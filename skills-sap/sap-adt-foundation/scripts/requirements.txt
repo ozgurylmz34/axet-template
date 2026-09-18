@@ -1,0 +1,4 @@
+# sap_adt_cli.py çalışma zamanı bağımlılıkları (Python >= 3.12). MCP paketi GEREKMEZ.
+requests>=2.31.0
+urllib3>=1.26
+python-dotenv>=1.0.0

@@ -1,0 +1,9 @@
+{
+  "fences": {
+    "Liste ekranı": [{"img": "kd-01-liste.png", "caption": "Şekil 1 — Liste ekranı"}]
+  },
+  "after_heading": {
+    "### 5.2 Toplu onay penceresi": [{"img": "kd-02-toplu.png", "caption": "Şekil 2 — Toplu onay penceresi"}]
+  },
+  "strip_circled_numbers": true
+}

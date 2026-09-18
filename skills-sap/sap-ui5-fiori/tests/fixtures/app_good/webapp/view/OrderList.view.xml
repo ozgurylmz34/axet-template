@@ -1,0 +1,27 @@
+<mvc:View controllerName="zxx001.order.controller.OrderList"
+	xmlns:mvc="sap.ui.core.mvc"
+	xmlns="sap.m"
+	xmlns:table="sap.ui.table"
+	xmlns:rowmodes="sap.ui.table.rowmodes">
+	<Page title="{i18n>list.title}">
+		<table:Table id="orderTable" rows="{ path: '/OrderSet' }" selectionMode="MultiToggle">
+			<table:rowMode>
+				<rowmodes:Auto/>
+			</table:rowMode>
+			<table:columns>
+				<table:Column sortProperty="OrderId" filterProperty="OrderId">
+					<Label text="{i18n>col.order}"/>
+					<table:template>
+						<Text text="{OrderId}" wrapping="false"/>
+					</table:template>
+				</table:Column>
+				<table:Column>
+					<Label text="{i18n>col.qty}"/>
+					<table:template>
+						<Input value="{Quantity}" type="Text" liveChange=".onNumericLiveChange"/>
+					</table:template>
+				</table:Column>
+			</table:columns>
+		</table:Table>
+	</Page>
+</mvc:View>

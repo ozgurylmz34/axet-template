@@ -1,0 +1,11 @@
+{
+  "name": "axet-ui5-smoke",
+  "private": true,
+  "description": "Lokal freestyle UI5 uygulaması için headless render smoke (Playwright). Kimlik env'den; config'e yazılmaz.",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}

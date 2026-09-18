@@ -1,0 +1,13 @@
+managed implementation in class zbp_ca000_i_demo unique;
+strict ( 2 );
+
+define behavior for ZCA000_I_DEMO alias Demo
+persistent table zca000_t_demo
+lock master
+authorization master ( instance )
+{
+  create;
+  update;
+  field ( readonly ) RequestId, Status;
+  field ( mandatory : create ) Amount;
+}

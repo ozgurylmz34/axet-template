@@ -1,0 +1,19 @@
+<mvc:View xmlns:mvc="sap.ui.core.mvc" xmlns="sap.m" xmlns:f="sap.ui.layout.form">
+	<!-- <f:fields><HBox/></f:fields> yorum içindeki desen bulgu üretmemeli -->
+	<f:Form editable="true">
+		<f:layout>
+			<f:ColumnLayout/>
+		</f:layout>
+		<f:formContainers>
+			<f:FormContainer>
+				<f:formElements>
+					<f:FormElement label="{i18n>col.order}">
+						<f:fields>
+							<Input value="{OrderId}" editable="false"/>
+						</f:fields>
+					</f:FormElement>
+				</f:formElements>
+			</f:FormContainer>
+		</f:formContainers>
+	</f:Form>
+</mvc:View>

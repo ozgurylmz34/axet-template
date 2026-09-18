@@ -1,0 +1,35 @@
+{
+  "_version": "1.60.0",
+  "sap.app": {
+    "id": "zxx001.order",
+    "type": "application",
+    "title": "{{appTitle}}",
+    "i18n": {
+      "bundleUrl": "i18n/i18n.properties",
+      "supportedLocales": ["", "tr"],
+      "fallbackLocale": ""
+    },
+    "dataSources": {
+      "mainService": {
+        "uri": "/sap/opu/odata/sap/ZXX001_UI_ORDER_O2/",
+        "type": "OData",
+        "settings": { "odataVersion": "2.0" }
+      },
+      "vhService": {
+        "uri": "/sap/opu/odata/sap/ZCA000_VH_O2/",
+        "type": "OData",
+        "settings": { "odataVersion": "2.0" }
+      }
+    }
+  },
+  "sap.ui5": {
+    "models": {
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": { "bundleName": "zxx001.order.i18n.i18n", "supportedLocales": ["", "tr"], "fallbackLocale": "" }
+      },
+      "": { "dataSource": "mainService", "settings": { "useBatch": false } },
+      "vh": { "dataSource": "vhService", "settings": { "useBatch": false } }
+    }
+  }
+}

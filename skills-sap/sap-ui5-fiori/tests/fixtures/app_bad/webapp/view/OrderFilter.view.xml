@@ -1,0 +1,3 @@
+<mvc:View xmlns:mvc="sap.ui.core.mvc" xmlns="sap.m">
+	<Input id="customerFilter" valueHelpRequest=".onCustomerValueHelp"/>
+</mvc:View>

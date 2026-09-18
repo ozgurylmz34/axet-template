@@ -1,0 +1,9 @@
+{
+  "_aciklama": "SAP araçlarının proje profili. Alanları doldurmadan sap_adt_cli.py yalnız ping çalıştırır. sap_profile: ecc | s4_private | s4_public | btp_abap. master_language: Z obje metinlerinin ve yazma oturumunun dili (ör. TR). source_root: paket klasörlerinin kökü (new_package.py <source_root>/<MODÜL>/<PAKET>/ kurar). Bağlantı bilgisi burada DEĞİL, gitignore'lu .conn_adt dosyasındadır.",
+  "project": "<PROJE_ADI>",
+  "sap_profile": "<ecc|s4_private|s4_public|btp_abap>",
+  "release": "<ör. 2023>",
+  "master_language": "<ör. TR>",
+  "cleancore_policy": "<ör. balanced>",
+  "source_root": "SOURCE_CODES"
+}

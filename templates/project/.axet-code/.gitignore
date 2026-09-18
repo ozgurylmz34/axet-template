@@ -1,0 +1,10 @@
+*
+!.gitignore
+!skills/
+!skills/**
+!commands/
+!commands/**
+!memory/
+!memory/**
+!intake/
+!intake/**

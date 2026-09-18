@@ -1,0 +1,14 @@
+{
+  "url": "http://localhost:8080/index.html?sap-ui-language=tr",
+  "out_dir": "out",
+  "expect_port": 8080,
+  "steps": [
+    {"do": "wait_ui5"},
+    {"do": "shot", "selector": "[id$='listPage']", "name": "kd-01-liste.png"},
+    {"do": "eval", "script": "document.body.setAttribute('data-kd', '1')"},
+    {"do": "set_model", "view_pattern": "Create", "model": "viewModel", "data_file": "state.json"},
+    {"do": "wait", "ms": 500},
+    {"do": "click", "selector": "button:has-text('Yeni')"},
+    {"do": "shot", "name": "kd-02-tam.png", "full_page": true, "optional": true}
+  ]
+}

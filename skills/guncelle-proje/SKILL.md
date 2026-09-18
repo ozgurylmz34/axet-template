@@ -1,0 +1,79 @@
+---
+name: guncelle-proje
+description: >
+  Use when the user wants to bring ONE open project's aXet template files (AGENTS.md, .axet-code.json,
+  .gitignore, .githooks, sap-project.json, validators-local) up to date with the template clone, or when
+  doctor / the session brief says "proje şablonu eski" or "proje şablon sürümü kayıtlı değil". Runs
+  scripts/guncelle_proje.py step by step: onkontrol, per-project approval, plan, apply automatic cases,
+  ask the user about merge cases, close with a report. Triggers: "%guncelle-proje", "proje şablonu eski",
+  "proje şablonunu güncelle", "AGENTS.md şablonu güncellensin". Not for updating the template clone itself
+  (that is %guncelle), not for creating a project (%yeni-proje), not for a package (new_package.py).
+---
+
+# guncelle-proje — bir projenin şablon dosyalarını 3-yollu güncelleme
+
+Tek kod yolu: `<AXET_HOME>/scripts/guncelle_proje.py`. `<AXET_HOME>` = bu skill klasörünün iki üstü
+(`<AXET_HOME>/skills/guncelle-proje/SKILL.md`); yolu buradan türet, varsayma, kullanıcıya özel yol yazma.
+Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya sorar ve kararı işaretlersin.
+
+## When to use this skill
+- `doctor.py` ya da oturum özeti "proje şablonu eski" / "proje şablon sürümü kayıtlı değil" dedi.
+- Kullanıcı açık projenin template dosyalarını güncellemek istiyor.
+- **Kullanma:** template klonunu güncellemek (`%guncelle`) · yeni proje (`%yeni-proje`) ·
+  paket (`new_package.py`) · `templates/package/**` (kapsam dışı, K5).
+
+## ⛔ Değişmezler
+1. **Her proje AYRI onaylanır.** Toplu tarama YOKTUR. Onay tek proje yoluna ve tek şablon sürümüne
+   bağlanır; script bunu zorlar (`onay.json`). Başka projede "zaten onaylamıştı" diye devam etme.
+2. **Önce klon güncel olmalı** (`%guncelle`). `onkontrol` ölçer; DUR derse önce onu çöz.
+3. **Taban uydurma YASAK.** `VTB` (taban bilinmiyor) dosyada otomatik birleştirme yapılmaz;
+   kullanıcı "yeniyi al / yereli koru / elle" seçer.
+4. **Commit ajanın işi değil.** Proje reposuna commit KULLANICININ onayıyla atılır; `push` asla.
+5. Script'in çıktısını **aynen** göster; raporu sen yazma.
+
+## How to use this skill
+
+| # | Adım | Komut | Beklenen | FAIL'de |
+|---|---|---|---|---|
+| 1 | Ön kontrol | `guncelle_proje.py --proje <dizin> onkontrol` | 0 | 2 → sebebi aynen göster, DUR |
+| 2 | Plan (salt-okur, onaysız çalışır) | `… plan` | 0 plan var · 1 güncel (bitir) | 2 → DUR |
+| 3 | Onay — kullanıcı projenin ADINI yazar | `… onay --kabul "<PROJE_ADI>"` | 0 | 2 → ad yanlış, yeniden sor |
+| 4 | Otomatik vakalar (V1/V2/V5/V6) | `… uygula --otomatik` | 0 | 1 → `durum` göster, DUR |
+| 5 | Yargı vakaları (V4t/V4c/V4B/V7/VTB) | `… oneri <yol>` → sor → `… isaretle <yol> --karar …` | her biri 0 | aşağıdaki karar tablosu |
+| 6 | Kapanış | `… kapanis` | 0 | 1 → raporu göster, seçenek sun |
+| 7 | Son | `RAPOR.md`'yi aynen göster | — | — |
+
+**Adım 3 neden 2. adımdan sonra:** plan görülmeden onay istemek, kullanıcıya ne onayladığını
+söylemeden onay istemektir. Önce planı göster, sonra onayı iste.
+
+### Yargı vakaları (adım 5)
+| Vaka | Ne demek | Ne yap |
+|---|---|---|
+| `V4t` | İki taraf da değişmiş, git temiz birleştirdi | İki farkı AYRI AYRI tek cümleyle özetle → "birleşik / yereli koru / yeniyi al" sor → `isaretle --karar birlesik\|yerel\|yeni` |
+| `V4c` | Çakışma var | Her çakışma bloğu için T/L/Y'yi göster, kendi önerini ve GEREKÇENİ yaz, onay al, öneri dosyasını işaretsiz bırak, sonra `isaretle --karar birlesik` |
+| `V4c+ESIK` | Ayrışma eşiği aşıldı (>3 blok ya da yerel fark >%50) | Birleştirme DENEME. `.axet-code/.guncelle-proje/elle/` altındaki iki farkı göster, "elle karşılaştırman gerekiyor" de, `isaretle --karar ertelendi --gerekce …` |
+| `V4B` | İkili dosya | Birleştirme yok: "yereli koru / yeniyi al" sor |
+| `V7` | Kullanıcının kendi dosyası, şablonun yeni dosyasıyla aynı yolda | "seninkini `<ad>.yerel` yap ve şablonunkini al (önerilen) / seninkini koru" → `isaretle --karar yeniden-adlandir\|yerel` |
+| `VTB` | Taban bilinmiyor | Otomatik birleştirme YASAK. Farkı göster, `isaretle --karar yeni\|yerel\|ertelendi` |
+
+### Kayıtsız (eski) projeler — SHA'sız geri düşüş
+Sürüm kaydı (`.axet-code/sablon-surumu.json`) yoksa script tabanı **içerik eşleştirmesiyle** arar:
+şablon geçmişindeki hangi sürüm, projedeki dosyayla birebir aynı? Bulursa taban odur; bulamazsa `VTB`.
+⚠ Kayıt yoksa **proje adı da bilinmiyordur** (`<PROJE_ADI>` onunla dolduruldu). Script dizin adını
+VARSAYAR ve bunu "ad kaynağı: dizin-adi-varsayimi" diye basar. Her şey `VTB` çıkıyorsa ad yanlıştır:
+kullanıcıya projenin gerçek adını sor ve `--ad <AD>` ile yeniden planla. **Adı tahmin etme, sor.**
+
+### SAP projesi (damga)
+`AGENTS.md`'deki kesin yasak damgası karşılaştırmaya GİRMEZ: üç sürümden de çıkarılır, gövde
+birleştirilir, damga sonra yeniden basılır. Damga BOZUKSA (birden fazla BASLA/BITIR) script DURUR —
+kullanıcı tek blok bırakmadan güncelleme başlamaz.
+
+### Sonda kullanıcıya söylenecekler
+- Rapordaki "aXet'i kapat-aç" ve "kendi terminalinde `behavior_manifest.py generate`" satırları.
+- Proje bir ekip reposuysa: "bu değişiklikler commit edilince ekip arkadaşlarına da gider".
+- Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN.
+
+## Yapmayacakların
+`git reset --hard` · `git push` · `--force` · `git clean` · `plan.json`/`durum.json`/`onay.json`'u elle
+düzenlemek · `.conn_adt` okumak · onay olmadan dosya yazmak · planda olmayan bir dosyaya dokunmak ·
+raporu kendin yazmak · "tamam" demeden önce `kapanis` çıkışını görmemek.

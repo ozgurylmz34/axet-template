@@ -1,0 +1,172 @@
+# aXet template — CI test takimlari (K2, 2026-09-15).
+#
+# KAPSAM BEYANI — bu is akisi NEYE BAKMAZ:
+#   * Canli SAP: hicbir is .conn_adt okumaz, SAP'ye baglanmaz (takimlar zaten cevrimdisi).
+#   * Linux/macOS: yalnizca windows-latest kosar. Gerekce: tests/test_kur.py Windows disinda
+#     kendini atlar (test_kur.py:66) ve tests/test_yeni_proje.py'de atlama korumasi YOK ->
+#     Linux runner'i yesil gorunurken gercekte kapsam kaybettirirdi.
+#   * Kurulum sonrasi davranis: install.py + doctor.py ayri iste kosar, ama global config'i
+#     olmayan TEMIZ bir runner'da olculur; gercek kullanici makinesindeki birikmis config
+#     durumunu TEMSIL ETMEZ.
+#   * Skill govde/dokuman kalitesi: burada olculmez (bug gate + doc checklist isi).
+#   * GERCEK aXet (axet-code) entegrasyonu: CI'da SAHTE (0 baytlik) bir axet-code.exe kurulur.
+#     kur.ps1'in Axet-Bul'u yalnizca VARLIK arar, binary'yi CALISTIRMAZ -> on kosul kontrolu
+#     olculur, aracin kendisi OLCULMEZ. Gercek aXet sirket kanalindan kurulur, CI'a kurulamaz.
+#     Stub bilerek PATH'e KONMAZ, yalniz %LOCALAPPDATA%\axet-code\bin altina konur: boylece
+#     install.py/doctor.py'nin `shutil.which("axet-code")` sonucu bugunku gibi BULUNAMADI kalir
+#     ve o iki betigin olculen davranisi degismez.
+name: testler
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  takimlar:
+    name: Testler (${{ matrix.takim }} · Python ${{ matrix.python }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # TAKIM BOYUTU (2026-09-16, kullanici karari) — kok ve foundation takimlari
+        # AYNI job'da SIRAYLA kosuyordu; olculdu (kosum #14): kok 275/293 sn +
+        # foundation 375/393 sn = 668 sn seri, job toplami 674/710 sn. Geri kalan HER SEY
+        # (checkout + setup-python + pip + on kosullar + sap-code-review) toplam 25 sn,
+        # yani surenin %99'u bu iki takim.
+        # Ayri kollara alinca duvar saati max(296, 393) ~ 6.6 dk'ya duser (11.8 dk'dan).
+        # KAPSAM DEGISMEZ: ayni komutlar, ayni on kosullar, ayni matris.
+        # Maliyet: toplam derleme suresi 1348 -> ~1430 sn (+%6, on kosullar iki kez kosuyor).
+        # NOT: hesabin Actions kotasi OLCULEMEDI (billing ucu 404 - token kapsami yok).
+        takim: [kok, foundation]
+        # Taban + guncel birlikte kosar ki "su surumden itibaren destekleniyor" iddiasi
+        # OLCULMUS olsun, varsayilmis degil.
+        #
+        # TABAN 3.9 -> 3.10 -> 3.12 · UST KOL 3.13 -> 3.14 (2026-09-16, kullanici karari).
+        #
+        # NEDEN 3.10'DA KALINMADI: destek takvimi olculdu — 3.10 EOL 31 Ekim 2026, yani
+        # taban ilan edildiginden ~6 hafta sonra oluyordu; ayrica 3.13'un bugfix evresi
+        # 1 Ekim 2026'da bitiyor (o tarihten sonra "guncel kol" guncel olmazdi). 3.12
+        # Ekim 2028'e, 3.14 Ekim 2030'a kadar destekli.
+        # 3.10 KOSTU VE DUSTU (kosum #11: 3.10 -> 2 failure, 3.13 -> yesil): asagidaki
+        # 2. kusur 3.10'da HALA acikti. Yani "3.10 gecer" varsayimi olsaydi yanlis olurdu.
+        # 3.12 SECIMI OLCULDU, varsayilmadi: yerelde Python 3.12.10 ile
+        # test_f1_belirsiz_origin... GECTI ve urllib 'https://[SECRETTOKEN]/r' icin
+        # ValueError veriyor (katilik 3.12'de VAR). 3.14 olculmedi — ama depoda PEP 594'te
+        # kaldirilan modullerden hicbiri ve __annotations__/get_type_hints kullanimi YOK
+        # (tarandi), maruziyet dusuk. Duserse kanitla ayarlanacak.
+        #
+        # Ilk daraltmanin gerekcesi: matris isini yapti ve
+        # "3.9 destekleniyor" iddiasinin YANLIS oldugunu olctu (kosum #10, 3.9 kolu 4 failure;
+        # 3.13 ve kurulum yesil). Iki ayri kusur:
+        #   1) 4 validator dosyasinda PEP 604 (`X | None`) var, `from __future__ import
+        #      annotations` korumasi yok -> 3.9'da reviewer HIC yuklenemiyor
+        #      ("TypeError: unsupported operand type(s) for |"). AST taramasi: 6 yer / 4 dosya.
+        #   2) yeni_proje.depo_onerisi, guvenle ayristirilamayan bir origin'i reddetmeyi
+        #      urllib'in SURUM KATILIGINA birakmis; 3.9'da fail-open (bozuk adres "yerel"
+        #      yerine ONERI olarak donuyor). Guvenlige dokunan karar surume devredilmis.
+        # Karar iddiayi DUZELTMEK degil DARALTMAK: 3.9 bugun de fiilen desteklenmiyordu,
+        # degisen tek sey durustluk.
+        # ✅ KAPANDI (2026-09-16): README/kur.ps1'deki "3.9" metinleri guncellendi ve
+        # kur.ps1'e TEK DOGRULUK KAYNAGI konuldu ($script:PyAsgari). Buradaki taban ile
+        # kur.ps1'in kapisi artik ayni seyi soyluyor; ikisi ayrilirsa test_kur.py:872,936
+        # kirmiziya doner (mutasyonla dogrulandi).
+        python: ['3.12', '3.14']
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Surumleri bas
+        run: |
+          python --version
+          git --version
+
+      # ON KOSUL 0 — depo bir DALIN uzerinde olmali. actions/checkout depoyu detached ve
+      # YEREL DALSIZ birakir; tests/test_kur.py setUpClass kendi fixture'ini `git clone --bare
+      # <bu depo>` ile kurdugu icin dalsizlik bare kopyaya, oradan da calisma klonuna geciyor
+      # ve `git push -q origin HEAD` "The destination you provided is not a full refname" ile
+      # dusuyor. Olculdu (2026-09-16, 3 kollu): dalda -> gecti · detached ama DALLAR VAR ->
+      # gecti · detached + dalsiz -> CI'daki hatanin AYNISI. Yani belirleyici olan detached
+      # olmak degil, yerel dalin BULUNMAMASI. Tam takim: dalsiz 252/15 -> bu adimla 252/0.
+      # NOT (acik kalem): asil kirilganlik testlerde — fixture calisilan deponun ortam
+      # durumunu devraliyor. Kalici cozum `uzakta_commit`in HEAD yerine tam refname itmesi
+      # ya da bare sablonun dalini garanti etmesidir; bu adim CI'yi normal bir calisma
+      # klonuna benzetir, o baglantiyi KALDIRMAZ.
+      # Dal adi bilerek `main`: olculen kol buydu ve normal bir calisma klonunun hali budur.
+      # PR'da bu yerel `main`, merge commit'ine isaret eder (origin/main'e DEGIL) — fixture
+      # kendi icinde tutarli oldugu icin testler icin dogru olan da budur.
+      - name: On kosul - dal uzerinde ol
+        run: git checkout -B main
+
+      # ON KOSUL 1 — sahte axet-code. Olculdu (2026-09-16, yerelde CI kosulu taklit edilerek,
+      # 3 kollu): gercek axet-code VAR -> test_kur 36/1 · YOK -> 36/30 · sahte stub ile -> 36/1.
+      # Yani kosum #1'deki 36 failure'in 30'u tek bir on kosul bosluguydu, kod kusuru DEGILDI
+      # (kur.ps1:371-375 -> `Bitir 2`). Testler ayni sahte-dosya yontemini zaten kullaniyor
+      # (tests/test_kur.py dar_ortam: axet-code.exe write_bytes(b"")).
+      - name: On kosul - sahte axet-code
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:LOCALAPPDATA 'axet-code\bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          New-Item -ItemType File -Force -Path (Join-Path $bin 'axet-code.exe') | Out-Null
+          Write-Host "sahte axet-code: $bin (PATH'e EKLENMEDI - bkz. kapsam beyani)"
+
+      # ON KOSUL 2 — SAP ADT foundation takiminin calisma zamani bagimliliklari. Olculdu:
+      # kurulmazsa o takim 6 test / 6 error verir (ModuleNotFoundError: dotenv) ve kok takimdaki
+      # test_run_tests_cli.py:47 de bu yuzden duser. Dosya repoda ZATEN vardi, CI onu hic kurmuyordu.
+      - name: On kosul - Python bagimliliklari
+        run: python -m pip install --quiet -r skills-sap/sap-adt-foundation/scripts/requirements.txt
+
+      # Asagidaki uc adim `takim` matris boyutuna gore ayrisir. sap-code-review yalnizca
+      # 3 sn surdugu icin kok koluna binmistir — kendi kolunu acmak on kosul maliyetini
+      # (13 sn) kazancindan buyuk yapardi.
+      - name: Kok takim
+        if: matrix.takim == 'kok'
+        run: python tests/run_tests.py
+
+      - name: sap-code-review takimi
+        if: matrix.takim == 'kok'
+        run: python -m unittest discover -s skills-sap/sap-code-review/tests -v
+
+      - name: SAP ADT foundation takimi
+        if: matrix.takim == 'foundation'
+        run: python skills-sap/sap-adt-foundation/tests/run_tests.py
+
+  kurulum:
+    name: Kurulum dumani (install + doctor)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: install.py --dry-run
+        run: python scripts/install.py --dry-run
+
+      - name: install.py
+        run: python scripts/install.py
+
+      - name: doctor.py
+        run: python scripts/doctor.py

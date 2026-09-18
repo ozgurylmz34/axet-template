@@ -1,0 +1,33 @@
+# aXet.code çalışma durumu (oturum DB, log, codegraph) — repoya girmez
+/.axet-code/
+# Güncelleme çalışma durumu (plan, uygulanan.json, öneri/elle dosyaları) — repoya girmez.
+# kur.cmd -Sifirla bu dizini AYRICA silmeye çalışır: clean -fd gitignore'lu dosyayı silmez ve kalan eski taban
+# kaydı sonraki %guncelle'yi yanlış tabana götürür. Silme KOŞULLU: yalnız dizinin altındaki her girdi yedek
+# dalına geri alınabilir biçimde (blob olarak) girdiyse siler. İçinde ayrı bir git deposu varsa (yedeğe yalnız
+# gitlink olarak girer) ya da yedeğe hiç alınamadıysa dizine DOKUNMAZ, sebebiyle birlikte adıyla bildirir.
+/.axet-guncelleme/
+# Deneme alanı
+/_lab/
+# Şirket içi ham dokümanlar (gerçek sistem/kişi bilgisi içerebilir) — repoya girmez
+/temp_docs/
+# Kurulum paketinden gelen eski binary ve ikon
+/axetcli.exe
+/AxetCodeIcoFile
+
+# Kimlik bilgileri — ASLA repoya girmez (örnek şablonlar hariç)
+.conn*
+!.conn*.example
+*.env
+!*.env.example
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+
+# install.py yedekleri
+*.bak-*
+# Makineye özel SAP yazma izni (install.py --sap-write) — repoya girmez
+/config/sap-write.local
+# Template kökünde canlı SAP testi için yerel profil (projelerde bu dosya repoya girer)
+/sap-project.json

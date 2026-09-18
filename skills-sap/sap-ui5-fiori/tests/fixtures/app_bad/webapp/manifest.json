@@ -1,0 +1,25 @@
+{
+  "_version": "1.60.0",
+  "sap.app": {
+    "id": "zxx001.orderbad",
+    "type": "application",
+    "title": "{{appTitle}}",
+    "i18n": {
+      "bundleUrl": "i18n/i18n.properties",
+      "supportedLocales": ["", "tr"],
+      "fallbackLocale": ""
+    },
+    "dataSources": {
+      "mainService": {
+        "uri": "/sap/opu/odata/sap/ZXX001_UI_ORDER_O2/",
+        "type": "OData",
+        "settings": { "odataVersion": "2.0" }
+      }
+    }
+  },
+  "sap.ui5": {
+    "models": {
+      "": { "dataSource": "mainService", "settings": { "useBatch": false } }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+<mvc:View xmlns:mvc="sap.ui.core.mvc" xmlns="sap.m">
+	<!-- Eski tek değerli alan: <Input valueHelpRequest=".onCustomerValueHelp"/> (yorum bulgu üretmemeli) -->
+	<MultiInput id="customerFilter" valueHelpRequest=".onCustomerValueHelp" placeholder="{i18n>filter.customer}"/>
+</mvc:View>

@@ -1,0 +1,16 @@
+# ref_docs/ — Kaynak dokümanlar ({PKG_FULL})
+
+> **Nedir:** Başka bir sistemden (eski sistem, başka SAP, legacy) alınan ve hedef sistemde **1:1 yaratılmayacak**
+> dönüşüm/planlama dokümanları. Build sırasında spesifikasyon kaynağıdır; canlı teslimat değildir.
+>
+> **Ne değildir:** geçici dosya değil. Karşılığı olan gerçek obje ve dokümanı paket kökünde oluşana kadar silinmez;
+> tüketildiğinde aşağıda "karşılandı" diye işaretlenir.
+>
+> Birden fazla kaynak sistem varsa `ref_docs/<kaynak>/` alt klasörü aç.
+> Kaynak dosyalarda kişisel veri varsa repoya koymadan önce maskele.
+
+## İçerik ve durum (kaynak: <KAYNAK SİSTEM>)
+
+| Dosya / klasör | İçerik | Durum |
+|---|---|---|
+| <doldur> | <DDL, yapı, program spesifikasyonu, ekran taslağı, csv…> | ham · karşılandı → <obje> · düştü |

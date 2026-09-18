@@ -1,0 +1,9 @@
+# aXet ajanının okuyamayacağı / yazamayacağı yollar.
+# Oturum başında okunur: değiştirince YENİ aXet oturumu aç.
+# Satır başına bir yol; göreli yollar proje köküne göredir. Glob desteği ölçülmedi: tam ad yaz.
+# Kimlik bilgisi dosyalarını script'ler okur, ajan okumaz. Ajanın işi için gereken bir yolu buraya ekleme.
+.conn_adt
+.env
+secrets
+# Davranış yüzeyi onay kaydı: onayı kullanıcı verir (behavior_manifest.py generate), ajan düzenlemez.
+.axet-code/behavior-manifest.json

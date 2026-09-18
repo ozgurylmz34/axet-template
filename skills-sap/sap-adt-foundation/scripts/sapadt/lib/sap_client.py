@@ -1,0 +1,3718 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SAP ABAP Development Client
+Unified OOP interface for all SAP ADT operations
+"""
+import os
+import sys
+import io
+import xml.etree.ElementTree as ET
+
+# Force UTF-8 output on Windows to handle Turkish and other non-ASCII characters
+def _setup_utf8_output():
+    if sys.platform == 'win32':
+        try:
+            # Only wrap if encoding is not already UTF-8
+            if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+                if hasattr(sys.stdout, 'buffer'):
+                    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            if hasattr(sys.stderr, 'encoding') and sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+                if hasattr(sys.stderr, 'buffer'):
+                    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except Exception:
+            pass  # Ignore if wrapping fails
+
+_setup_utf8_output()
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+from sap_adt_lib import (
+    SAPADTClient,
+    SAPTransportError,
+    check_sap_config,
+    create_conn_file,
+    create_conn_template,
+    get_conn_path,
+    get_explicit_working_dir,
+    validate_sap_config
+)
+from object_types import (
+    get_object_url,
+    get_source_url,
+    get_adt_type,
+    normalize_object_type,
+    get_type_description,
+    supports_creation
+)
+
+
+SAP_HATA_GOVDE_SINIRI = 500
+
+
+def sap_hata_govdesi(exc) -> Optional[Dict[str, Any]]:
+    """Istisnadaki SAP yanit govdesinden cagirana gosterilecek sebebi cikar.
+
+    Doner: None (istisna govde tasimiyor) | {'status_code', 'message', 'body_excerpt'}.
+    Olculmus govde bicimleri:
+      · 400 datapreview: XML `exc:exception` -> `<message lang="..">sebep</message>`
+      · aralikli 500: HTML "Application Server Error" -> `<title>`
+    Taninmayan govdede `message` govdenin ilk satiridir; ham ilk N bayt ayrica tasinir.
+    """
+    import re as _re
+    govde = getattr(exc, 'response_text', None)
+    if not govde:
+        return None
+    govde = str(govde)
+    mesaj = None
+    try:
+        kok = ET.fromstring(govde)
+        for el in kok.iter():
+            if el.tag.split('}')[-1] == 'message' and (el.text or '').strip():
+                mesaj = el.text.strip()
+                break
+    except ET.ParseError:
+        pass
+    if not mesaj:
+        # HTML ya iyi-bicimli XML olarak AYRISIR (message dugumu yok) ya da ParseError verir;
+        # iki durumda da sebep <title>'dadir.
+        m = _re.search(r'<title>\s*([^<]+?)\s*</title>', govde, _re.I)
+        if m:
+            mesaj = m.group(1)
+    if not mesaj:
+        mesaj = govde.strip().splitlines()[0][:200] if govde.strip() else None
+    return {'status_code': getattr(exc, 'status_code', None), 'message': mesaj,
+            'body_excerpt': govde[:SAP_HATA_GOVDE_SINIRI]}
+
+
+def worklist_ana_objeleri(govde: str) -> List[Dict[str, Any]]:
+    """Aktive-bekleyen worklist govdesi -> OBJE-seviyesi girdiler.
+
+    Ayristirma TEK KAYNAKTAN: `sap_adt_lib.aktivasyon_worklist_ayristir` (ioc olmayan govdede
+    ValueError, ayristirilamayan govdede ParseError — ikisi de YUTULMAZ). Ustune ortak eleme:
+    method/alt-obje (`*/OM` tipi ya da `#type=` fragmanli URI) atlanir — ana objenin kendi
+    girdisi vardir; URI (fragman/son `/` atilmis) basina TEK girdi. `uri` alani bu anahtardir.
+    """
+    from sap_adt_lib import aktivasyon_worklist_ayristir
+    out, gorulen = [], set()
+    for g in aktivasyon_worklist_ayristir(govde):
+        tip, uri = g.get('type') or '', g.get('uri') or ''
+        if tip.endswith('/OM') or '#type=' in uri:
+            continue
+        anahtar = uri.split('#')[0].rstrip('/')
+        if not g.get('name') or anahtar in gorulen:
+            continue
+        gorulen.add(anahtar)
+        out.append({**g, 'uri': anahtar})
+    return out
+
+
+def where_used_paket_ayir(refs) -> tuple:
+    """usageReferences listesi -> (obje_referanslari, paket_dugumleri).
+
+    Olculmus: yanit bir AGACTIR; `DEVC/K` dugumleri cagiran objelerin PAKET ATALARIDIR (olculen
+    tum paket dugumleri bir obje dugumunun parentUri zincirindeydi). Paketi cagiran sanmak
+    `count`u sisirir (ornek: 2 cagiran + 3 paket = 5).
+    """
+    objeler, paketler = [], []
+    for r in refs or []:
+        tip = str((r or {}).get('type') or '').upper()
+        (paketler if tip.startswith('DEVC') else objeler).append(r)
+    return objeler, paketler
+
+
+def readback_farki_yalniz_bicim_mi(yuklenen: str, canli: str) -> bool:
+    """Push sonrası readback farkı BİÇİM mi, İÇERİK mi? (True = yalnız biçim)
+
+    KÖK-FIX (2026-07-28). Vaka: bir CDS kaynağında ABAP tarzı `"` yorumu vardı;
+    CDS DDL'de `"` yorum DEĞİLDİR → SAP kaynağı **sessizce reddetti**. Beş kontrol de
+    yeşil verdi (run_review PASS · abaplint temiz · run_all_validators OK ·
+    adt_syntax_check valid:true · push "[OK] uploaded" + "[OK] activated") ama kaynak
+    canlıya hiç inmedi. Yakalayan tek şey readback karşılaştırmasıydı — o da yalnızca
+    WARNING basıyor, `result`'a başarısızlık işareti koymuyordu.
+
+    Körü körüne hard-fail YAPILAMAZ: SAP bazı obje tiplerinde kaynağı pretty-print eder
+    (gerçek vaka: bir tabloda 12 fark satırı, hepsi hizalama boşluğu, içerik AYNI).
+    Ayrım: **tüm boşluklar atıldığında hâlâ farklıysa** bu biçim değil, gerçek içerik
+    uyuşmazlığıdır → push başarısız sayılır.
+
+    Modül düzeyinde ve ağsızdır ki regresyon testi GERÇEK kod yolunu çağırabilsin
+    (testin mantığı yeniden-uygulaması = sahte güvence).
+    """
+    y = (yuklenen or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    c = (canli or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    if y == c:
+        return True
+    return "".join(y.split()) == "".join(c.split())
+
+
+def kaynak_kimligi(local_file, source_code: str) -> Dict[str, Any]:
+    """Push edilen kaynağın İZİNİ üret: mutlak yol + md5 (dosya VE gönderilen).
+
+    ⛔ NEDEN VAR (Q222②, 2026-09-09): `push_object.py` başarıda yalnız
+    *"[OK] Push completed successfully: <ad>"* yazıyordu. HANGİ dosyanın gittiği
+    çıktıda YOKTU (`--source-file` verilmediğinde yol bu katmanda TÜRETİLİR, çağıran
+    onu hiç görmez) ve `md5` bu yolun HİÇBİR yerinde geçmiyordu ⇒ push'un
+    "staging ↔ repo" kıyası yapılamıyordu. Bu deponun ölçülmüş dersi:
+    **push ara-kopyası BAYATLAR ve readback bunu yapısal olarak GÖREMEZ**
+    (readback canlıyı GÖNDERİLENLE kıyaslar; gönderilen yanlış dosyaysa ikisi de
+    tutar ve yeşil çıkar). Hangi dosyanın gittiğini YAZMAYAN push doğrulanamaz.
+
+    ⚠ İKİ md5 vardır ve KARIŞTIRILMAMALIDIR:
+      · `md5_dosya`     = diskteki BAYTLAR. `md5sum`/`certutil -hashfile` ile
+                          birebir üretilebilir ⇒ repo/staging kıyasının çapası budur.
+      · `md5_gonderilen`= SAP'ye giden metnin md5'i. Dosya CRLF ise Python'un
+                          evrensel satır-sonu çevrimi onu LF'e indirir ⇒ İKİSİ FARKLI
+                          OLUR. Bu bir kusur değil, ölçülmüş bir gerçektir; bu yüzden
+                          fark VARSA ikisi de basılır (tek md5 basmak, iki değerden
+                          hangisiyle kıyaslayacağını bilmeyen operatörü yanıltır).
+
+    Okunamayan dosya "temiz" sayılmaz: `md5_dosya` `None` kalır ve çağıran bunu
+    *"DOĞRULANAMADI"* diye basar ("ölçülemedi" ≠ "aynı").
+    """
+    import hashlib
+    try:
+        yol = str(Path(local_file).resolve())
+    except Exception:
+        yol = str(local_file)
+    try:
+        md5_dosya = hashlib.md5(Path(local_file).read_bytes()).hexdigest()
+    except Exception:
+        md5_dosya = None
+    md5_gonderilen = hashlib.md5((source_code or '').encode('utf-8')).hexdigest()
+    return {
+        'source_path': yol,
+        'source_md5': md5_dosya,
+        'source_md5_sent': md5_gonderilen,
+        'source_bytes': len(source_code or ''),
+    }
+
+
+def kaynak_kimligi_bas(kimlik: Dict[str, Any], girinti: str = '      ') -> None:
+    """`kaynak_kimligi()` çıktısını operatöre GÖRÜNÜR biçimde bas (tek kaynak).
+
+    ⚠ Bu metin İKİ push yolundan da çağrılır. Kopyalayıp yapıştırma — bu bileşen
+    ailesinde "elle kopyalanmış ikinci literal" kusuru daha önce yaşandı
+    (bkz. `utils/ddic_aktivasyon.py` başlığı).
+    """
+    print(f"{girinti}[KAYNAK] {kimlik.get('source_path')}")
+    md5d = kimlik.get('source_md5')
+    if md5d:
+        print(f"{girinti}         md5(dosya)      = {md5d}")
+    else:
+        print(f"{girinti}         md5(dosya)      = DOĞRULANAMADI (dosya baytları okunamadı)")
+    if md5d != kimlik.get('source_md5_sent'):
+        print(f"{girinti}         md5(gönderilen) = {kimlik.get('source_md5_sent')}"
+              f"  (satır sonu çevrimi CRLF->LF)")
+
+
+class SAPClient:
+    """High-level SAP ABAP Development Client"""
+
+    def __init__(self, local_base: Optional[Path] = None):
+        """
+        Initialize SAP client
+
+        Args:
+            local_base: Local directory for storing .abap files (default: project_root/.tmp/sap_scratch/classes)
+        """
+        self.debug_enabled = (os.getenv('ADT_SAP_DEBUG') == '1') or (os.getenv('SAP_ADT_DEBUG') == '1')
+        self.debug_log_path = None
+        explicit_dir = get_explicit_working_dir()
+
+        if self.debug_enabled:
+            log_dir = explicit_dir if explicit_dir else Path.cwd()
+            self.debug_log_path = log_dir / "sap_adt_debug.log"
+            try:
+                self.debug_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.debug_log_path, "a", encoding="utf-8") as log_file:
+                    log_file.write(f"\n--- SAP ADT DEBUG {datetime.utcnow().isoformat()}Z ---\n")
+            except Exception as exc:
+                print(f"[DEBUG] Failed to init debug log at {self.debug_log_path}: {exc}")
+                self.debug_log_path = None
+
+        self.adt_client = SAPADTClient()
+
+        # Log SAP connection details (without password)
+        if self.debug_enabled and self.debug_log_path:
+            self._debug(f"[DEBUG] SAP Connection - URL: {self.adt_client.url}, Client: {self.adt_client.client}, User: {self.adt_client.user}")
+
+        # Set up local workspace in user's project directory
+        if local_base:
+            self.local_base = Path(local_base)
+        else:
+            if explicit_dir:
+                # Use the explicit working directory (user's project folder)
+                self.local_base = explicit_dir / ".tmp" / "sap_scratch" / "classes"
+            else:
+                # Fall back to current working directory
+                self.local_base = Path.cwd() / ".tmp" / "sap_scratch" / "classes"
+
+        # NOT: local_base (.tmp/sap_scratch scratch) artık LAZY yaratılır — sadece gerçekten
+        # dosya kaydedilirken (download_object save bloğu, target_dir.mkdir).
+        # Eskiden burada eager mkdir vardı → her SAPClient() (activate/create/push
+        # dahil, kaydetmeyen işlemler) .tmp/sap_scratch'yi yeniden yaratıyordu → scratch dizin
+        # silinse de sürekli geri geliyordu. Eager mkdir'i GERİ EKLEME.
+
+        if self.debug_enabled and self.debug_log_path:
+            self._debug(f"[DEBUG] debug log path: {self.debug_log_path}")
+
+    def _debug(self, message: str) -> None:
+        if not self.debug_enabled:
+            return
+        print(message)
+        if not self.debug_log_path:
+            return
+        try:
+            with open(self.debug_log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"{message}\n")
+        except Exception as exc:
+            print(f"[DEBUG] Failed to write debug log: {exc}")
+
+    @staticmethod
+    def check_sap_config():
+        """Return .conn_adt configuration status (no SAP call)."""
+        return check_sap_config()
+
+    @staticmethod
+    def check_logon():
+        """Return whether we can reach SAP ADT with current credentials."""
+        return SAPADTClient().check_logon()
+
+    # ===== Object Source Operations =====
+
+    def download_object(self, object_name: str, object_type: str = 'class', save_local: bool = True) -> str:
+        """
+        Download ABAP object source code from SAP
+
+        Args:
+            object_name: Name of the object (e.g., 'ZDEMO0_CL_AI_CLIENT')
+            object_type: Type of object ('class', 'interface', 'program', etc.)
+            save_local: Whether to save to local file (default: True)
+
+        Returns:
+            Source code as string
+        """
+        source_url = get_source_url(object_name, object_type)
+        type_desc = get_type_description(object_type)
+
+        print(f">> Downloading {type_desc}: {object_name}")
+        print(f"   URL: {self.adt_client.url}{source_url}")
+
+        source_code = self.adt_client.get_object_source(source_url)
+
+        # Clean SAP's double line breaks
+        cleaned_source = source_code.replace('\r\r\n', '\n').replace('\r\n', '\n').replace('\r', '\n')
+
+        if save_local:
+            from object_types import get_local_subdir
+            subdir = get_local_subdir(object_type)
+
+            # Use parent of local_base (which is .../.tmp/sap_scratch/classes) to get .../.tmp/sap_scratch
+            package_base = self.local_base.parent
+            target_dir = package_base / subdir
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = target_dir / f"{object_name}.abap"
+            with open(file_path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(cleaned_source)
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] download_object local_base: {self.local_base}")
+                self._debug(f"[DEBUG] download_object target_dir: {target_dir}")
+                self._debug(f"[DEBUG] download_object file_path: {file_path}")
+            print(f"   [SAVED] {file_path}")
+
+        return cleaned_source
+
+    def _push_method_includes(self, object_url: str, object_name: str, source_code: str,
+                               method_names: list, transport: Optional[str]) -> bool:
+        """Fallback: PUT failing method bodies to method-level include URLs.
+
+        Called when activation returns "Implementation missing for method X" — the
+        symptom of SAP's include splitter not updating a method's CCAU include when a
+        new method override is added via source/main PUT.
+
+        Ghost-transport guard is built-in: lock_object() internally calls
+        _verify_and_return_lock() which raises SAPLockError if SAP assigns a different
+        transport. No PUT is attempted on mismatch, so no ghost CTS entries are created.
+
+        Args:
+            object_url: Class ADT URL (e.g. /sap/bc/adt/oo/classes/ZCL_FOO)
+            object_name: Class name (for logging)
+            source_code: Merged source that was PUT to source/main
+            method_names: Uppercase list of method names with missing implementations
+            transport: Transport corrNr to use for locking and PUT
+
+        Returns:
+            True if at least one method include was successfully updated
+        """
+        import re as _re
+        any_success = False
+
+        for method_name in method_names:
+            print(f"\n      [FALLBACK] Method include fallback for: {method_name}")
+
+            # Extract the METHOD...ENDMETHOD block from merged source
+            method_pattern = _re.compile(
+                rf'(^\s*METHOD\s+{_re.escape(method_name)}\s*\..*?^\s*ENDMETHOD\s*\.)',
+                _re.IGNORECASE | _re.DOTALL | _re.MULTILINE
+            )
+            method_match = method_pattern.search(source_code)
+            if not method_match:
+                print(f"      [FALLBACK] METHOD {method_name} not found in source — skipping")
+                continue
+
+            method_block = method_match.group(1)
+            if not method_block.endswith('\n'):
+                method_block += '\n'
+            print(f"      [FALLBACK] Extracted {len(method_block)} chars")
+
+            include_url = f"{object_url}/includes/implementations/{method_name.upper()}"
+            fallback_lock = None
+            try:
+                # Re-lock. _verify_and_return_lock() is called inside lock_object().
+                # If SAP assigns a different transport (ghost or foreign), SAPLockError is
+                # raised immediately and we never reach the PUT — no ghost entries written.
+                print(f"      [FALLBACK] Locking (transport: {transport})...")
+                fallback_lock = self.adt_client.lock_object(object_url, transport=transport)
+                fb_effective = self.adt_client._last_lock_effective_transport or transport
+                print(f"      [FALLBACK] Lock OK: {(fallback_lock or '')[:30]}... effective transport: {fb_effective}")
+
+                # PUT method body to method-level include
+                print(f"      [FALLBACK] PUT → {include_url}")
+                self.adt_client.set_include_source(
+                    include_url, method_block, fallback_lock, fb_effective
+                )
+                print(f"      [FALLBACK] [OK] Updated: {method_name}")
+                any_success = True
+
+            except Exception as fb_err:
+                print(f"      [FALLBACK] [FAIL] {method_name}: {str(fb_err)[:200]}")
+                if 'transport' in str(fb_err).lower() or 'CORRNR' in str(fb_err):
+                    print(f"      [FALLBACK] [STOP] Ghost transport risk detected — aborting fallback")
+                    print(f"      [FALLBACK] Use SE01/SM12 to clean up, then retry.")
+                    break  # Abort entire fallback on transport mismatch
+            finally:
+                if fallback_lock and fallback_lock != 'NO_LOCK_SUPPORT':
+                    try:
+                        self.adt_client.unlock_object(object_url, fallback_lock)
+                        fallback_lock = None
+                        print(f"      [FALLBACK] Unlocked.")
+                    except Exception:
+                        print(f"      [FALLBACK] [WARNING] Unlock failed — use SM12 to release manually")
+
+        return any_success
+
+    def _find_existing_transport(self, object_name: str, object_type_str: str, requested_transport: str) -> str:
+        """Query E071+E070 to find the K-type workbench request already owning this object.
+
+        Called before every lock_object() call (Bug 9 fix). Prevents ghost transports
+        when the same object was already recorded in a previous push session.
+
+        Resolution rules (applied in order):
+          1. Filter E071 by OBJ_NAME (the name column), joined with E070 for TRSTATUS='D'.
+          2. Resolve S-type task → K-type workbench request via E070.STRKORR.
+             (E071 always records against the S-task; lock_object's CORRNR verification
+             expects the K-parent — returning an S-type causes a spurious mismatch.)
+          3. Filter candidates to current user (E070.AS4USER) to avoid hijacking
+             another developer's transport.
+          4. Prefer R3TR CLAS entries over LIMU sub-include entries. R3TR CLAS is a
+             catch-all that CTS treats as owning the whole class pool; any push reuses
+             its transport. LIMU CLSD/CPUB/CM0xx entries only claim one include and
+             cause new ghosts when a different include is touched.
+          5. If requested_transport appears in the candidate K-parents, keep it.
+             Otherwise return the top-ranked candidate.
+
+        Falls back to requested_transport if the data preview API returns an error
+        (e.g. HTTP 500 on systems where E071 is not accessible — see Bug 11).
+        ⚠ 2026-08-10: bu geri-düşüş artık **SESSİZ DEĞİL** — görünür `[WARN]` basar.
+        Docstring eskiden "Falls back **silently**" diyordu ve bu, düzeltilmesi gereken
+        davranışın kendisinin **itirafıydı**: sessizlik bir tasarım tercihi gibi
+        belgelenmişti. Sonuç `self._last_transport_lookup` ile de okunabilir:
+        `resolved` | `kept` | `no_entry` | `foreign_only` | `shape_unrecognized` |
+        `error:<İstisnaAdı>` — yani "doğrulandı" ile "varsayıldı" AYIRT EDİLEBİLİR.
+
+        History:
+          - 2026-03-13 (Bug 9): Original — filtered E071~OBJECT='{name}' which is the
+            4-char type-code column. Caused HTTP 400 on every call (field width overflow).
+            The except-clause silently swallowed the error → fix was a no-op.
+            ⚠ Bu satır 2026-08-10'a kadar bir TARİHÇE notu sanıldı; oysa aynı `except`
+            HÂLÂ oradaydı ve aynı şeyi yapmaya devam ediyordu. Kusuru anlatan yorum,
+            kusurun düzeldiği anlamına gelmez.
+          - 2026-04-09: Fixed column name, added S→K resolution, user filter, and
+            R3TR CLAS preference. Live-tested on a DEV system against ZDEMO0_CL_AI_BASE
+            (scattered LIMU state) and ZDEMO0_CL_TMP1 (single R3TR CLAS).
+
+        Args:
+            object_name: ABAP object name (e.g. ZDEMO0_CL_LIB_TOOLS)
+            object_type_str: Normalized object type (e.g. 'class')
+            requested_transport: Transport corrNr the caller wants to use
+
+        Returns:
+            K-type workbench request owning the object, or requested_transport
+            if none found or on query error.
+        """
+        try:
+            obj_upper = object_name.upper()
+            current_user = (getattr(self.adt_client, 'user', '') or '').upper()
+            req_upper = (requested_transport or '').upper()
+
+            # Pull TRKORR + STRKORR + AS4USER + PGMID + OBJECT so we can resolve
+            # S→K and rank R3TR CLAS above LIMU shards.
+            query = (
+                f"SELECT E071~TRKORR, E070~STRKORR, E070~AS4USER, E071~PGMID, E071~OBJECT "
+                f"FROM E071 JOIN E070 ON E071~TRKORR = E070~TRKORR "
+                f"WHERE E071~OBJ_NAME = '{obj_upper}' "
+                f"AND E070~TRSTATUS = 'D'"
+            )
+            result_xml = self.adt_client.run_query(query, row_number=50)
+
+            ns = {'dp': 'http://www.sap.com/adt/dataPreview'}
+            dp_name = '{http://www.sap.com/adt/dataPreview}name'
+            root = ET.fromstring(result_xml)
+
+            columns = root.findall('.//dp:columns', ns)
+            if not columns:
+                # SINIFLAMA: sessiz EVET · kurtarma HAYIR · YANILTICI EVET -> DUZELTILDI.
+                # Gecerli bir datapreview yaniti 0 satirda bile SUTUN METADATASI tasir;
+                # hic `dp:columns` yoksa elimizdeki sey bir SONUC degil, TANIMADIGIMIZ bir
+                # govdedir (ADT hata belgesi / HTML / kirpilmis yanit). Bunu "obje hicbir
+                # transport'a kayitli degil" diye okumak #1'in sekil-korlugunun ta kendisi.
+                # Fallback KORUNUYOR (yazma yolu), yalniz artik GORUNUR.
+                self._last_transport_lookup = 'shape_unrecognized'
+                print(f"      [WARN] Transport sahipligi SORGULANAMADI: yanitta `dp:columns` YOK "
+                      f"(taninmayan govde, {len(result_xml or '')} bayt).")
+                print(f"      [WARN] Bu bir 'kayit yok' SONUCU DEGIL, bir OKUYAMAMA'dir. "
+                      f"'{requested_transport}' ile devam ediliyor (dogrulanmadi).")
+                return requested_transport
+
+            # Build column name → list of values
+            col_data = {}
+            for col in columns:
+                meta = col.find('dp:metadata', ns)
+                col_name = (meta.get(dp_name) if meta is not None else '').upper()
+                col_data[col_name] = [(d.text or '').strip() for d in col.findall('.//dp:data', ns)]
+
+            trkorrs = col_data.get('TRKORR', [])
+            if not trkorrs:
+                # SINIFLAMA: sessiz EVET · kurtarma EVET · yaniltici HAYIR -> DOKUNULMADI.
+                # Sutunlar VAR ama satir YOK = sorgu KOSTU ve obje gercekten hicbir
+                # degistirilebilir transport'a kayitli degil (yeni obje). Bu MESRU bir
+                # sonuctur ve requested_transport DOGRU cevaptir — burasi FP capasidir.
+                self._last_transport_lookup = 'no_entry'
+                return requested_transport
+            strkorrs = col_data.get('STRKORR', [])
+            users = col_data.get('AS4USER', [])
+            pgmids = col_data.get('PGMID', [])
+            objects = col_data.get('OBJECT', [])
+
+            # Build candidates: (k_parent_transport, pgmid, object_type, owner)
+            candidates = []
+            for i, trkorr in enumerate(trkorrs):
+                if not trkorr:
+                    continue
+                strkorr = strkorrs[i] if i < len(strkorrs) else ''
+                owner = (users[i] if i < len(users) else '').upper()
+                pgmid = (pgmids[i] if i < len(pgmids) else '').upper()
+                otype = (objects[i] if i < len(objects) else '').upper()
+                # Resolve S→K: if this row's E070 has a parent, use the parent
+                k_parent = strkorr if strkorr else trkorr
+                candidates.append((k_parent, pgmid, otype, owner))
+
+            # Filter to current user (avoid switching into another dev's transport).
+            if current_user:
+                own = [c for c in candidates if c[3] == current_user]
+            else:
+                own = candidates
+            if not own:
+                # SINIFLAMA: sessiz EVET · kurtarma EVET · yaniltici HAYIR -> DOKUNULMADI.
+                # Adaylar VAR ama hepsi BASKA kullanicinin. Fallback burada BILINCLI bir
+                # POLITIKADIR (yukaridaki yorum: "avoid hijacking another developer's
+                # transport") — yani cevap YANLIS degil, KASITLI. Sessizligi tek basina
+                # kusur saymadim; lider kararina uygun olarak DOKUNMADIM.
+                # ACIK KALEM: burada tek satirlik gorunurluk (obje su an baskasinin
+                # transport'unda) tesihse yardimci olurdu — ayri kalem, ayri karar.
+                self._last_transport_lookup = 'foreign_only'
+                return requested_transport
+
+            # Rank: R3TR CLAS (catch-all) first, then everything else (LIMU shards).
+            def rank(c):
+                k, pgmid, otype, _ = c
+                is_catchall = (pgmid == 'R3TR' and otype == 'CLAS')
+                # Prefer requested transport when it's already in the candidate set.
+                matches_requested = (req_upper and k.upper() == req_upper)
+                return (0 if matches_requested else 1, 0 if is_catchall else 1, k)
+
+            own_sorted = sorted(own, key=rank)
+            best = own_sorted[0][0]
+
+            # Detect scatter: multiple distinct K-parents with LIMU entries of the
+            # same class pool. Warn the user — Bug 11's auto-retry will save the push,
+            # but SE09 manual merge (adding as R3TR CLAS) is the permanent fix.
+            distinct_ks = sorted({c[0] for c in own})
+            has_catchall = any(c[1] == 'R3TR' and c[2] == 'CLAS' for c in own)
+            if len(distinct_ks) > 1 and not has_catchall:
+                others = ", ".join(k for k in distinct_ks if k != best)
+                print(f"      [WARN] Class-pool includes of {object_name} are scattered across multiple transports: {others} (will use {best}).")
+                print(f"      [WARN] To consolidate permanently: SE09 → add {object_name} as R3TR CLAS to one transport.")
+
+            if best.upper() != req_upper:
+                print(f"      [INFO] Object already recorded in transport {best} — using it instead of {requested_transport}")
+                print(f"      [INFO] (Prevents ghost transport: SAP class-pool includes must stay in one transport)")
+                # #67 (2026-08-29) — DAVRANIS DEGISMEDI, yalniz BEYAN duzeldi.
+                # Kok: yukarida `k_parent = strkorr if strkorr else trkorr` ile her kayit
+                # GOREV(S) -> UST ISTEK(K) cozumlenir. Operator bir GOREV numarasi verdiyse
+                # burada onun UST ISTEGI raporlanir; iki numara farkli GORUNUR ama AYNI
+                # transport ailesidir. Eski iki satir bunu soylemedigi icin kullanici
+                # "istegim yok sayildi" saniyordu (kayit #67'nin sikayeti tam buydu).
+                print(f"      [INFO] Your request was NOT ignored: E070 entries resolve "
+                      f"TASK->PARENT (STRKORR). If {requested_transport} is a TASK, then "
+                      f"{best} is its PARENT request — same transport, shown by its K number.")
+                print(f"      [INFO] Check in SE10/SE09: is {requested_transport} listed under "
+                      f"{best}? If NOT, they are unrelated and the object lives in {best}.")
+                self._last_transport_lookup = 'resolved'
+            else:
+                self._last_transport_lookup = 'kept'
+            return best
+
+        except Exception as e:
+            # ⛔ 2026-08-10 "Bug 11 sessiz fallback" — SESSIZLIK duzeltildi, FALLBACK DEGIL.
+            #
+            # Eskiden bu dal yalnizca `debug_enabled` acikken TEK BIR debug satiri
+            # basiyordu; kapaliyken (varsayilan) hicbir iz birakmadan requested_transport
+            # donuyordu. Bedeli bu dosyanin KENDI tarihcesinde yaziyor (yukarida,
+            # History 2026-03-13): sorgu HER CAGRIDA HTTP 400 veriyordu, except sessizce
+            # yutuyordu ve **fix bir NO-OP olarak aylarca fark edilmedi**. Yani bu except,
+            # kendisini duzeltmeye calisan fix'i de gizledi.
+            #
+            # ⚠ FALLBACK'IN KENDISI YUK TASIYOR, KALDIRILMADI: E071'e erisimi olmayan
+            # sistemlerde bu sorgu HTTP 500 verir ve push'un yine de yurumesi gerekir
+            # (push_object icindeki "Bug 11 auto-retry" tam bu duruma gore yazilmis).
+            # Bu yuzden dogru fix "raise" DEGIL, **gurultulu devam**: sonuc ayni, ama
+            # artik bir DOGRULAMA ile bir VARSAYIM birbirinden ayirt edilebiliyor.
+            self._last_transport_lookup = f'error:{type(e).__name__}'
+            print(f"      [WARN] Transport sahipligi SORGULANAMADI "
+                  f"({type(e).__name__}: {str(e)[:120]})")
+            print(f"      [WARN] '{requested_transport}' ile devam ediliyor — bu bir "
+                  f"DOGRULAMA DEGIL, VARSAYIMDIR.")
+            print(f"      [WARN] Obje baska bir transport'a kayitliysa lock 409/CORRNR "
+                  f"uyusmazligi verebilir (Bug 11 auto-retry devreye girer).")
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] _find_existing_transport failed (will use requested transport): {str(e)[:120]}")
+
+        return requested_transport
+
+    def push_class_include(self, class_name: str, include_kind: str,
+                           transport: Optional[str] = None,
+                           source_file: Optional[str] = None) -> Dict[str, Any]:
+        """Sınıf alt-include'unu (ccau/ccimp/ccdef/ccmac) push et: kilit → yaz → aktive.
+
+        ⛔ 2026-08-10 KUSUR-4: bu yol HİÇ YOKTU. `push_object.py --type` listesi
+        testclasses'i tanımıyordu ve `normalize_object_type('ccau')` ValueError
+        fırlatıyordu → operatör ham HTTP atmak zorunda kalıyor, oradan da KUSUR-5/6'ya
+        (POST gövdeyi yok sayıyor / var olana POST 500) çarpıyordu. Üçü tek sınıftır.
+
+        Kilit ANA SINIF üzerinden alınır (alt-include'un kendi kilidi yoktur) ve
+        aktivasyon da ANA SINIF üzerinden yapılır — SAP alt-include'u ayrı aktive etmez.
+
+        Returns:
+            dict {success, error, error_type, source_uploaded, activated, include}
+        """
+        from object_types import normalize_class_include, CLASS_INCLUDE_TYPES
+
+        result: Dict[str, Any] = {
+            'success': False, 'error': '', 'error_type': '',
+            'source_uploaded': False, 'activated': False, 'include': None,
+        }
+
+        try:
+            kind = normalize_class_include(include_kind)
+        except ValueError as e:
+            result['error'] = str(e)
+            result['error_type'] = 'ValueError'
+            return result
+
+        class_name = class_name.upper()
+        object_url = get_object_url(class_name, 'class')
+
+        # Yerel dosya: verilmediyse ev konvansiyonundan türet (classes/<CLS>.ccau.abap)
+        if source_file:
+            local_file = Path(source_file)
+        else:
+            from object_types import get_local_subdir
+            local_file = (self.local_base.parent / get_local_subdir('class')
+                          / f"{class_name}{CLASS_INCLUDE_TYPES[kind]['file_extension']}")
+        if not local_file.exists():
+            result['error'] = f"Local file not found: {local_file}"
+            result['error_type'] = 'FileNotFoundError'
+            result['source_path'] = str(local_file)   # Q222②: ARANAN yol da kanıttır
+            print(f"\n[ERROR] Local file not found: {local_file}")
+            return result
+
+        source_code = local_file.read_text(encoding='utf-8')
+        result.update(kaynak_kimligi(local_file, source_code))   # Q222②
+
+        print(f"\n{'=' * 70}")
+        print(f"  Pushing class include {CLASS_INCLUDE_TYPES[kind]['abap_include']}: "
+              f"{class_name} ({kind})")
+        print(f"{'=' * 70}")
+        print(f"\n[1/4] Reading local file...\n      {local_file}\n"
+              f"      Size: {len(source_code)} characters")
+        kaynak_kimligi_bas(result)
+
+        lock_handle = None
+        try:
+            # ── Q207 (2026-09-03): GÖREV(S) → ÜST İSTEK(K) çözümü BU YOLDA DA koşar ──
+            # Bugüne kadar `transport` HAM geçiyordu. Ölçülmüş sonuç (08-29 ×2 + 08-30 ×3,
+            # `infra-findings` Q207): aynı obje, aynı an, SAP **aynı** `CORRNR=<K>` atamasını
+            # yapıyor; ana sınıf yolu (`push_object` :687) `_find_existing_transport` ile
+            # görev→üst-istek çevirip DEVAM ederken, alt-include yolu aynı atamayı
+            # `[TRANSPORT MISMATCH]` sayıp ABORT ediyordu. Asimetri SAP'de değil,
+            # **iki kod yolu arasındaydı**; burada kapatılıyor.
+            #
+            # ⚠ BU BİR GEVŞETME DEĞİLDİR (ölçüldü):
+            #   · `_find_existing_transport` adaylarını `E070.AS4USER = mevcut kullanıcı`
+            #     ile süzer (kural 3); hepsi başkasınınsa `foreign_only` deyip İSTENEN
+            #     transport'u aynen döndürür ⇒ başka geliştiricinin transport'una kaymaz.
+            #   · `lock_object`'in `IS_LINK_UP='X'` yabancı-transport fail-fast'i aynen durur.
+            #   · Çözüm yine de tutmazsa bu yol ESKİSİ GİBİ sert düşer (aşağıda auto-retry
+            #     YOK — bkz. sonraki not).
+            #
+            # ⛔ BİLEREK EKLENMEYEN (Q220①): `push_object`'in "Bug 11 auto-retry"si buraya
+            # TAŞINMADI. O katman yalnız E071 sorgusunun HİÇ koşamadığı (HTTP 500) sistemler
+            # içindir ve bugün fail-closed olan bir yolu kurtarıcıya çevirirdi = gevşetme.
+            # Kalan asimetri BİLİNÇLİDİR ve dar: "E071 erişilemez + CORRNR uyuşmuyor"
+            # hâlinde ana yol kurtarır, bu yol durur. Kurtarma istenirse AYRI karar.
+            if transport:
+                transport = self._find_existing_transport(class_name, 'class', transport)
+
+            print(f"\n[2/4] Locking parent class...")
+            print(f"      corrNr (lock'a verilen transport): "
+                  f"{transport or '[YOK — hayalet transport riski]'}")
+            lock_handle = self.adt_client.lock_object(object_url, transport=transport)
+            effective_transport = (
+                getattr(self.adt_client, '_last_lock_effective_transport', None) or transport)
+
+            print(f"\n[3/4] Writing include (POST-if-absent -> PUT -> readback)...")
+            result['include'] = self.adt_client.push_class_include(
+                class_name, kind, source_code,
+                lock_handle=lock_handle, transport=effective_transport)
+            result['source_uploaded'] = True
+
+            if lock_handle and lock_handle != 'NO_LOCK_SUPPORT':
+                try:
+                    self.adt_client.unlock_object(object_url, lock_handle)
+                    lock_handle = None
+                except Exception as unlock_err:
+                    print(f"      [WARNING] Pre-activation unlock failed: {str(unlock_err)[:100]}")
+
+            # Aktivasyon ANA SINIF üzerinden — alt-include tek başına aktive edilmez.
+            print(f"\n[4/4] Activating parent class {class_name}...")
+            act = self.adt_client.activate_object(class_name, object_url)
+            result['activated'] = bool(act.get('success')) if isinstance(act, dict) else bool(act)
+            if not result['activated']:
+                result['error'] = f"Activation failed: {act}"
+                result['error_type'] = 'SAPActivationError'
+                return result
+
+            result['success'] = True
+            return result
+
+        except Exception as e:
+            result['error'] = str(e)
+            result['error_type'] = type(e).__name__
+            if lock_handle and lock_handle not in ('NO_LOCK_SUPPORT', 'IMPLICIT_LOCK', None, ''):
+                try:
+                    self.adt_client.unlock_object(object_url, lock_handle)
+                except Exception:
+                    pass
+            return result
+
+    def push_object(self, object_name: str, object_type: str = 'class', transport: Optional[str] = None, source_file: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Push local object changes to SAP (complete workflow: lock -> upload -> activate -> unlock)
+
+        Args:
+            object_name: Name of the object
+            object_type: Type of object
+            transport: Transport request number (optional)
+            source_file: Full path to local source file (optional, auto-detected if not provided)
+
+        Returns:
+            dict with keys:
+                success (bool): Whether the full push succeeded
+                error (str): Error message if failed, empty string otherwise
+                error_type (str): Exception class name if failed (e.g., 'SAPLockError')
+                source_uploaded (bool): Whether source code was uploaded to SAP
+                activated (bool): Whether the object was activated
+                lock_released (bool): Whether the lock was cleanly released
+                source_path (str): Q222② — ÇÖZÜLMÜŞ mutlak kaynak yolu (dosya
+                    bulunamadığında ARANAN yol). Çağıran bunu basar.
+                source_md5 (str|None): dosya baytlarının md5'i (None = okunamadı)
+                source_md5_sent (str): SAP'ye GÖNDERİLEN metnin md5'i (CRLF->LF)
+        """
+        from object_types import get_local_subdir
+
+        result = {
+            'success': False,
+            'error': '',
+            'error_type': '',
+            'source_uploaded': False,
+            'activated': False,
+            'lock_released': True,
+        }
+
+        type_desc = get_type_description(object_type)
+        object_url = get_object_url(object_name, object_type)
+        source_url = get_source_url(object_name, object_type)
+
+        print(f"\n{'=' * 70}")
+        print(f"  Pushing {type_desc}: {object_name}")
+        print(f"{'=' * 70}")
+
+        # Determine local file location
+        if source_file:
+            local_file = Path(source_file)
+        else:
+            subdir = get_local_subdir(object_type)
+            package_base = self.local_base.parent
+            local_file = package_base / subdir / f"{object_name}.abap"
+
+        if not local_file.exists():
+            print(f"\n[ERROR] Local file not found: {local_file}")
+            print(f"[INFO] Working directory: {Path.cwd()}")
+            print(f"[INFO] Local base: {self.local_base}")
+            if source_file:
+                print(f"[INFO] Specified source: {source_file}")
+            result['error'] = f"Local file not found: {local_file}"
+            result['error_type'] = 'FileNotFoundError'
+            result['source_path'] = str(local_file)   # Q222②: ARANAN yol da kanıttır
+            return result
+
+        if self.debug_enabled:
+            self._debug(f"[DEBUG] push_object local_base: {self.local_base}")
+            self._debug(f"[DEBUG] push_object local_file: {local_file}")
+            self._debug(f"[DEBUG] push_object object_url: {object_url}")
+            self._debug(f"[DEBUG] push_object source_url: {source_url}")
+
+        with open(local_file, 'r', encoding='utf-8') as f:
+            source_code = f.read()
+
+        result.update(kaynak_kimligi(local_file, source_code))   # Q222②
+
+        print(f"\n[1/4] Reading local file...")
+        print(f"      {local_file}")
+        print(f"      Size: {len(source_code)} characters")
+        kaynak_kimligi_bas(result)
+
+        # Resolve transport BEFORE locking so corrNr is passed during lock.
+        # Without corrNr, SAP CTS auto-creates a ghost transport during lock,
+        # which causes 409 deadlock conflicts when the push transport differs.
+        if not transport:
+            print(f"\n[INFO] No transport specified, getting default...")
+            transport_info = self.adt_client.get_transport_info(object_url)
+            if transport_info and transport_info != "No transport info available":
+                transport = transport_info
+                print(f"      Using transport: {transport}")
+
+        lock_handle = None
+        try:
+            # ⛔ 2026-09-14 KİLİT POLİTİKASI: burada eskiden "kendi bayat kilidini temizle" ön adımı
+            # vardı (is_object_locked → lock→unlock döngüsü). KALDIRILDI: enqueue kilidi silme Kesin
+            # Yasak C; döngü aynı kullanıcı kilitliyken yeniden kilit 403 ile hiç tamamlanmıyordu (MSAG notu
+            # :2789; diğer tiplerde canlıda DOĞRULANMADI) ve hatayı
+            # yutup False döndüğü için başarısızlığı görünmezdi. Çakışma artık aşağıdaki lock_object'te
+            # dürüst SAPLockError (sahip + SM12 tarifi) olarak durur.
+
+            # Bug 19 fix: pre-register the object as R3TR CLAS/INTF/PROG/FUGR in the
+            # target transport BEFORE locking. SAP CTS locks class-pool includes at
+            # LIMU granularity (CLSD, CPUB, CPRI, CPRO, CM0xx). If no R3TR catch-all
+            # exists, each touched include that isn't already owned by a transport
+            # spawns a new K+S ghost pair. One class push adding a method declaration
+            # can spawn 2–3 ghosts. R3TR entry makes CTS attribute every sub-object
+            # change to the caller's transport. Idempotent — safe to call every push.
+            if transport and object_type and object_type.lower() in (
+                'class', 'clas', 'interface', 'intf',
+                'program', 'prog', 'report',
+                'functiongroup', 'fugr',
+            ):
+                print(f"\n[1.5/4] Pre-registering R3TR entry to prevent ghost transports...")
+                print(f"        Object: {object_name} | Transport: {transport}")
+                reg_result = self.adt_client.register_object_in_transport(
+                    object_name, transport, object_type
+                )
+                if reg_result.get('registered'):
+                    print(f"        [OK] R3TR entry registered via {reg_result.get('method')}")
+                else:
+                    err_text = reg_result.get('error', '')[:180]
+                    status = reg_result.get('status_code', 0)
+                    print(f"        [WARN] Could not pre-register R3TR ({status}) — sub-object changes may spawn ghosts.")
+                    print(f"        [WARN] Manual fix: SE09 → {transport} → Include Objects → add object as R3TR.")
+                    if self.debug_enabled and err_text:
+                        self._debug(f"[DEBUG] register_object_in_transport error: {err_text}")
+
+            # Bug 9 fix: query E071 to find the transport that already owns this object.
+            # Prevents ghost K+S transport pairs when the same class-pool include was
+            # previously recorded in a different corrNr.
+            if transport:
+                transport = self._find_existing_transport(object_name, object_type, transport)
+
+            # Lock object (pass transport so SAP registers lock under correct corrNr)
+            # ⚠ ETag'i LOCK'TAN ÖNCE çek (2026-07-30, sınıf push'u 423 vakası).
+            # set_object_source() ETag'i kendi içinde çekerse o GET lock ile PUT arasına
+            # girer ve stateful lock context'ini bozar → 423 InvalidLockHandle.
+            # Sınıflarda If-Match ZORUNLU (CL_KU_CLASS_REST_HANDLER), o yüzden ETag'i
+            # atlayamayız — yalnız lock penceresinin DIŞINA taşıyoruz.
+            # Detay + emsal: sap_adt_lib.fetch_source_etag() docstring'i.
+            pre_lock_etag = self.adt_client.fetch_source_etag(source_url)
+            if pre_lock_etag:
+                print(f"      [OK] ETag alindi (lock oncesi): {pre_lock_etag[:24]}...")
+            else:
+                print(f"      [INFO] ETag alinamadi — If-Match'siz denenecek")
+
+            print(f"\n[2/4] Locking object...")
+            print(f"      corrNr (transport passed to lock): {transport or '[NONE — ghost transport risk!]'}")
+
+            # Bug 11 fix: if lock fails with a same-user CORRNR mismatch (IS_LINK_UP != 'X'),
+            # auto-retry using the transport SAP assigned. This handles the case where E071 is
+            # not accessible (HTTP 500) so _find_existing_transport fell through.
+            from sap_adt_lib import SAPLockError as _SAPLockError
+            try:
+                lock_handle = self.adt_client.lock_object(object_url, transport=transport)
+            except _SAPLockError as lock_err:
+                # ⛔ 2026-09-14 (bug gate M1): kurtarma YALNIZ `_verify_and_return_lock`'un sahipsiz 409'unda
+                # (CORRNR uyuşmazlığı) koşar. Kilit çakışması 403'ü (sahip okundu, aynı ya da başka kullanıcı)
+                # ve HTTP 409 buraya düşse de ikinci kilit DENENMEZ. `_last_lock_*` alanları `lock_object`
+                # başında sıfırlanır → yalnız BU çağrının kilit yanıtından gelen transport okunur (önceki
+                # objeden kalan değil). Ölçüm: test_kilit_politikasi M1a-M1d (kırmızı→yeşil) · M1k kontrol.
+                sahipsiz_409 = (getattr(lock_err, 'lock_owner', None) is None
+                                and getattr(lock_err, 'status_code', None) == 409)
+                corrnr_retry = self.adt_client._last_lock_effective_transport
+                is_foreign = (self.adt_client._last_lock_is_link_up == 'X')
+                if (sahipsiz_409 and corrnr_retry and transport
+                        and corrnr_retry.upper() != transport.upper() and not is_foreign):
+                    # ⚠ 2026-09-03 (Q220②) — SEVİYE [INFO] → [WARN], KURTARMA AYNEN KALDI.
+                    # Eski iki satır "Auto-retrying …" diyordu ve okuyan bunu *"araç
+                    # hallediyor"* diye okuyordu ⇒ YANLIŞ GİRDİ MASKELENİYORDU. Ölçülmüş
+                    # bedel: aynı yanlış girdi (S-tipi görev numarası) bu evde ilk iki
+                    # vakada sessizce kurtarıldı, ancak kurtarmasız bir yolda (populate_
+                    # tables, sonra `.ccau`) ortaya çıktı — teşhis o güne kadar gecikti.
+                    # "Araç kendiliğinden çalıştı" GİRDİNİN DOĞRU OLDUĞUNU KANITLAMAZ.
+                    print(f"      [WARN] İSTENEN TRANSPORT KABUL EDİLMEDİ: {transport} "
+                          f"— SAP {corrnr_retry} atadı (aynı kullanıcı, CORRNR uyuşmazlığı).")
+                    print(f"      [WARN] Kurtarma yapılıyor (Bug 11 auto-retry) — bu bir "
+                          f"DÜZELTMEDİR, girdinin doğru olduğunun kanıtı DEĞİLDİR.")
+                    print(f"      [WARN] Muhtemel sebep: araca GÖREV (S) numarası verildi; "
+                          f"araca İSTEK (K) verilir. Brifi/`.rules.md`'yi düzelt.")
+                    transport = corrnr_retry
+                    lock_handle = self.adt_client.lock_object(object_url, transport=transport)
+                else:
+                    raise
+
+            print(f"      Lock handle: {lock_handle[:50] if lock_handle else 'None'}...")
+            # _verify_and_return_lock() already printed the CORRNR and raised SAPLockError
+            # on mismatch. If we reach here the transport assignment is confirmed correct.
+            #
+            # ⛔ 2026-09-03 (Q219, İKİNCİ KOPYA) — buradaki eski iki satır ÇÜRÜKTÜ. CORRNR'ın
+            # daima K-tipi İSTEK dönmesinden *"etkin transport istenenle daima aynı olur"*
+            # sonucunu çıkarıyordu; öncül doğru, SONUÇ YANLIŞ. Eşitlik yalnız ÇAĞIRAN da
+            # K-tipi İSTEK verdiyse doğar. Çağıran S-tipi GÖREV verirse CORRNR uyuşmazlığı
+            # DAİMA olur (bu evde üç kez tur yaktı — `infra-findings` Q219).
+            # Bu satıra iki yoldan gelinir ve İKİSİ DE bir DÖNÜŞÜMÜN sonucudur:
+            #   (a) çağıran zaten K verdi → eşit;
+            #   (b) `_find_existing_transport` (:687) ya da yukarıdaki Bug-11 retry
+            #       transport'u K'ya ÇEVİRDİ → eşit.
+            # Kural: araca İSTEK (K) verilir, GÖREV (S) değil.
+            effective_transport = self.adt_client._last_lock_effective_transport or transport
+
+            if lock_handle == 'NO_LOCK_SUPPORT':
+                print(f"      [INFO] Lock endpoint not available on this SAP system")
+                print(f"      [INFO] Attempting edit without explicit lock...")
+
+            # Push source
+            print(f"\n[3/4] Uploading source code...")
+            if effective_transport:
+                print(f"      Transport: {effective_transport}")
+
+            try:
+                self.adt_client.set_object_source(source_url, source_code, lock_handle,
+                                                  effective_transport, etag=pre_lock_etag)
+                result['source_uploaded'] = True
+                print(f"      [OK] Source uploaded")
+            except Exception as upload_error:
+                error_text = str(upload_error)
+                # Bug fix (2026-06-15): push FAILURE'da lock'u serbest bırak. Aksi halde
+                # MCP server'ın persistent stateful session'ı lock'u tutmaya devam eder;
+                # sonraki her push_object aynı STALE lock handle'ı yeniden alır → tekrar
+                # eden başarısızlıklar + yanıltıcı hata (ör. OO_SOURCE_BASED 012 "unknown
+                # comments"). Burada unlock → her retry TAZE lock alır. (ZDEMO1 C4 patinajı.)
+                if lock_handle and lock_handle not in ('NO_LOCK_SUPPORT', 'IMPLICIT_LOCK', None, ''):
+                    try:
+                        if self.adt_client.unlock_object(object_url, lock_handle) is not False:
+                            # 2026-09-14: bırakılan handle None'a çekilir → finally ikinci UNLOCK göndermez.
+                            lock_handle = None
+                            print(f"      [INFO] Push başarısız — lock serbest bırakıldı (stale-lock guard)")
+                        else:
+                            print(f"      [WARNING] Başarısızlık-sonrası unlock düştü — finally tekrar dener")
+                    except Exception as _unlock_err:
+                        print(f"      [WARNING] Başarısızlık-sonrası unlock da başarısız: {str(_unlock_err)[:80]}")
+                if lock_handle == 'NO_LOCK_SUPPORT' and ('423' in error_text or 'lockHandle' in error_text):
+                    print(f"\n[ERROR] This SAP system requires explicit locking but doesn't support the ADT lock endpoint")
+                    print(f"[ERROR] ADT-based editing is not available for this object on this SAP version")
+                    print(f"\n[SOLUTION] Please edit this object in SAP GUI (SE24/SE80)")
+                    print(f"[INFO] Object: {object_name}")
+                    print(f"[INFO] Object URL: {object_url}")
+                    from sap_adt_lib import SAPLockError
+                    raise SAPLockError(
+                        f"Cannot edit object via ADT on this SAP system. "
+                        f"The system requires locking but doesn't support the ADT lock endpoint. "
+                        f"Please use SAP GUI (SE24/SE80) to edit {object_name}."
+                    )
+                else:
+                    raise
+
+            # Activate - unlock first because locks prevent activation
+            print(f"\n[4/4] Activating object...")
+
+            if lock_handle and lock_handle != 'NO_LOCK_SUPPORT':
+                try:
+                    if self.adt_client.unlock_object(object_url, lock_handle) is not False:
+                        lock_handle = None
+                        print(f"      [INFO] Unlocked for activation")
+                    else:
+                        # 2026-09-14: unlock_object artık dürüst (False = tüm stratejiler düştü) →
+                        # handle tutulur, finally tekrar dener ve lock_released'ı gerçeğe göre yazar.
+                        print(f"      [WARNING] Pre-activation unlock düştü — kilit bu aracın KENDİ handle'ında kalmış olabilir; "
+                              f"aktivasyon 403/'kilitli' derse sebep bu olabilir (açık editör şart değil). finally tekrar dener")
+                except Exception as unlock_err:
+                    print(f"      [WARNING] Pre-activation unlock failed: {str(unlock_err)[:100]}")
+
+            # --- AKTIVASYON-ONCESI CANLI SYNTAX-CHECK (push-before-activate guvenlik katmani) ---
+            # Kaynak upload edildi (inactive), henuz aktive edilmedi. abaplint/run_review STATIK
+            # katmani bazi KERNEL-derleme hatalarini yakalamaz (metot-param inline TABLE OF,
+            # string-template escape, METHODS param sirasi, released-CDS alan adi, use-before-DATA...)
+            # — yalniz SAP kernel gorur. syntax_check = preaudit-activation (SE24 "Check" ile ayni
+            # kernel, non-destructive: lock/yazma yok) -> aktivasyondan ONCE yakalar. valid:False ->
+            # AKTIVE ETME (inactive source incelemede kalir, aktif surum etkilenmez). Kernel-check
+            # kosulamazsa SOFT (aktivasyona devam; activate kendi hatasini verir).
+            # KAPSAM: yalniz self-contained source-based OO (class/interface) — bunlarda preaudit
+            # SE24-Check ile birebir guvenilir. prog/fugr/include DISLANDI: standalone include
+            # syntax-check parent-context'siz FAKE olabilir -> yanlis-pozitif blok riski (bkz.
+            # bug-checklist BE-46). Blok yalniz valid:False + somut error listesi varsa.
+            _ABAP_SRC_PRECHECK = {'class', 'clas', 'interface', 'intf'}
+            if (object_type or '').lower().strip() in _ABAP_SRC_PRECHECK:
+                _pre_istisna = ''
+                try:
+                    _pre = self.syntax_check(object_name, object_type=object_type)
+                except Exception as _pre_exc:
+                    _pre = None
+                    _pre_istisna = f"{type(_pre_exc).__name__}: {str(_pre_exc)[:160]}"
+                    print(f"      [INFO] Pre-activation syntax-check kosulamadi (SOFT, devam): {str(_pre_exc)[:80]}")
+                if isinstance(_pre, dict) and _pre.get('valid') is False and _pre.get('errors'):
+                    result['activated'] = False
+                    result['success'] = False
+                    result['syntax_precheck'] = 'failed'
+                    result['syntax_errors'] = _pre.get('errors', [])
+                    print(f"\n[BLOCK] Aktivasyon-oncesi syntax-check BASARISIZ -> AKTIVE EDILMEDI.")
+                    print(f"        Kaynagi duzelt + yeniden push et. Hatalar:")
+                    for _e in (_pre.get('errors') or [])[:10]:
+                        _m = _e.get('message', '') if isinstance(_e, dict) else str(_e)
+                        _ln = _e.get('line', '') if isinstance(_e, dict) else ''
+                        print(f"          Line {_ln}: {_m}")
+                    return result
+                # ⛔ ON-KONTROL OLCULEMEDI = GORUNUR IZ, ENGEL DEGIL.
+                # Durdurulmayan ve `valid is True` OLMAYAN her sonuc "kontrol kosmadi"dir:
+                #   (1) valid None (SAP kontrolu kosmadi)
+                #   (2) syntax_check istisnayi yuttu -> {'valid': False, 'error': ...}, errors YOK
+                #   (3) syntax_check cagrisi istisna firlatti -> _pre None
+                # Uc yol eskiden de aktivasyona devam ediyordu ama sonucta hicbir alan birakmiyordu
+                # ("olculemedi" ile "temiz" cagiran icin ayirt edilemezdi). Davranis DEGISMEZ:
+                # engellemek sahte-HATA uretirdi (None'un bir kismi cagrinin kendisinin aktive
+                # ettigi temiz surumdur). Aktivasyon hukmu ayri kapidir.
+                # Tuketici: MCP `adt_push_source` isareti ust seviyeye tasir.
+                if not (isinstance(_pre, dict) and _pre.get('valid') is True):
+                    _pre_d = _pre if isinstance(_pre, dict) else {}
+                    if _pre_d.get('sozdizimi_sebep'):
+                        _pre_sebep = str(_pre_d.get('sozdizimi_sebep'))
+                    elif _pre_d.get('error'):
+                        _pre_sebep = 'kontrol_istisnasi:' + str(_pre_d.get('error'))[:160]
+                    elif _pre_istisna:
+                        _pre_sebep = 'cagri_istisnasi:' + _pre_istisna
+                    else:
+                        _pre_sebep = 'sebep_bildirilmedi'
+                    result['syntax_precheck'] = 'olculemedi'
+                    result['sozdizimi_sebep'] = _pre_sebep
+                    print(f"      [UNVERIFIED] Aktivasyon-oncesi sozdizimi on-kontrolu OLCULEMEDI ({_pre_sebep[:120]}) "
+                          f"-> aktivasyona DEVAM; bu 'sozdizimi temiz' DEGILDIR")
+
+            activation_result = self.adt_client.activate_object(object_name, object_url)
+            if isinstance(activation_result, dict):
+                if activation_result.get('success'):
+                    result['activated'] = True
+                    print(f"      [OK] Object activated")
+
+                    # Post-activation: verify active source matches what was uploaded.
+                    # Bug 14 fix: must request version='active' explicitly.
+                    # Without it, SAP returns the most recent version (= inactive) when an
+                    # inactive version exists — so the comparison always passes even when
+                    # activation failed, producing a false "[OK] Active source verified".
+                    try:
+                        import time
+                        time.sleep(1)  # Brief delay for SAP to propagate activation
+                        active_source = self.adt_client.get_object_source(object_url, return_etag=False, version='active')
+                        # Normalize whitespace for comparison (SAP may reformat)
+                        uploaded_norm = source_code.strip().replace('\r\n', '\n').replace('\r', '\n')
+                        active_norm = active_source.strip().replace('\r\n', '\n').replace('\r', '\n')
+                        if uploaded_norm == active_norm:
+                            result['readback_ok'] = True
+                            print(f"      [OK] Active source verified - matches uploaded content")
+                        else:
+                            # Retry once after another second (SAP caching/load balancer delay)
+                            time.sleep(1)
+                            active_source = self.adt_client.get_object_source(object_url, return_etag=False, version='active')
+                            active_norm = active_source.strip().replace('\r\n', '\n').replace('\r', '\n')
+                            if uploaded_norm == active_norm:
+                                result['readback_ok'] = True
+                                print(f"      [OK] Active source verified (after brief delay)")
+                            elif readback_farki_yalniz_bicim_mi(uploaded_norm, active_norm):
+                                result['readback_ok'] = True
+                                result['readback_note'] = 'format_only'
+                                print(f"      [WARNING] Active source differs only in whitespace/formatting")
+                                print(f"      [WARNING] Muhtemelen SAP pretty-printing — İÇERİK aynı")
+                            else:
+                                # KÖK-FIX (2026-07-28): içerik uyuşmazlığı = BAŞARISIZLIK.
+                                # Eskiden bu da yalnız WARNING'di ve result'a hiçbir işaret
+                                # konmuyordu → SAP kaynağı sessizce reddettiğinde push
+                                # "başarılı" dönüyordu. Gerekçe: readback_farki_yalniz_bicim_mi
+                                result['readback_ok'] = False
+                                result['readback_mismatch'] = {
+                                    'uploaded_chars': len(uploaded_norm),
+                                    'active_chars': len(active_norm),
+                                }
+                                print(f"      [FAIL] READBACK UYUŞMAZLIĞI — canlı aktif kaynak "
+                                      f"yüklenenle AYNI DEĞİL (boşluk farkı değil, İÇERİK farkı)")
+                                print(f"      [FAIL] yüklenen {len(uploaded_norm)} ch · canlı aktif {len(active_norm)} ch")
+                                print(f"      [FAIL] SAP kaynağı SESSİZCE reddetmiş olabilir "
+                                      f"(ör. CDS'te geçersiz `\"` yorumu — CDS'te yorum // ve /* */)")
+                                print(f"      [HINT] 'activated'/'uploaded' mesajlarına GÜVENME; kanıt readback eşitliğidir")
+                                print(f"      [HINT] Kaynağı sözdizimi açısından gözden geçir, düzeltip yeniden push et")
+                    except Exception as verify_err:
+                        # ⛔ "DOĞRULAMA KOŞAMADI = DOĞRULANDI" sınıfı (2026-08-01 bug-avı):
+                        # burada eskiden SADECE bir [INFO] satırı basılıyor, `result`a hiçbir
+                        # işaret konmuyordu. Aşağıdaki success ifadesi `readback_ok` anahtarını
+                        # YOKSA True varsayıyordu → "readback koştu ve TUTTU" ile "readback
+                        # KOŞAMADI" çağıran için AYIRT EDİLEMEZ hale geliyordu (ikisi de
+                        # success:true). Artık üçüncü değer AÇIKÇA yazılır: None = ölçülemedi.
+                        # (success semantiği DEĞİŞMEZ: yalnız False düşürür — bkz. aşağısı.)
+                        result['readback_ok'] = None
+                        result['readback_reason'] = (
+                            f"post-activation readback KOŞAMADI: {type(verify_err).__name__}: "
+                            f"{str(verify_err)[:160]}")
+                        print(f"      [INFO] Post-activation verification skipped (could not read active source)")
+                        print(f"      [INFO] readback_ok=None — 'yazım doğrulandı' SANMA (kanıt üretilemedi)")
+                        if self.debug_enabled:
+                            self._debug(f"[DEBUG] Post-activation verify failed: {str(verify_err)[:100]}")
+                else:
+                    errors = activation_result.get('errors', [])
+                    warnings = activation_result.get('warnings', [])
+
+                    if errors:
+                        print(f"      [FAIL] Activation failed")
+                        for e in errors[:5]:
+                            print(f"             {e.get('message', '')}")
+
+                        # Check for class-pool include-split failure:
+                        # SAP's source/main splitter sometimes fails to update the method
+                        # include when a new override is added — "Implementation missing" at
+                        # activation even though GET /source/main returns the correct code.
+                        if object_type.upper() in ('CLAS', 'CLASS'):
+                            import re as _re
+                            impl_missing = []
+                            for _e in errors:
+                                _msg = _e.get('message', '')
+                                # SAP error patterns (EN/DE/TR): "Implementation missing for method X"
+                                _m = _re.search(
+                                    r'[Ii]mplementation\s+(?:missing|not\s+found)\s+for\s+method\s+"?([A-Z_a-z][A-Z_a-z0-9]*)"?',
+                                    _msg
+                                )
+                                if _m:
+                                    impl_missing.append(_m.group(1).upper())
+
+                            if impl_missing:
+                                print(f"\n      [FALLBACK] Include-split failure — affected methods: {', '.join(impl_missing)}")
+
+                                # Option B.5: Try a second PUT to source/main first (cheap).
+                                # The first PUT registers the method in class metadata (creates
+                                # the CM0xx include slot); the second PUT can then populate it.
+                                # Only attempt if we haven't already unlocked for activation.
+                                double_put_success = False
+                                print(f"      [FALLBACK B.5] Trying second source/main PUT (double-PUT heuristic)...")
+                                try:
+                                    fb_transport = effective_transport
+                                    fb_lock2 = self.adt_client.lock_object(object_url, transport=transport)
+                                    fb_eff2 = self.adt_client._last_lock_effective_transport or transport
+                                    try:
+                                        self.adt_client.set_object_source(source_url, source_code, fb_lock2,
+                                                                          fb_eff2, etag=pre_lock_etag)
+                                        self.adt_client.unlock_object(object_url, fb_lock2)
+                                        fb_lock2 = None
+                                        act_b5 = self.adt_client.activate_object(object_name, object_url)
+                                        if isinstance(act_b5, dict) and act_b5.get('success'):
+                                            result['activated'] = True
+                                            double_put_success = True
+                                            print(f"      [FALLBACK B.5] [OK] Double-PUT worked — object activated")
+                                        else:
+                                            print(f"      [FALLBACK B.5] Second PUT did not fix it — proceeding to method-include fallback")
+                                    finally:
+                                        if fb_lock2 and fb_lock2 != 'NO_LOCK_SUPPORT':
+                                            try:
+                                                self.adt_client.unlock_object(object_url, fb_lock2)
+                                            except Exception:
+                                                pass
+                                except Exception as b5_err:
+                                    print(f"      [FALLBACK B.5] Error: {str(b5_err)[:150]}")
+
+                                # Option C: Method-include PUT fallback (if B.5 didn't work)
+                                if not double_put_success:
+                                    print(f"      [FALLBACK C] Trying method-include PUT fallback (ghost-transport guard active)...")
+                                    fallback_ok = self._push_method_includes(
+                                        object_url, object_name, source_code, impl_missing, transport
+                                    )
+                                    if fallback_ok:
+                                        print(f"\n      [RETRY] Retrying activation after method-include fallback...")
+                                        activation_result2 = self.adt_client.activate_object(object_name, object_url)
+                                        if isinstance(activation_result2, dict) and activation_result2.get('success'):
+                                            result['activated'] = True
+                                            print(f"      [OK] Object activated (method-include fallback succeeded)")
+                                        else:
+                                            print(f"      [FAIL] Activation still failed after fallback.")
+                                            print(f"      [INFO] Activate manually in Eclipse ADT (Ctrl+F3) or SE24.")
+                                    else:
+                                        print(f"      [FALLBACK C] No method includes updated — cannot retry activation.")
+                                        print(f"      [INFO] Activate manually in Eclipse ADT (Ctrl+F3) or SE24.")
+
+                    elif warnings:
+                        print(f"      [WARNING] Activation had issues")
+                        for w in warnings[:3]:
+                            print(f"             {w.get('message', '')}")
+                    else:
+                        print(f"      [FAIL] Activation failed (no details from SAP)")
+
+                    if not result['activated']:
+                        print(f"      [INFO] Source uploaded but not activated - please fix errors and activate manually")
+            elif isinstance(activation_result, bool):
+                if activation_result:
+                    result['activated'] = True
+                    print(f"      [OK] Object activated")
+                else:
+                    print(f"      [WARNING] Activation failed (manual activation may be required)")
+
+            # KÖK-FIX (2026-07-28): readback İÇERİK uyuşmazlığı da başarısızlıktır.
+            # `readback_ok` yalnız gerçek içerik farkında False olur (pretty-print
+            # biçim farkı tetiklemez — bkz. readback_farki_yalniz_bicim_mi).
+            # 2026-08-01: `readback_ok` artık ÜÇ-DEĞERLİ (True/False/None). `is not False`
+            # KASITLI: None (= doğrulama koşamadı) push'u DÜŞÜRMEZ — aksi halde her geçici
+            # okuma hatası meşru push'u başarısız gösterirdi (aşırı-sıkılaşma). Bilgi
+            # kaybolmaz: `readback_ok=None` + `readback_reason` yanıtta görünür ve MCP
+            # katmanı bunu `readback_verified: null` + uyarı olarak yüzeye çıkarır.
+            result['success'] = (
+                result['source_uploaded']
+                and result['activated']
+                and result.get('readback_ok') is not False
+            )
+
+            print(f"\n{'=' * 70}")
+            if result['success']:
+                print(f"  [OK] Push Complete")
+            elif result.get('readback_ok', True) is False:
+                print(f"  [FAIL] Push BAŞARISIZ — canlı aktif kaynak yüklenenle aynı değil")
+                print(f"         (yukarıdaki READBACK UYUŞMAZLIĞI'na bak; kaynak sessizce reddedilmiş olabilir)")
+            else:
+                print(f"  [WARNING] Push Incomplete - source uploaded but activation failed")
+            print(f"{'=' * 70}")
+            return result
+
+        except Exception as e:
+            from sap_adt_lib import SAPLockError
+            error_str = str(e)
+            result['error'] = error_str
+            result['error_type'] = type(e).__name__
+            print(f"\n[ERROR] {error_str}")
+
+            if isinstance(e, SAPLockError) and getattr(e, 'status_code', None) == 409:
+                try:
+                    ghosts = self.adt_client.find_ghost_transports()
+                    if ghosts:
+                        print(f"\n[WARNING] The following ghost transports were likely created by this failed push:")
+                        for t in ghosts:
+                            print(f"  {t} — delete in SE10")
+                        print(f"[HINT] Open SE10, select each transport above and delete it")
+                except Exception:
+                    pass
+
+            # ⛔ 2026-09-14 KİLİT POLİTİKASI: eski metin koşulsuz "Source was uploaded successfully"
+            # diyordu — istisna kilit anında da gelebildiği için YANLIŞTI (yükleme olmadan basılıyordu).
+            # Yükleme durumu result['source_uploaded']'dan okunur; tarif lib'deki tek kaynaktan gelir.
+            if (getattr(e, 'lock_owner', None)
+                    or 'zaten' in error_str or 'already editing' in error_str):
+                from sap_adt_lib import KILIT_CAKISMA_TARIFI
+                durum = ("Kaynak YÜKLENDİ ama akış kilit çakışmasında durdu."
+                         if result['source_uploaded'] else "Kaynak YÜKLENMEDİ — kilit çakışması.")
+                print(f"\n[KİLİT] {durum}")
+                print(f"[KİLİT] {KILIT_CAKISMA_TARIFI}")
+
+            return result
+
+        finally:
+            # Always unlock (but only if still locked)
+            if lock_handle and lock_handle != 'NO_LOCK_SUPPORT':
+                import time
+                for attempt in range(2):
+                    try:
+                        if attempt == 0:
+                            print(f"\n[CLEANUP] Unlocking object...")
+                        else:
+                            print(f"          [RETRY] Retrying unlock...")
+                        if self.adt_client.unlock_object(object_url, lock_handle) is False:
+                            # 2026-09-14: False = tüm UNLOCK stratejileri düştü (eskiden hep True dönüyordu
+                            # → lock_released yalan söylüyordu). İstisna ile aynı dala yönlendirilir.
+                            raise RuntimeError("unlock_object tüm stratejilerde başarısız (False)")
+                        print(f"          [OK] Object unlocked")
+                        break
+                    except Exception as e:
+                        if attempt == 0:
+                            time.sleep(1)
+                        else:
+                            result['lock_released'] = False
+                            print(f"          [WARNING] Unlock failed after 2 attempts: {str(e)[:100]}")
+                            print(f"          [WARNING] Kilit kalmış olabilir — araç silmez; kullanıcı SM12'de "
+                                  f"kendi kilidini kontrol eder")
+
+    def create_object(self, object_type: str, name: str, package: str,
+                     description: str, transport: Optional[str] = None) -> Optional[str]:
+        """
+        Create new ABAP object
+
+        Args:
+            object_type: Type ('class', 'interface', 'program', etc.)
+            name: Object name
+            package: Package name
+            description: Object description
+            transport: Transport request (optional)
+
+        Returns:
+            Object URL if successful, None otherwise
+        """
+        if not supports_creation(object_type):
+            print(f"[ERROR] Object type '{object_type}' cannot be created via generic API. "
+                  f"Use a dedicated creation method (e.g., create_function_module for function modules).")
+            return None
+
+        adt_type = get_adt_type(object_type)
+        type_desc = get_type_description(object_type)
+
+        print(f"\n{'=' * 70}")
+        print(f"  Creating {type_desc}: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        # Get package path
+        package_path = f"/sap/bc/adt/packages/{package.lower()}"
+
+        try:
+            result = self.adt_client.create_object(
+                obj_type=adt_type,
+                name=name.upper(),
+                package_name=package,
+                description=description,
+                package_path=package_path,
+                transport=transport
+            )
+
+            if result.get('success'):
+                # low-level adt_client.create_object 'object_url' key'i döndürür ('url' değil) —
+                # key uyumsuzluğu success'te None döndürüp adt_post_shell'de ok:false yapıyordu.
+                object_url = result.get('object_url') or result.get('url') or f"{package_path}/{name.lower()}"
+                print(f"\n[OK] Object created successfully")
+                print(f"     URL: {object_url}")
+                return object_url
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return None
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return None
+
+    def delete_object(self, object_name: str, object_type: str = 'class',
+                     transport: Optional[str] = None, confirm: bool = True) -> bool:
+        """
+        Delete ABAP object
+
+        Args:
+            object_name: Name of the object
+            object_type: Type of object
+            transport: Transport request (optional)
+            confirm: Ask for confirmation (default: True)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        type_desc = get_type_description(object_type)
+        object_url = get_object_url(object_name, object_type)
+
+        if self.debug_enabled:
+            self._debug(f"[DEBUG] delete_object - name: {object_name}, type: {object_type}, url: {object_url}")
+            self._debug(f"[DEBUG] delete_object - transport: {transport}, confirm: {confirm}")
+
+        if confirm:
+            try:
+                response = input(f"\n[WARNING] Delete {type_desc} '{object_name}'? (yes/no): ")
+            except EOFError:
+                response = ''
+            if response.lower() != 'yes':
+                print("Deletion cancelled (no confirmation)")
+                return False
+
+        lock_handle = None
+        try:
+            print(f"\n[1/2] Locking object...")
+            print(f"      corrNr (transport passed to lock): {transport or '[NONE — ghost transport risk!]'}")
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] delete_object - locking {object_url}")
+
+            lock_handle = self.adt_client.lock_object(object_url, transport=transport)
+            if lock_handle == 'NO_LOCK_SUPPORT':
+                print("      Lock not supported; continuing without explicit lock.")
+                if self.debug_enabled:
+                    self._debug("[DEBUG] delete_object - lock not supported, continuing without lock")
+                lock_handle = None  # Don't try to unlock 'NO_LOCK_SUPPORT'
+            else:
+                print(f"      Lock handle: {lock_handle[:50]}...")
+                if self.debug_enabled:
+                    self._debug(f"[DEBUG] delete_object - lock handle: {lock_handle[:50]}")
+
+            print(f"\n[2/2] Deleting object...")
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] delete_object - calling adt_client.delete_object")
+
+            self.adt_client.delete_object(object_url, lock_handle, transport)
+            print(f"\n[OK] Object deleted successfully")
+
+            # Delete local file if exists
+            from object_types import get_local_subdir
+            subdir = get_local_subdir(object_type)
+            package_base = self.local_base.parent
+            local_file = package_base / subdir / f"{object_name}.abap"
+
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] delete_object - checking for local file: {local_file}")
+
+            if local_file.exists():
+                local_file.unlink()
+                print(f"     Local file deleted: {local_file}")
+                if self.debug_enabled:
+                    self._debug(f"[DEBUG] delete_object - local file deleted")
+            else:
+                if self.debug_enabled:
+                    self._debug(f"[DEBUG] delete_object - local file not found (may not exist locally)")
+
+            return True
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] delete_object - exception: {str(e)}")
+            return False
+
+        finally:
+            if lock_handle:
+                try:
+                    if self.debug_enabled:
+                        self._debug(f"[DEBUG] delete_object - unlocking object")
+                    self.adt_client.unlock_object(object_url, lock_handle)
+                    print("     Object unlocked")
+                except Exception as e:
+                    if self.debug_enabled:
+                        self._debug(f"[DEBUG] delete_object - unlock failed: {str(e)}")
+                    print(f"     [WARNING] Unlock failed: {str(e)}")
+
+    # ===== Search and Discovery =====
+
+    def search_objects(self, query: str, max_results: int = 50, obj_type: Optional[str] = None,
+                       debug_context: Optional[str] = None) -> List[Dict[str, str]]:
+        """
+        Search for ABAP objects
+
+        Args:
+            query: Search query (supports wildcards like 'ZDEMO0*')
+            max_results: Maximum number of results
+            obj_type: Optional object type filter (e.g., 'INTF', 'CLAS', 'PROG')
+            debug_context: Optional context label for debug output
+
+        Returns:
+            List of objects with name, type, uri, description
+
+        Note (2026-07-28 — SESSIZ-0 KOK FIX, canli olcumle):
+            `obj_type` artik SUNUCUYA gecirilir (`objectType` parametresi NATIVE
+            desteklenir). Eskiden filtresiz cekilip ISTEMCI tarafinda suzuluyordu;
+            uc-nokta ALFABETIK siralar ve maxResults'ta kirpar -> gec-alfabetik
+            adlar (ZDEMO1_T_* gibi) hic gelmez -> filtre bos kume suzer -> **ok:true,
+            count:0** doner ve "obje YOK" ile AYIRT EDILEMEZ.
+            Olcum: 'ZDEMO1*' + maxResults=400 -> 400 satirin ICINDE HIC TABL YOK
+            (son kayit ZDEMO1_I_*); `objectType=TABL/DT` ile ayni sorgu -> 9 TABL.
+            Ayrica eski "genis desenle yeniden dene" (Z*) yolu KALDIRILDI: daha genis
+            sorgu daha COK kirpilir, yani sorunu buyutuyordu.
+        """
+        if debug_context:
+            self._debug(f"[DEBUG] search_objects context: {debug_context}")
+        print(f"Searching for: {query}")
+        print(f"Max results: {max_results}\n")
+
+        # Tip filtresi SUNUCUYA gider; istemci-suzgeci yalnizca emniyet kemeri olarak kalir.
+        result_xml = self.adt_client.search_objects(query, max_results=max_results,
+                                                    obj_type=obj_type)
+
+        filter_type = obj_type.strip().upper() if obj_type else None
+        filter_short = filter_type.split('/')[0] if filter_type else None
+
+        if filter_type:
+            self._debug(f"[DEBUG] search_objects filter: {filter_type} (short: {filter_short})")
+
+        # Parse XML
+        root = ET.fromstring(result_xml)
+        namespaces = {'adtcore': 'http://www.sap.com/adt/core'}
+
+        objects = []
+        for obj in root.findall('.//adtcore:objectReference', namespaces):
+            name = obj.get('{http://www.sap.com/adt/core}name')
+            obj_type_value = obj.get('{http://www.sap.com/adt/core}type')
+            uri = obj.get('{http://www.sap.com/adt/core}uri')
+            description = obj.get('{http://www.sap.com/adt/core}description', '')
+
+            if name:
+                if filter_type:
+                    obj_type_upper = obj_type_value.upper() if obj_type_value else ''
+                    obj_short = obj_type_upper.split('/')[0] if obj_type_upper else ''
+                    if not (filter_type == obj_type_upper or filter_short == obj_short):
+                        continue
+                objects.append({
+                    'name': name,
+                    'type': obj_type_value or '',
+                    'uri': uri or '',
+                    'description': description
+                })
+
+        # KIRPMA UYARISI (sessiz-0/sessiz-eksik karsi-onlemi).
+        # Uc-nokta ALFABETIK sirali doner ve maxResults'ta kirpar. Ham (filtresiz)
+        # sonuc sayisi tavana dayandiysa liste EKSIK olabilir -> bunu SESSIZ birakma.
+        # `objectType` sunucuya gectigi icin tip-filtreli aramalarda kirpma
+        # filtreden SONRA uygulanir; yine de tavana dayanan her sonucta uyar.
+        raw_count = len(root.findall('.//adtcore:objectReference', namespaces))
+        truncated = raw_count >= max_results
+        # Sunucu tip TAKMA ADINI kendi tipine cevirebilir (olculmus: objectType=FUNC -> FUGR/FF
+        # isabet); istemci emniyet kemeri o isabeti ELER ve sonuc sessizce 0 olur. Eleme
+        # oldugunda GORUNUR yaz + cagirana sayiyi birak.
+        elenen = (raw_count - len(objects)) if filter_type else 0
+        # `truncated` cagirana da verilir: stdout uyarisi insan icindir, yapilandirilmis
+        # sonucu okuyan ajan onu GORMEZ ve kirpilmis listeyi tam liste sanar (K3, 2026-09-15).
+        self._last_search_meta = {'obj_type_sent': obj_type, 'server_hit_count': raw_count,
+                                  'type_filter_dropped': elenen, 'truncated': truncated,
+                                  'max_results': max_results}
+        if elenen and not objects:
+            print(f"[UYARI] Sunucu {raw_count} isabet dondu ama istemci tip suzgeci "
+                  f"('{filter_type}') HEPSINI eledi — 'obje yok' ANLAMINA GELMEZ. Sunucu "
+                  f"tip adini kendi tipine cevirmis olabilir (ör. FUNC -> FUGR/FF).\n")
+        if truncated:
+            print(f"[UYARI] Sonuc tavana dayandi ({raw_count} >= maxResults={max_results}) — "
+                  f"liste EKSIK olabilir. Uc-nokta ALFABETIK siralar ve kirpar; "
+                  f"gec-alfabetik adlar (ör. *_T_*) disarida kalabilir. "
+                  f"max_results'i yukselt (ust sinir {SAPADTClient.MAX_SEARCH_RESULTS}) "
+                  f"veya sorguyu daralt.\n")
+            self._debug(f"[DEBUG] search_objects TRUNCATED raw={raw_count} max={max_results}")
+
+        if not objects:
+            print("No results found.\n")
+            if filter_type and truncated:
+                # En tehlikeli kombinasyon: tip filtresi + kirpilmis sayfa.
+                print(f"[UYARI] '{filter_type}' tipinde sonuc YOK — ama sonuc KIRPILMIS. "
+                      f"Bu 'obje yok' ANLAMINA GELMEZ. Tekrar dene: max_results'i artir.\n")
+        else:
+            print(f"{'=' * 80}")
+            print(f"  Search Results: {len(objects)} objects found")
+            print(f"{'=' * 80}\n")
+
+            for obj in objects[:20]:  # Show first 20
+                type_short = obj['type'].split('/')[0] if '/' in obj['type'] else obj['type']
+                desc = f" - {obj['description']}" if obj['description'] else ""
+                print(f"  [{type_short:4}] {obj['name']}{desc}")
+
+            if len(objects) > 20:
+                print(f"\n  ... and {len(objects) - 20} more")
+
+            print(f"\n{'=' * 80}")
+
+        return objects
+
+    def list_package_contents(self, package_name: str) -> List[Dict[str, str]]:
+        """
+        List all objects in a package
+
+        Args:
+            package_name: Package name
+
+        Returns:
+            List of objects
+        """
+        print(f"Fetching contents of package: {package_name}\n")
+        if self.debug_enabled:
+            self._debug(f"[DEBUG] list_package_contents local_base: {self.local_base}")
+
+        try:
+            result_xml = self.adt_client.get_package_contents(package_name)
+
+            if self.debug_enabled:
+                # Log full XML for complete diagnostics
+                xml_preview = result_xml[:2000] if len(result_xml) > 2000 else result_xml
+                self._debug(f"[DEBUG] get_package_contents XML length: {len(result_xml)} chars")
+                self._debug(f"[DEBUG] get_package_contents XML preview (first 2000 chars): {xml_preview}")
+                if len(result_xml) > 2000:
+                    self._debug(f"[DEBUG] get_package_contents XML truncated (showing first 2000 of {len(result_xml)} chars)")
+
+            # Parse XML - SAP returns ABAP XML format with SEU_ADT_REPOSITORY_OBJ_NODE
+            root = ET.fromstring(result_xml)
+
+            # Try multiple parsing strategies for different SAP response formats
+            objects = []
+
+            # Strategy 1: Standard ADT format (adtcore:objectReference)
+            namespaces = {'adtcore': 'http://www.sap.com/adt/core'}
+            for obj in root.findall('.//adtcore:objectReference', namespaces):
+                name = obj.get('{http://www.sap.com/adt/core}name')
+                obj_type = obj.get('{http://www.sap.com/adt/core}type')
+                uri = obj.get('{http://www.sap.com/adt/core}uri')
+                description = obj.get('{http://www.sap.com/adt/core}description', '')
+
+                if name:
+                    objects.append({
+                        'name': name,
+                        'type': obj_type or '',
+                        'uri': uri or '',
+                        'description': description,
+                        # Paket üyeliği SAP'nin nodestructure ucundan geldi = KANITLI.
+                        'listing_source': 'nodestructure',
+                        'package_verified': True,
+                    })
+
+            # Strategy 2: ABAP XML format (SEU_ADT_REPOSITORY_OBJ_NODE)
+            # The XML may or may not have namespace prefixes on child elements
+            if not objects:
+                # Iterate all elements to find SEU_ADT_REPOSITORY_OBJ_NODE regardless of namespace
+                for node in root.iter():
+                    if 'SEU_ADT_REPOSITORY_OBJ_NODE' in node.tag:
+                        obj_type = obj_name = tech_name = description = ''
+
+                        for child in node:
+                            # Strip namespace from tag name
+                            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                            text = child.text if child.text else ''
+
+                            if tag == 'OBJECT_TYPE':
+                                obj_type = text
+                            elif tag == 'OBJECT_NAME':
+                                obj_name = text
+                            elif tag == 'TECH_NAME':
+                                tech_name = text
+                            elif tag == 'DESCRIPTION':
+                                description = text
+
+                        # Use OBJECT_NAME if present, otherwise TECH_NAME
+                        name = obj_name or tech_name
+
+                        # Skip container/category types - these are tree structure nodes, not actual objects
+                        # DEVC/Q*, DEVC/N, DEVC/K (packages), etc. are structural
+                        # We want actual object types like CLAS/OC, INTF/OI, DTEL/DE, etc.
+                        skip_types = ['DEVC/Q', 'DEVC/N', 'DEVC/K', 'DEVC/DA', 'DEVC/DD', 'DEVC/DE',
+                                     'DEVC/DL', 'DEVC/DS', 'DEVC/DT', 'DEVC/OC', 'DEVC/OI', 'DEVC/WO']
+                        should_skip = any(obj_type.startswith(skip) for skip in skip_types)
+
+                        if name and obj_type and not should_skip:
+                            objects.append({
+                                'name': name,
+                                'type': obj_type,
+                                'uri': f'/sap/bc/adt/{obj_type.lower().replace("/", "/")}s/{name.lower()}',
+                                'description': description,
+                                'listing_source': 'nodestructure',
+                                'package_verified': True,
+                            })
+
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] Parsed {len(objects)} objects from XML")
+
+            if not objects:
+                print(f"No objects found via nodestructure endpoint, trying search fallback...")
+                raise Exception("No objects found")
+
+        except Exception as e:
+            # Fallback: Use search if nodestructure fails
+            # (common issue: missing S_ADT_RES authorizations or inactive ICF services)
+            #
+            # ⛔ "DOĞRULAMA KOŞAMADI = DOĞRULANDI" sınıfı (2026-08-01 bug-avı):
+            # bu fallback PAKET ÜYELİĞİNİ ÖLÇMEZ; yalnız AD DESENİ arar ve desenlerin
+            # ikisi paket adından türetilen GENİŞ jokerlerdir (`Z_*`, ilk-iki-harf `ZS*`).
+            # Yani hata/yetki durumunda dönen liste BAŞKA PAKETLERİN objelerini içerir ve
+            # eskiden bu, gerçek paket içeriğinden AYIRT EDİLEMEZ biçimde dönüyordu
+            # (`adt_grep_source` bunu log'suz tüketiyordu: `with _capture():` notu da yutuyordu).
+            # Fallback KALDIRILMADI (yetkisiz sistemlerde tek yol; veri kaybı olurdu) ama
+            # artık her kayıt `package_verified: False` ile ETİKETLENİR → çağıran "bu paketin
+            # objeleri" iddiasını üstlenmez.
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] nodestructure failed: {e}")
+            print(f"Note: nodestructure endpoint failed ({str(e)}), using search as fallback")
+            print(f"[WARN] PAKET UYELIGI DOGRULANAMADI — asagidaki liste AD-DESENLI arama "
+                  f"sonucudur ve BASKA PAKETLERIN objelerini icerebilir (package_verified=False)")
+            print(f"This is usually due to missing SAP authorizations (S_ADT_RES for /sap/bc/adt/repository/*)\n")
+
+            # Search with multiple patterns to catch all objects in package
+            # Objects in ZDEMO0 package may use different prefixes: ZDEMO0*, Z_*, etc.
+            search_patterns = [
+                f'{package_name}*',  # Standard naming: ZDEMO0*
+                f'{package_name[0]}_*',  # Single letter prefix: Z_*
+                f'{package_name[:2]}*',  # Two letter prefix: ZA* (if applicable)
+            ]
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_patterns = [p for p in search_patterns if p not in seen and not seen.add(p)]
+
+            all_objects = {}
+            for pattern in unique_patterns:
+                pattern_objects = self.search_objects(
+                    pattern,
+                    max_results=500,
+                    debug_context=f"list_package_contents fallback for {package_name}"
+                )
+                for obj in pattern_objects:
+                    # Deduplicate by name
+                    name = obj.get('name', '')
+                    if name and name not in all_objects:
+                        # DOĞRULANMAMIŞ üyelik etiketi (yukarıdaki not) — çağıran ayırt etsin.
+                        obj = dict(obj)
+                        obj['listing_source'] = 'name_search_fallback'
+                        obj['package_verified'] = False
+                        all_objects[name] = obj
+
+            objects = list(all_objects.values())
+
+        # Group by type
+        by_type = {}
+        for obj in objects:
+            obj_type = obj['type'].split('/')[0] if '/' in obj['type'] else obj['type']
+            if obj_type not in by_type:
+                by_type[obj_type] = []
+            by_type[obj_type].append(obj)
+
+        print("=" * 80)
+        print(f"Package: {package_name}")
+        print("=" * 80)
+        print()
+
+        for obj_type, items in sorted(by_type.items()):
+            print(f"\n{obj_type} ({len(items)} objects):")
+            print("-" * 80)
+            for item in sorted(items, key=lambda x: x['name']):
+                desc = f" - {item['description']}" if item['description'] else ""
+                print(f"  {item['name']}{desc}")
+
+        print()
+        print("=" * 80)
+        print(f"Total: {len(objects)} objects")
+        print("=" * 80)
+
+        return objects
+
+    # ===== Code Quality Operations =====
+
+    def syntax_check(self, object_name: str, object_type: str = 'class') -> Dict[str, Any]:
+        """
+        Check syntax of ABAP code without activating.
+
+        Uses the SAP ADT activation endpoint in pre-audit mode, which performs
+        syntax check without actually activating the object.
+
+        Args:
+            object_name: Name of the object
+            object_type: Type of object
+
+        Returns:
+            Dict with 'valid' (bool), 'errors' (list), 'warnings' (list)
+
+        Note:
+            Unlike the old syntax_check which required a local file, this method
+            checks the syntax of the object as it exists in SAP's inactive version.
+            If you want to check source before pushing, first push it (without activating)
+            then run this check.
+        """
+        object_url = get_object_url(object_name, object_type)
+        type_desc = get_type_description(object_type)
+
+        print(f"Checking syntax: {object_name} ({type_desc})")
+
+        try:
+            # Use activation pre-audit to check syntax without activating
+            result = self.adt_client.syntax_check_via_activation(object_name, object_url)
+
+            if result.get('valid') is None:
+                # SAP kontrolu KOSMADI -> "gecerli" de "hatali" da DEGIL (olculemedi).
+                print("[UNVERIFIED] Syntax NOT measured (OLCULEMEDI): %s"
+                      % (result.get('sozdizimi_sebep') or 'sebep bildirilmedi'))
+            elif result.get('valid'):
+                print("[OK] Syntax check passed")
+
+                # Show warnings if any
+                warnings = result.get('warnings', [])
+                if warnings:
+                    print(f"\nWarnings ({len(warnings)}):")
+                    for w in warnings[:10]:
+                        msg = w.get('message', '')
+                        obj = w.get('object', '')
+                        line = w.get('line', '')
+                        if obj:
+                            print(f"  Line {line}: {msg} ({obj})")
+                        else:
+                            print(f"  - {msg}")
+                    if len(warnings) > 10:
+                        print(f"  ... and {len(warnings) - 10} more warnings")
+            else:
+                print("[FAIL] Syntax errors found:")
+                errors = result.get('errors', [])
+                for e in errors[:10]:
+                    msg = e.get('message', '')
+                    obj = e.get('object', '')
+                    line = e.get('line', '')
+                    if obj:
+                        print(f"  Line {line}: {msg}")
+                        if obj:
+                            print(f"           Object: {obj}")
+                    else:
+                        print(f"  - {msg}")
+                if len(errors) > 10:
+                    print(f"  ... and {len(errors) - 10} more errors")
+
+            return result
+
+        except Exception as e:
+            return {'valid': False, 'error': str(e)}
+
+    def run_classrun(self, class_name: str) -> Dict[str, Any]:
+        """Bir IF_OO_ADT_CLASSRUN sınıfını ADT classrun ile ÇALIŞTIR (F9-run muadili).
+
+        ADT-only ABAP çalıştırma kanalı (gap-analysis C1). Ekran/GUI status üretimi gibi
+        RFC FM (RPY_DYNPRO_INSERT vb.) çağıran generator sınıflarını çalıştırmak için.
+        SOAP-RFC gerektirmez. Sınıf if_oo_adt_classrun~main implement etmeli.
+
+        Args:
+            class_name: Çalıştırılacak sınıf (Z*/Y*).
+
+        Returns:
+            {ok, class, output, status} — output = console (out->write) çıktısı.
+        """
+        url = f"{self.adt_client.url}/sap/bc/adt/oo/classrun/{class_name.lower()}"
+        # Standart ADT header'ları ŞART (Authorization + sap-client + stateful
+        # session + X-CSRF-Token). Bare {'Accept':...} dict'i _get_headers()'ı
+        # atlatır → soğuk session'da SAP sınıf bağlamını bulamayıp sahte
+        # "does not implement if_oo_adt_classrun~main" döndürebilir. Accept override.
+        base_headers = self.adt_client._get_headers(accept_type='text/plain')
+
+        def _post(headers):
+            return self.adt_client._request_with_csrf_retry(
+                'post', url, headers=dict(headers))
+
+        try:
+            r = _post(base_headers)
+            body = r.text or ''
+            # ⛔ AYNI OTURUMDA RETRY ETKİSİZDİR — 2026-07-31 ölçümü. Eskiden burada
+            #    `_post()` ikinci kez AYNI session'la çağrılıyordu; aktif bir sınıfta
+            #    iki deneme de aynı "does not implement" hatasını verdi.
+            #    KÖK SEBEP: bu istemci süreç ömrü boyunca TEK stateful session tutar.
+            #    Obje BAŞKA BİR SÜREÇTE aktive edildiyse (push/activate ayrı süreç),
+            #    bu sürecin SAP oturumu aktivasyonu görmez ve eski class-load'a bağlı
+            #    kalır. Çare RESET: yeni session = yeni sap-contextid = güncel load.
+            #    Kanıt: taze süreçte aynı çağrı ANINDA çalıştı (tam konsol çıktısıyla).
+            #    Aynı desen jfilak/sapcli d223ed3c: activate() -> new_session() -> execute().
+            if r.status_code != 200 or 'does not implement' in body.lower():
+                self.adt_client.new_session()
+                # Header'lar eski session'dan türetilmişti (auth + CSRF) → yeniden al.
+                base_headers = self.adt_client._get_headers(accept_type='text/plain')
+                r = _post(base_headers)
+            # text/plain charset'siz dönebilir → requests latin-1 varsayar
+            # (Türkçe mojibake); out->write UTF-8 olduğundan UTF-8'e zorla.
+            try:
+                body = r.content.decode('utf-8')
+            except Exception:
+                body = r.text or ''
+            ok = r.status_code == 200 and 'does not implement' not in body.lower()
+
+            # TEŞHİS (2026-07-31 kök-fix ile YENİDEN YAZILDI).
+            # Buraya yalnız session-RESET'li retry de başarısız olunca gelinir.
+            # ⛔ ESKİ METİN YANLIŞTI ve zarar verdi: "TAZE (daha once kullanilmamis)
+            #    bir sinif adiyla yeniden yarat+kos" diyordu. O reçete iki gereksiz
+            #    obje yarattırdı, sorunu ÇÖZMEDİ ve sistem-geneli "adt_classrun
+            #    GÜVENİLMEZ" yanlış-sonucunu doğurdu. Sebebi: teşhis fonksiyonu
+            #    İNAKTİF kaynağı okuyup "yapısal olarak geçerli" diyordu
+            #    (bkz. _diagnose_classrun_binding — artık version=active okuyor).
+            # GERÇEK sebepler, olasılık sırasıyla:
+            #   1. Sınıf AKTİVE EDİLMEMİŞ → aktif sürüm boş kabuk → mesaj DOĞRU.
+            #   2. Bayat oturum (başka süreçte aktive edildi) → yukarıdaki reset çözer.
+            #   3. Sınıf gerçekten arayüzü implemente etmiyor.
+            if not ok and 'does not implement' in body.lower():
+                diag = self._diagnose_classrun_binding(class_name)
+                if not diag.get('structurally_valid'):
+                    # AKTİF sürümde arayüz yok → mesaj DOĞRU, tooling sorunu DEĞİL.
+                    nbytes = diag.get('active_source_bytes')
+                    return {
+                        'ok': False,
+                        'class': class_name,
+                        'status': r.status_code,
+                        'output': body,
+                        'error': 'classrun_class_not_active',
+                        'diagnosis': (
+                            f"SAP'nin mesaji DOGRU: {class_name} sinifinin AKTIF surumu "
+                            f"if_oo_adt_classrun'i implemente ETMIYOR "
+                            f"(aktif kaynak {nbytes} bayt, arayuz YOK). "
+                            f"En olasi sebep: sinif push edildi ama AKTIVE EDILMEDI — "
+                            f"aktif surum bos kabuk (adt_post_shell iskeleti) olarak duruyor. "
+                            f"YAP: adt_activate calistir, sonra `adt_inactive_objects` ile "
+                            f"DOGRULA (uyari: adtcore:version=\"active\" metadata'si bos "
+                            f"kabuk icin de 'active' der — TEK BASINA KANIT DEGILDIR). "
+                            f"Aktivasyon tamamsa sinif gercekten arayuzu implemente "
+                            f"etmiyordur: kaynakta INTERFACES if_oo_adt_classrun ara. "
+                            f"⛔ TAZE SINIF ADI ILE YENIDEN YARATMA — o eski recete "
+                            f"YANLISTI, sorunu cozmez, sadece cop obje birakir."
+                            f"IKINCI OLASILIK — CSRF/soguk-session: istek gecerli "
+                            f"X-CSRF-Token'siz gittiginde SAP 403 yerine 200 + BU "
+                            f"yaniltici govdeyi dondurebilir. 2026-07-28 kok-fix'i "
+                            f"(sap_adt_lib._request_with_csrf_retry + regresyon testi "
+                            f"scripts/tests/test_csrf_header_injection.py) bunu kapatti; "
+                            f"yine de gorursen fetch_csrf_token(force_refresh=True) ile "
+                            f"session'i isit ve TEKRAR DENE (ucuz kontrol)."
+                        ),
+                    }
+                # Aktif sürümde arayüz VAR ama reset'li retry de başarısız →
+                # gerçekten beklenmedik. Körlemesine reçete verme, ölçümü ilet.
+                return {
+                    'ok': False,
+                    'class': class_name,
+                    'status': r.status_code,
+                    'output': body,
+                    'error': 'classrun_unexpected',
+                    'diagnosis': (
+                        f"{class_name} AKTIF surumu arayuzu implemente ediyor "
+                        f"(aktif kaynak {diag.get('active_source_bytes')} bayt) ve "
+                        f"session-RESET'li retry de basarisiz oldu. Bu BILINEN bir "
+                        f"desen DEGIL — recete uydurma. Kanit topla: "
+                        f"SEOMETAREL'de VERSION=1 satiri var mi, `adt_inactive_objects` "
+                        f"ne diyor, ayni cagri TAZE BIR SURECTE calisiyor mu."
+                    ),
+                }
+            return {
+                'ok': ok,
+                'class': class_name,
+                'status': r.status_code,
+                'output': body,
+            }
+        except Exception as e:
+            return {'ok': False, 'class': class_name, 'error': str(e)}
+
+    def _diagnose_classrun_binding(self, class_name: str) -> Dict[str, Any]:
+        """classrun 'does not implement' teşhisi.
+
+        classrun **AKTİF** sürümü yükler → teşhis de AKTİF sürümü okumalıdır.
+
+        ⛔ 2026-07-31 KÖK-FIX — bu fonksiyon SAHTE TEŞHİS üretiyordu.
+        Eski hâli `source/main`'i **`version=` parametresi VERMEDEN** çekiyordu ve
+        **ADT varsayılanı İNAKTİF sürümdür** (canlı ölçüm: parametresiz GET inaktif
+        gövdeyi döndürdü — 10.659 bayt, arayüz VAR; `version=active` ise 192 baytlık
+        boş kabuk, arayüz YOK). Sonuç: sınıf hiç aktive edilmemişken bile
+        "structurally_valid=True" diyor, oradan da *"tooling bozuk → TAZE class adı
+        dene"* reçetesi doğuyordu. O reçete YANLIŞTI ve bir sistem-geneli "adt_classrun
+        bu sistemde GÜVENİLMEZ" sonucunun kaynağı oldu (6 doküman + 2 gereksiz obje).
+        GERÇEK: SAP'nin "does not implement" mesajı DOĞRUYDU — aktif sürüm gerçekten
+        boş kabuktu, çünkü push edilmiş ama AKTİVE EDİLMEMİŞTİ.
+        📖 Kanıt: `.tmp/classrun-research.md` (SEOMETAREL VERSION=0 · aktif⇄inaktif
+        bayt kıyası · semptomun talep üzerine yeniden üretimi).
+        ⚠ `version=active` parametresini KALDIRMA — kaldırıldığı an sahte teşhis geri gelir.
+        """
+        try:
+            src_url = (f"{self.adt_client.url}/sap/bc/adt/oo/classes/"
+                       f"{class_name.lower()}/source/main")
+            hdrs = self.adt_client._get_headers(accept_type='text/plain')
+            r = self.adt_client._request_with_csrf_retry(
+                'get', src_url, headers=dict(hdrs),
+                params={'version': 'active'})
+            src = (r.content.decode('utf-8', errors='replace')
+                   if r.content else '')
+            has_iface = 'if_oo_adt_classrun' in src.lower()
+            return {
+                'structurally_valid': (r.status_code == 200 and has_iface),
+                'has_interface': has_iface,
+                'source_http': r.status_code,
+                'active_source_bytes': len(src),
+            }
+        except Exception as e:
+            return {'structurally_valid': False, 'error': str(e)}
+
+    def activate_object(self, object_name: str, object_type: str = 'class') -> bool:
+        """
+        Activate ABAP object (retry after failed push)
+
+        Args:
+            object_name: Name of the object
+            object_type: Type of object
+
+        Returns:
+            True if successful, False otherwise
+        """
+        object_url = get_object_url(object_name, object_type)
+        type_desc = get_type_description(object_type)
+
+        print(f"\nActivating {type_desc}: {object_name}")
+
+        try:
+            result = self.adt_client.activate_object(object_name, object_url)
+
+            if isinstance(result, dict):
+                if result.get('success'):
+                    print(f"[OK] Object activated successfully")
+
+                    # Show warnings if any
+                    warnings = result.get('warnings', [])
+                    if warnings:
+                        print(f"\nWarnings ({len(warnings)}):")
+                        for w in warnings[:10]:  # Show first 10 warnings
+                            msg = w.get('message', '')
+                            obj = w.get('object', '')
+                            line = w.get('line', '')
+                            if obj:
+                                print(f"  - {msg} ({obj} line {line})")
+                            else:
+                                print(f"  - {msg}")
+                        if len(warnings) > 10:
+                            print(f"  ... and {len(warnings) - 10} more warnings")
+
+                    return True
+
+                # Activation failed - show errors
+                errors = result.get('errors', [])
+                warnings = result.get('warnings', [])
+
+                print(f"[FAIL] Activation failed")
+
+                if result.get('http_error'):
+                    print(f"  Reason: HTTP {result['http_error']}")
+                elif not result.get('activation_executed') and not result.get('check_executed') and result.get('errors'):
+                    print(f"  Reason: Activation blocked (see errors below)")
+                elif result.get('check_executed') and result.get('errors'):
+                    print(f"  Reason: Syntax errors prevent activation")
+                elif result.get('errors'):
+                    print(f"  Reason: Errors during activation")
+
+                if errors:
+                    print(f"\nErrors ({len(errors)}):")
+                    for e in errors[:10]:  # Show first 10 errors
+                        msg = e.get('message', '')
+                        obj = e.get('object', '')
+                        line = e.get('line', '')
+                        href = e.get('href', '')
+                        if obj:
+                            print(f"  Line {line}: {msg}")
+                            if obj:
+                                print(f"           Object: {obj}")
+                        else:
+                            print(f"  - {msg}")
+                    if len(errors) > 10:
+                        print(f"  ... and {len(errors) - 10} more errors")
+
+                if warnings:
+                    print(f"\nWarnings ({len(warnings)}):")
+                    for w in warnings[:5]:
+                        msg = w.get('message', '')
+                        obj = w.get('object', '')
+                        line = w.get('line', '')
+                        if obj:
+                            print(f"  Line {line}: {msg} ({obj})")
+                        else:
+                            print(f"  - {msg}")
+                    if len(warnings) > 5:
+                        print(f"  ... and {len(warnings) - 5} more warnings")
+
+                return False
+
+            # Fallback for old boolean return type
+            if isinstance(result, bool):
+                if result:
+                    print(f"[OK] Object activated successfully")
+                    return True
+                print(f"[FAIL] Activation failed")
+                return False
+
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return False
+
+    def get_object_metadata(self, object_name: str, object_type: str = 'class') -> Optional[str]:
+        """
+        Get object structure and metadata (token-efficient - no full source)
+
+        Args:
+            object_name: Name of the object
+            object_type: Type of object
+
+        Returns:
+            XML metadata string
+        """
+        object_url = get_object_url(object_name, object_type)
+
+        try:
+            metadata = self.adt_client.get_object_structure(object_url)
+            print(f"Metadata for {object_name}:")
+            print(metadata[:500])  # Show first 500 chars
+            return metadata
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return None
+
+    # ===== Transport Operations =====
+
+    #: CTS Transport Organizer feed'ini TANIMA işareti. Eşleşme YEREL-ADA göre yapılır
+    #: (aşağıda); bu liste yalnızca "gelen gövde gerçekten bir tm feed'i mi" sorusunu
+    #: yanıtlar — yani "0 transport" cevabının KANITLANMIŞ mı yoksa OKUNAMAMIŞ mı
+    #: olduğunu ayırt eder.
+    _TM_NS_ISARETLERI = ('/cts/adt/tm', '/adt/tm')
+
+    @staticmethod
+    def _yerel_ad(etiket) -> str:
+        """'{ns}request' → 'request'. Namespace-bağımsız eşleşme için."""
+        if not isinstance(etiket, str):
+            return ''
+        return etiket.rsplit('}', 1)[-1]
+
+    def list_user_transports(self, user: Optional[str] = None) -> List[Dict[str, str]]:
+        """
+        List user's transport requests
+
+        ⛔ 2026-08-10 — İKİ SESSİZ SIFIR KAYNAĞI KAPATILDI. Ölçülen semptom: sistemde
+        4 açık transport varken `adt_transport_list` `ok:true, count:0` döndü.
+
+        (a) **Yutulan istisna:** `except Exception: print(...); return []`. Bir XML
+            ParseError ya da ağ hatası, çağıran için "kullanıcının transport'u yok"tan
+            AYIRT EDİLEMEZ bir `[]` üretiyordu. Bu, 2026-08-01'de `where_used`/ATC/
+            `get_inactive_objects` için kapatılan *"DOĞRULAMA KOŞAMADI = DOĞRULANDI"*
+            sınıfının aynısıdır — o süpürme bu metodu ATLAMIŞTI.
+        (b) **Şekil körlüğü:** `user_transports()` 12 farklı Accept header dener ve İLK
+            200'ü döndürür (bir fallback header kazanabilir); gövdenin ŞEKLİ Accept'e
+            göre değişir. Ayrıştırıcı ise TEK bir namespace'e (`cts/adt/tm`) ve tam
+            nitelikli attribute adlarına çivilenmişti → başka şekilde gelen gövdede
+            `findall` boş döner, HATA YOK, `count:0`. Artık eşleşme namespace-bağımsız
+            (yerel ad) yapılır.
+
+        `count:0` ancak gövde GERÇEKTEN tanınmış bir tm feed'iyse rapor edilir; şekil
+        tanınmazsa sıfır İDDİA EDİLMEZ, `SAPTransportError` fırlatılır.
+
+        Args:
+            user: User name (optional, defaults to current user)
+
+        Returns:
+            List of transports (boş liste = KANITLANMIŞ sıfır)
+
+        Raises:
+            SAPTransportError: gövde ayrıştırılamadı VEYA şekil tanınmadı — bu durumda
+                "transport yok" SONUCU ÇIKARILAMAZ.
+        """
+        # NOT: `user_transports()` kendi HTTP hatasını zaten fırlatır (SAPTransportError);
+        # burada onu YAKALAMIYORUZ — yakalamak (a)'nın ta kendisiydi.
+        transports_xml = self.adt_client.user_transports(user)
+        accept = getattr(self.adt_client, '_last_transport_accept', None)
+
+        try:
+            root = ET.fromstring(transports_xml)
+        except ET.ParseError as e:
+            raise SAPTransportError(
+                f"Transport listesi AYRIŞTIRILAMADI (Accept: {accept}): {e}. "
+                f"'transport yok' SONUCU ÇIKARILAMAZ — gövde ilk 200 karakter: "
+                f"{(transports_xml or '')[:200]!r}"
+            )
+
+        sekil_tanindi = False
+        transports = []
+        for el in root.iter():
+            tag = el.tag if isinstance(el.tag, str) else ''
+            if any(isaret in tag for isaret in self._TM_NS_ISARETLERI):
+                sekil_tanindi = True
+            if self._yerel_ad(tag) != 'request':
+                continue
+            # Attribute'lar da namespace-bağımsız okunur (fallback header'da namespace
+            # düşebilir ya da değişebilir; tam nitelikli ad aramak sessiz sıfır üretir).
+            attrs = {self._yerel_ad(k): v for k, v in el.attrib.items()}
+            transport_id = attrs.get('number')
+            if transport_id:
+                transports.append({
+                    'number': transport_id,
+                    'description': attrs.get('desc', ''),
+                    'status': attrs.get('status', '')
+                })
+
+        if not transports and not sekil_tanindi:
+            raise SAPTransportError(
+                f"Transport listesi ŞEKLİ TANINMADI (Accept: {accept}): gövdede ne "
+                f"`request` öğesi ne de bir CTS/tm namespace'i var. Bu bir SIFIR DEĞİL, "
+                f"bir OKUYAMAMA'dır — 'açık transport yok' diye OKUMA. "
+                f"Gövde ilk 300 karakter: {(transports_xml or '')[:300]!r}"
+            )
+
+        # Teşhis izi: "0 bulundu" cevabı hangi şekilden çıktı?
+        self._last_transport_meta = {
+            'accept': accept,
+            'shape_recognized': sekil_tanindi,
+            'body_bytes': len(transports_xml or ''),
+        }
+
+        print(f"\nUser transports ({len(transports)} found; Accept={accept}):")
+        print("=" * 80)
+        for tr in transports:
+            print(f"  {tr['number']} - {tr['description']} [{tr['status']}]")
+        if not transports:
+            print("  (tanınan tm feed'i, hiç `request` öğesi yok — KANITLANMIŞ sıfır)")
+        print("=" * 80)
+
+        return transports
+
+    def create_transport(self, description: str, package_name: str) -> Optional[str]:
+        """
+        Create new transport request
+
+        Args:
+            description: Transport description
+            package_name: Package name
+
+        Returns:
+            Transport number if successful, None otherwise
+        """
+        try:
+            result = self.adt_client.create_transport(description, package_name)
+
+            if result.get('success'):
+                transport_num = result.get('transport')
+                print(f"[OK] Transport created: {transport_num}")
+                return transport_num
+            else:
+                print(f"[ERROR] {result.get('message')}")
+                return None
+
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return None
+
+    # ===== Database Operations =====
+
+    def run_query(self, sql_query: str, row_limit: int = 100) -> Optional[str]:
+        """
+        Execute SQL query on SAP database
+
+        Args:
+            sql_query: SQL query string
+            row_limit: Maximum rows to return
+
+        Returns:
+            XML result string
+        """
+        print(f"Executing query: {sql_query}")
+        print(f"Row limit: {row_limit}\n")
+
+        try:
+            result_xml = self.adt_client.run_query(sql_query, row_number=row_limit)
+            print(f"Query executed successfully")
+            print(f"Result (first 500 chars):\n{result_xml[:500]}")
+            return result_xml
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return None
+
+    def table_contents(self, table_name: str, row_limit: int = 100) -> Optional[str]:
+        """
+        Get contents of a database table
+
+        **DEPRECATED:** Use run_sql_query() instead for better results.
+
+        Args:
+            table_name: Table name
+            row_limit: Maximum rows to return
+
+        Returns:
+            XML result string
+        """
+        print(f"[WARNING] table_contents() is deprecated. Use run_sql_query() instead.")
+        print(f"Fetching table contents: {table_name}")
+        print(f"Row limit: {row_limit}\n")
+
+        try:
+            result_xml = self.adt_client.table_contents(table_name, row_number=row_limit)
+            print(f"Table contents retrieved successfully")
+            print(f"Result (first 500 chars):\n{result_xml[:500]}")
+            return result_xml
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return None
+
+    # ===== DDIC Object Operations =====
+
+    def create_dataelement(self, name: str, domain_name: str, description: str,
+                          package: str, transport: Optional[str] = None,
+                          short_label: Optional[str] = None,
+                          medium_label: Optional[str] = None,
+                          long_label: Optional[str] = None,
+                          heading_label: Optional[str] = None) -> bool:
+        """
+        Create a data element
+
+        Args:
+            name: Data element name (e.g., 'ZDEMO0_E_MODEL')
+            domain_name: Domain name (e.g., 'CHAR200')
+            description: Description text
+            package: Package name
+            transport: Transport request (optional)
+            short_label: Short field label (max 10 chars)
+            medium_label: Medium field label (max 20 chars)
+            long_label: Long field label (max 40 chars)
+            heading_label: Heading label (max 55 chars)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Data Element: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Domain: {domain_name}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_dataelement(
+                name=name.upper(),
+                domain_name=domain_name.upper(),
+                description=description,
+                package_name=package,
+                short_label=short_label,
+                medium_label=medium_label,
+                long_label=long_label,
+                heading_label=heading_label,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Data element created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            # aXet 2026-09-14: domain tip bilgisi ÖLÇÜLEMEDİ → yutulmaz, çağıran (adt_dtel_create) yapılandırılmış
+            # hata (`validation_error` + mesaj) görsün. Diğer istisnalar eskisi gibi False.
+            from sap_adt_lib import DomainTipBilgisiHatasi
+            if isinstance(e, DomainTipBilgisiHatasi):
+                raise
+            return False
+
+    def create_domain(self, name: str, datatype: str, length: int,
+                     description: str, package: str,
+                     transport: Optional[str] = None,
+                     decimals: int = 0,
+                     lowercase: bool = False,
+                     fixed_values: Optional[List[Dict[str, str]]] = None) -> bool:
+        """
+        Create a domain
+
+        Args:
+            name: Domain name (e.g., 'ZDEMO0_D_MODEL')
+            datatype: Data type ('CHAR', 'NUMC', 'INT4', etc.)
+            length: Length (e.g., 200)
+            description: Description text
+            package: Package name
+            transport: Transport request (optional)
+            decimals: Number of decimal places (default: 0)
+            lowercase: Allow lowercase (default: False)
+            fixed_values: List of dicts with 'value' and 'text' keys (optional)
+                         Example: [{'value': 'A', 'text': 'Option A'}]
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Domain: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Type: {datatype}({length})")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if decimals:
+            print(f"  Decimals: {decimals}")
+        if lowercase:
+            print(f"  Lowercase: Allowed")
+        if fixed_values:
+            print(f"  Fixed Values: {', '.join([fv.get('value', '') for fv in fixed_values])}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_domain(
+                name=name.upper(),
+                datatype=datatype.upper(),
+                length=length,
+                description=description,
+                package_name=package,
+                decimals=decimals,
+                lowercase=lowercase,
+                fixed_values=fixed_values,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Domain created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_structure(self, name: str, fields: list, description: str,
+                        package: str, transport: Optional[str] = None) -> bool:
+        """
+        Create a structure (INTTAB) in SAP
+
+        Args:
+            name: Structure name (e.g., 'ZDEMO0_S_CUSTOMER')
+            fields: List of field definitions. Each field is a dict with:
+                - 'name': Field name
+                - 'type': ABAP type (e.g., 'char10', 'numc8', or data element name like 'ZDEMO0_E_STATUS')
+                - 'description': Field description (optional, for comments)
+            description: Structure description text
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Examples:
+            # Simple structure with predefined types
+            client.create_structure('ZDEMO0_S_TEST', [
+                {'name': 'FIELD1', 'type': 'char10'},
+                {'name': 'FIELD2', 'type': 'numc8'}
+            ], 'Test structure', 'ZDEMO0', transport='<TRANSPORT>')
+
+            # Structure with data elements
+            client.create_structure('ZDEMO0_S_STATUS', [
+                {'name': 'STATUS', 'type': 'ZDEMO0_E_STATUS', 'description': 'Status indicator'}
+            ], 'Status info', 'ZDEMO0', transport='<TRANSPORT>')
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Structure: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        print(f"  Fields:")
+        for field in fields:
+            print(f"    - {field.get('name')}: {field.get('type')}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_structure(
+                name=name.upper(),
+                fields=fields,
+                description=description,
+                package_name=package,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Structure created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     NOTE: Structure must be activated before use!")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/structures/{name.lower()}')")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_table(self, name: str, description: str, package: str,
+                    fields: Optional[list] = None, ref_structure: Optional[str] = None,
+                    transport: Optional[str] = None, table_category: str = 'TRANSP',
+                    delivery_class: str = 'A', data_maintenance: str = 'ALLOWED') -> bool:
+        """
+        Create a database table in SAP
+
+        Args:
+            name: Table name (e.g., 'ZDEMO0_T_CUSTOMER')
+            description: Table description text
+            package: Package name
+            fields: List of field definitions (mutually exclusive with ref_structure)
+                Each field is a dict with:
+                - 'name': Field name (required)
+                - 'type': ABAP type (e.g., 'char10', 'mandt', or data element name)
+                - 'key': True if this is a key field (default: False)
+                - 'null': True if null allowed (default: False)
+                - 'description': Field description (optional)
+            ref_structure: Name of existing structure to reference (optional)
+                If provided, fields parameter is ignored (recommended pattern)
+            transport: Transport request number
+            table_category: Table type - 'TRANSP' (transparent), 'POOL', 'CLUSTER'
+            delivery_class: Delivery class
+                - 'A': Application table (master/transaction data) - default
+                - 'C': Customizing table
+                - 'L': Temporary data, delivered empty
+                - 'G': Customizing, protected against SAP update
+            data_maintenance: Data Browser/Table View Editing
+                - 'ALLOWED': Display/Maintenance Allowed (default)
+                - 'RESTRICTED': Display/Maintenance with Restrictions
+                - 'NOT_ALLOWED': Display/Maintenance Not Allowed
+                - 'LIMITED': Only Display, No Maintenance
+
+        Returns:
+            True if successful, False otherwise
+
+        Examples:
+            # Table with direct field definitions
+            client.create_table('ZDEMO0_T_CUSTOMER', 'Customer master', 'ZDEMO0',
+                               fields=[
+                                   {'name': 'CLIENT', 'type': 'mandt', 'key': True},
+                                   {'name': 'ID', 'type': 'char10', 'key': True},
+                                   {'name': 'NAME', 'type': 'char50'},
+                                   {'name': 'STATUS', 'type': 'ZDEMO0_E_STATUS'}
+                               ],
+                               delivery_class='A',
+                               data_maintenance='ALLOWED',
+                               transport='<TRANSPORT>')
+
+            # Table referencing existing structure (recommended)
+            client.create_table('ZDEMO0_T_CONFIG', 'Configuration data', 'ZDEMO0',
+                               ref_structure='ZDEMO0_S_CUSTOMER',
+                               transport='<TRANSPORT>')
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Table: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        print(f"  Category: {table_category}")
+        print(f"  Delivery Class: {delivery_class}")
+        print(f"  Data Maintenance: {data_maintenance}")
+        if ref_structure:
+            print(f"  Reference Structure: {ref_structure}")
+        else:
+            print(f"  Fields:")
+            for field in fields:
+                key_mark = ' [KEY]' if field.get('key') else ''
+                null_mark = ' [NULL]' if field.get('null') else ''
+                print(f"    - {field.get('name')}: {field.get('type')}{key_mark}{null_mark}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_table(
+                name=name.upper(),
+                description=description,
+                package_name=package,
+                fields=fields,
+                ref_structure=ref_structure,
+                transport=transport,
+                table_category=table_category,
+                delivery_class=delivery_class,
+                data_maintenance=data_maintenance
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Table created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     NOTE: Table must be activated before use!")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tables/{name.lower()}')")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_cds_view(self, name: str, cds_source: str, description: str,
+                        package: str, transport: Optional[str] = None) -> bool:
+        """
+        Create a CDS (Core Data Services) view in SAP
+
+        Args:
+            name: CDS view name (e.g., 'ZDEMO0_C_CUSTOMER')
+            cds_source: CDS DDL source code (SQL-like syntax with annotations)
+            description: View description text
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Examples:
+            Simple view:
+            ```python
+            cds_source = '''@AbapCatalog.sqlViewName: 'ZDEMO0_C_CUSTOMER'
+            @AccessControl.authorizationCheck: #CHECK
+
+            define view ZDEMO0_C_CUSTOMER as
+            select from zai_t_customer
+            {
+              key customer_id,
+              customer_name,
+              status
+            }'''
+            client.create_cds_view('ZDEMO0_C_CUSTOMER', cds_source,
+                                   'Customer view', 'ZDEMO0', transport='TRXXXXXX')
+            ```
+
+            View with WHERE clause:
+            ```python
+            cds_source = '''@AbapCatalog.sqlViewName: 'ZDEMO0_C_ACTIVE'
+            @EndUserText.label: 'Active Tasks'
+            @AccessControl.authorizationCheck: #CHECK
+
+            define view ZDEMO0_C_ACTIVE as
+            select from zai_t_task_complete
+            {
+              key task_id,
+              task_name
+            }
+            where priority = '1'
+            '''
+            ```
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating CDS View: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        print(f"  Source length: {len(cds_source)} characters")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_cds_view(
+                name=name.upper(),
+                cds_source=cds_source,
+                description=description,
+                package_name=package,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] CDS view created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     NOTE: CDS view must be activated before use!")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/ddl/sources/{name.lower()}')")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    # ===== New Object Type Wrappers (Added 2026-02-02) =====
+
+    def create_table_type(self, name: str, row_type: str, description: str,
+                         package: str, transport: Optional[str] = None,
+                         access_type: str = 'standard', key_kind: str = 'nonUnique') -> bool:
+        """
+        Create a Table Type (TTYP) in SAP
+
+        Args:
+            name: Table type name (e.g., 'ZDEMO0_TT_CUSTOMERS')
+            row_type: Row type - can be a data element, structure, or predefined type
+            description: Table type description
+            package: Package name
+            transport: Transport request number
+            access_type: Table access type - 'standard', 'sorted', 'hashed', 'index'
+            key_kind: Key type - 'unique', 'nonUnique', 'notSpecified'
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            client.create_table_type('ZDEMO0_TT_IDS', 'ZDEMO0_E_TEST_ID',
+                                    'Table of IDs', 'ZDEMO0', transport='<TRANSPORT>')
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Table Type: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Row Type: {row_type}")
+        print(f"  Package: {package}")
+        print(f"  Access Type: {access_type}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            self.adt_client.fetch_csrf_token()
+
+            url = f'{self.adt_client.url}/sap/bc/adt/ddic/tabletypes'
+            headers = {
+                'Authorization': self.adt_client._get_auth_header(),
+                'sap-client': self.adt_client.client,
+                'X-CSRF-Token': self.adt_client.csrf_token,
+                'Content-Type': 'application/vnd.sap.adt.tabletype.v1+xml',
+                'Accept': '*/*'
+            }
+
+            xml_payload = f'''<?xml version="1.0" encoding="UTF-8"?>
+<ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype"
+                xmlns:adtcore="http://www.sap.com/adt/core"
+                adtcore:name="{name.upper()}"
+                adtcore:description="{description}"
+                adtcore:masterLanguage="{self.adt_client.language}">
+    <adtcore:packageRef adtcore:name="{package.upper()}"/>
+    <ttyp:rowType>
+        <ttyp:typeKind>dictionaryType</ttyp:typeKind>
+        <ttyp:typeName>{row_type.upper()}</ttyp:typeName>
+        <ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType>
+        <ttyp:rangeType/>
+    </ttyp:rowType>
+    <ttyp:initialRowCount>00000</ttyp:initialRowCount>
+    <ttyp:accessType>{access_type}</ttyp:accessType>
+    <ttyp:primaryKey>
+        <ttyp:definition>standard</ttyp:definition>
+        <ttyp:kind>{key_kind}</ttyp:kind>
+        <ttyp:components/>
+        <ttyp:alias/>
+    </ttyp:primaryKey>
+</ttyp:tableType>'''
+
+            params = {'corrNr': transport} if transport else {}
+            response = self.adt_client.session.post(url, headers=headers, params=params,
+                                                    data=xml_payload, timeout=60)
+
+            if response.status_code in [200, 201]:
+                print(f"\n[OK] Table type created successfully")
+                print(f"     Activate with: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tabletypes/{name.lower()}')")
+                return True
+            if response.status_code == 404:
+                print("\n[WARNING] Table type endpoint not available on this SAP system")
+                return True
+            if response.status_code == 405 and 'AlreadyExists' in response.text:
+                print("\n[OK] Table type already exists")
+                return True
+            print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+            return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_message_class(self, name: str, description: str, package: str,
+                            transport: Optional[str] = None) -> bool:
+        """
+        Create a Message Class (MSAG) in SAP
+
+        Args:
+            name: Message class name (e.g., 'ZDEMO0_MSG')
+            description: Message class description
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            client.create_message_class('ZDEMO0_MSG', 'ZDEMO0 Messages', 'ZDEMO0', transport='<TRANSPORT>')
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Message Class: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            # force_refresh: bayat disk-cache CSRF token server-side geçersiz olabilir
+            # → deterministik 403 "CSRF token validation failed" döngüsünü önler.
+            self.adt_client.fetch_csrf_token(force_refresh=True)
+
+            url = f'{self.adt_client.url}/sap/bc/adt/messageclass'
+            headers = {
+                'Authorization': self.adt_client._get_auth_header(),
+                'sap-client': self.adt_client.client,
+                'X-CSRF-Token': self.adt_client.csrf_token,
+                'Content-Type': 'application/vnd.sap.adt.messageclass.v2+xml',
+                'Accept': '*/*',
+                # FIX (2026-07-15, referans abap-adt-api createObject = stateless):
+                # Session default'u 'stateful' (sap_adt_lib.py session header). Stateful create,
+                # MSAG create-anı SE91 editor enqueue'sunu (EU 510) request sonunda BIRAKMIYOR →
+                # sonraki populate/delete 403. Bu POST'u per-call STATELESS yaparak enqueue'nun
+                # request-end roll-out ile düşmesini sağlıyoruz. Yalnız bu çağrıyı etkiler.
+                'x-sap-adt-sessiontype': 'stateless',
+            }
+
+            xml_payload = f'''<?xml version="1.0" encoding="UTF-8"?>
+<mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass"
+                 xmlns:adtcore="http://www.sap.com/adt/core"
+                 adtcore:name="{name.upper()}"
+                 adtcore:description="{description}">
+    <adtcore:packageRef adtcore:name="{package.upper()}"/>
+</mc:messageClass>'''
+
+            params = {'corrNr': transport} if transport else {}
+            response = self.adt_client.session.post(url, headers=headers, params=params,
+                                                    data=xml_payload, timeout=60)
+
+            if response.status_code in [200, 201]:
+                print(f"\n[OK] Message class created successfully")
+                # NOT: Eski "clear_enqueue_lock re-lock safety-net"i KALDIRILDI (2026-07-15).
+                # O, kalıcı kilidi yeni bir MODIFY-lock alarak temizlemeye çalışıyordu; ama
+                # obje aynı kullanıcıca zaten kilitli → lock_object 403 EU510 → cycle hiç
+                # tamamlanmıyordu (etkisiz churn). Kök-fix yukarıda: create'i STATELESS yapmak
+                # → enqueue request-end'de düşer, temizlenecek kalıntı kalmaz.
+                return True
+            else:
+                print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_lock_object(self, name: str, primary_table: str, description: str,
+                          package: str, lock_fields: list, transport: Optional[str] = None,
+                          lock_mode: str = 'E', allow_rfc: bool = False) -> bool:
+        """
+        Create a Lock Object (ENQU) in SAP
+
+        Args:
+            name: Lock object name (e.g., 'EZDEMO0_CUSTOMER') - must start with E
+            primary_table: Primary table to lock
+            description: Lock object description
+            package: Package name
+            lock_fields: List of field names to include as lock parameters
+            transport: Transport request number
+            lock_mode: Lock mode - 'E' (exclusive), 'S' (shared), 'X' (exclusive non-cumulative)
+            allow_rfc: Allow RFC access to the lock
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            client.create_lock_object('EZDEMO0_CUST', 'ZDEMO0_T_CUSTOMER',
+                                     'Customer lock', 'ZDEMO0',
+                                     lock_fields=['CUSTOMER_ID'],
+                                     transport='<TRANSPORT>')
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Lock Object: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Primary Table: {primary_table}")
+        print(f"  Lock Mode: {lock_mode}")
+        print(f"  Lock Fields: {lock_fields}")
+        print(f"  Package: {package}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            self.adt_client.fetch_csrf_token()
+
+            url = f'{self.adt_client.url}/sap/bc/adt/ddic/lockobjects/sources'
+            headers = {
+                'Authorization': self.adt_client._get_auth_header(),
+                'sap-client': self.adt_client.client,
+                'X-CSRF-Token': self.adt_client.csrf_token,
+                'Content-Type': 'application/vnd.sap.adt.lockobjects.v1+xml',
+                'Accept': '*/*'
+            }
+
+            # Build lock parameters XML
+            lock_params_xml = ""
+            for field in lock_fields:
+                lock_params_xml += f'''
+            <enqu:lockParameter>
+                <enqu:parameterWanted>true</enqu:parameterWanted>
+                <enqu:parameterName>{field.upper()}</enqu:parameterName>
+                <enqu:tableName>{primary_table.upper()}</enqu:tableName>
+                <enqu:fieldName>{field.upper()}</enqu:fieldName>
+            </enqu:lockParameter>'''
+
+            allow_rfc_str = 'true' if allow_rfc else 'false'
+
+            xml_payload = f'''<?xml version="1.0" encoding="UTF-8"?>
+<enqu:lockobject xmlns:enqu="http://www.sap.com/adt/ddic/enqu"
+                 xmlns:adtcore="http://www.sap.com/adt/core"
+                 adtcore:name="{name.upper()}"
+                 adtcore:description="{description}">
+    <adtcore:packageRef adtcore:name="{package.upper()}"/>
+    <enqu:content>
+        <enqu:allowRFC>{allow_rfc_str}</enqu:allowRFC>
+        <enqu:primaryTable>
+            <enqu:tableName>{primary_table.upper()}</enqu:tableName>
+            <enqu:lockMode>{lock_mode}</enqu:lockMode>
+        </enqu:primaryTable>
+        <enqu:secondaryTables/>
+        <enqu:lockParameters>{lock_params_xml}
+        </enqu:lockParameters>
+    </enqu:content>
+</enqu:lockobject>'''
+
+            params = {'corrNr': transport} if transport else {}
+            response = self.adt_client.session.post(url, headers=headers, params=params,
+                                                    data=xml_payload, timeout=60)
+
+            if response.status_code in [200, 201]:
+                print(f"\n[OK] Lock object created successfully")
+                print(f"     Generated functions: ENQUEUE_{name.upper()}, DEQUEUE_{name.upper()}")
+                return True
+            else:
+                print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def run_sql_query(self, query: str, max_rows: int = 100) -> Optional[Dict[str, Any]]:
+        """
+        Execute a freestyle SQL query via SAP ADT datapreview
+
+        Args:
+            query: SQL SELECT query (ABAP SQL syntax, no UP TO clause needed)
+            max_rows: Maximum rows to return (default 100)
+
+        Returns:
+            Dict with 'columns', 'data', 'total_rows', 'execution_time' or None on error
+
+        Example:
+            result = client.run_sql_query("SELECT MATNR, MAKTX FROM MARA")
+            for row in result['data']:
+                print(row)
+        """
+        # Son hatanin SAP GOVDESI. `None` sozlesmesi DEGISMEDI (cok sayida cagiran); sebep
+        # metni ayrica burada tutulur ki MCP katmani cagirana tasiyabilsin.
+        self.last_sql_error = None
+        try:
+            response_text = self.adt_client.run_query(query, row_number=max_rows)
+
+            # Parse XML response
+            root = ET.fromstring(response_text)
+            ns = {'dp': 'http://www.sap.com/adt/dataPreview'}
+
+            total_rows = root.find('.//dp:totalRows', ns)
+            exec_time = root.find('.//dp:queryExecutionTime', ns)
+
+            result = {
+                'total_rows': int(total_rows.text) if total_rows is not None else 0,
+                'execution_time': float(exec_time.text) if exec_time is not None else 0,
+                'columns': [],
+                'data': []
+            }
+
+            # Get columns and data
+            columns = root.findall('.//dp:columns', ns)
+            for col in columns:
+                meta = col.find('dp:metadata', ns)
+                col_name = meta.get('{http://www.sap.com/adt/dataPreview}name') if meta is not None else ''
+                result['columns'].append(col_name)
+
+                # Get data for this column
+                data_elements = col.findall('.//dp:data', ns)
+                col_data = [d.text for d in data_elements]
+
+                # Store data transposed (will be pivoted later)
+                if not result['data']:
+                    result['data'] = [[] for _ in range(len(col_data))]
+                for i, val in enumerate(col_data):
+                    if i < len(result['data']):
+                        result['data'][i].append(val)
+
+            return result
+
+        except Exception as e:
+            print(f"[ERROR] SQL query error: {str(e)}")
+            self.last_sql_error = sap_hata_govdesi(e)
+            if self.last_sql_error and self.last_sql_error.get('message'):
+                print(f"[ERROR] SAP yaniti: {self.last_sql_error['message']}")
+            return None
+
+    def create_type_group(self, name: str, types_and_constants: str, description: str,
+                         package: str, transport: Optional[str] = None) -> bool:
+        """
+        Create a Type Group (TYPE) in SAP
+
+        Type groups are legacy ABAP constructs for defining reusable types and constants.
+        They are used with the TYPE-POOLS statement.
+
+        Args:
+            name: Type group name (e.g., 'ZDEMO0_TYPES')
+            types_and_constants: ABAP source code containing TYPES and CONSTANTS definitions
+                               (should NOT include 'type-pool' statement - that's added automatically)
+            description: Short description
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Examples:
+            Simple type group:
+            ```python
+            types_consts = '''
+types:
+  zai_status_type type c length 1.
+
+constants:
+  zai_status_active type zai_status_type value 'A',
+  zai_status_inactive type zai_status_type value 'I'.
+'''
+            client.create_type_group('ZDEMO0_TYPES', types_consts,
+                                    'ZDEMO0 Type Definitions', 'ZDEMO0', transport='TRXXXXXX')
+            ```
+
+            Using in ABAP:
+            ```abap
+            TYPE-POOLS zai_types.
+            DATA status TYPE zai_types-zai_status_type.
+            status = zai_types-zai_status_active.
+            ```
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Type Group: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        print(f"  Source length: {len(types_and_constants)} characters")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_type_group(
+                name=name.upper(),
+                types_and_constants=types_and_constants,
+                description=description,
+                package_name=package,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Type group created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     NOTE: Type group must be activated before use!")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/typegroups/{name.lower()}')")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def get_ddic_object(self, object_type: str, name: str) -> Optional[str]:
+        """
+        Get DDIC object XML
+
+        Args:
+            object_type: Type ('dataelement', 'domain', 'table', 'structure')
+            name: Object name
+
+        Returns:
+            XML string if successful, None otherwise
+        """
+        print(f"Fetching {object_type}: {name}")
+
+        try:
+            xml_result = self.adt_client.get_ddic_object(object_type, name)
+            print(f"[OK] Retrieved successfully")
+            print(f"Result (first 500 chars):\n{xml_result[:500]}")
+            return xml_result
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return None
+
+    def create_function_group(self, name: str, description: str, package: str,
+                             transport: Optional[str] = None) -> bool:
+        """
+        Create a Function Group (FUGR) in SAP
+
+        Function groups are containers for function modules. A function group must
+        exist before creating function modules within it.
+
+        Args:
+            name: Function group name (e.g., 'ZDEMO0_FG_CUSTOMER')
+            description: Short description
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Examples:
+            ```python
+            client.create_function_group('ZDEMO0_FG_CUSTOMER', 'Customer Function Modules',
+                                       'ZDEMO0', transport='TRXXXXXX')
+            ```
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Function Group: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_function_group(
+                name=name.upper(),
+                description=description,
+                package_name=package,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Function group created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     NOTE: Function group must be activated before use!")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/functions/groups/{name.lower()}')")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    def create_function_module(self, name: str, function_group: str, description: str,
+                              import_params: Optional[list] = None,
+                              export_params: Optional[list] = None,
+                              changing_params: Optional[list] = None,
+                              tables: Optional[list] = None,
+                              exceptions: Optional[list] = None,
+                              transport: Optional[str] = None) -> bool:
+        """
+        Create a Function Module within a Function Group
+
+        Args:
+            name: Function module name (e.g., 'ZDEMO0_GET_CUSTOMER')
+            function_group: Parent function group name (must exist)
+            description: Short description
+            import_params: List of IMPORTING parameters
+                Each param: {'name': 'IV_ID', 'type': 'char10', 'optional': False, 'default': 'SPACE'}
+            export_params: List of EXPORTING parameters
+            changing_params: List of CHANGING parameters
+            tables: List of TABLES parameters
+                Each table: {'name': 'IT_DATA', 'type': 'ZDEMO0_S_DATA', 'optional': False}
+            exceptions: NOT SUPPORTED via ADT - Use SAP GUI
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+
+        Note: This creates the SHELL only. The signature (IMPORTING/EXPORTING/...) and
+              body ARE settable via ADT — push full source with INLINE ABAP signature
+              clauses (NOT the *" comment block) via
+              SAPADTClient.set_function_module_source(). RFC-enable ('Remote-Enabled
+              Module') is a one-time SE37 toggle (not an ADT create attribute).
+              See playbook/adt-fugr-functions.md §2-§3 + ADR 0005.
+
+        Examples:
+            Simple function module (shell only):
+            ```python
+            # Create function group first
+            client.create_function_group('ZDEMO0_FG_CUSTOMER', 'Customer Functions', 'ZDEMO0', transport='TR...')
+
+            # Create function module shell
+            client.create_function_module(
+                name='ZDEMO0_GET_CUSTOMER',
+                function_group='ZDEMO0_FG_CUSTOMER',
+                description='Get Customer Data',
+                transport='TR...'
+            )
+
+            # Then add parameters via SAP GUI (SE37)
+            ```
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Function Module: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Function Group: {function_group}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}")
+        print(f"  NOTE: Shell only. Push signature+body via set_function_module_source")
+        print(f"        (inline ABAP signature). RFC-enable = one-time SE37 toggle.")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_function_module(
+                name=name.upper(),
+                function_group=function_group,
+                description=description,
+                transport=transport
+            )
+
+            if result.get('success'):
+                print(f"\n[OK] Function module created successfully")
+                print(f"     URL: {result.get('object_url')}")
+                print(f"\n     IMPORTANT:")
+                print(f"     - Shell created. Push full source (INLINE signature + body)")
+                print(f"       via SAPADTClient.set_function_module_source(), then activate")
+                print(f"     - RFC-enable (Remote-Enabled Module) = one-time SE37 toggle")
+                return True
+            else:
+                print(f"\n[ERROR] {result.get('message')}")
+                return False
+
+        except Exception as e:
+            print(f"\n[ERROR] {str(e)}")
+            return False
+
+    # ===== Function Module (FM) çözümleme — Q261 =====
+    # FM'in ADT ucu FONKSİYON GRUBUNU içerir (`/functions/groups/<fg>/fmodules/<fm>`) ve
+    # grup adı FM adından TÜRETİLEMEZ; bu yüzden `object_types.get_object_url(func)` bilinçli
+    # olarak fail-closed'dır (Q221). Bu blok o kapının yanına ÇALIŞAN kanalı koyar: grup,
+    # SAP'nin kendi arama indeksinden okunur — tahmin edilmez.
+    # CANLI ÖLÇÜM (2026-09-13, DEV, salt-okur):
+    #   quickSearch objectType=FUGR/FF + tam ad   -> 1 isabet, uri FG'yi içerir
+    #   search_objects(obj_type=FUNC / FUNC/FF)   -> 0 (VAR OLAN FM için de!) ⇒ KULLANMA
+    #     ⚠ Bu 0 sunucudan değil istemci tip süzgecinden gelir: ham quickSearch FUNC/FUNC/FF
+    #     FM'i FUGR/FF tipiyle döndürür, süzgeç FUNC≠FUGR diye eler. MCP `adt_search_objects`
+    #     FM takma adını FUGR/FF'ye çevirir; resolver zaten FUGR/FF sorar.
+    #   quickSearch ön-ek (tam ad değil)          -> 0 isabet ⇒ eşleşme TAM AD ile yapılır
+    #   GET <uri> Accept core.v1 / application/xml -> 406 (gövde: kabul edilen tip v3+xml)
+    #   GET <uri> Accept fmodules.v3+xml          -> 200 (metadata)
+    #   GET <uri>/source/main Accept text/plain   -> 200 (kaynak)
+    FM_SEARCH_TYPE = 'FUGR/FF'
+    FM_METADATA_ACCEPT = 'application/vnd.sap.adt.functions.fmodules.v3+xml'
+
+    def resolve_function_module(self, function_module: str) -> Dict[str, Any]:
+        """FM adından GERÇEK ADT ucunu (fonksiyon grubu dahil) çöz. READ-ONLY.
+
+        Returns:
+            {'status': 'found'|'not_found', 'name', 'uri', 'function_group', 'probe'}
+            `not_found` YALNIZ arama BAŞARIYLA koştuğunda ve tam-ad eşleşmesi olmadığında
+            döner — `probe` hangi sorunun sorulduğunu yazar (yokluk iddiası kanıt ister).
+
+        Raises:
+            SAPADTError / ağ istisnası: arama koşamadı. Bu, 'not_found' DEĞİLDİR ve
+            ona ÇEVRİLMEZ — "bakamadım" ile "yok" aynı cevaba düşmez.
+            SAPADTError: aynı tam ad için birden fazla uç döndü (hangisi seçilemez).
+        """
+        from sap_adt_lib import SAPADTError
+
+        fm = (function_module or '').strip().upper()
+        if not fm:
+            raise ValueError("resolve_function_module: FM adi bos")
+        probe = (f"quickSearch objectType={self.FM_SEARCH_TYPE} query={fm} "
+                 f"(tam ad + /fmodules/ ucu)")
+        hits = self.search_objects(fm, max_results=50, obj_type=self.FM_SEARCH_TYPE)
+        uris = sorted({(h.get('uri') or '').split('#')[0].rstrip('/')
+                       for h in (hits or [])
+                       if (h.get('name') or '').strip().upper() == fm
+                       and '/fmodules/' in (h.get('uri') or '').lower()})
+        if not uris:
+            return {'status': 'not_found', 'name': fm, 'uri': None,
+                    'function_group': None, 'probe': probe}
+        if len(uris) > 1:
+            raise SAPADTError(
+                f"FM {fm} icin BIRDEN FAZLA ADT ucu dondu ({', '.join(uris)}) — hangisinin "
+                f"istendigi SECILEMEZ. Tahminle birini okumak yanlis objeyi okumaktir.")
+        uri = uris[0]
+        parca = uri.split('/functions/groups/', 1)
+        fg = parca[1].split('/', 1)[0].upper() if len(parca) == 2 else ''
+        if not fg:
+            raise SAPADTError(f"FM {fm} icin donen uc beklenen bicimde degil: {uri}")
+        return {'status': 'found', 'name': fm, 'uri': uri, 'function_group': fg,
+                'probe': probe}
+
+    def read_function_module(self, function_module: str,
+                             include_source: bool = True) -> Dict[str, Any]:
+        """FM'i OKU: çözümle → (isteğe bağlı) kaynak + metadata. READ-ONLY.
+
+        Dönüş `resolve_function_module` alanlarına `source` / `metadata` ekler.
+        `not_found` ise okuma YAPILMAZ. Kaynak/metadata GET'i başarısızsa istisna
+        yükselir (sessiz `None` yok).
+        """
+        from sap_adt_lib import SAPADTError
+
+        sonuc = dict(self.resolve_function_module(function_module))
+        if sonuc['status'] != 'found':
+            return sonuc
+        adt = self.adt_client
+        sonuc['source'] = adt.get_object_source(sonuc['uri']) if include_source else None
+        resp = adt.session.get(f"{adt.url}{sonuc['uri']}",
+                               headers=adt._get_headers(self.FM_METADATA_ACCEPT),
+                               timeout=adt.timeout_short)
+        if resp.status_code != 200:
+            raise SAPADTError("FM metadata okunamadi", status_code=resp.status_code,
+                              response_text=(resp.text or '')[:500], endpoint=sonuc['uri'])
+        sonuc['metadata'] = resp.text
+        return sonuc
+
+    def object_exists(self, object_name: str, object_type: str = 'class') -> bool:
+        """SAP'de obje var mı? (read-only; kaynak indirmez, yalnız structure sorar)
+
+        Var-yok ayrımı gerektiren çağrıların ÖNKOŞULU. ADT bazı endpoint'lerde
+        (özellikle usageReferences) silinmiş obje için de BOŞ LİSTE döner — yani
+        "obje yok" ile "tüketicisi yok" aynı cevabı verir. Bu metot ayrımı yapar.
+
+        Not: 404 her zaman SAPObjectNotFoundError olarak gelmez; düz SAPADTError +
+        status_code=404 de gelir (canlı ölçüm 2026-07-09) → ikisi de yakalanır.
+
+        FM (`func`/`function`): generic URL yok → `resolve_function_module` (Q261).
+        Arama koşamazsa istisna yükselir; False DÖNMEZ.
+        """
+        from object_types import get_object_url, is_function_module_type
+        from sap_adt_lib import SAPADTError, SAPObjectNotFoundError
+
+        if is_function_module_type(object_type):
+            return self.resolve_function_module(object_name)['status'] == 'found'
+
+        object_url = get_object_url(object_name, object_type)
+        try:
+            self.adt_client.get_object_structure(object_url)
+            return True
+        except SAPObjectNotFoundError:
+            return False
+        except SAPADTError as e:
+            if getattr(e, 'status_code', None) == 404:
+                return False
+            raise  # 401/403/500 vb. varlık cevabı DEĞİL — yutma
+
+    def where_used(self, object_name: str, object_type: str ='class') -> Optional[List[Dict]]:
+        """
+        Find all usages of an ABAP object (Where-Used List)
+
+        Args:
+            object_name: Object name (e.g., 'ZCL_MY_CLASS')
+            object_type: Object type (class, interface, program, table, dataelement, domain, cds)
+
+        Returns:
+            List of dicts with 'name', 'type', 'uri', 'description', or None on error
+
+        Raises:
+            SAPObjectNotFoundError: obje SAP'de YOK. count=0'ı "tüketicisi yok" diye
+                okumak orphan-sweep'te yanlış silmeye yol açar → sessiz boş liste
+                yerine gürültülü hata (T11 gate; canlı kanıt: silinmiş DDLS için
+                usageReferences 200 + [] döner).
+        """
+        from sap_adt_lib import SAPObjectNotFoundError
+        from object_types import is_function_module_type
+
+        print(f"\nSearching where-used for: {object_name} ({object_type})")
+
+        # GATE: varlık önce. Yoksa where_used'ın boş listesi anlamsızdır.
+        # FM: varlık VE uç TEK çözümlemeden gelir (Q261) — generic URL üretilemez.
+        object_url = None
+        if is_function_module_type(object_type):
+            fm = self.resolve_function_module(object_name)
+            if fm['status'] == 'found':
+                object_url = fm['uri']
+            varlik = object_url is not None
+        else:
+            varlik = self.object_exists(object_name, object_type)
+        if not varlik:
+            raise SAPObjectNotFoundError(
+                f"{object_name} ({object_type}) SAP'de yok — where_used bos liste doner; "
+                f"bunu 'tuketicisi yok' diye okuma.",
+                status_code=404,
+            )
+
+        try:
+            object_url = object_url or get_object_url(object_name, object_type)
+            results = self.adt_client.where_used(object_url)
+            return results
+        except Exception as e:
+            print(f"[ERROR] Where-used search failed: {str(e)}")
+            return None
+
+    def pretty_print(self, object_name: str, object_type: str = 'class') -> Optional[str]:
+        """
+        Bicimlenmis ABAP kaynagini SAP'den ALIR ve DONDURUR. SUNUCUYA YAZMAZ.
+
+        ⛔ Durumsuz bir BICIMLEME SERVISI: kaynagi GET eder, `POST .../prettyprinter`
+        ile bicimletir, metni return eder. `lock` YOK · `PUT source/main` YOK ·
+        `activate` YOK · `transport` YOK. Cagiran metni kalici kilmak istiyorsa
+        AYRI bir push adimi kurmalidir.
+
+        ⚠ Eski cikti metni ("Applying pretty printer to: X") bir SUNUCU DEGISIKLIGI
+        ima ediyordu ve bir turda liderin "bu arac SAP'de kaynagi degistirir"
+        varsayimini besledi (2026-08-20'de olculerek curutuldu).
+
+        Args:
+            object_name: Object name
+            object_type: Object type (class, interface, program, include, function)
+
+        Returns:
+            Formatted source code string, or None on error
+        """
+        from object_types import get_object_url, get_source_url
+
+        print(f"\nFetching pretty-printed source for: {object_name} ({object_type}) "
+              f"— read-only, server is NOT modified")
+
+        try:
+            object_url = get_object_url(object_name, object_type)
+            source_url = get_source_url(object_name, object_type)
+
+            # Get current source
+            source = self.adt_client.get_object_source(source_url)
+            if not source:
+                print("[ERROR] Could not retrieve source code")
+                return None
+
+            # Apply pretty printer
+            formatted = self.adt_client.pretty_print(object_url, source)
+            return formatted
+        except Exception as e:
+            print(f"[ERROR] Pretty printer failed: {str(e)}")
+            return None
+
+    def run_atc_check(self, object_name: str, object_type: str = 'class',
+                      variant: str = 'DEFAULT') -> Optional[Dict[str, Any]]:
+        """
+        Run ATC (ABAP Test Cockpit) code quality checks
+
+        Args:
+            object_name: Object name or package name
+            object_type: Object type (class, interface, program, package)
+            variant: ATC check variant name
+
+        Returns:
+            Dict with 'findings' list, or None on error
+        """
+        from object_types import get_object_url
+
+        print(f"\nRunning ATC check on: {object_name} ({object_type})")
+        print(f"Variant: {variant}")
+
+        try:
+            object_url = get_object_url(object_name, object_type)
+            result = self.adt_client.run_atc_check(object_url, variant=variant)
+            return result
+        except Exception as e:
+            print(f"[ERROR] ATC check failed: {str(e)}")
+            return None
+
+    def list_inactive_objects(self) -> Optional[List[Dict]]:
+        """
+        List all inactive (not yet activated) objects
+
+        Returns:
+            List of dicts with 'name', 'type', 'uri', 'user', or None on error
+        """
+        print(f"\nRetrieving inactive objects...")
+
+        try:
+            results = self.adt_client.get_inactive_objects()
+            return results
+        except Exception as e:
+            print(f"[ERROR] Failed to get inactive objects: {str(e)}")
+            return None
+
+    def get_structure(self, object_name: str, object_type: str = 'class') -> Optional[Dict[str, Any]]:
+        """
+        Get internal structure of an ABAP object
+
+        Args:
+            object_name: Object name
+            object_type: Object type
+
+        Returns:
+            Dict with 'components' list, or None on error
+        """
+        from object_types import get_object_url
+        import xml.etree.ElementTree as ET
+
+        print(f"\nGetting structure of: {object_name} ({object_type})")
+
+        try:
+            object_url = get_object_url(object_name, object_type)
+            xml_text = self.adt_client.get_object_structure(object_url)
+
+            # Parse XML to extract components
+            components = []
+            try:
+                root = ET.fromstring(xml_text)
+                for elem in root.iter():
+                    name = elem.get('{http://www.sap.com/adt/core}name', '') or elem.get('name', '')
+                    obj_type = elem.get('{http://www.sap.com/adt/core}type', '') or elem.get('type', '')
+                    uri = elem.get('{http://www.sap.com/adt/core}uri', '') or elem.get('uri', '')
+                    desc = elem.get('{http://www.sap.com/adt/core}description', '') or elem.get('description', '')
+                    if name and name != object_name.upper():
+                        components.append({
+                            'name': name,
+                            'type': obj_type,
+                            'uri': uri,
+                            'description': desc
+                        })
+            except ET.ParseError:
+                pass
+
+            return {'components': components}
+        except Exception as e:
+            print(f"[ERROR] Failed to get structure: {str(e)}")
+            return None
+
+    def get_system_info(self) -> Optional[Dict[str, str]]:
+        """
+        Get SAP system information
+
+        Returns:
+            Dict with system properties, or None on error
+        """
+        print(f"\nRetrieving SAP system information...")
+
+        try:
+            result = self.adt_client.get_system_info()
+            return result
+        except Exception as e:
+            print(f"[ERROR] Failed to get system info: {str(e)}")
+            return None
+
+    def create_metadata_extension(self, name: str, source: str, description: str,
+                                   package: str, transport: Optional[str] = None) -> bool:
+        """
+        Create a CDS Metadata Extension (DDLX) in SAP
+
+        Args:
+            name: Metadata extension name (e.g., 'ZDEMO0_E_CUSTOMER')
+            source: DDLX source code
+            description: Description text
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Metadata Extension: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_metadata_extension(
+                name=name.upper(),
+                source=source,
+                description=description,
+                package_name=package.upper(),
+                transport=transport
+            )
+            if result and result.get('success'):
+                print(f"[OK] Metadata extension {name} created")
+                return True
+            return False
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return False
+
+    def create_access_control(self, name: str, source: str, description: str,
+                package: str, transport: Optional[str] = None) -> bool:
+        """
+        Create a CDS Access Control (DCL) in SAP
+
+        Args:
+            name: Access control name (e.g., 'ZDEMO0_A_CUSTOMER')
+            source: DCL source code
+            description: Description text
+            package: Package name
+            transport: Transport request number
+
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Access Control: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_access_control(
+                name=name.upper(),
+                source=source,
+                description=description,
+                package_name=package.upper(),
+                transport=transport
+            )
+            if result and result.get('success'):
+                print(f"[OK] Access control {name} created")
+                return True
+            return False
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return False
+
+    def create_behavior_definition(self, name: str, root_entity: str,
+                                   implementation_type: str, package: str,
+                                   description: str = '', transport: Optional[str] = None,
+                                   source: Optional[str] = None,
+                                   activate: bool = True) -> Optional[dict]:
+        """
+        Create an ABAP Behavior Definition (BDEF) in SAP
+
+        Args:
+            name: Behavior Definition name (e.g., 'ZI_MY_BDEF')
+            root_entity: Root Entity name (CDS view entity, e.g., 'ZI_MY_ENTITY')
+            implementation_type: Implementation type ('Managed', 'Unmanaged', 'Abstract', 'Projection')
+            package: Package name
+            description: Description text
+            transport: Transport request number
+            source: BDEF source code (optional, creates empty if not provided)
+            activate: Activate after creation
+
+        Returns:
+            dict with result information
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Behavior Definition: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Root Entity: {root_entity}")
+        print(f"  Implementation Type: {implementation_type}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_behavior_definition(
+                name=name.upper(),
+                root_entity=root_entity.upper(),
+                implementation_type=implementation_type,
+                package_name=package.upper(),
+                description=description or name,
+                transport=transport or '',
+                source=source,
+                activate=activate
+            )
+            if result and result.get('success'):
+                print(f"[OK] Behavior Definition {name} created")
+                if activate:
+                    print(f"[OK] Behavior Definition {name} activated")
+                return result
+            return result
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    def create_behavior_implementation(self, name: str, behavior_definition: str,
+                                       package: str, description: str = '',
+                                       transport: Optional[str] = None,
+                                       source: Optional[str] = None,
+                                       activate: bool = True) -> Optional[dict]:
+        """
+        Create an ABAP Behavior Implementation (BIMP) in SAP
+
+        Args:
+            name: Behavior Implementation name (e.g., 'ZBP_MY_ENTITY')
+            behavior_definition: Behavior Definition name (e.g., 'ZI_MY_BDEF')
+            package: Package name
+            description: Description text
+            transport: Transport request number
+            source: BIMP source code (optional, creates empty if not provided)
+            activate: Activate after creation
+
+        Returns:
+            dict with result information
+        """
+        print(f"\n{'=' * 70}")
+        print(f"  Creating Behavior Implementation: {name}")
+        print(f"{'=' * 70}")
+        print(f"  Package: {package}")
+        print(f"  Behavior Definition: {behavior_definition}")
+        print(f"  Description: {description}")
+        if transport:
+            print(f"  Transport: {transport}")
+        print(f"{'=' * 70}\n")
+
+        try:
+            result = self.adt_client.create_behavior_implementation(
+                name=name.upper(),
+                behavior_definition=behavior_definition.upper(),
+                package_name=package.upper(),
+                description=description or name,
+                transport=transport or '',
+                source=source,
+                activate=activate
+            )
+            if result and result.get('success'):
+                print(f"[OK] Behavior Implementation {name} created")
+                if activate:
+                    print(f"[OK] Behavior Implementation {name} activated")
+                return result
+            return result
+        except Exception as e:
+            print(f"[ERROR] {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+
+# Example usage
+if __name__ == '__main__':
+    # Create client
+    client = SAPClient()
+
+    # Download object
+    # client.download_object('ZDEMO0_CL_AI_CLIENT', 'class')
+
+    # Push object
+    # client.push_object('ZDEMO0_CL_AI_CLIENT', 'class', '<TRANSPORT>')
+
+    # Search
+    # results = client.search_objects('ZDEMO0*', max_results=50)
+
+    # List package
+    # objects = client.list_package_contents('ZDEMO0')
+
+    # Create object
+    # client.create_object('class', 'ZCL_TEST', 'ZDEMO0', 'Test class', '<TRANSPORT>')
+
+    # Syntax check
+    # client.syntax_check('ZDEMO0_CL_AI_CLIENT', 'class')
+
+    # List transports
+    # client.list_user_transports()
+
+    print("\nSAP Client ready. Import and use methods as needed.")

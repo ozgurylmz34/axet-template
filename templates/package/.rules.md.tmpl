@@ -1,0 +1,79 @@
+---
+layer: paket
+scope: package:{PKG_FULL}
+last-updated: {DATE}
+status: active
+---
+
+# {PKG_FULL} — Paket kuralları
+
+> Yalnız bu pakete özgü kurallar. Pakette çalışmadan önce oku; pakete özel bir karar netleşince (ad istisnası,
+> bağımlılık, transport) aynı turda buraya yaz. Genel SAP kuralları SAP çekirdeğinde, obje yöntemleri SAP
+> skill'lerindedir; burada tekrarlanmaz. `new_package.py` üretti — `PAKETLER.md` bu dosyadaki alanları okur.
+
+- **Başlık:** {TITLE}
+- **Modül:** {MODULE}
+- **Owner:** {OWNER}
+- **Durum:** aktif
+
+{PKG_TYPE_NOTE}
+
+## Naming (zorunlu önekler)
+
+Teknik ad İngilizce, açıklama/etiket metinleri projenin `master_language`'inde yazılır. `{PKG}` = paket adı
+(`_CLC` soneki olmadan), `{P}CL_{PKG_BODY}` = sınıf öneki.
+
+| Obje tipi | Önek | Regex |
+|---|---|---|
+| Program (rapor) | `{PKG}_P_*` / `{PKG}_R_*` | `^{PKG}_[PR]_[A-Z0-9_]+$` |
+| Include (klasik) | `{PKG}_I_<PROGRAM>_<Tip><NN>` | `^{PKG}_I_[A-Z0-9_]+_[A-Z][0-9]{2}$` |
+| Class | `{P}CL_{PKG_BODY}_*` | `^{P}CL_{PKG_BODY}_[A-Z0-9_]+$` |
+| Interface | `{P}IF_{PKG_BODY}_*` | `^{P}IF_{PKG_BODY}_[A-Z0-9_]+$` |
+| Exception class | `{P}CX_{PKG_BODY}_*` | `^{P}CX_{PKG_BODY}_[A-Z0-9_]+$` |
+| Function group | `{PKG}_FG_*` | `^{PKG}_FG_[A-Z0-9_]+$` |
+| Function module | `{PKG}_FM_*` | `^{PKG}_FM_[A-Z0-9_]+$` |
+| CDS interface view | `{PKG}_I_*` | `^{PKG}_I_[A-Z0-9_]+$` |
+| CDS projection view | `{PKG}_C_*` | `^{PKG}_C_[A-Z0-9_]+$` |
+| CDS root view | `{PKG}_R_*` | `^{PKG}_R_[A-Z0-9_]+$` |
+| CDS extension view | `{PKG}_E_*` | `^{PKG}_E_[A-Z0-9_]+$` |
+| DDL source | `{PKG}_DDL_*` | `^{PKG}_DDL_[A-Z0-9_]+$` |
+| Behavior definition | root view ile aynı ad | — |
+| Service definition | `{PKG}_UI_*` / `{PKG}_API_*` | `^{PKG}_(UI\|API)_[A-Z0-9_]+$` |
+| Service binding | `{PKG}_UI_*_O2` / `_O4` | `^{PKG}_(UI\|API)_[A-Z0-9_]+_O[24]$` |
+| Table | `{PKG}_T_*` | `^{PKG}_T_[A-Z0-9_]+$` |
+| Draft table | `{PKG}_A_*_D` | `^{PKG}_A_[A-Z0-9_]+_D$` |
+| Table type | `{PKG}_TT_*` | `^{PKG}_TT_[A-Z0-9_]+$` |
+| Structure | `{PKG}_S_*` | `^{PKG}_S_[A-Z0-9_]+$` |
+| Data element | `{PKG}_E_*` | `^{PKG}_E_[A-Z0-9_]+$` |
+| Domain | `{PKG}_D_*` | `^{PKG}_D_[A-Z0-9_]+$` |
+| Message class | `{PKG}_MSG` | `^{PKG}_MSG$` |
+| Number range | `{PKG}_NR` | `^{PKG}_NR$` |
+| Enhancement implementation | `{PKG}_ENH_*` | `^{PKG}_ENH_[A-Z0-9_]+$` |
+| Lock object | `E{PKG}_*` | `^E{PKG}_[A-Z0-9_]+$` |
+
+Önek çakışmaları obje tipi ve klasörle ayrılır: `_I_` hem klasik include (`programs/`) hem CDS interface view
+(`cds/`); `_E_` hem data element hem CDS extension view. Aynı kök adı iki tip için kullanma.
+
+**Klasik include adı programdan türer, kısaltma yok:** `{PKG}_P_<AD>` → `{PKG}_I_<AD>_T01` (Tip: **T**op ·
+**S**el · **C**ls · **O** PBO · **I** PAI · **F**orm; NN 01'den artar). Program adı en fazla 26 karakter olur
+(include = 26 + `_T01` = 30 karakter sınırı). Klasik program tek gövde yazılmaz; ana program yalnız `INCLUDE`
+satırları ve olay blokları taşır.
+
+DTEL ve append alanı adını AI önermez, kullanıcı belirler (kesin yasak A).
+
+## Bağımlılıklar
+- Üst paket: <varsa>
+- Kullandığı paketler: <varsa>
+
+## Bilinen istisnalar
+<Yukarıdaki desene uymayan mevcut objeler ve gerekçesi. Ör. eski sistemden gelen ad, BAdI implementasyon sınıfı.>
+
+## Transport
+- Aktif transport: <kullanıcı verir>
+- Önceki transportlar: <varsa>
+
+## Klasör düzeni
+- Obje tipi klasörleri: `cds/` `classes/` `programs/` (`programs/includes/`) `structures/` `tables/` `functions/` `ui/`.
+- `docs/`: bu paketin FS/TS ve kullanıcı dokümanları.
+- `ref_docs/`: başka sistemden gelen, hedef sistemde 1:1 yaratılmayacak kaynak dokümanlar (bkz. `ref_docs/README.md`).
+- Paket kökündeki `*.txt` dosyaları ilk taslak/eski kaynak olabilir: yeniden adlandırma, silme.

@@ -1,0 +1,2128 @@
+"""Query tools — read-only.
+
+- adt_search_objects  : Search by name/wildcard, optional type filter
+- adt_transport_list  : List modifiable transports for current user
+- adt_lock_check      : Probe whether an object is currently locked
+
+All return structured JSON; never write to SAP.
+"""
+from __future__ import annotations
+
+import contextlib
+import io
+import re
+from typing import Any
+
+from sapadt._app import log, profil_tool
+
+
+def _get_client():
+    from sapadt.tools.atom import _get_client as _g
+    return _g()
+
+
+def _err_from_exc(exc: Exception) -> dict:
+    from sapadt.tools.atom import _err_from_exc as _e
+    return _e(exc)
+
+
+@contextlib.contextmanager
+def _capture():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        yield buf
+
+
+def _cagri_basarisiz(kod: str, log: str, ozet: str, **ek) -> dict:
+    """Alt katman `None` döndü ⇒ `ok:false` + sebep `error`/`message` alanında.
+
+    ⛔ SESSİZ FAIL-OPEN kapatıldı (2026-08-19, lider bizzat düştü): `sap_client.run_sql_query`
+    başarısızlıkta `None` döner ve sebebi YALNIZ stdout'a basar (`[ERROR] SQL query error:
+    [400] ...`). Bu değer `ok:true` + `row_count:0` + `rows:null` olarak dönüyordu ⇒ çağıran
+    bunu *"TADIR'da 0 obje"* diye okudu = **kanıt sanılan sahte yeşil**. Ölçülmüş kontrol
+    grubu: kısa `IN` listeli sorgu 3 satır + boş `client_log` (sağlıklı) · aynı sorgu 15
+    elemanlı `IN` listesiyle `ok:true` + 0 satır + log'da `[400]`.
+    `client_log` KALDIRILMADI, sorgu davranışı DEĞİŞMEDİ — yalnız başarısızlık GÖRÜNÜR oldu
+    ("üç-değerli doğrulama sözleşmesi", 2026-08-01 sınıfının süpürgeden artan üyesi).
+    """
+    satirlar = [s.strip() for s in (log or "").splitlines() if s.strip()]
+    hata = [s for s in satirlar if "[ERROR]" in s or "error" in s.lower()]
+    sebep = " · ".join((hata or satirlar)[:3])
+    # SAP'nin KENDİ sebep metni `sap_error` alanındadır (alt katman `SAPClient.last_sql_error`);
+    # `message`'a da eklenir — HTTP kodu tek başına sebep değildir.
+    sap = ek.get("sap_error") if isinstance(ek.get("sap_error"), dict) else None
+    sap_mesaj = (sap or {}).get("message")
+    if sap_mesaj and sap_mesaj not in sebep:
+        sebep = (sebep + " · " if sebep else "") + "SAP: " + str(sap_mesaj)
+    return {
+        "ok": False,
+        "error": kod,
+        "message": (ozet + (" — " + sebep if sebep else
+                            " (alt katman sebep basmadı; sorguyu/uç erişimini elle doğrula)")),
+        "client_log": log,
+        **ek,
+    }
+
+
+def _sap_hata_eki(client) -> dict:
+    """Alt katmanın son SQL hatasının SAP gövdesi → `{"sap_error": {...}}` ya da `{}`."""
+    h = getattr(client, "last_sql_error", None)
+    return {"sap_error": h} if isinstance(h, dict) else {}
+
+
+def _sonda_limiti(row_limit):
+    """SAP'den `row_limit + 1` satır iste (sonda satırı). Limit yoksa/0 ise aynen."""
+    return row_limit + 1 if isinstance(row_limit, int) and row_limit > 0 else row_limit
+
+
+def _sondayi_kes(rows, row_limit) -> tuple:
+    """Sonda satırını at → `(rows[:row_limit], kirpildi_mi)`.
+
+    `kirpildi_mi` KESİNDİR: `row_limit`'ten FAZLA satır geldiyse sonuç kırpılmıştır. Tam
+    `row_limit` kadar satırı olan sonuç kırpılmış SAYILMAZ (eski `row_count >= row_limit`
+    tahmini bunu sahte-kırpık gösterirdi). `totalRows` KULLANILMAZ: aggregate sorguda alttaki
+    satır sayısıdır (ölçülmüş: `COUNT(*)` → 1 satır, totalRows 249).
+    """
+    if not (isinstance(rows, list) and isinstance(row_limit, int) and row_limit > 0):
+        return rows, False
+    return rows[:row_limit], len(rows) > row_limit
+
+
+# =============================================================================
+# adt_search_objects
+# =============================================================================
+
+@profil_tool()
+def adt_search_objects(
+    query: str,
+    max_results: int = 50,
+    object_type: str | None = None,
+) -> dict:
+    """Search SAP objects by name/wildcard.
+
+    Args:
+        query: Search query — wildcards allowed (e.g., 'ZDEMO1*', 'ZDEMO0_E_*').
+        max_results: Cap on results (default 50, max recommended 500).
+        object_type: Optional ADT type filter ('CLAS', 'INTF', 'DOMA', 'DTEL', 'TABL', 'DDLS', 'PROG').
+
+    Returns:
+        {ok, count, results: [{name, type, uri, description}, ...], query, object_type,
+         object_type_sent, server_hit_count, type_filter_dropped, truncated, max_results,
+         truncated_notice?, warning?, client_log}
+
+    ⚠ `truncated` (K3, 2026-09-15): sunucu isabet sayısı `max_results`'a dayandıysa `true`.
+    Üç-nokta ALFABETİK sıralayıp kırpar, yani geç-alfabetik adlar listeye hiç girmez. `truncated:
+    true` iken **`count` bir sayım DEĞİLDİR** ve "listede yok" ⇒ "sistemde yok" çıkarımı geçersizdir.
+    `adt_sql_query` / `adt_table_read` ile aynı çıktı sözleşmesi. ⚠ Aynı adı taşısalar da anlamları
+    ayrı: orada araç `row_limit + 1` isteyip fazlasını atarak KESİN ölçer; burada ölçüt sunucunun
+    döndürdüğü isabet sayısının tavana DAYANMASIDIR — tam olarak `max_results` kadar obje varsa
+    `truncated: true` çıkar (yanlış-pozitif mümkün, yanlış-negatif değil).
+
+    ⚠ FM TİPİ (ölçülmüş): quickSearch SUNUCUSU `FUNC`/`FUNC/FF`/`func` filtresine uyar ve FM'i
+    **`FUGR/FF`** tipiyle döndürür; `sap_client.search_objects` istemci süzgeci o isabeti
+    `FUNC`≠`FUGR` diye ELİYORDU ⇒ var olan FM için `count:0` (sahte sıfır). FM takma adları
+    (`FUNC`, `FUNC/FF`, `FUNCTION`, `func`, `function`) artık sunucuya `FUGR/FF` olarak gider
+    (`object_type_sent`). Başka bir takma adda sunucu isabetleri istemci süzgecinde elenirse
+    `type_filter_dropped > 0` + `warning` döner — `count:0` o durumda KANIT DEĞİLDİR.
+    """
+    from object_types import is_function_module_type  # type: ignore
+    client = _get_client()
+    try:
+        gonderilen = object_type
+        if object_type and (str(object_type).strip().upper() in _FM_ARAMA_TAKMA_ADLARI
+                            or is_function_module_type(object_type)):
+            gonderilen = getattr(client, "FM_SEARCH_TYPE", None) or "FUGR/FF"
+        with _capture() as buf:
+            results = client.search_objects(
+                query=query,
+                max_results=max_results,
+                obj_type=gonderilen,
+            )
+        meta = getattr(client, "_last_search_meta", None)
+        meta = meta if isinstance(meta, dict) else {}
+        out = {
+            "ok": True,
+            "query": query,
+            "object_type": object_type,
+            "object_type_sent": gonderilen,
+            "count": len(results),
+            "results": results,
+            "server_hit_count": meta.get("server_hit_count"),
+            "type_filter_dropped": meta.get("type_filter_dropped"),
+            "truncated": bool(meta.get("truncated")),
+            "max_results": meta.get("max_results"),
+            "client_log": buf.getvalue().strip(),
+        }
+        if out["truncated"]:
+            out["truncated_notice"] = (
+                "Sonuç tavana dayandı (%s isabet >= max_results=%s) — liste EKSİK olabilir. "
+                "Üç-nokta ALFABETİK sıralar ve kırpar, geç-alfabetik adlar (ör. *_T_*) hiç "
+                "girmemiş olabilir. count'u 'sistemde bu kadar obje var' diye OKUMA ve 'listede "
+                "yok' ⇒ 'sistemde yok' ÇIKARMA: max_results'i yükselt (üst sınır %s) ya da "
+                "sorguyu daralt."
+                % (meta.get("server_hit_count"), meta.get("max_results"),
+                   getattr(client, "MAX_SEARCH_RESULTS", "?")))
+        if meta.get("type_filter_dropped") and not results:
+            out["warning"] = (
+                "Sunucu %s isabet döndü ama istemci tip süzgeci ('%s') HEPSİNİ eledi — "
+                "count:0 'obje yok' ANLAMINA GELMEZ. Tip filtresini kaldırıp ya da ADT tam "
+                "tipini (ör. FUGR/FF, CLAS/OC) vererek tekrar ara."
+                % (meta.get("server_hit_count"), gonderilen))
+        return out
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# FM tip takma adları — sunucu FUGR/FF döndürür. `func`/`function` ayrıca
+# `object_types.is_function_module_type` ile tanınır (FM çözümlemesiyle TEK normalizasyon).
+_FM_ARAMA_TAKMA_ADLARI = frozenset({"FUNC", "FUNC/FF", "FUNCTION"})
+
+
+# =============================================================================
+# adt_transport_list
+# =============================================================================
+
+@profil_tool(("ecc", "s4_private", "s4_public"))  # btp_abap: transport=gcts -> CTS ucu yok
+def adt_transport_list(user: str | None = None) -> dict:
+    """List a user's transport requests (modifiable + released).
+
+    Use this BEFORE create/modify operations to confirm the correct transport ID.
+    Never invent a transport — always pick one from this list and verify with the user.
+
+    Args:
+        user: SAP user name. Defaults to the .conn_adt user.
+
+    ⛔⛔ `count: 0` **KANIT DEĞİLDİR** — `shape_recognized: true` OLSA BİLE.
+
+    ⚠ 2026-08-10 tarihli eski docstring, `shape_recognized` bayrağını sıfırın
+    DOĞRULUK kanıtı olarak sunuyordu. **BU REHBERLİK 2026-08-18'de ÖLÇÜLEREK
+    ÇÜRÜTÜLDÜ ve 2026-08-20'de bu metinden kaldırıldı.** (Çürütülen cümle burada
+    BİLEREK yeniden yazılmıyor: bir korpus çapası onun yokluğunu denetliyor ve
+    "tarihçe olarak alıntılamak" ile "hâlâ öğretmek" metin düzeyinde ayırt
+    edilemez — Parti-1'de aynı tuzağa bir kez düşüldü.) Çürüten ölçümler:
+      · 2026-08-18: `count:0` + `shape_recognized:true` iken `<TRANSPORT>` VARdı
+        (E070: TRFUNCTION='S', TRSTATUS='D', AS4USER eşleşiyor).
+      · 2026-08-19: aynı bileşim, E070'te **iki** açık kayıt.
+      · 2026-08-19 (A-00): aynı bileşim, E070'te **dört** açık görev.
+    ⇒ `shape_recognized` YALNIZCA *"yanıtın BİÇİMİNİ ayrıştırabildim"* der; içeriğin
+    doğruluğu hakkında HİÇBİR ŞEY söylemez. İkisini karıştırmak, yanlış cevaba güven
+    damgası basmaktır.
+
+    ⛔ **NEDEN CİDDİ:** transport teyidi bir **ADR 0005-C kapısıdır**. Araç "TR yok"
+    derse doğal refleks **yeni TR açmaktır** — ki bu YASAKTIR. Yani bu sahte-negatif
+    doğrudan bir yasak ihlaline sürükleyebilir.
+
+    ✅ **DOĞRU YÖNTEM:** sıfır sonucu `E070` (+ içerik için `E071`) ile ÇAPRAZ KONTROL
+    et — `TRSTATUS`, `AS4USER`, `TRFUNCTION`, `STRKORR` alanlarına bak. ⚠ `E070×E071`
+    JOIN + `E07T` tek sorguda **400** döndürür; iki ayrı sorguya böl. ⚠ Ayrıca
+    `IN ('a','b')` listesi de 400 verebilir — `OR` zincirine çevir.
+
+    Returns:
+        {ok, count, transports: [...], accept_header, shape_recognized,
+         zero_verified, zero_notice, client_log}
+
+        `zero_verified`: `None` → count > 0 (soru geçersiz) ·
+                         `False` → count == 0 ve **bu araç sıfırı KANITLAYAMAZ**.
+                         ⛔ Bu alan ASLA `True` olmaz: pozitif kontrolü (dolu döndüğü
+                         bilinen bir sorgu) bu tool koşmaz. Üç-değerli doğrulama
+                         sözleşmesinin kardeşi (`delete_verified`/`readback_verified`).
+    """
+    client = _get_client()
+    try:
+        with _capture() as buf:
+            transports = client.list_user_transports(user=user)
+        meta = getattr(client, "_last_transport_meta", None) or {}
+        n = len(transports)
+        sonuc = {
+            "ok": True,
+            "user": user,
+            "count": n,
+            "transports": transports,
+            # Hangi Accept header cevapladı + gövde tanınan bir tm feed'i miydi.
+            # ⚠ Bu alan bir BİÇİM sinyalidir; "0 transport" iddiasının DAYANAĞI DEĞİLDİR.
+            "accept_header": meta.get("accept"),
+            "shape_recognized": meta.get("shape_recognized"),
+            # Üç-değerli doğrulama: soru geçersiz (None) / kanıtlanamadı (False).
+            "zero_verified": None if n else False,
+            "client_log": buf.getvalue().strip(),
+        }
+        if not n:
+            sonuc["zero_notice"] = (
+                "count:0 KANIT DEGILDIR (shape_recognized:true olsa bile). Uc olculmus "
+                "vakada bu arac 0 derken E070'te acik transport VARDI. Once E070 ile "
+                "capraz kontrol et (TRSTATUS/AS4USER/TRFUNCTION/STRKORR); teyit etmeden "
+                "'acik istek yok' SONUCUNA VARMA ve YENI TR ACMA (ADR 0005-C)."
+            )
+        return sonuc
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_where_used  (gap-analysis #10)
+# =============================================================================
+
+@profil_tool()
+def adt_where_used(name: str, object_type: str = "class") -> dict:
+    """Where-used: bir Z objeyi referanslayan objeleri listele (read-only).
+
+    Etki analizi + SİLMEDEN ÖNCE kullanım kontrolü (ADR 0005 / #3 reuse-gate eş).
+    Standart ADT usageReferences endpoint'i kullanır; SAP'ye YAZMAZ.
+
+    Args:
+        name: Obje adı (Z*/Y* veya standart — okuma serbest).
+        object_type: ADT tipi ('class', 'ddls', 'dtel', 'doma', 'tabl', 'intf', 'prog', ...).
+
+    Returns:
+        {ok, name, type, count, references: [{name, type, uri, description}], client_log}
+        Obje YOKSA: {ok: false, error_code: "OBJECT_NOT_FOUND", ...} — count DÖNMEZ.
+
+    Gate (T11): SAP, silinmiş obje için de usageReferences'ta 200 + boş liste döner.
+    "count=0" sorusu "tüketicisi yok mu?" ile "obje yok mu?" ayrımını YAPAMAZ — bu
+    ayrım orphan-sweep'te yanlış silmeye yol açar. Varlık önce doğrulanır; obje yoksa
+    count HİÇ dönmez ki çağıran onu 0 sanmasın.
+
+    FM (`func`/`function`, Q261): generic URL yok; uç ve varlık TEK çözümlemeden gelir
+    (`SAPClient.resolve_function_module`). Üç ayrık sonuç:
+      · obje YOK (arama koştu, tam ad yok) → `OBJECT_NOT_FOUND` + `probe`
+      · obje VAR, 0 çağıran              → `ok:true, count:0, existence_verified:true`
+      · arama/usageReferences koşamadı   → `ok:false` (ölçülmüş: var olmayan FM ucunda
+        usageReferences **500** döner — 0'a ÇEVRİLMEZ)
+    """
+    client = _get_client()
+    try:
+        from object_types import get_object_url, is_function_module_type  # type: ignore
+
+        with _capture() as buf:
+            fm = None
+            if is_function_module_type(object_type):
+                fm = client.resolve_function_module(name)
+                varlik = fm.get("status") == "found"
+            else:
+                varlik = client.object_exists(name.upper(), object_type)
+            if not varlik:
+                yok = {
+                    "ok": False,
+                    "error_code": "OBJECT_NOT_FOUND",
+                    "name": name,
+                    "type": object_type,
+                    "hint": (
+                        f"{name} ({object_type}) SAP'de yok. where_used bos liste "
+                        f"donerdi; bunu 'tuketicisi yok' diye okuma."
+                    ),
+                    "client_log": buf.getvalue().strip(),
+                }
+                if fm is not None:
+                    yok["probe"] = fm.get("probe")
+                return yok
+            url = fm["uri"] if fm is not None else get_object_url(name.upper(), object_type)
+            refs = client.adt_client.where_used(url)
+        from sap_client import where_used_paket_ayir  # type: ignore
+        objeler, paketler = where_used_paket_ayir(refs)
+        if paketler and not objeler:
+            # Paket düğümleri çağıranların ATASIDIR; yalnız paket içeren ağaç ölçülmüş bir şekil
+            # DEĞİL ⇒ ne "0 çağıran" ne "N çağıran" denebilir (count BASILMAZ, fail-closed).
+            return {
+                "ok": False,
+                "error": "where_used_belirsiz",
+                "name": name,
+                "type": object_type,
+                "package_count": len(paketler),
+                "package_references": paketler,
+                "message": ("usageReferences %d paket düğümü döndü ama TEK obje referansı yok — "
+                            "tanınan bir ağaç şekli değil. 'Tüketicisi yok' SONUCUNA VARMA."
+                            % len(paketler)),
+                "existence_verified": True,
+                "resolved_uri": url,
+                "client_log": buf.getvalue().strip(),
+            }
+        return {
+            "ok": True,
+            "name": name,
+            "type": object_type,
+            # count YALNIZ obje referanslarıdır; DEVC/K paket düğümleri (çağıranların ataları)
+            # ayrı alanda. Eskiden "4 ref" = 1 çağıran + 3 paket olabiliyordu.
+            "count": len(objeler),
+            "references": objeler,
+            "package_count": len(paketler),
+            "package_references": paketler,
+            "existence_verified": True,
+            "resolved_uri": url,
+            "client_log": buf.getvalue().strip(),
+        }
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_atc_check  (gap-analysis #10)
+# =============================================================================
+
+@profil_tool()
+def adt_atc_check(name: str, object_type: str = "class",
+                  variant: str | None = None, max_verdicts: int = 100) -> dict:
+    """ATC statik kod kontrolü (Clean ABAP / performans / güvenlik) — read-only.
+
+    Reviewer'ı (ADR 0006) tamamlar; SAP'ye YAZMAZ. Bulgular severity'li döner.
+
+    Args:
+        name: Obje adı (Z*/Y*).
+        object_type: ADT tipi ('class', 'ddls', 'prog', ...).
+        variant: ATC check variant. None ise .conn_adt ADT_ATC_VARIANT'tan okunur
+                 (sisteme özgü, ör. Z_ATC_VARIANT); o da yoksa 'DEFAULT'.
+        max_verdicts: Maks bulgu sayısı.
+
+    Returns:
+        {ok, name, type, variant, finding_count, findings: [...], client_log}
+    """
+    client = _get_client()
+    try:
+        if variant is None:
+            from sapadt._conn import get_atc_variant
+            variant = get_atc_variant()
+        from object_types import get_object_url  # type: ignore
+        url = get_object_url(name.upper(), object_type)
+        with _capture() as buf:
+            res = client.adt_client.run_atc_check(url, variant=variant, max_verdicts=max_verdicts)
+        findings = res.get("findings", []) if isinstance(res, dict) else (res or [])
+
+        # Proje kuralı (kullanıcı, T3): YALNIZCA Priority 1 ZORUNLU düzeltilir;
+        # Priority 2/3 kullanıcının açık onayıyla pass geçilebilir.
+        def _prio(f):
+            return str((f or {}).get("priority", "")).strip()
+        prio1 = [f for f in findings if _prio(f) == "1"]
+        prio_other = [f for f in findings if _prio(f) not in ("1", "")]
+        # ATC run yanıtı ayrıştırılamadıysa sonuç worklist'i TAHMİNDİR → "0 bulgu" temizlik
+        # kanıtı sayılamaz (2026-08-01; sessiz fallback görünür kılındı).
+        if isinstance(res, dict) and res.get("worklist_parse_fallback"):
+            return {
+                "ok": False,
+                "error": "belirsiz",
+                "name": name,
+                "type": object_type,
+                "variant": variant,
+                "message": ("ATC run yanıtı ayrıştırılamadı; sonuçlar TAHMİNİ worklist'ten "
+                            "okundu. Bulgu sayısı GÜVENİLİR DEĞİL — 'temiz' sanma, tekrar çalıştır."),
+                "finding_count_unverified": len(findings),
+                "client_log": buf.getvalue().strip(),
+            }
+        return {
+            "ok": True,
+            "name": name,
+            "type": object_type,
+            "variant": variant,
+            "finding_count": len(findings),
+            "priority_1_count": len(prio1),          # ZORUNLU düzelt
+            "other_priority_count": len(prio_other),  # kullanıcı onayıyla pass
+            "must_fix": len(prio1) > 0,
+            "policy": ("Priority 1 ZORUNLU düzeltilir; Priority 2/3 yalnızca kullanıcının "
+                       "açık onayıyla pass geçilebilir (proje kuralı)."),
+            "findings": findings,
+            "client_log": buf.getvalue().strip(),
+        }
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_syntax_check  (gap-analysis #10)
+# =============================================================================
+
+def _gecerlilik(res) -> tuple:
+    """`syntax_check` yanıtından ÜÇ-DEĞERLİ sonuç türet: True / False / **None = ÖLÇÜLEMEDİ**.
+
+    ⛔ Eski hâl (2026-09-09'a kadar): `bool(res.get("valid"))`. `bool(None)` **False**'tur ⇒
+    alt katman ölçüm ÜRETEMEDİĞİNDE tool *"sözdizimi HATALI"* diyordu. Bu, bu evin en sık
+    tekrarlayan kusur sınıfı: **"bakamadım" ile "hayır" AYNI DEĞERE çöküyor.** Kardeşleri
+    aynı dosyada zaten üç-değerli: `adt_lock_check` → `locked: None` + `kilit_belirsiz` ·
+    `adt_transport_list` → `zero_verified` · `adt_atc_check` → `finding_count_unverified`;
+    komşu katmanda `atom.adt_activate` → `activation_verified` · `sap_client` → `readback_ok`.
+
+    ÖLÇÜLMÜŞ vakalar (hipotez değil, kaynakta yazılı):
+      · obje KİLİTLİ (HTTP 403) → `{'valid': False, 'check_executed': False, 'locked': True}`
+        — `scripts/sap_adt_lib.py:3490-3506`
+      · alt katman istisna yakaladı → `{'valid': False, 'error': str(e)}`
+        — `scripts/sap_client.py:1594`
+      · yanıt XML'i ayrıştırılamadı → `valid:False` + YEREL üretilmiş tek mesaj
+        — `scripts/sap_adt_lib.py:3596-3598`
+    Üçünde de sözdizimi **HİÇ kontrol edilmedi**; tool yine de "hatalı" diyordu. Zarar:
+    ajan var olmayan bir sözdizimi hatasını "düzeltmeye" oturur, gerçek sebep (kilit /
+    bağlantı / bozuk yanıt) görünmez kalır.
+
+    Ayrım kuralı:
+      · **Olumlu sonuç çöküşten DOĞAMAZ** — her başarısızlık yolu `False` yazar ⇒ `valid:true`
+        doğrudan ölçümdür.
+      · `valid:false` ancak **SAP'nin KENDİ bulgu kaydı** varsa ölçümdür. SAP'nin msg
+        listesinden gelen her kayıt `type` taşır (`sap_adt_lib.py:3568-3580`: `errors`e yalnız
+        `msg_type == 'E'` olanlar eklenir); kilit metni ve parse-hatası metni gibi YEREL
+        üretilmiş kayıtlar taşımaz. Yapısal ayrım — metin eşleştirmesi YOK.
+    """
+    if not isinstance(res, dict):
+        return None, "alt katman sözlük döndürmedi (çağrı KOŞMADI)"
+    if "valid" not in res:
+        return None, "alt katman 'valid' alanı ÜRETMEDİ"
+    if res.get("valid"):
+        return True, None
+    if res.get("locked"):
+        return None, ("obje KİLİTLİ (%s) — sözdizimi HİÇ kontrol edilmedi; SM12/SE11 ile çöz"
+                      % (res.get("lock_user") or "sahibi bildirilmedi"))
+    if res.get("error") and not res.get("errors"):
+        return None, "alt katman istisna yakaladı: %s" % str(res.get("error"))[:160]
+    hatalar = res.get("errors") or []
+    if not any(isinstance(h, dict) and h.get("type") for h in hatalar):
+        return None, ("valid:false ama SAP'nin kendi bulgu kaydı YOK (%d yerel mesaj) — "
+                      "sözdizimi ÖLÇÜLMEDİ" % len(hatalar))
+    return False, None
+
+
+@profil_tool()
+def adt_syntax_check(name: str, object_type: str = "class") -> dict:
+    """⚠️ YAN ETKİLİ — SALT-OKUMA DEĞİL: temiz bekleyen sürümü AKTİVE EDER. Yazma sayılır.
+
+    Gerçek semantik: "temizse aktive et". Alt katman (`sap_adt_lib.
+    syntax_check_via_activation`) ölçtü (2026-07-31): `preauditRequested=true` SAP
+    tarafından ONURLANDIRILMIYOR — bekleyen INACTIVE sürüm temiz derleniyorsa bu çağrı
+    onu AKTİVE EDER (`adt_inactive_objects` 1 → 0 gözlendi). Hatalıysa aktivasyon iptal
+    edilir ve hatalar döner.
+
+    ⚠ 2026-08-01'e kadar bu docstring "read-only" diyordu; alt katman "treat as WRITE"
+    diyordu. Doküman-yalanı yüzünden tool MUTASYON YAPAN TEK GUARD'SIZ araçtı: tier
+    guard'ı da namespace guard'ı da YOKTU → PRD tier'ında ve standart obje üzerinde
+    çağrılabiliyordu. Artık `require_writable_tier` + `require_customer_namespace`
+    diğer mutasyon tool'larıyla (create/push/activate/delete) AYNI kapıdan geçer.
+
+    Kullanım: push-before-activate akışında aktivasyon hatasını (ADR 0006/T10) önceden
+    yakalar — ama bilinçli geciktirilen bir aktivasyonu (co-activation sırası, def/impl
+    include çiftleri) SIRA BOZARAK öne alabilir. Tek-yazıcı (gateway) disiplinine tabidir.
+
+    Args:
+        name: Obje adı (Z*/Y*; standart obje REDDEDİLİR — ADR 0005-A).
+        object_type: ADT tipi ('class', 'ddls', 'prog', ...).
+
+    Returns:
+        {ok, name, type, valid, errors: [...], warnings: [...], client_log}
+        veya guardrail_violation (PRD/QA tier ya da standart obje)
+        veya {ok: false, error: "sozdizimi_belirsiz", valid: null, valid_reason, message}
+        — kontrol KOŞMADIYSA (2026-09-09 / Q205; eskiden ölçülemeyen her durum `valid:false`
+        oluyordu = *"kod hatalı"* sanılan sahte-negatif).
+        ⚠ `valid: false` YALNIZ `ok: true` iken "sözdizimi hatalı" demektir. `valid: null`
+        **"bakamadım"**tır — kodu düzeltmeye oturmadan önce `valid_reason`'ı oku.
+    """
+    from sapadt._conn import get_active_tier
+    from sapadt.guardrails import (
+        GuardrailViolation, require_customer_namespace, require_writable_tier,
+    )
+    ne = f"{object_type} syntax_check (temiz bekleyen sürümü AKTİVE EDER)"
+    try:
+        require_customer_namespace(name, what=ne, object_type=object_type)
+        require_writable_tier(get_active_tier(), what=ne)
+    except GuardrailViolation as gv:
+        return gv.as_dict()
+
+    client = _get_client()
+    try:
+        with _capture() as buf:
+            res = client.syntax_check(name, object_type=object_type)
+        gecerli, sebep = _gecerlilik(res)
+        hatalar = res.get("errors", []) if isinstance(res, dict) else []
+        uyarilar = res.get("warnings", []) if isinstance(res, dict) else []
+        if gecerli is None:
+            # Emsal AYNI DOSYADA: `adt_lock_check` → `ok:false` + `locked:null` +
+            # "'kilitli DEĞİL' ANLAMINA GELMEZ"; `adt_atc_check` → `ok:false` +
+            # `finding_count_unverified`. Belirsiz sonuç `ok:true` ile SUNULMAZ.
+            return {
+                "ok": False,
+                "error": "sozdizimi_belirsiz",
+                "name": name,
+                "type": object_type,
+                "valid": None,
+                "valid_reason": sebep,
+                "message": ("Sözdizimi ÖLÇÜLEMEDİ (%s). Bu sonuç 'sözdizimi HATALI' "
+                            "ANLAMINA GELMEZ — kodu düzeltmeye oturma; önce sebebi gider, "
+                            "sonra yeniden ölç." % sebep),
+                "errors": hatalar,
+                "warnings": uyarilar,
+                "client_log": buf.getvalue().strip(),
+            }
+        return {
+            "ok": True,
+            "name": name,
+            "type": object_type,
+            "valid": gecerli,
+            "errors": hatalar,
+            "warnings": uyarilar,
+            "client_log": buf.getvalue().strip(),
+        }
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_package_contents  (gap-analysis #10)
+# =============================================================================
+
+@profil_tool()
+def adt_package_contents(package: str) -> dict:
+    """Bir paketin içeriğini (objeleri) listele — read-only.
+
+    Args:
+        package: Paket adı (ör. 'ZDEMO1_CLC').
+
+    Returns:
+        {ok, package, count, objects: [{name, type, uri, package_verified, ...}],
+         package_verified, warning?, client_log}
+
+    ⚠ `package_verified: false` → liste SAP'nin paket-ucu (nodestructure) yerine AD-DESENLİ
+    ARAMA fallback'inden geldi (yetki/ICF hatası). O durumda liste BAŞKA PAKETLERİN
+    objelerini içerebilir; "bu paketin içeriği" diye kullanma (2026-08-01 bug-avı).
+
+    ⛔ `description_verified: false` (DAİMA) — Q230, 2026-09-13 canlı ölçüm (DEV, salt-okuma):
+    `objects[].description` SAP'nin nodestructure yanıtından OLDUĞU GİBİ gelir ve bu araç onu
+    DOĞRULAMAZ. Ölçülen kusur SUNUCU tarafındadır: büyük bir pakette yanıt XML'i bir
+    *"Error loading node: The message content is not acceptable…"* düğümü taşıdı ve o paketin
+    açıklamaları **bir satır kaydı** (karşılaştırılabilen 120/120 obje yanlış; çoğu bir önceki
+    objenin açıklamasını taşıyordu). Kontrol paketi (hata düğümü yok) 10/10 doğru. Kayma HAM
+    XML'dedir (istemci ayrıştırması düğüm-içi okur); `Accept` başlığına `application/atomsvc+xml`
+    eklemek yanıtı DEĞİŞTİRMEDİ (aynı uzunluk, aynı hata düğümü) ⇒ istemcide düzeltilemez.
+    Yanlış açıklama HATA VERMEZ, makul görünür. Obje KİMLİĞİNİ bu alandan çıkarma;
+    açıklama gerekiyorsa `adt_search_objects` (ad bazlı) ya da `adt_get` metadata'sı
+    (`adtcore:description`; MSAG için `adt_msgclass_read`) ile oku.
+    """
+    client = _get_client()
+    try:
+        with _capture() as buf:
+            objs = client.list_package_contents(package)
+        objs = objs or []
+        dogrulanmis = all(o.get("package_verified") for o in objs if isinstance(o, dict))
+        out = {
+            "ok": True,
+            "package": package,
+            "count": len(objs) if hasattr(objs, "__len__") else 0,
+            "objects": objs,
+            "package_verified": bool(dogrulanmis),
+            # Q230: araç açıklamayı HİÇBİR dalda doğrulamaz — bayrak koşulsuzdur (tahmin eden
+            # bir "kayma var mı" sezgisi YOK; ölçülen sunucu kayması istemciden görünmez).
+            "description_verified": False,
+            "description_warning": (
+                "objects[].description DOĞRULANMADI: SAP nodestructure yanıtından olduğu gibi "
+                "gelir ve büyük pakette SUNUCU TARAFINDA satır kaydığı ölçüldü (yanlış açıklama "
+                "hata vermez, makul görünür). Obje kimliğini bu alandan çıkarma; açıklama "
+                "gerekiyorsa adt_search_objects ya da adt_get metadata'sı (adtcore:description; "
+                "MSAG için adt_msgclass_read) ile oku."
+            ),
+            "client_log": buf.getvalue().strip(),
+        }
+        if not dogrulanmis:
+            out["warning"] = (
+                "PAKET ÜYELİĞİ DOĞRULANAMADI: SAP'nin paket ucu (nodestructure) hata verdi, "
+                "liste AD-DESENLİ arama fallback'inden geldi (ör. 'Z_*', ilk-iki-harf 'ZS*'). "
+                "Liste BAŞKA PAKETLERİN objelerini içerebilir ve paketin bazı objelerini "
+                "KAÇIRMIŞ olabilir. Silme/etki analizi/envanter kararı bu listeye DAYANDIRILMAZ; "
+                "her objenin paketini adt_get metadata'sından teyit et."
+            )
+        return out
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_table_read  (gap-analysis #10 + #2 PII guard, ADR 0011)
+# =============================================================================
+# Tek tanımlayıcı (namespace'li ad dahil: /SCWM/AQUA). Boşluk/parantez/nokta YOK.
+_TABLO_ADI = re.compile(r"^[A-Za-z_/][A-Za-z0-9_/]*$")
+_KOLON_ADI = re.compile(r"^[A-Za-z_][A-Za-z0-9_~/]*$")
+
+
+@profil_tool()
+def adt_table_read(
+    table: str,
+    row_limit: int = 100,
+    columns: str | list | None = None,
+    acknowledge_risk: bool = False,
+    approval_text: str | None = None,
+) -> dict:
+    """Tablo verisi oku (ADT data preview). ⚠️ ADR 0011 PII guard'a tabi.
+
+    DEV tier: serbest. QA/PRD tier: hassas tablo/alan (KNA1/PA*/banka/TCKN...) için
+    acknowledge_risk=True + açık onay kelimesi ('onay'/'approve'/'proceed') ZORUNLU;
+    muğlak ifade yetmez (KVKK — ADR 0011).
+
+    ⚠️ HİZALAMA: Satırlar `data.rows_labeled` ([{KOLON: değer}, ...]) olarak döner —
+    kolon-adı→değer eşlemeli (hizalama-güvenli). Ham POZİSYONEL `data.data` dizisi (kolon-adı
+    içermez, gözle-hizalamada off-by-one'a açıktı — bir tablo okumasında iki komşu kolon üst üste
+    3 kez karıştırıldı) etiketleme BAŞARILI olduğunda çıktıdan KALDIRILIR; alan değerini DAİMA
+    `rows_labeled`'dan oku. (Kolon listesi alınamayan nadir durumda pozisyonel `data.data`
+    korunur — veri kaybı olmasın.) Tek/birkaç kolon yeterliyse `columns` ver → SELECT daralır.
+
+    Args:
+        table: Tablo adı (ör. 'ZDEMO1_T_BOOKHD', 'T000').
+        row_limit: Maks satır (default 100).
+        columns: İstenen kolon(lar) — "BATCH,HU_IDENT" (virgüllü str) veya liste. None → SELECT *.
+        acknowledge_risk: QA/PRD'de hassas veri için açık risk-kabulü.
+        approval_text: Onay metni (affirmative kelime içermeli).
+
+    Returns:
+        {ok, table, row_limit, truncated, data, client_log} veya guardrail_violation (QA/PRD hassas, onaysız)
+        `truncated` KESİNDİR: araç `row_limit + 1` satır ister; fazlası geldiyse `true` (sonda atılır).
+        Başarısızlıkta `sap_error` = {status_code, message, body_excerpt} (SAP'nin kendi gövdesi).
+        veya {ok: false, error: "tablo_okunmadi", message} — okuma KOŞMADIYSA (2026-08-19:
+        eskiden `ok:true` + `data:null` idi, "boş tablo" ile ayırt edilemiyordu).
+        data.rows_labeled: [{KOLON: değer}, ...] (hizalama-güvenli; satırları BURADAN oku).
+        data.columns: kolon adları (referans). data.data (pozisyonel) etiketleme başarılıysa kaldırılır.
+    """
+    from sapadt._conn import get_active_tier
+    from sapadt.data_guard import require_data_access
+    from sapadt.guardrails import GuardrailViolation
+
+    # İstenen kolonları normalize et (str "A,B" veya liste) → daraltılmış SELECT (off-by-one'sız).
+    col_list = None
+    if columns:
+        raw = columns.split(",") if isinstance(columns, str) else list(columns)
+        col_list = [str(c).strip().upper() for c in raw if str(c).strip()]
+    select_cols = ", ".join(col_list) if col_list else "*"
+
+    # ⚠ ALAN-SEVİYESİ GUARD ARTIK KABLOLU (2026-08-01 KAYIT-K1b): `fields=` parametresi
+    # doğuştan beri vardı ve `fields=["STCD1"]` verilince BLOCKED diyordu, ama HİÇBİR tool
+    # onu geçirmiyordu → guard'ın yarısı ÖLÜ KOD'du. `columns` da doğrulanmadan SELECT'e
+    # giriyordu. Guard, ham `table` ifadesini görür (normalizasyon guard içindedir).
+    try:
+        require_data_access(
+            get_active_tier(), table, fields=col_list,
+            acknowledge_risk=acknowledge_risk, approval_text=approval_text,
+        )
+    except GuardrailViolation as gv:
+        return gv.as_dict()
+
+    # ⚠ ŞEKİL DOĞRULAMASI (KAYIT-K1a ikinci katman): `table`/`columns` string olarak
+    # SELECT'e gömülür. Serbest ifadeye izin vermek hem guard-atlatma hem sorgu-enjeksiyon
+    # yüzeyidir ("T000 AS T", "T000 UNION SELECT * FROM KNA1"). Bu tool TEK tablo okur;
+    # takma ad/JOIN isteyen `adt_sql_query`'yi kullanır (o da aynı PII guard'ına tabidir).
+    if not _TABLO_ADI.match((table or "").strip()):
+        return {"ok": False, "error": "gecersiz_tablo_adi",
+                "message": (f"'{table}' tek bir tablo/görünüm adı değil. Bu tool yalnız "
+                            "'SELECT ... FROM <tablo>' yapar; takma ad/JOIN/alt-sorgu için "
+                            "adt_sql_query kullan (aynı PII guard'ı geçerlidir).")}
+    for c in (col_list or []):
+        if not _KOLON_ADI.match(c):
+            return {"ok": False, "error": "gecersiz_kolon_adi",
+                    "message": (f"Kolon '{c}' geçerli bir alan adı değil (harf/rakam/_/~). "
+                                "İfade/fonksiyon gerekiyorsa adt_sql_query kullan.")}
+
+    client = _get_client()
+    try:
+        # run_sql_query (table_contents deprecated). OSQL — sadece OKUMA (SELECT).
+        with _capture() as buf:
+            data = client.run_sql_query(
+                f"SELECT {select_cols} FROM {table.upper()}", max_rows=_sonda_limiti(row_limit))
+        log = buf.getvalue().strip()
+        if data is None:
+            # Kardeş kusur (aynı alt katman, aynı sınıf): `run_sql_query` hata halinde None
+            # döner ⇒ eskiden `ok:true` + `data:null` idi. "Tablo boş" ile "okuma KOŞMADI"
+            # ayırt edilemiyordu.
+            return _cagri_basarisiz("tablo_okunmadi", log,
+                                    "Tablo okuma sorgusu KOŞMADI", table=table,
+                                    **_sap_hata_eki(client))
+        # Kırpma GÖRÜNÜR ve KESİN — row_limit+1 istendi; fazlası geldiyse kırpıldı (sonda atılır).
+        _kirpik = False
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            data["data"], _kirpik = _sondayi_kes(data["data"], row_limit)
+        # Kolon-adı→değer eşlemeli görünüm — pozisyonel diziyi gözle hizalama off-by-one'ını
+        # yapısal olarak önler (ders: komşu iki kolonun değerleri karıştırıldı).
+        try:
+            if isinstance(data, dict):
+                cols = data.get("columns")
+                rows = data.get("data")
+                if cols and isinstance(rows, list):
+                    data["rows_labeled"] = [dict(zip(cols, r)) for r in rows]
+                    # Footgun kaldır: etiketleme başarılıysa ham POZİSYONEL diziyi çıktıdan SÖK
+                    # → gözle-hizalama off-by-one imkânsızlaşır (ders 2026-06-22 DORIT.BATCH).
+                    # `columns` referans için kalır. Kolon alınamazsa (nadir) bu blok atlanır →
+                    # pozisyonel `data` KORUNUR (veri kaybı olmasın).
+                    data.pop("data", None)
+                    data["_note"] = ("Satırları 'rows_labeled' ([{KOLON: değer}]) listesinden okuyun; "
+                                     "ham pozisyonel 'data' dizisi footgun olduğu için kaldırıldı.")
+        except Exception:
+            pass  # etiketleme best-effort; ham veri her hâlükârda döner
+        return {
+            "ok": True,
+            "table": table,
+            "row_limit": row_limit,
+            "truncated": _kirpik,
+            "data": data,
+            "client_log": log,
+        }
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_sql_query  (WHERE-filtreli serbest SELECT — ADT Data Preview freestyle)
+# =============================================================================
+_SQL_WRITE_RE = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|MODIFY|DROP|CREATE|ALTER|TRUNCATE|MERGE|UPSERT|"
+    r"COMMIT|ROLLBACK|CALL|EXEC|GRANT|REVOKE|LOCK)\b", re.IGNORECASE)
+
+
+@profil_tool()
+def adt_sql_query(
+    query: str,
+    row_limit: int = 100,
+    acknowledge_risk: bool = False,
+    approval_text: str | None = None,
+) -> dict:
+    """WHERE/JOIN/aggregate destekli serbest OpenSQL **SELECT** çalıştır — READ-ONLY.
+
+    `adt_table_read` yalnız `SELECT * FROM tablo` yapar (WHERE yok); bu tool ADT Data
+    Preview freestyle (`/datapreview/freestyle`) ile tam OpenSQL SELECT'i koşar:
+    WHERE, JOIN, GROUP BY, COUNT/SUM (başka kolonla birlikte aggregate'e ALIAS şart — madde 4).
+    INTO/UP TO **YAZMA** — SAP kendi ekler.
+
+    Guard'lar:
+      • **SELECT-only (ADR 0005-B):** SELECT/WITH ile başlamalı; yazma/DDL keyword'ü
+        (INSERT/UPDATE/DELETE/MODIFY/DROP/...) tespit edilirse REDDEDİLİR. (Data Preview
+        zaten server-side salt-okuma; bu tool-seviyesi ikinci katman.)
+      • **PII (ADR 0011):** FROM/JOIN tabloları çıkarılır; DEV serbest, QA/PRD'de hassas
+        tablo (KNA1/PA*/banka/TCKN...) için `acknowledge_risk=True` + onay kelimesi ZORUNLU.
+
+    ⚠ **HTTP 400 = "sorgu kabul edilmedi", "tablo erişilemez" DEĞİL** (ölçüldü 2026-08-17,
+    iki ajan bağımsız yaşadı). "400 ⇒ tabloya bakamıyorum" teşhisi bu araçta YANLIŞTIR ve
+    doğrudan *"bulunamadı ≠ yok"* ihlaline götürür. Ölçülmüş üç 400 sebebi:
+
+      1. **UZUN `WHERE`.** Uzun `IN (...)` listesi ya da **5'ten fazla `OR`** → 400.
+         Çözüm (iki ajan da böyle tamamladı): WHERE'i **5'erli parçalara böl**, sonuçları
+         çağıran tarafta birleştir. (Kardeş ölçüm, `adt_transport_list:138`: `E070×E071`
+         JOIN + `E07T` tek sorguda 400; `IN ('a','b')` listesi de 400 verebilir.)
+      2. **VAR OLMAYAN KOLON ADI TAHMİNİ.** `DD30L` sorgusu 400 döndü; sebep erişim değil,
+         **tahmin edilen kolon adıydı**. ⇒ Kolon adını TAHMİN ETME: önce `SELECT *` ile
+         (küçük `row_limit`) kolonları KEŞFET, sonra daralt.
+      3. **ABAP anahtar-kelime çakışması (bağlama göre).** `tadir`'da `object`, `seoclass`'ta
+         `state` kolonu 400 verdi; kolon çıkarılınca sorgu koştu. ⚠ **Genel bir yasak DEĞİL** —
+         aynı turda `E071` `object` kolonuyla sorgulanabildi ve bu modülün kendi
+         `adt_inactive_objects`'i bugün `SELECT obj_name, object, delflag FROM tadir` koşuyor.
+         **Kapsamı ÖLÇÜLMEDİ.** 400 alırsan şüpheli kolonu çıkarıp tekrar ölç.
+
+    ⚠ **SAP'NİN 400/500 GÖVDESİ `sap_error` ALANINDADIR.** Eskiden bu araç gövdeyi TAŞIMIYORDU
+    (ölçülmüş: `client_log` yalnız `[ERROR] SQL query error: [400] Failed to run query`;
+    *"…must have an alias name"* sebebi hiçbir alanda yoktu). Şimdi `sap_client.run_sql_query`
+    hata dalı `SAPADTError.response_text`'ten `last_sql_error = {status_code, message,
+    body_excerpt}` üretir; araç bunu `sap_error` olarak döndürür ve `message`'a `SAP: <sebep>`
+    ekler. Ölçülmüş gövde biçimleri: 400 → XML `exc:exception/message` · aralıklı 500 → HTML
+    `<title>` (*Application Server Error*). `body_excerpt` ilk 500 bayttır. ⇒ 400'de refleks:
+    önce `sap_error.message`'ı oku, aynı sorguyu körlemesine TEKRARLAMA; aşağıdaki ölçülmüş
+    biçimlerle **daralt** (tek değişken).
+
+    ⚠ **ÖLÇÜLMÜŞ BİÇİM SINIRLARI (Q274 — kayıt 2026-09-08; canlı yeniden ölçüm 2026-09-13,
+    DEV, yalnız SELECT; her satır en az 2 çağrı; sebep metinleri SAP gövdesinden):**
+
+      4. **Aggregate başka kolonla birlikteyse ALIAS ŞART.** `SELECT lgnum, COUNT(*) FROM likp
+         GROUP BY lgnum` → **400**, gövde *"all expressions in the projection list must have
+         an alias name"*. Aynısı `COUNT(*) AS cnt` ile → **200**. ⇒ Sebep `GROUP BY` DEĞİL,
+         alias'sız ifade; değer başına ayrı `COUNT` koşmaya gerek yok. Tek başına `COUNT(*)`
+         alias'lı da alias'sız da 200.
+      5. **Kolon-kolon karşılaştırmada sağ taraf `tablo~kolon` yazılır.** `WHERE vrkme <> meins`
+         (ve `= meins`) → **400**, gövde *"The variable "MEINS" must be escaped using "@""* —
+         çıplak ad host değişkeni sanılıyor. `WHERE vrkme <> lips~meins` ve
+         `WHERE lips~vrkme <> lips~meins` → **200**. Kolon-literal karşılaştırma zaten 200.
+      6. **Aralıklı 500, ardından "Session Timed Out" 400 — SORGUYA AİT DEĞİL.** Başka
+         çağrılarda 200 dönen sorgular (`SELECT land1 FROM t005`, `SELECT * FROM t320`) tek
+         seferlik **500** döndü (gövde SAP mesajı değil, HTML *"Application Server Error"*);
+         iki vakada da HEMEN SONRAKİ çağrı **400** + gövde *"400 Session Timed Out"* verdi,
+         bir sonraki normale döndü. ⇒ 500'den sonraki ilk 400'ü "sorgu reddedildi" diye okuma
+         (yukarıdaki *"400 = sorgu kabul edilmedi"* kuralının ölçülmüş istisnası); aynı sorguyu
+         BİR kez tekrarla.
+      7. **KIRPMA GÖRÜNÜR.** `row_limit=10` ile `SELECT LAND1 FROM T005` → `row_count:10`,
+         SAP `totalRows` **249**. Araç `truncated` ve `total_rows` (SAP `totalRows` aynen)
+         döndürür. `truncated` KESİNDİR: araç SAP'den `row_limit + 1` satır ister, fazlası
+         gelirse `true` der ve sondayı atar. Eskiden elde yalnız `row_count == row_limit` vardı
+         ve bu bir TAHMİNDİ: tam `row_limit` kadar satırı olan sonuç da aynı görünürdü.
+         ⚠ `totalRows` sonuç satırı sayısı DEĞİLDİR: aggregate sorguda alttaki satır sayısıdır
+         (ölçülmüş: `SELECT COUNT(*) AS cnt FROM t005` → 1 satır, `totalRows` 249) ⇒
+         `truncated` ondan TÜRETİLMEZ. Sayı gerekiyorsa `row_limit`'i yükselt ya da
+         `SELECT COUNT(*) …` koş (kayıttaki vaka: `row_limit=300` → tam 300, gerçek 994).
+      8. **Namespace'li ad TIRNAKSIZ yazılır.** `FROM /scwm/aqua` ve `FROM /SCWM/AQUA` → 200;
+         `FROM "/SCWM/AQUA"` → **400** (gövde login dilinde: geçersiz sorgu dizilimi).
+
+      ⓘ **2026-09-08'de ölçülüp 2026-09-13'te TEKRARLANAMAYANLAR — kural DEĞİL:**
+      `COUNT(*) AS CNT` → 500 (bugün 6/6 çağrı 200) · belirli bir alanda `<>` → 400
+      (`I_EWM_HANDLINGUNITHDR` `handlingunitindicator <> 'A'` bugün 2/2 200; `=` ve `<>`
+      sayıları toplamla tutarlı) · `SELECT * FROM T320` → 400 (bugün 8/8 200; bir kez 500 =
+      madde 6) · "terim bütçesi" (7 alan + 1 WHERE → 400, 14 alan → 500) — bugün `lips`'ten
+      4/6/7/8/14 alan + 1 WHERE her biri 2/2 200. Kayıttaki vakaların madde 6'nın aralıklı
+      500/oturum ikilisi olup olmadığı **DOĞRULANMADI**.
+
+    Args:
+        query: OpenSQL SELECT. Ör: "SELECT msgnr, text FROM t100 WHERE arbgb = 'ZDEMO1' AND sprsl = 'T'".
+        row_limit: Maks satır (default 100).
+        acknowledge_risk / approval_text: QA/PRD hassas-tablo için (ADR 0011).
+
+    Returns:
+        {ok, query, row_count, row_limit, total_rows, truncated, truncated_notice?, columns,
+         rows: [{KOLON: değer}, ...], executed?, client_log}
+        veya {ok: false, error, message, sap_error?} (SELECT-değil / yazma-keyword /
+        **sorgu KOŞMADI**; `sap_error` = {status_code, message, body_excerpt})
+        veya guardrail_violation.
+        ⚠ `row_count: 0` YALNIZ `ok: true` iken "0 satır" demektir. Sorgu SAP'de düşerse
+        `ok: false` + `error: "sorgu_kosmadi"` döner (sebep `message`+`client_log`) — 0 satır
+        ile başarısızlık artık AYIRT EDİLEBİLİR (2026-08-19).
+        Satırları DAİMA `rows`'tan oku (kolon-adı→değer eşlemeli; hizalama-güvenli).
+    """
+    q = (query or "").strip().rstrip(";").strip()
+    low = q.lstrip("( \t\n").lower()
+    if not (low.startswith("select") or low.startswith("with")):
+        return {"ok": False, "error": "not_select",
+                "message": "Yalnız SELECT/WITH sorgusu kabul edilir (WHERE/JOIN/aggregate). "
+                           "Yazma/DDL reddedilir (ADR 0005-B)."}
+    # String-literalleri sök → literal içindeki keyword yanlış-pozitif reddetmesin.
+    q_nolit = re.sub(r"'[^']*'", "''", q)
+    if _SQL_WRITE_RE.search(q_nolit):
+        return {"ok": False, "error": "write_keyword",
+                "message": "Yazma/DDL/işlem keyword'ü tespit edildi — REDDEDİLDİ (ADR 0005-B). "
+                           "Bu tool yalnız salt-okuma SELECT içindir."}
+
+    from sapadt._conn import get_active_tier
+    from sapadt.data_guard import (
+        require_data_access, select_fields, table_candidates,
+    )
+    from sapadt.guardrails import GuardrailViolation
+    # TEK KAYNAK (2026-08-01 KAYIT-K1a): tablo çıkarımı `data_guard.table_candidates`'a
+    # taşındı. Buradaki yerel regex şema önekini kaçırıyordu ("SAPABAP1.KNA1" -> 'SAPABAP1'
+    # okunup serbest bırakılıyordu) ve kardeş `adt_table_read` ile ayrışabiliyordu; iki
+    # tool'un AYRI çözüm taşıması bu kusur sınıfının kökeniydi.
+    tables = table_candidates(q_nolit)
+    alanlar = select_fields(q_nolit)   # alan-seviyesi guard (KAYIT-K1b) burada da devrede
+    try:
+        require_data_access(get_active_tier(), q_nolit, fields=alanlar,
+                            acknowledge_risk=acknowledge_risk, approval_text=approval_text)
+    except GuardrailViolation as gv:
+        return gv.as_dict()
+
+    client = _get_client()
+    try:
+        with _capture() as buf:
+            # Bir satır FAZLA istenir (sonda) — `row_limit`'ten fazla satır varsa KESİN bilinir.
+            data = client.run_sql_query(q, max_rows=_sonda_limiti(row_limit))
+        log = buf.getvalue().strip()
+        if data is None:
+            return _cagri_basarisiz("sorgu_kosmadi", log,
+                                    "ADT data preview sorgusu KOŞMADI",
+                                    query=q, tables=sorted(tables), **_sap_hata_eki(client))
+        cols = data.get("columns") if isinstance(data, dict) else None
+        rows = data.get("data") if isinstance(data, dict) else None
+        rows, _kirpik = _sondayi_kes(rows, row_limit)
+        rows_labeled = ([dict(zip(cols, r)) for r in rows]
+                        if (cols and isinstance(rows, list)) else rows)
+        n = len(rows) if isinstance(rows, list) else 0
+        out = {
+            "ok": True,
+            "query": q,
+            "tables": sorted(tables),
+            "executed": data.get("executedQueryString") if isinstance(data, dict) else None,
+            "columns": cols,
+            "row_count": n,
+            "row_limit": row_limit,
+            # SAP `totalRows` AYNEN (aggregate'de alttaki satır sayısıdır — docstring madde 7).
+            "total_rows": data.get("total_rows") if isinstance(data, dict) else None,
+            # KESİN (sonda satırı): row_limit+1 istendi, row_limit'ten FAZLA satır geldi ⇒ kırpıldı.
+            "truncated": _kirpik,
+            "rows": rows_labeled,
+            "client_log": log,
+        }
+        if out["truncated"]:
+            out["truncated_notice"] = (
+                "Sonuç row_limit=%s satırda KIRPILDI (en az bir satır daha var). Tam sayı "
+                "gerekiyorsa row_limit'i yükselt ya da ayrıca SELECT COUNT(*) AS cnt koş."
+                % row_limit)
+        return out
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_dump_list  (ST22 ABAP short-dump feed — runtime hata teşhisi)
+# =============================================================================
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+
+
+@profil_tool()
+def adt_dump_list(limit: int = 20, from_ts: str | None = None, to_ts: str | None = None,
+                  acknowledge_risk: bool = False) -> dict:
+    """ST22 ABAP kısa-dump (short dump) feed'ini oku — READ-ONLY.
+
+    RAP/UI/classrun çalıştırmalarında runtime 500/kısa-dump kök-neden teşhisi (SAP GUI'siz).
+    `GET /sap/bc/adt/runtime/dumps` (Accept `application/atom+xml;type=feed`) → Atom feed parse.
+
+    ⚠ PII (ADR 0011): dump feed'i kullanıcı-adı + program (kişisel veri, KVKK) taşır → DEV dışı
+    tier'da `acknowledge_risk=True` ZORUNLU (adt_table_read/adt_sql_query ile tutarlı).
+
+    Args:
+        limit: Döndürülecek maks dump (default 20; feed en yeni→eski).
+        from_ts / to_ts: Opsiyonel zaman penceresi (feed'in `from`/`to` param'ı; ör. '20260710154122').
+        acknowledge_risk: QA/PRD'de PII-kabulü (DEV'de gereksiz).
+
+    Returns:
+        {ok, count, dumps: [{error_type, program, user, timestamp, title, id, dump_uri}], client_log}
+        `dump_uri` = tek dumpın ADT detay URI'si (sonra detay çekmek için).
+    """
+    import xml.etree.ElementTree as ET
+    from sapadt._conn import get_active_tier
+    if get_active_tier() != "DEV" and not acknowledge_risk:
+        return {"ok": False, "error": "tier_pii_guard",
+                "message": ("ST22 dump feed'i kullanıcı-adı/program (KVKK — ADR 0011) taşır; "
+                            "DEV dışı tier'da acknowledge_risk=True gerekli.")}
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        params: dict = {}
+        if from_ts:
+            params["from"] = from_ts
+        if to_ts:
+            params["to"] = to_ts
+        with _capture() as buf:
+            r = adt.session.get(
+                adt.url + "/sap/bc/adt/runtime/dumps", params=params,
+                headers={"Accept": "application/atom+xml;type=feed"}, verify=adt.session.verify, timeout=60)
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:400], "client_log": buf.getvalue().strip()}
+        root = ET.fromstring(r.text)
+        dumps = []
+        for e in root.findall("{%s}entry" % _ATOM_NS):
+            if len(dumps) >= limit:
+                break
+            cats = e.findall("{%s}category" % _ATOM_NS)
+
+            def _cat(lbl, _cats=cats):
+                for c in _cats:
+                    if c.get("label") == lbl:
+                        return c.get("term")
+                return None
+
+            author = e.find("{%s}author/{%s}name" % (_ATOM_NS, _ATOM_NS))
+            updated = e.find("{%s}updated" % _ATOM_NS)
+            idel = e.find("{%s}id" % _ATOM_NS)
+            title = e.find("{%s}title" % _ATOM_NS)
+            dump_uri = None
+            for lnk in e.findall("{%s}link" % _ATOM_NS):
+                if "/runtime/dump/" in (lnk.get("href") or ""):
+                    dump_uri = lnk.get("href")
+                    break
+            dumps.append({
+                "error_type": _cat("ABAP runtime error"),
+                "program": _cat("Terminated ABAP program"),
+                "user": author.text if author is not None else None,
+                "timestamp": updated.text if updated is not None else None,
+                "title": title.text if title is not None else None,
+                "id": idel.text if idel is not None else None,
+                "dump_uri": dump_uri,
+            })
+        return {"ok": True, "count": len(dumps), "dumps": dumps, "client_log": buf.getvalue().strip()}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_inactive_objects  (aktive-bekleyen worklist — worklist_audit MCP-native)
+# =============================================================================
+# TADIR `IN` listesi parça boyutu. Ölçülmüş sınır SABİT DEĞİL (bir ölçümde 15 ad → 200,
+# 25 ad → 400; daha önceki bir ölçümde 15 ad → 400). Bu yüzden `adt_sql_query` docstring
+# madde 1'in ölçülmüş çözümü (5'erli parçalar) kullanılır — sınıra yakın durulmaz.
+_TADIR_PARCA = 5
+
+
+def _tadir_isaretle(out: list, sorulan: set, silinmis: set) -> None:
+    """Her worklist girdisine ÜÇ-DEĞERLİ `tadir_deleted` yaz. `None` = **SORULMADI**.
+
+    ⛔ Eski hâl (2026-09-09'a kadar): TADIR sorgusu koştuğunda `out`'un TAMAMINA
+    `(ad, tip) in silinmis` yazılıyordu — sorguya HİÇ girmemiş adlara da. Ad süzgeci
+    (`isalnum` / `_` / `/`) elediği için `adlar`e alınmayan bir girdi böylece
+    **"ölçüldü: silinmemiş"** damgası alıyordu; oysa hakkında tek bir satır bile
+    sorulmamıştı. Bu, kaydın (Q224) bildirdiği kusurun SESSİZ kardeşidir: orada en
+    azından `warning` basılıyordu, burada hiç basılmıyordu.
+    """
+    for o in out:
+        ad = o.get("name", "")
+        if ad not in sorulan:
+            o["tadir_deleted"] = None
+            continue
+        tadir_obj = (str(o.get("type", "")).split("/")[0] or "").strip()
+        o["tadir_deleted"] = (ad, tadir_obj) in silinmis
+
+
+def _tadir_kovalari(out: list) -> tuple:
+    """ÜÇ kova: ölçülmüş-canlı · ölçülmüş-silinmiş · **ÖLÇÜLEMEDİ**.
+
+    ⛔ Eski hâl: `canli = [o for o in out if o.get("tadir_deleted") is not True]`.
+    `is not True` üç değeri İKİYE indirir ⇒ `None` (**ölçülemedi**) `False`
+    (**ölçüldü: silinmemiş**) ile aynı kovaya düşer ⇒ `count` sahte-pozitif ŞİŞER.
+    Kayıt Q224'ün kökü tam olarak budur; `warning` basılıyordu ama **sayı
+    düzeltilmiyordu** (fail-open: uyarıyı okumayan çağıran yanlış sayıyı alır).
+    """
+    canli = [o for o in out if o.get("tadir_deleted") is False]
+    bayat = [o for o in out if o.get("tadir_deleted") is True]
+    olculemedi = [o for o in out if o.get("tadir_deleted") is None]
+    return canli, bayat, olculemedi
+
+
+@profil_tool()
+def adt_inactive_objects() -> dict:
+    """Aktive-bekleyen (inactive) obje worklist'ini oku — READ-ONLY.
+
+    `scripts/worklist_audit.py`'nin MCP-native karşılığı. Gün-sonu/commit-öncesi "aktive
+    edilmemiş obje var mı" kontrolü tek çağrıya iner. `GET /sap/bc/adt/activation/inactiveobjects`.
+
+    ⚠ **SİLİNMİŞ OBJE TUZAĞI (2026-07-29, canlı vaka).** Bu uç nokta SİLİNMİŞ objeleri de
+    listeler ve kendi `ioc:deleted` alanı bunu ELE VERMEZ (ölçüm: TADIR `DELFLAG='X'` olan
+    iki sınıf için `ioc:deleted="false"` döndü — o alan *bekleyen taslağın* türünü anlatıyor,
+    objenin silinmiş olup olmadığını değil). Ham liste "2 obje aktive bekliyor" gibi okundu;
+    oysa objeler silinmişti (SE24/SE80'de yok, `adt_get` `exists:false`) ve geriye yalnız
+    bayat worklist kaydı kalmıştı. → Bu tool her girdiyi **TADIR DELFLAG** ile çapraz
+    kontrol eder; silinmişler `count`/`inactive_objects`'ten ÇIKARILIR, `stale_deleted`
+    altında ayrıca raporlanır. TADIR sorgusu koşamazsa SUSULMAZ: `tadir_deleted` null olur
+    + `warning` alanı döner.
+    ⚠ TADIR'daki `DELFLAG='X'` satırları **SİLİNMEZ** — silme işleminin transport'la
+    taşınması için gereklidir.
+
+    Returns:
+        ÖLÇÜLDÜ (her girdi çapraz kontrol edildi):
+        {ok: true, count, count_verified: true, inactive_objects, stale_deleted_count,
+         stale_deleted, client_log}
+        count=0 → AKSİYON GEREKTİREN aktive-bekleyen obje yok (silinmişler + transport/
+        method-seviyesi girdiler elenir). Girdi: {name, type, uri, user, deleted, transport,
+        tadir_deleted}.
+
+        ÖLÇÜLEMEDİ (2026-09-09 / Q224 — en az bir girdide `tadir_deleted: null`):
+        {ok: false, error: "tadir_kontrolu_belirsiz", count_verified: false,
+         confirmed_live_count, unverified_count, confirmed_live, unverified,
+         stale_deleted*, tadir_check, warning, message, client_log}
+        ⛔ Bu dalda **`count` ve `inactive_objects` anahtarları HİÇ BASILMAZ.** Eskiden
+        `warning` basılıyor ama sayı DÜZELTİLMİYORDU: `tadir_deleted is not True` süzgeci
+        `null`ı (=ölçülemedi) `false` (=ölçüldü, silinmemiş) ile aynı kovaya atıyordu ⇒
+        `count` sahte-pozitif şişiyordu ve uyarıyı okumayan çağıran yanlış sayıyı "kanıt"
+        sanıyordu (fail-open). Doğru okuma: `confirmed_live_count` ≤ gerçek ≤
+        `confirmed_live_count + unverified_count`. Emsal: `adt_atc_check`
+        (`finding_count_unverified`) · `adt_lock_check` (`locked: null`).
+
+        worklist ucu 200 döner ama gövde `ioc:inactiveObjects` DEĞİLSE:
+        {ok: false, error: "worklist_govdesi_degil", message, client_log} — `count` YOK.
+
+    KAPSAM — TADIR PARÇALAMA: ad listesi en fazla 5 adlık parçalarla sorulur; her parça AYRI
+    ölçülür. Başarısız (HTTP hata, istisna) ya da `truncated` dönen parçanın adları SORULMAMIŞ
+    sayılır (`tadir_deleted: null`) ⇒ sonuç yukarıdaki ÖLÇÜLEMEDİ dalıdır. Diğer parçaların
+    ölçümü korunur.
+    ⚠ GEVŞETME NOTU (bilinçli): eskiden tek uzun `IN` listesi 400 alıp tüm liste ölçülemediği
+    için uzun worklist'te sonuç `ok:false` idi; artık tüm parçalar ölçülürse `ok:true` dönebilir.
+    Bu, ölçülen yüzeyin genişlemesidir, kapının gevşemesi DEĞİL: ölçülemeyen hiçbir ad
+    "silinmemiş" sayılmaz ve tek bir parça bile ölçülemezse `ok:false` döner (`count` basılmaz).
+    ⚠ BAKILMAYAN: TADIR'da HİÇ SATIRI OLMAYAN ad bugün `tadir_deleted: false` alır (eksik satır
+    "kırpık" sayılmaz; kırpık = `row_limit`'ten fazla satır). Bu davranış bu değişiklikte
+    DEĞİŞMEDİ.
+    """
+    from sap_client import worklist_ana_objeleri  # type: ignore
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        with _capture() as buf:
+            r = adt.session.get(adt.url + "/sap/bc/adt/activation/inactiveobjects",
+                                headers={"Accept": "application/*"}, verify=adt.session.verify, timeout=45)
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:300], "client_log": buf.getvalue().strip()}
+        # Ayrıştırma TEK KAYNAKTAN (`sap_adt_lib.aktivasyon_worklist_ayristir` + ortak ana-obje
+        # elemesi). ParseError eskisi gibi dış `except`e düşer (ok:false).
+        # ⚠ SIKILAŞTIRMA: ioc OLMAYAN geçerli XML eskiden BOŞ liste → ok:true count:0 idi.
+        try:
+            girdiler = worklist_ana_objeleri(r.text)
+        except ValueError as exc:
+            return {"ok": False, "error": "worklist_govdesi_degil",
+                    "message": ("Worklist ucu 200 döndü ama gövde ioc:inactiveObjects DEĞİL (%s) "
+                                "— 'aktive bekleyen yok' SONUCUNA VARMA." % exc),
+                    "client_log": buf.getvalue().strip()}
+        # ioc:deleted = BEKLEYEN TASLAĞIN türü ("bu taslak bir silme mi"), objenin silinmiş
+        # olup olmadığı DEĞİL (ölçüm: TADIR DELFLAG='X' olan iki obje için "false" döndü).
+        # Bu yüzden tek başına yeterli değil → aşağıdaki TADIR çapraz kontrolü.
+        out = [{k: g[k] for k in ("name", "type", "uri", "user", "deleted", "transport")}
+               for g in girdiler]
+
+        # ── TADIR çapraz kontrolü: SİLİNMİŞ objeyi "aktive bekliyor" diye raporlama ──
+        # 2026-07-29 vakası: iki sınıf worklist'te duruyordu; SE24/SE80'de yok,
+        # adt_get exists:false, TADIR DELFLAG='X'. Yani obje SİLİNMİŞ, worklist kaydı
+        # bayat kalmıştı. Araç bunu ayırt etmediği için "2 obje aktive bekliyor" diye
+        # okundu ve neredeyse TADIR silme-kaydı temizlenecekti (o kayıtlar silmenin
+        # transport'la taşınması için ZORUNLUDUR — silinseydi gerçek hasar olurdu).
+        tadir_hata = None
+        sorulan: set = set()
+        if out:
+            adlar = sorted({o["name"] for o in out
+                            if o["name"] and all(c.isalnum() or c in "_/" for c in o["name"])})
+            if adlar:
+                # Ad listesi `_TADIR_PARCA`'lık parçalara bölünür; her parça AYRI ölçülür.
+                # Başarısız ya da kırpık parçanın adları SORULMAMIŞ sayılır (`tadir_deleted: null`).
+                silinmis: set = set()
+                hatalar: list = []
+                for i in range(0, len(adlar), _TADIR_PARCA):
+                    parca = adlar[i:i + _TADIR_PARCA]
+                    liste = ", ".join("'%s'" % a for a in parca)
+                    try:
+                        res = adt_sql_query(
+                            "SELECT obj_name, object, delflag FROM tadir "
+                            "WHERE obj_name IN ( %s )" % liste,
+                            row_limit=max(200, len(parca) * 2))
+                    except Exception as exc:        # noqa: BLE001 — teşhis bozulmasın
+                        hatalar.append(str(exc)[:200])
+                        continue
+                    if not res.get("ok"):
+                        hatalar.append(res.get("message") or res.get("error") or "bilinmeyen")
+                        continue
+                    if res.get("truncated"):
+                        # Kırpılmış yanıtta DELFLAG='X' satırı dışarıda kalmış olabilir ⇒
+                        # "silinmemiş" damgası basılamaz.
+                        hatalar.append("TADIR yanıtı row_limit'te KIRPILDI (%s satır)"
+                                       % res.get("row_count"))
+                        continue
+                    sorulan.update(parca)
+                    silinmis |= {
+                        (str(r.get("OBJ_NAME", "")).strip(),
+                         str(r.get("OBJECT", "")).strip())
+                        for r in (res.get("rows") or [])
+                        if str(r.get("DELFLAG", "")).strip().upper() == "X"
+                    }
+                if hatalar:
+                    tadir_hata = " · ".join(dict.fromkeys(hatalar))[:800]
+                if sorulan:
+                    # ADT tipi 'CLAS/OC' → TADIR OBJECT 'CLAS'; sorulmayan ad → None
+                    _tadir_isaretle(out, sorulan, silinmis)
+            else:
+                tadir_hata = ("worklist'teki adların hiçbiri TADIR sorgusuna uygun değil "
+                              "(ad süzgeci); çapraz kontrol HİÇ KOŞMADI")
+        if tadir_hata and not sorulan:
+            # Ölçülemediyse SUSMA — "silinmiş değil" varsayımı tam da bu tuzağın kendisi.
+            for o in out:
+                o["tadir_deleted"] = None
+
+        canli, bayat, olculemedi = _tadir_kovalari(out)
+        if olculemedi:
+            # ⛔ SAYI DÜZELTİLMEDEN uyarı basmak FAIL-OPEN'dır (kayıt Q224): uyarıyı
+            # okumayan çağıran şişmiş `count`u "kaç obje aktive bekliyor" sanır.
+            # Emsal AYNI DOSYADA: `adt_atc_check` ayrıştırma tahminîyse `finding_count`
+            # ADINI KULLANMAZ, `finding_count_unverified` der ve `ok:false` döner;
+            # `adt_lock_check` belirsizlikte `ok:false` + `locked:null` döner.
+            # ⇒ Burada da `count` / `inactive_objects` ANAHTARLARI HİÇ BASILMAZ:
+            #    olmayan bir ölçüm, yanlış bir sayıyla temsil edilmez.
+            return {
+                "ok": False,
+                "error": "tadir_kontrolu_belirsiz",
+                "message": (
+                    "TADIR DELFLAG çapraz kontrolü %d girdi için KOŞMADI ⇒ 'aktive bekliyor' "
+                    "ile 'zaten silinmiş' AYIRT EDİLEMEDİ. Bu yüzden `count` alanı BİLEREK "
+                    "döndürülmüyor: doğrulanmış canlı sayısı EN AZ %d, ölçülemeyenler de "
+                    "canlıysa EN ÇOK %d. 'Aktive bekleyen obje yok' SONUCUNA VARMA; "
+                    "SE80/adt_get ile elle doğrula (silinmiş objenin TADIR kaydı SİLİNMEZ)."
+                    % (len(olculemedi), len(canli), len(canli) + len(olculemedi))),
+                "count_verified": False,
+                "confirmed_live_count": len(canli),
+                "unverified_count": len(olculemedi),
+                "confirmed_live": canli,
+                "unverified": olculemedi,     # `tadir_deleted: null` → ölçülemedi
+                "stale_deleted_count": len(bayat),
+                "stale_deleted": bayat,
+                "tadir_check": "FAILED: %s" % (tadir_hata or "girdi sorguya alınmadı"),
+                "warning": ("TADIR DELFLAG kontrolü KOŞMADI → listede silinmiş obje "
+                            "olabilir; 'tadir_deleted' alanları null. Elle doğrula."),
+                "client_log": buf.getvalue().strip(),
+            }
+        return {
+            "ok": True,
+            "count": len(canli),              # AKSİYON GEREKTİREN (silinmişler hariç)
+            "count_verified": True,           # her girdi TADIR ile çapraz kontrol edildi
+            "inactive_objects": canli,
+            "stale_deleted_count": len(bayat),
+            "stale_deleted": bayat,           # TADIR DELFLAG='X' → obje zaten silinmiş
+            "client_log": buf.getvalue().strip(),
+        }
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_enhancements  (bir objedeki enhancement/BAdI implementasyonları — legacy analiz)
+# =============================================================================
+_ENH_NS = {"enh": "http://www.sap.com/adt/abapsource/enhancements",
+           "adtcore": "http://www.sap.com/adt/core"}
+_ENH_SEG = {"program": "programs/programs", "prog": "programs/programs",
+            "class": "oo/classes", "clas": "oo/classes",
+            "include": "programs/includes", "incl": "programs/includes",
+            "functiongroup": "functions/groups", "fugr": "functions/groups"}
+
+
+@profil_tool()
+def adt_enhancements(name: str, object_type: str = "program", include_source: bool = False) -> dict:
+    """Bir objeye BAĞLI enhancement implementasyonlarını (implicit/explicit source enh.) oku — READ-ONLY.
+
+    ECC/legacy davranış analizinde std koda NE enjekte edilmiş + NEREYE görmek. Her impl'in
+    enjeksiyon SİTE'lerini (full_name = enhancement-point yolu, position, mode/replacing) ve
+    `include_source=True` ise base64-çözülmüş enjekte kaynağı verir. `.../source/main/enhancements/elements`.
+    Std obje OKUR, DEĞİŞTİRMEZ (ADR 0005 temiz).
+
+    Args:
+        name: Obje adı. object_type: 'program'|'class'|'include'|'functiongroup'.
+        include_source: True → her site'ın enjekte-kaynağını (base64→utf8) dahil et (büyük olabilir).
+
+    Returns:
+        {ok, name, exists, count, enhancements: [{name, type, version, enhanced_object,
+         sites: [{full_name, mode, replacing, impl_uri, position_uri, source?}]}], client_log}
+        (ENHO tipleri objeye-bağlı; `adt_enhancement_read` ile impl kaynağını isimle de çekebilirsiniz.)
+    """
+    import xml.etree.ElementTree as ET
+    import base64
+    seg = _ENH_SEG.get((object_type or "").lower().strip())
+    if not seg:
+        return {"ok": False, "error": "unsupported_type",
+                "message": "object_type: program|class|include|functiongroup"}
+    _E = "{%s}" % _ENH_NS["enh"]
+    _A = "{%s}" % _ENH_NS["adtcore"]
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        from urllib.parse import quote
+        url = (adt.url + "/sap/bc/adt/" + seg + "/" + quote(name.lower(), safe="")
+               + "/source/main/enhancements/elements")
+        with _capture() as buf:
+            r = adt.session.get(url, headers={"Accept": "application/vnd.sap.adt.enhancements.v3+xml"},
+                                verify=adt.session.verify, timeout=45)
+        if r.status_code == 404:
+            return {"ok": True, "name": name.upper(), "exists": False, "count": 0,
+                    "enhancements": [], "client_log": buf.getvalue().strip()}
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:300], "client_log": buf.getvalue().strip()}
+        root = ET.fromstring(r.text)
+        out = []
+        for impl in root.iter(_E + "enhancementImplementations"):
+            eobj = impl.find(".//" + _E + "enhancedObject")
+            sites = []
+            for scp in impl.iter(_E + "sourceCodePlugin"):
+                pos = scp.find(".//" + _E + "position")
+                site = {
+                    "full_name": scp.get(_E + "full_name", ""),
+                    "mode": scp.get(_E + "mode", ""),
+                    "replacing": scp.get(_E + "replacing", ""),
+                    "impl_uri": scp.get(_E + "uri", ""),
+                    "position_uri": pos.get(_A + "uri", "") if pos is not None else "",
+                }
+                if include_source:
+                    src_el = scp.find(_E + "source")
+                    if src_el is not None and src_el.text:
+                        try:
+                            site["source"] = base64.b64decode(src_el.text).decode("utf-8", "replace")
+                        except Exception:  # noqa: BLE001
+                            site["source"] = None
+                sites.append(site)
+            out.append({
+                "name": impl.get(_A + "name", ""),
+                "type": impl.get(_A + "type", ""),
+                "version": impl.get(_A + "version", ""),
+                "enhanced_object": eobj.get(_A + "name", "") if eobj is not None else "",
+                "sites": sites,
+            })
+        return {"ok": True, "name": name.upper(), "exists": True, "count": len(out),
+                "enhancements": out, "client_log": buf.getvalue().strip()}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_enhancement_read  (ENHO/BAdI-impl kaynağını İSİMLE oku)
+# =============================================================================
+_ENHO_TYPE_SEG = {"enhoxhh": "enhancements/enhoxhh", "enhoxh": "enhancements/enhoxh",
+                  "enhoxhb": "enhancements/enhoxhb"}
+
+
+@profil_tool()
+def adt_enhancement_read(name: str, enh_type: str = "enhoxhh") -> dict:
+    """Bir ENHO/BAdI-impl objesinin ham ABAP kaynağını İSİMLE oku — READ-ONLY.
+
+    `adt_enhancements`'in verdiği impl adını tam kaynağa çevirir (legacy davranış analizinin
+    ikinci yarısı). `.../enhancements/{enh_type}/{name}/source/main`.
+
+    Args:
+        name: ENHO obje adı (namespaced ise '/NS/...' URL-encode edilir). enh_type:
+              'enhoxhh' (source-plugin) | 'enhoxh' (impl) | 'enhoxhb' (BAdI impl).
+
+    Returns:
+        {ok, name, type, exists, source, client_log}
+    """
+    from sapadt.tools.atom import _read_source_object
+    seg = _ENHO_TYPE_SEG.get((enh_type or "").lower().strip())
+    if not seg:
+        return {"ok": False, "error": "unsupported_type", "message": "enh_type: enhoxhh|enhoxh|enhoxhb"}
+    return _read_source_object(name, seg, enh_type.lower())
+
+
+# =============================================================================
+# adt_enhancement_options  (obje HANGİ exit/point/spot'u SUNUYOR — ⚠ devasa yanıt)
+# =============================================================================
+_ENHO_OPT_NS = {"enho": "http://www.sap.com/adt/enhancementOptions/enho",
+                "enhocore": "http://www.sap.com/abapsource/enhancementscore",
+                "atom": "http://www.w3.org/2005/Atom"}
+
+
+@profil_tool()
+def adt_enhancement_options(name: str, object_type: str = "program",
+                            name_filter: str | None = None, max_results: int = 100) -> dict:
+    """Bir objenin SUNDUĞU enhancement option'ları (exit/point/BAdI) listele — READ-ONLY.
+
+    "Bu program/FG nereden genişletilebilir / nereye enjekte edilebilir" haritası.
+    `.../enhancements/options`. ⚠ Yanıt DEVASA olabilir (MB'larca) → `name_filter` + `max_results`
+    ile daralt. Std obje OKUR, DEĞİŞTİRMEZ (ADR 0005 temiz).
+
+    Args:
+        name: Obje adı. object_type: 'program'|'class'|'include'|'functiongroup'.
+        name_filter: Yalnız full_name'inde bu metin geçen option'lar (ör. 'EX:' exit'ler).
+        max_results: Döndürülecek maks option (default 100).
+
+    Returns:
+        {ok, name, matched, returned, truncated, options: [{full_name, description, mode,
+         source_link}], client_log}
+    """
+    import xml.etree.ElementTree as ET
+    seg = _ENH_SEG.get((object_type or "").lower().strip())
+    if not seg:
+        return {"ok": False, "error": "unsupported_type",
+                "message": "object_type: program|class|include|functiongroup"}
+    _O = "{%s}" % _ENHO_OPT_NS["enho"]
+    _OC = "{%s}" % _ENHO_OPT_NS["enhocore"]
+    _AT = "{%s}" % _ENHO_OPT_NS["atom"]
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        from urllib.parse import quote
+        url = (adt.url + "/sap/bc/adt/" + seg + "/" + quote(name.lower(), safe="")
+               + "/enhancements/options")
+        with _capture() as buf:
+            r = adt.session.get(
+                url, headers={"Accept": "application/vnd.sap.adt.enhancementoptions.v2+xml"},
+                verify=adt.session.verify, timeout=90)
+        if r.status_code == 404:
+            return {"ok": True, "name": name.upper(), "matched": 0, "returned": 0,
+                    "options": [], "client_log": buf.getvalue().strip()}
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:300], "client_log": buf.getvalue().strip()}
+        root = ET.fromstring(r.text)
+        matched, opts = 0, []
+        flt = name_filter.lower() if name_filter else None
+        for opt in root.iter(_O + "option"):
+            fn = opt.get(_OC + "full_name", "")
+            if flt and flt not in fn.lower():
+                continue
+            matched += 1
+            if len(opts) < max_results:
+                link = opt.find(_AT + "link")
+                opts.append({
+                    "full_name": fn,
+                    "description": opt.get(_O + "fullDescription", ""),
+                    "mode": opt.get(_O + "mode", ""),
+                    "source_link": link.get("href") if link is not None else None,
+                })
+        return {"ok": True, "name": name.upper(), "matched": matched, "returned": len(opts),
+                "truncated": matched > len(opts), "options": opts,
+                "client_log": buf.getvalue().strip()}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_feature_probe  (ADT sunucu yetenek keşfi — statik profil matrisini canlı-kanıta çevirir)
+# =============================================================================
+_APP_NS = "http://www.w3.org/2007/app"
+
+
+@profil_tool()
+def adt_feature_probe(filter: str | None = None) -> dict:
+    """ADT sunucu yetenek keşfi (discovery) — hangi ADT collection'ları/yetenekleri MEVCUT. READ-ONLY.
+
+    `profiles/` matrisimiz "rehberdir, kanıt değildir" (D34d) — bu tool onu CANLI-kanıta çevirir:
+    sistemde hangi ADT yetenek uçları (RAP generator, BOPF, abapGit, datapreview, atc...) açık.
+    `GET /sap/bc/adt/discovery` (Atom service doc) parse.
+
+    Args:
+        filter: Opsiyonel — yalnız title/href/workspace'inde bu metin geçen collection'lar.
+
+    Returns:
+        {ok, collection_count, collections: [{workspace, title, href}], client_log}
+    """
+    import xml.etree.ElementTree as ET
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        with _capture() as buf:
+            r = adt.session.get(adt.url + "/sap/bc/adt/discovery",
+                                headers={"Accept": "application/atomsvc+xml"}, verify=adt.session.verify, timeout=60)
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:300], "client_log": buf.getvalue().strip()}
+        root = ET.fromstring(r.text)
+        flat = []
+        for ws in root.findall("{%s}workspace" % _APP_NS):
+            wt = ws.find("{%s}title" % _ATOM_NS)
+            ws_title = wt.text if wt is not None else None
+            for col in ws.findall("{%s}collection" % _APP_NS):
+                ct = col.find("{%s}title" % _ATOM_NS)
+                flat.append({"workspace": ws_title,
+                             "title": ct.text if ct is not None else None,
+                             "href": col.get("href")})
+        if filter:
+            fl = filter.lower()
+            flat = [x for x in flat if any(fl in (x.get(k) or "").lower()
+                                           for k in ("title", "href", "workspace"))]
+        return {"ok": True, "collection_count": len(flat), "collections": flat,
+                "client_log": buf.getvalue().strip()}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_grep_source  (paket/obje kapsamında ABAP kaynak-metin regex arama)
+# =============================================================================
+_GREP_TYPE_MAP = {"CLAS": "class", "PROG": "program", "INTF": "interface",
+                  "FUGR": "functiongroup", "DDLS": "ddls", "BDEF": "bdef"}
+
+
+def _grep_tip_normalize(t: str) -> str:
+    """Kullanıcının verdiği tip dizesini `package=` dalının SÖZLÜĞÜNE çevirir.
+
+    ⛔ 2026-09-04 (kuyruk Q206 / Q106① / Q226) — `adt_grep_source`'un İKİ giriş dalı
+    vardı ve İKİ AYRI TİP SÖZLÜĞÜ konuşuyordu: `package=` dalı `_GREP_TYPE_MAP` ile
+    ADT kanonik adına çeviriyordu (`FUGR` → `functiongroup`), `objects=` dalı ise
+    tipi `t.strip().lower()` ile HAM geçiriyordu (`"<FG>:FUGR"` → `"fugr"`).
+    Sonuç SESSİZ bir sahte-tamlıktı: `adt_get` her iki yazımı da kabul ettiğinden
+    (`object_types.OBJECT_TYPE_ALIASES`: `fugr` → `functiongroup`) obje OKUNUYORDU,
+    ama tarama döngüsündeki iskelet muhafızı `at == "functiongroup"` diye baktığı
+    için `"fugr"` ile TUTMUYOR ⇒ `kismi` listesi boş kalıyor, `coverage_complete`
+    **True** oluyor ve `coverage_warning` HİÇ basılmıyordu. Yani araç FUGR
+    iskeletine bakıp "tam taradım" diyordu; `objects=<FG>:fugr` çağrısı
+    `0 eşleşme` + bütün bayraklar yeşil döndürüyor, çağıran bunu *"canlıda yok"*
+    diye okuyabiliyordu (ölçülmüş iki canlı vaka; playbook §4.1).
+
+    ⭐ Normalizasyon TEK NOKTADADIR (bu fonksiyon). Muhafızın kendisi bilerek
+    `at == "functiongroup"` olarak BIRAKILMIŞTIR: ikinci bir eşanlamlı kontrolü
+    (`at in ("functiongroup", "fugr")`) savunma-derinliği gibi görünür ama
+    mutasyon testini körleştirir — tek katman kesilince kusur geri gelmelidir.
+
+    Bilinmeyen tip (`func`/`include`/`incl`…) DEĞİŞTİRİLMEDEN küçük harfe düşer:
+    `adt_get` onları kendi alias tablosuyla çözer, burada kapsam kararı verilmez.
+    """
+    ham = (t or "").strip()
+    return _GREP_TYPE_MAP.get(ham.upper(), ham.lower())
+
+
+def _sinif_include_listesi(metadata) -> list | None:
+    """Sınıf metadata XML'inden VAR OLAN alt-include tiplerini çıkarır (`main` hariç).
+
+    `None` = metadata yok / ayrıştırılamadı / şekli tanınmadı ⇒ **"include yok" DEĞİL,
+    "bilinmiyor"** (Q282). Boş liste ise "sınıfın `main` dışında include'u yok" demektir.
+
+    CANLI ÖLÇÜM (2026-09-13, DEV, salt-GET, 2 sınıf): metadata her include için
+    `<class:include class:includeType="…">` elemanı taşır. Listelenen HER tip include
+    ucundan 200 döndü (4/4 ve 5/5); listelenmeyen `testclasses` 404 döndü (1/1). `main`
+    iki sınıfta da listelendi ⇒ şekil tanıma çapası `main`dir — o yoksa liste güvenilmez.
+    """
+    if not isinstance(metadata, str) or not metadata.strip():
+        return None
+    import xml.etree.ElementTree as ET
+    try:
+        kok = ET.fromstring(metadata)
+    except ET.ParseError:
+        return None
+    tipler = []
+    for el in kok.iter():
+        if str(el.tag).rsplit("}", 1)[-1] != "include":
+            continue
+        for k, v in el.attrib.items():
+            if k.rsplit("}", 1)[-1] == "includeType" and v and v.strip():
+                tipler.append(v.strip().lower())
+    if "main" not in tipler:
+        return None
+    return [t for t in dict.fromkeys(tipler) if t != "main"]
+
+
+def _sinif_include_kaynaklari(client, ad: str, metadata) -> tuple:
+    """Sınıfın alt-include kaynaklarını okur → `(okunan[(tip, metin)], taranamayan[str])`.
+
+    ⛔ Q282 (2026-09-11 vakası): `adt_grep_source` sınıfta YALNIZ ana kaynağı okuyordu;
+    behavior pool / local class gövdesi `includes/implementations` (CCIMP) içindedir ve
+    taranmıyordu, üstelik `coverage_complete: true` basılıyordu (sahte negatif).
+    Hangi include'un okunacağı metadata listesinden gelir (tahminle uç denenmez —
+    listelenmeyen ucu yoklamak her sınıfa 404 gürültüsü ekler). Okunamayan HER include
+    `taranamayan` listesine girer; çağıran bunu `partial_objects`e çevirir.
+    """
+    tipler = _sinif_include_listesi(metadata)
+    if tipler is None:
+        return [], ["include listesi alınamadı (sınıf metadata'sı yok/tanınmadı) — "
+                    "includes/* TARANMADI"]
+    adt = getattr(client, "adt_client", None)
+    okunan, taranamayan = [], []
+    for tip in tipler:
+        try:
+            from object_types import get_class_include_url  # type: ignore
+            url = get_class_include_url(ad, tip)
+        except Exception as exc:                                   # noqa: BLE001
+            taranamayan.append("%s: tanınmayan include tipi (%s)" % (tip, type(exc).__name__))
+            continue
+        try:
+            with _capture():
+                metin = adt.get_object_source(url)
+        except Exception as exc:                                   # noqa: BLE001
+            taranamayan.append("%s: okunamadı (%s %s)" % (
+                tip, type(exc).__name__,
+                getattr(exc, "status_code", None) or str(exc)[:80]))
+            continue
+        if not isinstance(metin, str):
+            taranamayan.append("%s: okunamadı (kaynak gövdesi yok)" % tip)
+            continue
+        okunan.append((tip, metin))
+    return okunan, taranamayan
+
+
+@profil_tool()
+def adt_grep_source(
+    pattern: str,
+    package: str | None = None,
+    objects: str | list | None = None,
+    object_types: str = "CLAS,PROG,INTF,DDLS",
+    max_objects: int = 80,
+    ignore_case: bool = True,
+) -> dict:
+    """Paket/obje kapsamında ABAP **KAYNAK-METİN** regex arama — READ-ONLY.
+
+    `adt_where_used` "beni kim referanslıyor" der; bu tool "bu metin/pattern nerede geçiyor"
+    der (tamamlayıcı). Kaynağı indirip satır-satır regex. Token-ekonomisi için `max_objects`
+    ve toplam 500 eşleşme sınırlı — sınıra ulaşılırsa `truncated_*` işaretlenir (sessiz-kesme yok).
+
+    Args:
+        pattern: Python regex. package: paket adı (kapsam). objects: "NAME" veya "NAME:type"
+                 virgüllü liste (package'a alternatif; tip yazımı SERBEST — `FUGR`/`fugr`/
+                 `FuGr`/`functiongroup` aynı şeydir, `_grep_tip_normalize` ile `package=`
+                 dalının sözlüğüne çevrilir). object_types: paket-taramada tip filtresi
+                 (CLAS/PROG/INTF/DDLS/FUGR/BDEF). max_objects: taranacak maks obje. ignore_case.
+
+    ⛔ 2026-08-28 (C-04) — "EŞLEŞME YOK" ile "OKUYAMADIM" ayrı şeylerdir. Eskiden okunamayan
+    obje `if not src: continue` ile SESSİZCE düşüyordu: ne sayılıyor ne raporlanıyordu.
+    Çağıran `match_count: 0` görüp "bu pakette geçmiyor" diye KARAR veriyordu (ölçülmüş
+    vaka: kuyruk Q106 + `playbook/lessons-learned.md` PATTERN #19/#20). Artık kapsamdan
+    düşen her obje **makinece okunur** biçimde döner:
+      `skipped_objects[{object, type, reason, detail}]` — sebep sınıfları:
+        `type_filtered`    → `object_types` filtresi dışladı (ör. varsayılanda FUGR yok)
+        `type_unsupported` → grep'lenebilir tip değil (TABL/DTEL/DOMA/FUNC…)
+        `max_objects`      → `max_objects` sınırının dışında kaldı
+        `read_failed`      → `adt_get` hata döndü (HTTP/parse/timeout)
+        `not_readable`     → `adt_get` `exists:false` dedi (⚠ `func`/FUGR group-resolution
+                             kusuru dahil — playbook/adt-fugr-functions.md §4, §4.1)
+        `source_empty`     → 200 ama gövde BOŞ (ör. behavior pool `source/main`)
+      `partial_objects[{object, type, reason}]` — okundu ama İÇERİK EKSİK:
+        `fugr_skeleton_only` → FUGR'ın yalnız iskelet ana include'u; FM gövdesi
+                               `L<FG>U01`'de ve TARANMADI (playbook §4.1)
+        `class_includes_not_scanned` → sınıfın ana kaynağı tarandı ama alt-include'larından
+                               (CCIMP/CCDEF/CCMAC/CCAU) en az biri OKUNAMADI ya da include
+                               listesi (sınıf metadata'sı) alınamadı — `detail` hangisi/neden
+      `coverage_complete` → hiçbir obje düşmedi/eksilmedi mi? (`scope_verified`
+      paket ucunun DOĞRULUĞUNU, bu alan taramanın TAMLIĞINI söyler — ikisi ayrı eksendir)
+    Mevcut alanların hiçbiri kaldırılmadı/anlamı değiştirilmedi (tüketici sözleşmesi).
+
+    ⛔ 2026-09-04 (Q206/Q106①/Q226) — yukarıdaki muhasebe `package=` dalında koşuyordu,
+    `objects=` dalında KOŞMUYORDU: tip dizesi ham geçtiği için (`"…:FUGR"` → `"fugr"`)
+    iskelet muhafızı tutmuyor, `coverage_complete` **sahte-yeşil** yanıyordu. Artık iki dal
+    aynı sözlüğü konuşur (`_grep_tip_normalize`). ⚠ TÜKETİCİ NOTU: `objects=` dalında tip
+    eşanlamlısı verilen çağrılarda dönüş alanlarındaki `type` artık KANONİK addır
+    (`"…:INTF"` → `interface`, `"…:FUGR"` → `functiongroup`) — `package=` dalı zaten böyleydi.
+
+    ⛔ 2026-09-13 (Q282) — SINIF ALT-INCLUDE'LARI artık TARANIR. Eskiden sınıfta yalnız
+    ana kaynak (`source/main`) okunuyordu; behavior pool / local class gövdesi
+    `includes/implementations` (CCIMP) içindedir ⇒ `match_count: 0` + `coverage_complete:
+    true` = SAHTE NEGATİF (canlı vaka 2026-09-11). Okunacak include'lar sınıf metadata'sının
+    `class:include` listesinden gelir (listelenmeyen uç YOKLANMAZ). Metadata alınamazsa ya
+    da listelenen bir include okunamazsa obje `partial_objects`e
+    `class_includes_not_scanned` ile düşer — "tarandı" ile "taranmadı" karışmaz.
+    ⚠ Maliyet: include'lu her sınıf için listelenen include başına +1 GET.
+    Include'dan gelen eşleşme `include` alanı taşır (`"implementations"` vb.); `line`
+    o include İÇİNDEKİ satırdır. Ana kaynak eşleşmelerinin şekli DEĞİŞMEDİ.
+
+    Returns:
+        {ok, pattern, scanned_objects, match_count, truncated_object_scope, truncated_matches,
+         scanned_class_include_count,
+         matches: [{object, type, line, text, include?}], scope_verified, coverage_complete,
+         skipped_count, skipped_objects, partial_count, partial_objects, client_log}
+    """
+    import re as _re
+    # pull-state YAZMAYAN okuyucu: grep taraması "düzenlemek için çekme" değildir (IMPLEMENTATION.md §13).
+    from sapadt.tools.atom import _adt_get_oku as adt_get
+    try:
+        rx = _re.compile(pattern, _re.IGNORECASE if ignore_case else 0)
+    except _re.error as e:
+        return {"ok": False, "error": "bad_regex", "message": str(e)}
+
+    wanted = {t.strip().upper() for t in (object_types.split(",") if object_types else []) if t.strip()}
+    client = _get_client()
+    targets: list = []
+    kapsam_dogrulanmis = True
+    kapsam_log = ""
+    atlanan: list[dict] = []      # kapsamdan DÜŞEN objeler (sebebiyle)
+    kismi: list[dict] = []        # okundu ama içeriği EKSİK olanlar
+    try:
+        if objects:
+            raw = objects.split(",") if isinstance(objects, str) else list(objects)
+            for item in [str(x).strip() for x in raw if str(x).strip()]:
+                if ":" in item:
+                    n, t = item.split(":", 1)
+                    # ⛔ HAM GEÇİRME YOK (Q206/Q106①/Q226): tip `package=` dalıyla AYNI
+                    # sözlüğe çevrilir, yoksa iskelet muhafızı `"fugr"` yazımını kaçırır
+                    # ve `coverage_complete` sahte-yeşil yanar (bkz. _grep_tip_normalize).
+                    targets.append((n.strip(), _grep_tip_normalize(t)))
+                else:
+                    targets.append((item, "class"))
+        elif package:
+            # ⚠ Buradaki `_capture()` eskiden buffer'ı ADSIZ tüketiyordu: paket-ucu
+            # başarısız olup ad-desenli fallback'e düşüldüğünde SAP'nin bastığı uyarı
+            # notu da yutuluyordu → grep, BAŞKA PAKETLERİN objelerinde arama yapıp
+            # sonucu "bu pakette" diye sunuyordu (2026-08-01 bug-avı, sessiz-kapsam).
+            with _capture() as _kbuf:
+                objs = client.list_package_contents(package)
+            kapsam_log = _kbuf.getvalue().strip()[-400:]
+            objs = objs or []
+            kapsam_dogrulanmis = all(o.get("package_verified") for o in objs if isinstance(o, dict))
+            for o in objs:
+                pref = (o.get("type") or "").split("/")[0].upper()
+                if wanted and pref not in wanted:
+                    # Filtre bir KAPSAM KARARIDIR; sessizce düşerse "taradım" yalanı olur
+                    # (varsayılan `object_types` FUGR içermez — Q106'nın kör noktası).
+                    atlanan.append({"object": o.get("name"), "type": pref,
+                                    "reason": "type_filtered",
+                                    "detail": f"object_types={object_types}"})
+                    continue
+                at = _GREP_TYPE_MAP.get(pref)
+                if not at:
+                    atlanan.append({"object": o.get("name"), "type": pref,
+                                    "reason": "type_unsupported",
+                                    "detail": "kaynak-metin grep'i bu tipi desteklemiyor"})
+                    continue
+                targets.append((o.get("name"), at))
+        else:
+            return {"ok": False, "error": "no_scope", "message": "package veya objects gerekli"}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+    truncated_scope = len(targets) > max_objects
+    for n, at in targets[max_objects:]:
+        atlanan.append({"object": n, "type": at, "reason": "max_objects",
+                        "detail": f"max_objects={max_objects} sınırının dışında"})
+    targets = targets[:max_objects]
+    matches, scanned, hit_cap = [], 0, False
+    taranan_inc = 0               # okunup taranan sınıf alt-include sayısı (Q282)
+    for n, at in targets:
+        r = adt_get(n, object_type=at, include_source=True)
+        src = r.get("source")
+        if not isinstance(src, str) or not src:
+            # ⛔ SESSİZ DÜŞÜŞ YOK: "eşleşme yok" ile "okuyamadım" ayırt edilebilmeli.
+            if r.get("ok") is False:
+                sebep, detay = "read_failed", str(r.get("error") or r.get("message") or "")[:200]
+            elif r.get("exists") is False:
+                sebep = "not_readable"
+                detay = ("adt_get exists:false — obje YOK ya da bu tip bu uçtan okunamıyor "
+                         "(func/FUGR group-resolution: playbook/adt-fugr-functions.md §4)")
+            else:
+                sebep, detay = "source_empty", "HTTP 200 ama kaynak gövdesi BOŞ"
+            atlanan.append({"object": n, "type": at, "reason": sebep, "detail": detay})
+            continue
+        if at == "functiongroup":
+            # Okundu ama İSKELET: FM gövdeleri L<FG>U01… include'larında ve TARANMADI.
+            kismi.append({"object": n, "type": at, "reason": "fugr_skeleton_only",
+                          "detail": ("yalnız iskelet ana include tarandı; FM gövdesi "
+                                     "L<FG>U01… içinde — playbook/adt-fugr-functions.md §4.1")})
+        inc_kaynaklar: list = []
+        if at == "class":
+            # Q282: sınıfın alt-include'ları (CCIMP/CCDEF/CCMAC/CCAU) ayrı uçlardadır.
+            inc_kaynaklar, inc_eksik = _sinif_include_kaynaklari(client, n, r.get("metadata"))
+            if inc_eksik:
+                kismi.append({"object": n, "type": at, "reason": "class_includes_not_scanned",
+                              "detail": "; ".join(inc_eksik)[:300]})
+            taranan_inc += len(inc_kaynaklar)
+        scanned += 1
+        for inc, metin in [(None, src)] + inc_kaynaklar:
+            for i, line in enumerate(metin.splitlines(), 1):
+                if rx.search(line):
+                    esl = {"object": n, "type": at, "line": i, "text": line.strip()[:200]}
+                    if inc:
+                        esl["include"] = inc
+                    matches.append(esl)
+                    if len(matches) >= 500:
+                        hit_cap = True
+                        break
+            if hit_cap:
+                break
+        if hit_cap:
+            break
+    tam_kapsam = not atlanan and not kismi and not truncated_scope and not hit_cap
+    out = {"ok": True, "pattern": pattern, "scanned_objects": scanned,
+           "match_count": len(matches), "truncated_object_scope": truncated_scope,
+           "scanned_class_include_count": taranan_inc,
+           "truncated_matches": hit_cap, "matches": matches,
+           "scope_verified": bool(kapsam_dogrulanmis),
+           "coverage_complete": tam_kapsam,
+           "skipped_count": len(atlanan), "skipped_objects": atlanan[:50],
+           "partial_count": len(kismi), "partial_objects": kismi[:50]}
+    if len(atlanan) > 50:
+        out["skipped_truncated"] = True
+    if len(kismi) > 50:
+        out["partial_truncated"] = True
+    if not tam_kapsam:
+        sebepler = sorted({a["reason"] for a in atlanan} | {k["reason"] for k in kismi})
+        out["coverage_warning"] = (
+            "KAPSAM TAM DEĞİL: %d obje taranamadı, %d obje EKSİK içerikle tarandı "
+            "(sebepler: %s). `match_count` bu objeler için KANIT DEĞİLDİR — "
+            "'geçmiyor' sonucunu buradan ÇIKARMA; düşen objeleri `skipped_objects`/"
+            "`partial_objects` listesinden tek tek doğrula."
+            % (len(atlanan), len(kismi), ", ".join(sebepler) or "kesme sınırı"))
+    if not kapsam_dogrulanmis:
+        out["scope_warning"] = (
+            "KAPSAM DOĞRULANMADI: paket içeriği SAP'nin paket ucundan alınamadı, AD-DESENLİ "
+            "arama fallback'i kullanıldı → taranan objeler BAŞKA PAKETLERE ait olabilir ve bu "
+            "paketin bazı objeleri HİÇ taranmamış olabilir. 'bu pakette geçmiyor' sonucunu "
+            "buradan ÇIKARMA (match_count=0 kanıt değildir)."
+        )
+        if kapsam_log:
+            out["scope_log"] = kapsam_log
+    return out
+
+
+# =============================================================================
+# adt_impact_analysis  (blast-radius — özyinelemeli where-used)
+# =============================================================================
+@profil_tool()
+def adt_impact_analysis(name: str, object_type: str = "ddls",
+                        max_depth: int = 2, max_nodes: int = 150) -> dict:
+    """Değişiklik etki-alanı (blast-radius) — bir objeyi DOLAYLI referanslayanları
+    özyinelemeli where-used ile çıkarır. READ-ONLY.
+
+    "Fix öncesi where-used + blast-radius" feedback'inin otomasyonu: direkt referanslardan
+    başlayıp `max_depth` seviyeye kadar yukarı çıkar ("kim etkilenir"). Çok-katmanlı CDS
+    stack'inde değişiklik-riskini ölçer. `max_nodes` ile sınırlı — aşılırsa `truncated=True`
+    (sessiz-kesme yok).
+
+    Args:
+        name: Kök obje. object_type: 'ddls'|'class'|'dtel'|'tabl'|'intf'... max_depth: özyineleme
+              derinliği (default 2). max_nodes: toplam maks düğüm (default 150).
+
+    Returns:
+        {ok, name, type, max_depth, impacted_count, truncated,
+         by_depth: [{depth, count, objects:[{name,type,uri,depth}]}], client_log}
+    """
+    client = _get_client()
+    try:
+        from object_types import get_object_url, is_function_module_type  # type: ignore
+        from sap_client import where_used_paket_ayir  # type: ignore
+        adt = getattr(client, "adt_client", None) or client
+        with _capture() as buf:
+            if is_function_module_type(object_type):
+                # Q261: FM ucu grubu içerir → tek çözümleme (varlık + uç).
+                fm = client.resolve_function_module(name)
+                if fm.get("status") != "found":
+                    return {"ok": False, "error_code": "OBJECT_NOT_FOUND", "name": name,
+                            "type": object_type, "probe": fm.get("probe"),
+                            "client_log": buf.getvalue().strip()}
+                root_url = fm["uri"]
+            elif not client.object_exists(name.upper(), object_type):
+                return {"ok": False, "error_code": "OBJECT_NOT_FOUND", "name": name,
+                        "type": object_type, "client_log": buf.getvalue().strip()}
+            else:
+                root_url = get_object_url(name.upper(), object_type)
+            seen = {name.upper() + "|" + object_type.lower()}
+            frontier = [root_url]
+            levels = []
+            truncated = False
+            paket_atlanan = 0
+            for depth in range(max_depth):
+                level_nodes, next_frontier = [], []
+                for url in frontier:
+                    refs = adt.where_used(url) or []
+                    # DEVC/K paket düğümleri çağıran DEĞİL (atalar) ⇒ ne etkilenen sayılır ne de
+                    # özyinelemeye (paket URI'si) girer.
+                    refs, _paketler = where_used_paket_ayir(refs)
+                    paket_atlanan += len(_paketler)
+                    for r in refs:
+                        rn = (r.get("name") or "").upper()
+                        rt = (r.get("type") or "")
+                        ru = (r.get("uri") or "").split("#")[0]
+                        key = rn + "|" + rt.lower()
+                        if not rn or key in seen:
+                            continue
+                        seen.add(key)
+                        level_nodes.append({"name": rn, "type": rt, "uri": ru, "depth": depth + 1})
+                        if ru:
+                            next_frontier.append(ru)
+                        if len(seen) >= max_nodes:
+                            truncated = True
+                            break
+                    if truncated:
+                        break
+                levels.append(level_nodes)
+                frontier = next_frontier
+                if truncated or not frontier:
+                    break
+        all_nodes = [n for lvl in levels for n in lvl]
+        return {"ok": True, "name": name.upper(), "type": object_type, "max_depth": max_depth,
+                "impacted_count": len(all_nodes), "truncated": truncated,
+                "packages_skipped": paket_atlanan,
+                "by_depth": [{"depth": i + 1, "count": len(lvl), "objects": lvl}
+                             for i, lvl in enumerate(levels)],
+                "client_log": buf.getvalue().strip()}
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_unit_run  (ABAP Unit test koşucu — bug-gate'i canlı-test seviyesine çıkarır)
+# =============================================================================
+_AUNIT_SEG = {"class": "oo/classes", "clas": "oo/classes",
+              "program": "programs/programs", "prog": "programs/programs",
+              "functiongroup": "functions/groups", "fugr": "functions/groups"}
+# NOT: aunit ns yalnız İSTEK gövdesinde (kök <aunit:runConfiguration>) ve YANITIN KÖKÜNDE
+# (<aunit:runResult>) kullanılır. Yanıttaki program/testClass/testMethod/alert ÖNEKSİZDİR →
+# parser'da aunit ns SABİTİ KULLANILMAZ (canlı ölçüm 2026-07-29; bkz. adt_unit_run yorumları).
+_ADTCORE_NS = "http://www.sap.com/adt/core"
+
+
+@profil_tool()
+def adt_unit_run(name: str, object_type: str = "class",
+                 allow_risky_tests: bool = False) -> dict:
+    """Bir Z objenin ABAP Unit testlerini çalıştır → sonuç/assertion döner. READ-ONLY.
+
+    `POST /sap/bc/adt/abapunit/testruns` (run config). Test KOŞAR ama kalıcı obje değişimi
+    YOK → ADR 0005 temiz (Z-scope). BUG GATE'i "checklist" seviyesinden "canlı test sonucu"na
+    çıkarır. Test yoksa boş sonuç (passed=true, method 0).
+
+    ⛔ 2026-08-28 (C-08) İKİ SIKILAŞTIRMA:
+      1. `require_customer_namespace` EKLENDİ. Tool ABAP kodu çalıştırır ve kardeşleri
+         (`adt_classrun`, `adt_syntax_check`, `adt_post_shell`) bu kapıdan zaten
+         geçiyordu; tek istisna buydu → standart (Z/Y olmayan) obje adıyla
+         çağrılabiliyordu. ADR 0005-A.
+      2. `testRiskLevels` artık VARSAYILAN KAPALI: yalnız `harmless`. `dangerous`/
+         `critical` işaretli ABAP Unit testleri **kalıcı veri değiştirebilir** (SAP'nin
+         risk sınıflandırmasının tanımı budur) — salt-okunur beklentisiyle çağrılan bir
+         tool'un varsayılanı bu olamaz. Açıkça `allow_risky_tests=True` verilirse açılır
+         ve yanıt `risk_levels` alanında hangi bandın koştuğu GÖRÜNÜR olur.
+         `method_count == 0` dönerse yanıt `risk_notice` ile "riskli bant kapalıydı"
+         ihtimalini söyler (sessiz sıfır YOK).
+
+    Args:
+        name: Obje (Z*/Y*; standart obje REDDEDİLİR — ADR 0005-A).
+        object_type: 'class'|'program'|'functiongroup'.
+        allow_risky_tests: `dangerous`/`critical` bandını da koş (varsayılan False).
+
+    Returns:
+        {ok, name, method_count, failed_count, passed, risk_levels, classes: [{class,
+         methods:[{method, status, alerts:[{severity, kind, title}]}]}], client_log}
+        veya guardrail_violation (PRD/QA tier ya da standart obje).
+    """
+    import xml.etree.ElementTree as ET
+    seg = _AUNIT_SEG.get((object_type or "").lower().strip())
+    if not seg:
+        return {"ok": False, "error": "unsupported_type",
+                "message": "object_type: class|program|functiongroup"}
+    # ABAP Unit ABAP KODU çalıştırır (test) → adt_classrun ile aynı risk sınıfı → DEV-tier-gate
+    # (kötü-yazılmış test COMMIT edebilir; ADR 0010) + customer-namespace (ADR 0005-A).
+    from sapadt._conn import get_active_tier
+    from sapadt.guardrails import (
+        GuardrailViolation, require_customer_namespace, require_writable_tier,
+    )
+    ne = "abap unit run (kod çalıştırır)"
+    try:
+        require_customer_namespace(name, what=ne, object_type=object_type)
+        require_writable_tier(get_active_tier(), what=ne)
+    except GuardrailViolation as gv:
+        return gv.as_dict()
+    riskli = "true" if allow_risky_tests else "false"
+    risk_bandi = "harmless+dangerous+critical" if allow_risky_tests else "harmless"
+    client = _get_client()
+    try:
+        from rap_service import csrf  # type: ignore
+        from urllib.parse import quote
+        adt = getattr(client, "adt_client", None) or client
+        objuri = "/sap/bc/adt/" + seg + "/" + quote(name.lower(), safe="")
+        # ⛔ <options> ZORUNLU ve ÖNEKSİZ (canlı ölçüm 2026-07-29, tek-değişkenli matris):
+        #   options YOK        -> HTTP 200, 99 bayt, 0 test  (sunucu filtreleri kapalı sayıyor)
+        #   options ÖNEKLİ     -> HTTP 200, 99 bayt, 0 test  (tanınmayan eleman SESSİZCE yok sayılıyor)
+        #   options ÖNEKSİZ    -> HTTP 200, 2416 bayt, 9 test ✅
+        # Kardeşleri (<external>, <objectSet>) de öneksiz — ipucu gövdedeydi.
+        # Accept DEĞİŞTİRİLMEZ: api.abapunit.run.v1 -> HTTP 406, sunucu "yalnız
+        # ...testruns.result.v2+xml kabul edilir" diyor.
+        body = ('<?xml version="1.0" encoding="UTF-8"?>'
+                '<aunit:runConfiguration xmlns:aunit="http://www.sap.com/adt/aunit"'
+                ' xmlns:adtcore="http://www.sap.com/adt/core">'
+                '<external><coverage active="false"/></external>'
+                '<options><uriType value="semantic"/>'
+                '<testDeterminationStrategy sameProgram="true" assignedTests="false"'
+                ' appendAssignedTestsPreview="true"/>'
+                '<testRiskLevels harmless="true" dangerous="' + riskli +
+                '" critical="' + riskli + '"/>'
+                '<testDurations short="true" medium="true" long="true"/></options>'
+                '<adtcore:objectSets><objectSet kind="inclusive"><adtcore:objectReferences>'
+                '<adtcore:objectReference adtcore:uri="' + objuri + '"/>'
+                '</adtcore:objectReferences></objectSet></adtcore:objectSets>'
+                '</aunit:runConfiguration>')
+        with _capture() as buf:
+            tok = csrf(adt)
+            r = adt.session.post(
+                adt.url + "/sap/bc/adt/abapunit/testruns",
+                headers={"X-CSRF-Token": tok,
+                         "Content-Type": "application/vnd.sap.adt.abapunit.testruns.config.v4+xml",
+                         "Accept": "application/vnd.sap.adt.abapunit.testruns.result.v2+xml",
+                         "sap-client": str(adt.client or "")},  # aXet: sabit "100" yerine bağlantı
+                data=body.encode("utf-8"), verify=adt.session.verify, timeout=180)
+        if r.status_code != 200:
+            return {"ok": False, "error": "http_%d" % r.status_code,
+                    "message": (r.text or "")[:400], "client_log": buf.getvalue().strip()}
+        root = ET.fromstring(r.text)
+
+        def _an(el, a):
+            return el.get("{%s}%s" % (_ADTCORE_NS, a), "")
+
+        # ⛔ Yanıtta YALNIZ kök <runResult> aunit ns'inde; program/testClass/testMethod/alert
+        #   NAMESPACE'SİZ (canlı ölçüm 2026-07-29: .//{aunit}program -> 0, .//program -> 1,
+        #   .//testMethod -> 9). Namespace'li arayan parser DOLU yanıtı bile 0 sayar.
+        #   ⚠ adtcore:name (_an) DOĞRU — `name` attribute'u gerçekten adtcore ns'inde.
+        #   ⚠ Tam-tag eşleşme şart: yanıtta testClasses/testMethods SARMALAYICILARI var;
+        #     substring eşleşmesi 9 yerine 10 sayar.
+        #   ⚠ DOĞRULANAMADI: <alert> ns'i ölçülemedi (9/9 test geçti, 0 alert). Kardeşleri
+        #     öneksiz olduğu için öneksiz varsayıldı — bilerek kırılan bir testle teyit edilmeli.
+        classes, mcount, fcount = [], 0, 0
+        for prog in root.iter("program"):
+            for tclass in prog.iter("testClass"):
+                methods = []
+                for tm in tclass.iter("testMethod"):
+                    alerts = []
+                    for al in tm.iter("alert"):
+                        title_el = al.find("title")
+                        alerts.append({
+                            "severity": al.get("severity", ""),
+                            "kind": al.get("kind", ""),
+                            "title": title_el.text if title_el is not None else None,
+                        })
+                    mcount += 1
+                    if alerts:
+                        fcount += 1
+                    methods.append({"method": _an(tm, "name"),
+                                    "status": "failed" if alerts else "passed",
+                                    "alerts": alerts})
+                classes.append({"class": _an(tclass, "name"), "methods": methods})
+        out = {"ok": True, "name": name.upper(), "method_count": mcount,
+               "failed_count": fcount, "passed": fcount == 0,
+               "classes": classes, "risk_levels": risk_bandi,
+               "client_log": buf.getvalue().strip()}
+        if mcount == 0 and not allow_risky_tests:
+            # "0 test" ile "0 HARMLESS test" ayrı şeylerdir — sessiz sıfır YOK.
+            out["risk_notice"] = (
+                "method_count=0: yalnız `harmless` bandı koştu. Obje `dangerous`/"
+                "`critical` işaretli test taşıyorsa bu sonuç 'test yok' DEMEK DEĞİLDİR "
+                "— `allow_risky_tests=True` ile tekrar koş (o testler KALICI VERİ "
+                "DEĞİŞTİREBİLİR; ADR 0005-B kapsamını önce doğrula).")
+        return out
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
+# =============================================================================
+# adt_lock_check
+# =============================================================================
+
+@profil_tool()
+def adt_lock_check(name: str, object_type: str = "class") -> dict:
+    """Bir SAP objesinin kilitli olup olmadığını sorgula — salt-okuma (GET /adt/locks).
+
+    ⚠ ESKİ SÜRÜM KİLİT TESPİTİ YAPAMIYORDU (2026-08-01 KAYIT-K3): strateji
+    "metadata OKU; SAPLockError düşerse kilitlidir" idi. Ama (a) OKUMA kilit hatası
+    üretmez ve (b) alt katman `sap_client.get_object_metadata` HER istisnayı yutup
+    `None` döner → `except` dalına HİÇ girilmez. Sonuç: `locked: True` ULAŞILAMAZ ÖLÜ
+    DAL'dı; tool DAİMA `locked: False` diyordu — yani kilit tespiti fiilen yoktu ve
+    "kilitli değil" cevabı KANITSIZDI. Ayrıca `exists: md is not None` yüzünden ağ/500/
+    403 hatası da sessizce `exists: false` oluyordu (adt_get DDIC dalıyla aynı sınıf,
+    W2-MCPT-01).
+
+    Şimdi: gerçek kilit ucu (`SAPADTClient.is_object_locked` → `GET /sap/bc/adt/locks`,
+    push yolunda da kullanılır: sap_client.py:485) sorgulanır. Uç cevap veremezse
+    `locked: null` + `ok: false` döner — "kilitli değil" DİYE OKUNAMAZ.
+
+    Args:
+        name: Obje adı.
+        object_type: ADT tipi ('class', 'doma', 'dtel', 'tabl', 'ddls', ...).
+
+    Returns:
+        {ok, name, type, locked: bool|null, lock_owner?, exists: bool, client_log}
+        `locked: null` = ÇÖZÜLEMEDİ (kanıt yok). Bu bir "hayır" değildir.
+    """
+    from sapadt.tools.atom import _miss_or_unreachable  # tek-kaynak sınıflandırıcı
+    client = _get_client()
+    try:
+        from sap_adt_lib import SAPLockError, SAPObjectNotFoundError  # type: ignore
+    except ImportError:
+        SAPLockError = Exception  # type: ignore
+        SAPObjectNotFoundError = Exception  # type: ignore
+
+    # ── 1) Varlık: metadata okuması (hata ≠ yokluk — sınıflandırıcıdan geçer) ──────
+    try:
+        with _capture() as buf:
+            md = client.get_object_metadata(name, object_type=object_type)
+        log = buf.getvalue().strip()
+    except Exception as exc:
+        if isinstance(exc, SAPLockError):                      # (savunma amaçlı korunur)
+            return {"ok": True, "name": name, "type": object_type, "exists": True,
+                    "locked": True, "lock_owner": getattr(exc, "lock_owner", None),
+                    "message": str(exc)}
+        if isinstance(exc, SAPObjectNotFoundError):
+            return {"ok": True, "name": name, "type": object_type,
+                    "exists": False, "locked": False}
+        return _err_from_exc(exc)
+
+    if md is None:
+        sinif = _miss_or_unreachable(name, object_type, log)
+        if not sinif.get("ok"):
+            sinif["locked"] = None                             # yokluk DA kilit DE iddia etme
+            return sinif
+        return {"ok": True, "name": name, "type": object_type,
+                "exists": False, "locked": False, "client_log": log}
+
+    # ── 2) Gerçek kilit sondası ───────────────────────────────────────────────────
+    adt = getattr(client, "adt_client", None)
+    bilgi = None
+    try:
+        from object_types import get_object_url  # type: ignore
+        if adt is not None and hasattr(adt, "is_object_locked"):
+            with _capture() as buf2:
+                bilgi = adt.is_object_locked(get_object_url(name, object_type))
+            log = (log + "\n" + buf2.getvalue().strip()).strip()
+    except Exception as exc:                                   # sonda kurulumu bile başarısızsa
+        log = (log + f"\n[ERROR] kilit sondası: {exc}").strip()
+
+    if not isinstance(bilgi, dict):
+        # 2026-08-10: sebep artık YÜZEYE ÇIKAR. Alt katman 404'ü sessizce
+        # `{'locked': False}` yapıyordu (bkz. sap_adt_lib.is_object_locked başlığı);
+        # düzeltildikten sonra bu dala düşen vakanın NEDEN düştüğü görünmezse teşhis
+        # yine "araç bozuk"a saplanır — HTTP kodu ile ağ hatasını ayırt et.
+        sebep = getattr(adt, "_last_lock_check_reason", None)
+        return {
+            "ok": False, "error": "kilit_belirsiz",
+            "name": name, "type": object_type, "exists": True, "locked": None,
+            "reason": sebep,
+            "message": ("Kilit durumu ÇÖZÜLEMEDİ (kilit ucu cevap vermedi ya da bu "
+                        "kurulumda yok"
+                        + (f"; sonda sonucu: {sebep}" if sebep else "")
+                        + "). Bu sonuç 'kilitli DEĞİL' ANLAMINA GELMEZ — "
+                        "yazma denemesi 409/enqueue hatası verebilir. SM12/SE11 ile "
+                        "doğrula."),
+            "client_log": log,
+        }
+    return {
+        "ok": True, "name": name, "type": object_type, "exists": True,
+        "locked": bool(bilgi.get("locked")),
+        "lock_owner": bilgi.get("lock_owner"),
+        "client_log": log,
+    }

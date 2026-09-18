@@ -1,0 +1,32 @@
+# aXet template — kod sahipleri (K2, 2026-09-15).
+#
+# Bu dosya, main dal korumasiyla BIRLIKTE anlam tasir: koruma "sahip onayi sart"
+# demezse CODEOWNERS yalnizca otomatik inceleme atamasi yapar, kapi kurmaz.
+#
+# Bugun tek bakimci var. Dosyanin degeri ileride katkici geldiginde ortaya cikar;
+# simdi de davranis tasiyan yollari ACIKCA isaretleyerek "bu dosyalar sessizce
+# degismez" kaydini tutar.
+
+# Varsayilan: her sey bakimciya.
+*                                   @ozgurylmz34
+
+# --- Davranis yuzeyi: sessiz degisim en pahali oldugu yerler ---
+/core/                              @ozgurylmz34
+/core/sap/00-sap.md                 @ozgurylmz34
+/config/                            @ozgurylmz34
+/.axetcode-denylist                 @ozgurylmz34
+/scripts/install.py                 @ozgurylmz34
+/kur.ps1                            @ozgurylmz34
+/kur.cmd                            @ozgurylmz34
+
+# --- CI ve kod sahipligi kendisi ---
+/.github/                           @ozgurylmz34
+
+# --- SAP yazma kapisi ve gate zinciri ---
+/skills-sap/sap-adt-foundation/     @ozgurylmz34
+/skills-sap/sap-code-review/        @ozgurylmz34
+
+# --- Guncelleme motoru (P1-P7) ---
+/guncelle/                          @ozgurylmz34
+/GUNCELLE.md                        @ozgurylmz34
+/scripts/guncelle.py                @ozgurylmz34

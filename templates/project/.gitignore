@@ -1,0 +1,35 @@
+# Kimlik bilgileri — ASLA commit edilmez (örnek şablonlar hariç)
+.conn*
+!.conn*.example
+*.env
+!*.env.example
+secrets/
+conn/*
+!conn/*.example
+!conn/README.md
+.saml_cookies.json
+
+# Doldurulmuş proje reçetesi — müşteri adı, peyzaj, kişiler taşıyabilir.
+# Şablonu (`proje-recetesi.ornek.md`) izlenir, doldurulmuş hâli izlenmez.
+# İçerik müşteri bilgisi taşımıyorsa ve ekip commit etmek isterse bu satır ELLE kaldırılır.
+proje-recetesi.md
+
+# Geçici dosyalar ve araç çıktıları
+.tmp/
+__pycache__/
+*.pyc
+node_modules/
+
+# UI build çıktıları (source_root farklıysa yolu uyarla)
+SOURCE_CODES/**/ui/*/dist/
+SOURCE_CODES/**/ui/*/archive.zip
+
+# Editör / işletim sistemi
+*.swp
+~$*
+.DS_Store
+Thumbs.db
+
+# abapGit teslim çıktıları ve SAP dönüş kayıtları (sistem ayrıntısı taşıyabilir)
+**/abapgit/dist/
+**/abapgit/.abapgit-status/

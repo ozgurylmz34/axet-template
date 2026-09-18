@@ -1,0 +1,16 @@
+# Satır sonu: metin dosyaları depoda LF; betik ve yapılandırma dosyaları her platformda LF.
+# ABAP/CDS kaynak dosyaları için ayrı kural yok (SAP'nin satır sonu davranışı ölçülmedi).
+* text=auto
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+# git hook'ları: CRLF'li `#!/bin/sh` satırı hook'u çalıştırmaz
+.githooks/* text eol=lf
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.zip  binary

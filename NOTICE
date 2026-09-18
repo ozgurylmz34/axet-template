@@ -1,0 +1,33 @@
+aXet template
+Copyright (c) 2026 Ozgur Yilmaz
+
+Bu depodaki içerik, aşağıdaki istisnalar dışında MIT lisansıyla dağıtılır (bkz. LICENSE).
+
+1. İzinle dahil edilen bölümler
+-------------------------------
+Aşağıdaki bölümler, hak sahibi kurumun yazılı izniyle dahil edilmiş ya da onun
+malzemesinden uyarlanmıştır. Bu bölümlerin kullanım ve yeniden dağıtım koşulları
+MIT lisansına değil, o iznin koşullarına tabidir. Bu bölümleri başka bir yerde
+yeniden dağıtmadan önce depo sahibine danışın.
+
+  - skills-sap/sap-classic-abap/templates/screen-gen/   (ekran üreteci kiti)
+  - skills-sap/sap-classic-abap/templates/alv-temp*.prog.abap   (ALV şablonları)
+  - skills-sap/sap-dev/references/naming.md   (adlandırma kılavuzu uyarlaması)
+  - skills-sap/sap-fs-ts-docs/
+  - skills-sap/sap-abapgit-delivery/
+  - skills/office-excel/
+  - skills/office-docs/
+  - skills/office-slides/
+  - skills/onboard/
+
+2. Üçüncü taraf açık kaynak
+---------------------------
+Açık kaynak projelerden türetilen ya da onlara dayanan kısımlar ve lisansları:
+THIRD_PARTY_NOTICES.md
+
+3. Ticari adlar
+---------------
+SAP, ABAP, S/4HANA, SAP BTP ve SAP GUI, SAP SE'nin ya da bağlı şirketlerinin
+ticari markalarıdır. Bu depo SAP SE ile bağlantılı değildir ve SAP SE tarafından
+onaylanmamıştır. aXet adı kendi sahibine aittir; bu depo aXet için bağımsız bir
+şablondur.

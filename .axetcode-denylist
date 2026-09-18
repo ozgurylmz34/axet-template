@@ -1,0 +1,6 @@
+# aXet.code bu dosyalari okumaz/yazmaz (satir basina yol, # yorum).
+# Dosya araclarinda kesin, bash'te best-effort (aXet belgesi; bash davranisi canli olculmedi).
+# Glob destegi olculmedi: yollar acik yazilir.
+.conn_adt
+.env
+secrets

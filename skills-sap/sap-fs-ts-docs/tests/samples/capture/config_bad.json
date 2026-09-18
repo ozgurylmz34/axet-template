@@ -1,0 +1,10 @@
+{
+  "url": "http://localhost:8080/index.html",
+  "steps": [
+    {"do": "shot", "name": "kd-01.jpg"},
+    {"do": "teleport"},
+    {"do": "set_model", "view_pattern": "Create", "data_file": "yok.json"},
+    {"do": "shot", "name": "same.png"},
+    {"do": "shot", "name": "same.png"}
+  ]
+}

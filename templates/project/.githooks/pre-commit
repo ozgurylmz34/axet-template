@@ -1,0 +1,26 @@
+#!/bin/sh
+# aXet proje pre-commit — new_project.py kurar ve kablolar (git config core.hooksPath .githooks).
+# Gerçek denetim template klonundaki runner'dadır; yalnız staged içerik taranır:
+#   kimlik dosyası · sır deseni · paket adları · validators-local/ · SAP kaynak incelemesi (çevrimdışı)
+# Runner ya da python bulunamazsa commit ENGELLENİR (koşmayan denetim "temiz" sayılmaz).
+# Kaçış yok: yanlış alarmda kullanıcı KENDİ terminalinde `git commit --no-verify` kullanır.
+RUNNER="<AXET_HOME>/scripts/project_precommit.py"
+
+ROOT="$(git rev-parse --show-toplevel)" || {
+  echo "[pre-commit] git repo kökü bulunamadı — commit ENGELLENDİ" >&2
+  exit 1
+}
+if [ ! -f "$RUNNER" ]; then
+  echo "[pre-commit] denetim runner'ı bulunamadı: $RUNNER — commit ENGELLENDİ" >&2
+  echo "  Template klonu taşındıysa bu dosyadaki RUNNER yolunu düzelt (doctor.py da uyarır)." >&2
+  exit 1
+fi
+PY=""
+for aday in python python3 py; do
+  if command -v "$aday" >/dev/null 2>&1; then PY="$aday"; break; fi
+done
+if [ -z "$PY" ]; then
+  echo "[pre-commit] python bulunamadı — denetim çalıştırılamadı, commit ENGELLENDİ" >&2
+  exit 1
+fi
+exec "$PY" "$RUNNER" --project-dir "$ROOT"

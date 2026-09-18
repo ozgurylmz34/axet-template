@@ -1,0 +1,18 @@
+# .conn_adt örneği — YALNIZ yer tutucu. Gerçek dosya proje kökünde `.conn_adt` (tek sistem) ya da
+# `conn/<SISTEM_ADI>.env` (çoklu sistem, scripts/switch_tier.py ile etkinleştirilir) olarak durur ve REPOYA GİRMEZ.
+# Önerilen yol: geliştirici kendi terminalinde `python scripts/setup_credentials.py` (parola yankılanmaz).
+# Elle doldurulacaksa: parolayı sohbete, log'a ya da komut satırına YAZMA.
+ADT_SAP_URL=https://<HOST>:<PORT>
+ADT_SAP_USER=<SAP_KULLANICI>
+ADT_SAP_PASSWORD=<SAP_PAROLA>
+ADT_SAP_CLIENT=<CLIENT>
+# Oturum dili = sap-project.json master_language (Yasak D) — ör. TR
+ADT_SAP_LANGUAGE=<MASTER_LANG>
+# Kurum sertifikası tanımlı değilse false (sap_doctor WARN verir)
+ADT_SAP_SSL_VERIFY=false
+# DEV | QA | PRD — TEK satır. Yazma yalnız DEV; satır yoksa/çakışırsa UNKNOWN → yazma reddedilir (fail-closed)
+ADT_SAP_TIER=DEV
+# Sistem adı — conn/ slotunun adıyla aynı tutulur
+ADT_SAP_SYSTEM_NAME=<SISTEM_ADI>
+# ATC check variant — tanımsızsa DEFAULT (adt_atc_check)
+# ADT_ATC_VARIANT=<VARIANT>

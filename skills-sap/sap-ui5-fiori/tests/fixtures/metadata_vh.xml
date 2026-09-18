@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata">
+	<edmx:DataServices m:DataServiceVersion="2.0">
+		<Schema Namespace="ZCA000_VH_O2" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+			<EntityType Name="CountryVHType">
+				<Key><PropertyRef Name="Country"/></Key>
+				<Property Name="Country" Type="Edm.String" Nullable="false" MaxLength="3"/>
+			</EntityType>
+			<EntityContainer Name="ZCA000_VH_O2_Entities" m:IsDefaultEntityContainer="true">
+				<EntitySet Name="CountryVHSet" EntityType="ZCA000_VH_O2.CountryVHType"/>
+			</EntityContainer>
+		</Schema>
+	</edmx:DataServices>
+</edmx:Edmx>

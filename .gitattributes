@@ -1,0 +1,28 @@
+# Satır sonu: metin dosyaları depoda LF. Betik ve yapılandırma dosyaları her platformda LF.
+# Proje iskeletinin kendi kopyası: templates/project/.gitattributes.
+* text=auto
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+# cmd.exe LF'li .cmd dosyasında goto/etiket satırlarını yanlış okuyabilir → kurulum araçları CRLF
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+# git hook şablonları: CRLF'li `#!/bin/sh` satırı hook'u çalıştırmaz
+templates/project/.githooks/* text eol=lf
+# git yamaları BAYT-BAYT korunur: `* text=auto` bunları Windows'ta CRLF'e çevirir, `git am`
+# de her satıra bir CR sızdırır (sessiz içerik bozulması). ÖLÇÜLDÜ 2026-09-16:
+# maintenance/core-cherry-squash-kurali.patch eklenirken git "LF will be replaced by CRLF" uyardı.
+*.patch -text
+*.diff  -text
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.exe  binary
+*.xlsx binary
+*.docx binary
