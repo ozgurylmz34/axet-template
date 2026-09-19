@@ -63,6 +63,13 @@ def yayin(etiket: str, *kalemler: dict, **ek) -> dict:
 
 
 class YayinTemeli(GeciciTest):
+    # Yayın aracı noreply olmayan kimlikle commit atmaz (yayın ⓐ) → akış testleri noreply kimlikle koşar.
+    NOREPLY = "test@users.noreply.github.com"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.env = dict(self.env, GIT_AUTHOR_EMAIL=self.NOREPLY, GIT_COMMITTER_EMAIL=self.NOREPLY)
+
     def depo(self, yayinlar_verisi: dict | None = None, motor: bool = False, **dosyalar: str) -> Path:
         """Sahte template deposu: zorunlu dosyalar + yayın aracı (+ istenirse güncelleme motoru)."""
         d = self.tmp / "depo"
@@ -191,6 +198,29 @@ class YayinAkisiTest(YayinTemeli):
         hedef = self.tmp / hedef_ad
         r = self.arac(depo, "--hedef", str(hedef), "--ilk")
         return hedef, r
+
+    # --- yayın ⓐ: commit kimliği ---------------------------------------------------------------------------
+    def test_noreply_olmayan_kimlik_yayini_durdurur_hedef_bos_kalir(self):
+        d = self.depo(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        self.commitle(d)
+        kurumsal = "biri@" + "sirket.example"  # parçalı: yayın taraması bu dosyayı da tarar
+        self.env = dict(self.env, GIT_AUTHOR_EMAIL=kurumsal)  # committer noreply kalır: yazar TEK BAŞINA yeter
+        hedef, r = self.ilk_yayin(d)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 1, c)
+        self.assertIn("GIT_AUTHOR_IDENT: e-posta GitHub noreply adresi değil", c)
+        self.assertNotIn("GIT_COMMITTER_IDENT", c)
+        self.assertNotIn(kurumsal, c)  # kimlik izi çıktıya basılmaz
+        self.assertFalse((hedef / ".git").exists(), "kimlik reddinde depo kurulmamalı")
+        self.assertEqual([], list(hedef.iterdir()), "--ilk tekrar koşulabilsin diye hedef BOŞ kalmalı")
+
+    def test_committer_kimligi_de_denetlenir(self):
+        d = self.depo(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        self.commitle(d)
+        self.env = dict(self.env, GIT_COMMITTER_EMAIL="biri@" + "sirket.example")
+        hedef, r = self.ilk_yayin(d)
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertIn("GIT_COMMITTER_IDENT: e-posta GitHub noreply adresi değil", self.cikti(r))
 
     def test_ilk_yayin_commit_etiket_changelog_trailer(self):
         d = self.depo(yayinlar(yayin("v0.1.0",
@@ -631,6 +661,46 @@ class SessionBriefGuncellemeTest(GeciciTest):
         self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01", kritik=True))))
         self.uygulananlari_yaz({"0.1.0-01": {"etiket": "v0.1.0", "durum": "uygulandi"}})
         self.assertFalse(any("WARN kritik" in s for s in self.bolum()))
+
+    # --- K-F (2026-09-18): yayını ZATEN içeren klon kalemi "bekliyor" saymaz ---------------------
+    def test_iceren_klonda_kalem_bekliyor_sayilmaz(self):
+        """ÖLÇÜLMÜŞ KUSUR (davranış testi 2026-09-18): taze klon v0.1.0'ı içerdiği hâlde oturum
+        özeti "1 güncelleme kalemi bekliyor" diyordu; motor o yayını plana almadığı için kalem
+        hiç `uygulandi` olmuyor ⇒ satır `%guncelle` sonrasında bile KALICIYDI."""
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        # kontrol grubu: etiket YOKKEN (çözülemez) kalem bekleyen sayılır — motorla aynı
+        self.assertTrue(any("1 güncelleme kalemi bekliyor" in s for s in self.bolum()))
+        self.git(self.klon, "tag", "v0.1.0", "HEAD")
+        satirlar = self.bolum()
+        self.assertTrue(any("bekleyen güncelleme kalemi yok" in s for s in satirlar), satirlar)
+        self.assertFalse(any("kalemi bekliyor" in s for s in satirlar), satirlar)
+
+    def test_icermeyen_klonda_kalem_bekliyor_kalir(self):
+        """TERS YÖN: etiket origin/main'de, HEAD onun GERİSİNDE ⇒ kalem gerçekten bekliyor."""
+        self.klon_geride(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        self.git(self.klon, "tag", "v0.1.0", "refs/remotes/origin/main")
+        satirlar = self.bolum()
+        self.assertTrue(any("1 güncelleme kalemi bekliyor" in s for s in satirlar), satirlar)
+
+    def test_iceren_klonda_kritik_kalem_uyarmaz(self):
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01", kritik=True))))
+        self.git(self.klon, "tag", "v0.1.0", "HEAD")
+        self.assertFalse(any("WARN kritik" in s for s in self.bolum()))
+
+    def test_motor_ice_aktarilamazsa_kalem_satiri_OLCULEMEDI_sayilir(self):
+        """Ata testi yapılamıyorsa "kalem bekliyor" ya da "güncel" DENMEZ — eski satır aynen kalır."""
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        with mock.patch.dict(sys.modules, {"guncelle": None}):
+            satirlar = self.bolum()
+        self.assertFalse(any("güncelleme kalemi" in s for s in satirlar), satirlar)
+
+    def test_ata_testi_motorla_TEK_KAYNAK(self):
+        """AYNA: iki taraf da `guncelle.yayin_durumu`'nu çağırır; ata testi elle kopyalanmaz."""
+        self.assertIn("yayin_durumu(", SESSION_BRIEF.read_text(encoding="utf-8"))
+        motor = GUNCELLE.read_text(encoding="utf-8")
+        self.assertIn("durum_y = yayin_durumu(", motor)
+        self.assertEqual(motor.count('"merge-base", "--is-ancestor"'), 1,
+                         "ata testi motorda birden fazla yerde — tek kaynak bozuldu")
 
     def test_main_template_bolumunu_cagirir(self):
         """KABLOLAMA: `main()` TEMPLATE bölümünü artık `template_bolumu`'ndan alıyor mu."""

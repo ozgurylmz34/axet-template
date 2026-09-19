@@ -84,3 +84,41 @@ class SessionBriefTest(GeciciTest):
         f = d / "AGENTS.md"
         f.write_text(f.read_text(encoding="utf-8").replace("aktif paket: <…>", "aktif paket: `ZSD999`"), encoding="utf-8")
         self.assertIn("aktif paket ZSD999", self.brief(d))
+
+
+class DurumCapasiGitTest(GeciciTest):
+    """rc taraması 2026-09-18 (Z15): durum çapası `git status` çıktısını yanlış okuyordu.
+    ① `_git` çıktının tamamını baştan kırpıyordu ⇒ ilk porcelain satırının (" M a.txt") dosya
+    adı 1 karakter kısalıyordu (ölçüldü: `.txt`). ② status rc≠0 (bozuk index) "temiz" deniyordu.
+    KAPSAM — bakılmayan: zaman aşımı dalı (aynı rc≠0 yolundan geçer, ayrı test yok)."""
+
+    def _repo(self):
+        import session_brief
+        d = self.tmp / "repo"
+        d.mkdir()
+        self.git(d, "init", "-q")
+        self.yaz(d / "a.txt", "1")
+        self.git(d, "add", "a.txt")
+        self.git(d, "commit", "-q", "-m", "ilk")
+        return session_brief, d
+
+    def test_degisen_ilk_dosyanin_adi_tam(self):
+        sb, d = self._repo()
+        self.yaz(d / "a.txt", "2")
+        satir = [s for s in sb.durum_capasi(d) if s.startswith("değişiklik:")][0]
+        self.assertIn("— a.txt", satir)
+
+    def test_izlenmeyen_dosya_kontrol_grubu(self):
+        sb, d = self._repo()
+        self.yaz(d / "b.txt", "x")
+        satir = [s for s in sb.durum_capasi(d) if s.startswith("değişiklik:")][0]
+        self.assertIn("— b.txt", satir)
+
+    def test_bozuk_indexte_temiz_denmez(self):
+        sb, d = self._repo()
+        (d / ".git" / "index").write_bytes(b"bozuk")
+        r = self.git(d, "status", "--porcelain", kontrol=False)
+        self.assertNotEqual(r.returncode, 0, "enjeksiyon tutmadı — test hiçbir şey ölçmez")
+        out = sb.durum_capasi(d)
+        self.assertFalse(any("temiz" in s for s in out), out)
+        self.assertTrue(any("ÖLÇÜLEMEDİ" in s and s.startswith("değişiklik:") for s in out), out)

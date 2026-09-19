@@ -452,7 +452,7 @@ class PlanKenarTest(GuncelleTemel):
         r = self.f.calistir("plan")
         self.assertEqual(r.returncode, 1, self.cikti(r))
         # EK-3: "1 döndü" ile "BEKLEDİĞİM SEBEPTEN 1 döndü" ayrışsın
-        self.assertIn("Klon güncel", self.cikti(r))
+        self.assertIn("Klon güncel: bekleyen yayın kalemi yok", self.cikti(r))
 
     def test_yayinlar_json_yoksa_cikis_2(self):
         """Eşlemesiz plan üretmek kalem sözleşmesini uydurmak olur → hata (0/1 değil)."""
@@ -601,9 +601,15 @@ class UygulaTest(GuncelleTemel):
     def test_V6d_otomatik_kapanmaz(self):
         """Ad↔içerik uyumu: bu test YALNIZ V6d'yi ölçer (eski adı V6'yı da ölçtüğünü ima
         ediyordu; gövdede tek bir V6 assertion'ı yoktu)."""
-        self.f.calistir("uygula", "--otomatik")
+        r = self.f.calistir("uygula", "--otomatik")
+        # V6d otomatik yola HİÇ girmemeli: dosyanın korunması tek başına kanıt değildir
+        # (otomatik yol denenip `git checkout` rastlantıyla patlasa da dosya yerinde kalır).
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("docs/silinecek.md", r.stderr, self.cikti(r))
         d = self.f.durum()["dosyalar"]
         self.assertEqual(d["docs/silinecek.md"]["vaka"], "V6d")
+        self.assertEqual(d["docs/silinecek.md"]["durum"], "bekliyor", d["docs/silinecek.md"])
+        self.assertNotIn("not_", d["docs/silinecek.md"], "otomatik yol denenmiş")
         self.assertNotIn(d["docs/silinecek.md"]["durum"], ("dogrulandi",),
                          "V6d otomatik kapanamaz — kullanıcıya bilgi vakasıdır")
         self.assertTrue((self.f.tuketici / "docs/silinecek.md").exists())
@@ -1193,21 +1199,31 @@ class AkisTest(GuncelleTemel):
         `uygulanan.json` mühürleniyor, RAPOR.md "KAPANMADI" demiyordu.
 
         Başarısızlık burada BAŞKA bir yolla zorlanır (düzeltilen kusurla değil): V7 kararı
-        `yerel` bırakılan `skills/cakisan/SKILL.md` İZLENMEYEN kalır; `.gitignore`a eklenince
+        `yeniden-adlandir` template dosyasını `skills/cakisan/SKILL.md`'ye yazar (git checkout
+        ile ⇒ STAGE'li); test onu `git rm --cached` ile İZLENMEYEN yapıp `.gitignore`a ekler ⇒
         `git add -- <yol>` `rc=1` + "ignored by one of your .gitignore files" verir.
+        (Eskiden `yerel` kararı kullanılıyordu: dosya doğal olarak izlenmeyendi. M-6'dan beri
+        `yerel` + izlenmeyen dosya kapanışa hiç girmez — bkz.
+        test_V7_yerel_izlenmeyen_dosya_kapanis_commitine_GIRMEZ.)
+        Ek (P2 kurulum-sonrası ⓐ): başarısızlıktan sonra index'te kapanışın yarım bıraktığı stage
+        (`Klon.sil()` silmeleri) KALMAZ.
         """
         self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
         self._tum_yargilari_kapat(haric="skills/cakisan/SKILL.md")
-        r = self.f.calistir("isaretle", "skills/cakisan/SKILL.md", "--karar", "yerel")
+        r = self.f.calistir("isaretle", "skills/cakisan/SKILL.md", "--karar", "yeniden-adlandir")
         self.assertEqual(r.returncode, 0, self.cikti(r))
         self.ozel_adimlari_kostur()
         self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
         self.assertEqual(self.f.calistir("butunluk").returncode, 0)
 
+        self.git(self.f.tuketici, "rm", "-q", "--cached", "--", "skills/cakisan/SKILL.md")
         # kontrol grubu: yol gerçekten İZLENMİYOR (yoksa .gitignore `git add`i etkilemez)
         self.assertEqual(self.git(self.f.tuketici, "ls-files", "--",
                                   "skills/cakisan/SKILL.md").stdout.strip(), "")
+        # kontrol grubu: V6 silmesi kapanıştan ÖNCE stage'li (yoksa aşağıdaki "index temiz" vakum)
+        self.assertIn("docs/silinecek2.md",
+                      self.git(self.f.tuketici, "diff", "--cached", "--name-only").stdout)
         gi = self.f.tuketici / ".gitignore"
         gi.write_text(gi.read_text(encoding="utf-8") + "/skills/cakisan/\n", encoding="utf-8")
 
@@ -1224,13 +1240,94 @@ class AkisTest(GuncelleTemel):
         # mühür BASILMAMALI — "uygulandı" yalanı `komut_plan`da kalemi kalıcı olarak düşürür
         self.assertFalse((self.f.durum_dizini() / "uygulanan.json").exists(),
                          "git add patladığı hâlde uygulanan.json mühürlendi")
+        # ⓐ index plandaki yollar için HEAD'e geri alındı — yarım stage (V6 silmesi) KALMADI
+        self.assertIn("index'i HEAD'e geri alındı", self.cikti(r))
+        stage = self.git(self.f.tuketici, "diff", "--cached", "--name-only").stdout.strip()
+        self.assertEqual(stage, "", f"başarısız kapanıştan sonra index'te yarım stage kaldı: {stage}")
+        # çalışma ağacı ise DEĞİŞMEDİ: silinen dosya diskte yok, yeniden-adlandırılan duruyor
+        self.assertFalse((self.f.tuketici / "docs/silinecek2.md").exists())
+        self.assertTrue((self.f.tuketici / "skills/cakisan/SKILL.md").exists())
+
+    def test_V7_yerel_izlenmeyen_dosya_kapanis_commitine_GIRMEZ(self):
+        """M-6 (kullanıcı kararı 2026-09-18, TASARIM §6): `--karar yerel` = "bu dosyaya DOKUNMA".
+
+        Eskiden kapanış, İZLENMEYEN bir kullanıcı dosyasını `git add` ile commit'e alıyordu —
+        kullanıcının hiç izletmediği dosya aXet commit'iyle depoya giriyordu. Artık girmez:
+        dosya diskte kullanıcının içeriğiyle durur, izlenmeyen kalır, kapanış 0 döner.
+        """
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat(haric="skills/cakisan/SKILL.md")
+        r = self.f.calistir("isaretle", "skills/cakisan/SKILL.md", "--karar", "yerel")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+        # kontrol grubu: yol kapanıştan ÖNCE izlenmiyor ve diskte kullanıcının içeriği var
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--",
+                                  "skills/cakisan/SKILL.md").stdout.strip(), "")
+        once = (self.f.tuketici / "skills/cakisan/SKILL.md").read_text(encoding="utf-8")
+
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertNotIn("skills/cakisan/SKILL.md", agac,
+                         "`yerel` kararlı izlenmeyen dosya kapanış commit'ine girdi")
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--",
+                                  "skills/cakisan/SKILL.md").stdout.strip(), "")
+        self.assertEqual((self.f.tuketici / "skills/cakisan/SKILL.md").read_text(encoding="utf-8"),
+                         once, "`yerel` kararlı dosyanın içeriği değişti")
+        # kontrol grubu: aynı kapanışta DİĞER değişiklikler commit'e girdi (süzgeç aşırı değil)
+        self.assertNotIn("docs/silinecek2.md", agac, "V6 silmesi kapanış commit'ine girmedi")
+
+    def test_V4R_birlesik_sonra_ertelendi_yarim_tasima_uretmez(self):
+        """Bug gate 2026-09-19 ikinci tur (ölçüldü): "motor yazmadıysa her izlenmeyen yolu koru"
+        süzgeci, `birlesik` ile YENİ yola yazılmış V4R dosyası sonradan `ertelendi` yapılınca yeni yolu
+        commit dışı bırakıyordu; eski yolun silmesi ise stage'liydi ⇒ HEAD'de İKİ yol da yoktu."""
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.birlesik_isaretle("docs/tasinan2.md")
+        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
+        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "ertelendi", "--gerekce", "vazgectim")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        # kontrol grubu: yeni yol motor tarafından yazıldı ve henüz izlenmiyor
+        self.assertTrue((self.f.tuketici / "docs/tasindi2.md").is_file())
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        r = self.f.calistir("kapanis")
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
+                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
+
+    def test_V4R_birlesik_sonra_yerel_yarim_tasima_uretmez(self):
+        """Bug gate 2026-09-19 üçüncü tur (ölçüldü): aynı sınıf `yerel` kararında — süzgeç `yerel` için
+        yeni yolu da koruyordu; taşıma motor tarafından yapılmışken bu HEAD'de iki yolu da yok ediyordu."""
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.birlesik_isaretle("docs/tasinan2.md")
+        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
+        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "yerel")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        # kontrol grubu: taşıma gerçekten olmuş (eski yol diskte yok, yeni yol izlenmiyor)
+        self.assertFalse((self.f.tuketici / "docs/tasinan2.md").exists())
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        r = self.f.calistir("kapanis")
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
+                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
 
     def test_kapanis_COMMIT_BASARISIZSA_eksik_olur_ve_muhur_basilmaz(self):
         """⛔ BLOCKER-3 (kardeş vaka): commit'in kendisi patlarsa da yalnız `UYARI:` basılıyordu.
 
         Ayrıca `rc=1` KOŞULSUZ tolere ediliyordu ("commit edilecek bir şey yok" varsayımı).
-        Burada stage'de fark VAR ve commit `gpg.program` yok diye patlar ⇒ rc=1'in ikinci
-        anlamı ölçülür. `--no-verify` bunu ATLAMAZ (hook değil, imzalama).
+        Burada stage'de fark VAR ve commit imzalanamadığı için patlar (`gpg.program` yok ⇒
+        git rc=128 verir). Hook reddinin ürettiği rc=1 AYRI testte ölçülür
+        (`KapanisKabulVeHookTest.test_hook_rc1_...`). `--no-verify` imzalamayı ATLAMAZ.
         """
         self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
@@ -1263,6 +1360,113 @@ class AkisTest(GuncelleTemel):
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn("KAPSAM —", rapor)
         self.assertIn("bakılmayanlar", rapor)
+
+
+class KapanisKabulVeHookTest(GuncelleTemel):
+    """P2 ⓑ: `kapanis --kabul` altında git tarafının davranışı + hook reddi (rc=1).
+
+    M-1: `--kabul` verilip git tarafı (add/commit) PATLARSA kapanış 1 döner; rapor aynı anda
+    hem "KAPANMADI" hem "Kullanıcı onaylı açık FAIL ile kapandı" diyordu — "onaylı kapandı"
+    satırı yalnız kod=3'te (onaylı açık FAIL, git tarafı TEMİZ) basılır.
+    Ön-eksik burada `butunluk`un KOŞTURULMAMASIYLA üretilir ⇒ `--kabul` olmadan kapanış reddeder.
+    """
+
+    # AkisTest'ten MİRAS DEĞİL (miras onun tüm testlerini ikinci kez koşturur) — yalnız yardımcılar
+    birlesik_isaretle = AkisTest.birlesik_isaretle
+    _tum_yargilari_kapat = AkisTest._tum_yargilari_kapat
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.senaryolari_uygula()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+
+    def _hazirla(self, *, butunluk: bool, birlesik: str | None = None,
+                 haric: str | None = None, karar: tuple[str, str] | None = None) -> None:
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        if birlesik:
+            self.birlesik_isaretle(birlesik)
+        self._tum_yargilari_kapat(haric=haric)
+        if karar:
+            r = self.f.calistir("isaretle", karar[0], "--karar", karar[1])
+            self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        if butunluk:
+            self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+
+    def _rapor(self) -> str:
+        return (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+
+    def _muhur(self) -> bool:
+        return (self.f.durum_dizini() / "uygulanan.json").exists()
+
+    def test_kabul_ile_ADD_hatasi_ortulmez(self):
+        self._hazirla(butunluk=False, haric="skills/cakisan/SKILL.md",
+                      karar=("skills/cakisan/SKILL.md", "yeniden-adlandir"))
+        self.git(self.f.tuketici, "rm", "-q", "--cached", "--", "skills/cakisan/SKILL.md")
+        gi = self.f.tuketici / ".gitignore"
+        gi.write_text(gi.read_text(encoding="utf-8") + "/skills/cakisan/\n", encoding="utf-8")
+        r = self.f.calistir("kapanis", "--kabul", "bilerek-kabul")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertFalse(self._muhur(), "git add patladığı hâlde mühür basıldı")
+        rapor = self._rapor()
+        self.assertIn("`git add` başarısız", rapor)
+        self.assertIn("KAPANMADI", rapor)
+        self.assertNotIn("Kullanıcı onaylı açık FAIL ile kapandı", rapor,
+                         "git tarafı patladığı hâlde rapor 'onaylı kapandı' diyor (M-1)")
+
+    def test_kabul_ile_COMMIT_hatasi_ortulmez(self):
+        self._hazirla(butunluk=False, birlesik="core/00-temel.md", haric="core/00-temel.md")
+        self.git(self.f.tuketici, "config", "commit.gpgsign", "true")
+        self.git(self.f.tuketici, "config", "gpg.program", "boyle-bir-program-yok-xyz")
+        r = self.f.calistir("kapanis", "--kabul", "bilerek-kabul")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertFalse(self._muhur(), "commit patladığı hâlde mühür basıldı")
+        rapor = self._rapor()
+        self.assertIn("commit'i atılamadı", rapor)
+        self.assertNotIn("Kullanıcı onaylı açık FAIL ile kapandı", rapor,
+                         "commit patladığı hâlde rapor 'onaylı kapandı' diyor (M-1)")
+
+    def test_kabul_ile_git_tarafi_kosar_ve_3_doner(self):
+        """Kontrol grubu: git tarafı temizken `--kabul` = rc 3 + mühür + "onaylı" satırı."""
+        self._hazirla(butunluk=False, birlesik="core/00-temel.md", haric="core/00-temel.md")
+        r = self.f.calistir("kapanis", "--kabul", "bilerek-kabul")
+        self.assertEqual(r.returncode, 3, self.cikti(r))
+        self.assertTrue(self._muhur())
+        self.assertIn("Kullanıcı onaylı açık FAIL ile kapandı", self._rapor())
+        head = self.git(self.f.tuketici, "show", "HEAD:core/00-temel.md").stdout
+        self.assertIn("Çekirdek v3", head)
+        self.assertIn("son yerel", head)
+
+    def test_izlenen_yol_diskte_yoksa_silmesi_commite_girer(self):
+        """Plan yolu index'te var, diskte yok (elle silindi) ⇒ silme stage'lenir ve commit'e girer."""
+        self._hazirla(butunluk=True)
+        izli = self.git(self.f.tuketici, "ls-files", "--", "scripts/sap_stamp.py").stdout.strip()
+        self.assertEqual(izli, "scripts/sap_stamp.py", "kontrol: yol index'te olmalı")
+        (self.f.tuketici / "scripts/sap_stamp.py").unlink()
+        r = self.f.calistir("kapanis", "--kabul", "bilerek-kabul")
+        self.assertIn(r.returncode, (0, 3), self.cikti(r))
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertNotIn("scripts/sap_stamp.py", agac,
+                         "index'te olup diskte olmayan yolun silmesi commit'e girmedi")
+
+    def test_hook_rc1_commiti_durdurursa_eksik_olur_ve_muhur_basilmaz(self):
+        """`--no-verify` prepare-commit-msg'i ATLAMAZ; hook exit 1 ⇒ git commit rc=1 + stage'de
+        fark var ⇒ "commit edilecek bir şey yok" sanılıp tolere EDİLMEZ."""
+        self._hazirla(butunluk=True, birlesik="core/00-temel.md", haric="core/00-temel.md")
+        hp = self.git(self.f.tuketici, "rev-parse", "--git-path", "hooks").stdout.strip()
+        hd = Path(hp) if Path(hp).is_absolute() else self.f.tuketici / hp
+        hd.mkdir(parents=True, exist_ok=True)
+        (hd / "prepare-commit-msg").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        once = self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip()
+        r = self.f.calistir("kapanis")
+        self.assertEqual(once, self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip(),
+                         "kontrol: hook commit'i engellemeliydi")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertFalse(self._muhur(), "commit atılmadığı hâlde mühür basıldı")
+        self.assertIn("commit'i atılamadı", self._rapor())
 
 
 class OlcumOlculemediTest(GuncelleTemel):
@@ -1303,6 +1507,85 @@ class OlcumOlculemediTest(GuncelleTemel):
         self.assertTrue(veri["testler"], "kayıt yine de yazılmalı (ölçülemedi ≠ hiç bakılmadı)")
         self.assertTrue(all(t["cikis"] is None for t in veri["testler"]),
                         [t for t in veri["testler"] if t["cikis"] is not None])
+
+
+class HazirlaStatusRcTest(GuncelleTemel):
+    """rc taraması 2026-09-18 (Z15): `hazirla` `git status` rc'sini okumuyordu ⇒ bozuk index'te
+    "temiz" sanılıp anlık commit atlanıyor, geri dönüş etiketi kullanıcının izlenen
+    değişikliğini İÇERMİYORDU (ölçüldü: etiketteki LICENSE = eski sürüm).
+    KAPSAM — bakılmayan: onkontrol'ün sığ-klon rc dalı (sahte klon gerektirir; kod okumasıyla)."""
+
+    def test_status_basarisizsa_DUR_ve_etiket_atilmaz(self):
+        self.f.yerel_degistir("LICENSE", "MIT yerel\n")
+        (self.f.tuketici / ".git" / "index").write_bytes(b"bozuk")
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("git status", self.cikti(r))
+        etiketler = self.git(self.f.tuketici, "tag", "-l", "guncelle-oncesi-*").stdout.split()
+        self.assertEqual(etiketler, [], "ölçülemeyen durumda geri dönüş noktası atıldı")
+
+
+class BirlestirRcTest(unittest.TestCase):
+    """`git merge-file` hata kodu (Windows'ta 255) "255 çakışma" sayılıyordu ⇒ yanlış teşhis
+    ("ayrışma eşiği aşıldı"). Hata taklitle üretilir; kontrol grubu gerçek merge-file'dır."""
+
+    def test_127_ustu_rc_hata_sayilir(self):
+        import guncelle  # noqa: PLC0415
+        from unittest import mock
+        sahte = subprocess.CompletedProcess([], 255, stdout=b"", stderr=b"error: kirik")
+        with mock.patch.object(guncelle.subprocess, "run", return_value=sahte):
+            with self.assertRaises(guncelle.Dur) as bag:
+                guncelle.birlestir(None, "a.md", b"t\n", b"l\n", b"y\n")
+        self.assertIn("rc=255", str(bag.exception))
+
+    def test_kontrol_grubu_gercek_cakisma_sayisi(self):
+        import guncelle  # noqa: PLC0415
+        icerik, cakisma = guncelle.birlestir(None, "a.md", b"x\n", b"yerel\n", b"yeni\n")
+        self.assertEqual(cakisma, 1)
+        self.assertIn(b"YEREL:a.md", icerik)
+
+
+class DiskShaOlculemediTest(GuncelleTemel):
+    """rc taraması 2026-09-18 (ZARARLI-1): `Klon.disk_sha` `git hash-object` rc≠0'ını yutup
+    `None` ("dosya yok") döndürüyordu ⇒ kullanıcının İZLENMEYEN dosyası V7 (yargı) yerine V2
+    (otomatik) sınıflanıyor, `_yedeksiz_mi` "ezilecek içerik yok" diyor ve `uygula --otomatik`
+    dosyayı YEDEKSİZ eziyordu (ölçüldü: `ALINDI … (V2)`, `.yerel` yok).
+
+    Arıza enjeksiyonu: yalnız o yola bağlı, `required` ve clean komutu başarısız bir filtre —
+    `hash-object --path`'i rc≠0 yaptırmanın deterministik yolu (gerçek karşılığı: okunamayan
+    dosya, eksik LFS/filtre, kilit).
+    KAPSAM — bakılmayan: `stdin_sha` dalı (aynı düzeltme, ayrı test yok) · yazım sonrası geri
+    okumanın hash'leyemediği dal (`_yazim_sonrasi_sha`).
+    """
+
+    YOL = "skills/cakisan/SKILL.md"
+    KULLANICI = "---\nname: cakisan\n---\nKULLANICININ dosyasi\n"
+
+    def _filtreyi_boz(self) -> None:
+        t = self.f.tuketici
+        (t / ".git" / "info").mkdir(exist_ok=True)
+        (t / ".git" / "info" / "attributes").write_text(f"{self.YOL} filter=kirik\n", encoding="utf-8")
+        self.git(t, "config", "filter.kirik.clean", "false")
+        self.git(t, "config", "filter.kirik.smudge", "cat")
+        self.git(t, "config", "filter.kirik.required", "true")
+        r = self.git(t, "hash-object", "--path", self.YOL, "--", str(t / self.YOL), kontrol=False)
+        self.assertNotEqual(r.returncode, 0, "enjeksiyon tutmadı — test hiçbir şey ölçmez")
+
+    def test_kontrol_grubu_saglam_gitte_yerel_dosya_V7(self):
+        self.f.yerel_degistir(self.YOL, self.KULLANICI)
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.vakalar().get(self.YOL), "V7")
+
+    def test_hash_object_duserse_plan_DUR_ve_dosya_dokunulmaz(self):
+        self.f.yerel_degistir(self.YOL, self.KULLANICI)
+        self._filtreyi_boz()
+        r = self.hazirla_ve_planla()
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("ÖLÇÜLEMEDİ", self.cikti(r))
+        if (self.f.durum_dizini() / "plan.json").is_file():
+            self.assertNotEqual(self.f.vakalar().get(self.YOL), "V2",
+                                "okunamayan yerel dosya otomatik ezme vakasına düştü")
+        self.assertEqual((self.f.tuketici / self.YOL).read_text(encoding="utf-8"), self.KULLANICI)
 
 
 class ButunlukTest(GuncelleTemel):
@@ -1654,6 +1937,87 @@ class KartTest(GuncelleTemel):
         self.assertEqual(r.returncode, 0, self.cikti(r))
         self.assertIn("kart gövdesi", self.cikti(r))
         self.assertNotIn("BOZUK", self.cikti(r))
+
+
+class M6YenidenAdlandirmaTest(GuncelleTemel):
+    """M-6'nın yeniden adlandırmalı V7 kolu (bug gate 2026-09-19, BLOCKER #1-#2 — ölçüldü).
+
+    Template `docs/tasinacak.md`'yi `docs/tasindi.md`'ye taşır; kullanıcının yeni yolda
+    İZLENMEYEN kendi dosyası vardır ⇒ V7. Eski süzgeç yalnız `karar == yerel` kaydının `hedef_yol`unu
+    koruyordu ve o alan ESKİ yolu tutuyordu ⇒ kullanıcının dosyası kapanış commit'ine giriyordu.
+    `ertelendi` kararında süzgeç hiç devreye girmiyordu. Taban AkisTest DEĞİL: onun testleri
+    V1R taşımasını varsayar, bu fikstürde aynı yol V7'dir.
+    """
+    OZEL = "KULLANICININ OZEL NOTU\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.senaryolari_uygula()
+        self.f.yerel_degistir("docs/tasindi.md", self.OZEL)
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+
+    def _karar_ver_ve_kapat(self, *karar: str):
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.f.calistir("uygula", "--otomatik")
+        AkisTest._tum_yargilari_kapat(self)
+        r = self.f.calistir("isaretle", "docs/tasinacak.md", *karar)
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        # kontrol grubu: vaka gerçekten V7 ve kullanıcının dosyası kapanıştan ÖNCE izlenmiyor
+        plan = json.loads((self.f.durum_dizini() / "plan.json").read_text(encoding="utf-8"))
+        kayit = [d for k in plan["kalemler"] for d in k["dosyalar"] if d["yol"] == "docs/tasinacak.md"]
+        self.assertEqual([(d["vaka"], d.get("yeni_yol")) for d in kayit], [("V7", "docs/tasindi.md")])
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi.md").stdout.strip(), "")
+        return self.f.calistir("kapanis")
+
+    def _kullanici_dosyasi_commite_girmedi(self, r) -> None:
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertNotIn("docs/tasindi.md", agac,
+                         f"kullanıcının izlenmeyen dosyası kapanış commit'ine girdi:\n{self.cikti(r)}")
+        self.assertEqual((self.f.tuketici / "docs/tasindi.md").read_text(encoding="utf-8"), self.OZEL)
+
+    def test_V7_yeniden_adlandirmali_yerel_yeni_yolu_korur(self):
+        r = self._karar_ver_ve_kapat("--karar", "yerel")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self._kullanici_dosyasi_commite_girmedi(r)
+        # kontrol grubu: süzgeç aşırı değil — aynı kapanışta V6 silmesi commit'e girdi
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertNotIn("docs/silinecek2.md", agac)
+
+    def test_V7_yeniden_adlandirmali_ertelendi_yeni_yolu_korur(self):
+        r = self._karar_ver_ve_kapat("--karar", "ertelendi", "--gerekce", "sonra bakarim")
+        self._kullanici_dosyasi_commite_girmedi(r)
+
+    def test_V7_karar_verilmeden_kabul_ile_kapanis_yeni_yolu_korur(self):
+        """Bug gate 2026-09-19 #2'nin üçüncü kolu: yargı verilmemiş (`bekliyor`) V7 + `kapanis --kabul`."""
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.f.calistir("uygula", "--otomatik")
+        AkisTest._tum_yargilari_kapat(self)
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi.md").stdout.strip(), "")
+        r = self.f.calistir("kapanis", "--kabul", "kabul ediyorum")
+        self.assertEqual(r.returncode, 3, self.cikti(r))   # kullanıcı onaylı açık FAIL ile kapandı
+        self._kullanici_dosyasi_commite_girmedi(r)
+
+
+class M6EskiYolSilinmisTest(M6YenidenAdlandirmaTest):
+    """Bug gate 2026-09-19 dördüncü tur (ölçüldü): aynı üç karar, ama kullanıcı template'in ESKİ yolunu
+    önceden kendisi silip commit'lemiş. "Eski yol duruyor mu" işareti burada "taşındı" diyordu ⇒
+    kullanıcının yeni yoldaki izlenmeyen dosyası üç kararda da commit'e giriyordu. Testler üst sınıftan."""
+
+    def setUp(self) -> None:
+        GuncelleTemel.setUp(self)
+        self.senaryolari_uygula()
+        self.git(self.f.tuketici, "rm", "-q", "docs/tasinacak.md")
+        self.git(self.f.tuketici, "commit", "-qm", "kullanici eski yolu sildi")
+        self.f.yerel_degistir("docs/tasindi.md", self.OZEL)
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
 
 
 def _uret_elle(hedef: str) -> int:

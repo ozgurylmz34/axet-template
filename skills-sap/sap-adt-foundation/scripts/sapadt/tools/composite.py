@@ -342,7 +342,7 @@ def adt_domain_create(
     try:
         require_writable_tier(get_active_tier(), what="domain create")
         require_customer_namespace(name, what=obj_type)
-        require_transport(transport, what=f"{obj_type} create")
+        require_transport(transport, what=f"{obj_type} create", package=package)
         require_tr_text(description, what="domain description")
     except GuardrailViolation as gv:
         return gv.as_dict()
@@ -472,7 +472,7 @@ def adt_dtel_create(
     try:
         require_writable_tier(get_active_tier(), what="dtel create")
         require_customer_namespace(name, what=obj_type)
-        require_transport(transport, what=f"{obj_type} create")
+        require_transport(transport, what=f"{obj_type} create", package=package)
         require_tr_text(description, what="dtel description")
         require_all_labels(labels, expected=["short", "medium", "long", "heading"])
         require_label_lengths(labels)

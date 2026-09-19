@@ -210,6 +210,9 @@ Klonu günceller ve kurulumu yeniler. Yeni kurallar ve skill'ler bir sonraki aXe
   `.axetcode-denylist`) değişiklikleri git'e karşı raporlar; `%guncelle`'nin kendi commit'leri bilgi satırı,
   kullanıcı kaynaklı sapma WARN olur. Yeniden kurulum eski `edit` deny'larını config'ten siler.
 - **Özel ajan tanımı çalışmaz** (`.axet-code/agents`, `agent create`): devir yerleşik `agent` aracıyla yapılır.
+- **Bash izninde "Allow for Session" bütün bash'e yayılır** (ölçüldü 2026-09-18): tek bir komuta verilen oturum onayı
+  o oturumdaki TÜM bash komutlarını kapsar; `ask` kuralları da sorulmadan geçer (`deny` geçerli kalır). Bash için
+  oturum onayı verme; her komutu tek tek onayla.
 - **`axet-code run` ve `-y` izin sormaz:** `ask` kuralları run modunda sormadan onaylanır (ölçüldü); deny run modunda
   da bloklar. Betikten çağırırken stdin kapatılmalı. `ask`'ın TUI'de sorması beklenir (DOĞRULANMADI).
 - **İki desen aynı komuta uyunca uzun olan kazanır.** ⚠ Devamı olan *"eşitlikte ask kazanır, kural sırası etkisizdir"*

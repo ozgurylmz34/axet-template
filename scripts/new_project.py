@@ -21,6 +21,7 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +42,11 @@ AXET_DEFAULT_GITIGNORE = ".axet-code/.gitignore"
 # tutmazsa vaka VTB olur. Bu yüzden kayıt İLK projelerden başlamalı (yayından önce).
 SURUM_KAYDI = ".axet-code/sablon-surumu.json"
 SURUM_KAYDI_SURUMU = 1
+
+
+def _ikili_sablon_mu(rel: str, ham: bytes) -> bool:
+    import guncelle  # aynı klasör; uzantı listesinin tek kaynağı
+    return Path(rel).suffix.lower() in guncelle.IKILI_UZANTI or b"\0" in ham[:8000]
 
 
 def sablon_yollari(sap: bool) -> list[str]:
@@ -182,20 +188,46 @@ def main() -> int:
     name = args.name or target.name
 
     counts = {"oluşturuldu": 0, "değiştirildi": 0, "atlandı": 0}
+    # Sürüm kaydı kararının girdisi `counts`'tan AYRI tutulur (K-E, ölçüldü 2026-09-18): aXet klasörü açılınca
+    # `.axet-code/.gitignore`'ı `*` içeriğiyle KENDİSİ yazar. O dosya "değiştirildi"/"aynı" sayılır ama kullanıcının
+    # önceden kurduğu bir proje dosyası DEĞİLDİR; sayılırsa her aXet'le açılmış klasörde doğum kaydı yazılmaz.
+    # ⚠ Bu yüzden `counts` ile `onceden_kullanici` birebir eşleşmez — biri ekran özeti, öbürü karar girdisi.
+    onceden_kullanici = 0
     sources = [(TEMPLATE, p) for p in sorted(TEMPLATE.rglob("*")) if p.is_file()]
     if args.sap:
         sources += [(TEMPLATE_SAP, p) for p in sorted(TEMPLATE_SAP.rglob("*")) if p.is_file()]
     for base, src in sources:
         rel = src.relative_to(base).as_posix()
         dst = target / rel
-        text = _doldur(src.read_text(encoding="utf-8"), name)
+        # İkili şablon (görsel, arşiv …): yer tutucu doldurulmaz, bayt bayt kopyalanır (Z9 — eskiden
+        # UnicodeDecodeError ile tüm kurulum yarıda kalıyordu; bugün repoda ikili şablon yok, gizli tuzak).
+        # Ölçüt `%guncelle-proje` ile AYNI (uzantı + NUL): UTF-8 olarak çözülebilen ikili dosya (bug gate
+        # 2026-09-19 #6) eskiden metin sayılıp yer tutucusu doldurulur ve satır sonları çevrilirdi.
+        ham = src.read_bytes()
+        text = None
+        if not _ikili_sablon_mu(rel, ham):
+            try:
+                # `read_text()` ile AYNI satır sonu çevirisi (universal newlines): çevrilmezse CRLF şablon
+                # aşağıdaki `write_text` ile Windows'ta `\r\r\n` olur.
+                text = _doldur(ham.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n"), name)
+            except UnicodeDecodeError:
+                text = None
         if dst.exists():
-            current = dst.read_text(encoding="utf-8", errors="replace")
-            if current == text:
+            if text is None:
+                current = dst.read_bytes()
+                ayni = current == src.read_bytes()
+                axet_varsayilani = False
+            else:
+                current = dst.read_text(encoding="utf-8", errors="replace")
+                ayni = current == text
+                axet_varsayilani = rel == AXET_DEFAULT_GITIGNORE and current.strip() == "*"
+            if not axet_varsayilani:
+                onceden_kullanici += 1
+            if ayni:
                 print(f"  [aynı]        {rel}")
                 counts["atlandı"] += 1
                 continue
-            if rel == AXET_DEFAULT_GITIGNORE and current.strip() == "*":
+            if axet_varsayilani:
                 status, key = "[değiştirildi] (aXet varsayılanı `*` idi)", "değiştirildi"
             else:
                 print(f"  [VAR, dokunulmadı] {rel}  — template ile farklı; gerekirse elle birleştir")
@@ -207,7 +239,9 @@ def main() -> int:
         counts[key] += 1
         if not args.dry_run:
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if rel.startswith(".githooks/"):
+            if text is None:
+                shutil.copy2(src, dst)
+            elif rel.startswith(".githooks/"):
                 # git hook'u her platformda LF olmalı: CRLF'li `#!/bin/sh` satırı hook'u çalıştırmaz.
                 with open(dst, "w", encoding="utf-8", newline="\n") as fh:
                     fh.write(text)
@@ -239,10 +273,11 @@ def main() -> int:
     # Kayıt DOĞUM sürümüdür: yalnız kaydı olmayan ve bu koşumda BAŞTAN kurulan projeye yazılır.
     # · Kayıt varsa dokunulmaz — yeniden çalıştırmada bugünü yazmak, dosyalar eski sürümde kalmışken
     #   tabanı ileri kaydırır (yanlış 3-yollu birleştirme).
-    # · Dosyalar zaten varken (atlandı/değiştirildi > 0) doğum sürümü BİLİNMİYOR ⇒ uydurulmaz;
+    # · Kullanıcının dosyaları zaten varken doğum sürümü BİLİNMİYOR ⇒ uydurulmaz (aXet'in kendi yazdığı
+    #   `.axet-code/.gitignore` `*` bu sayıma girmez — yukarıdaki `onceden_kullanici` notu);
     #   `%guncelle-proje` içerik eşleştirmesiyle geri düşer (SHA'sız geri düşüş).
     mevcut_kayit = surum_kaydi_oku(target)
-    onceden_vardi = counts["atlandı"] > 0 or counts["değiştirildi"] > 0
+    onceden_vardi = onceden_kullanici > 0
     if args.dry_run:
         print(f"  [şablon sürüm kaydı] {SURUM_KAYDI} " +
               ("var, dokunulmaz" if mevcut_kayit else "yazılacak" if not onceden_vardi

@@ -75,8 +75,16 @@ def _parser() -> _Parser:
     return p
 
 
+KAPI_HATIRLATMA = ("HATIRLATMA: kapı reddini aşmak için kapı ayarını, kuralı ya da proje dosyalarını "
+                   "(sap-project.json, .rules.md, izinler) DEĞİŞTİRME ve başka yoldan yazmayı deneme — "
+                   "reddi ve sebebini kullanıcıya bildir (core/00-temel.md §3).")
+
+
 def _cikti(payload: dict, kod: int) -> int:
     print(json.dumps(payload, ensure_ascii=False, default=str))
+    if kod == EXIT_GATE:
+        # K-O① (2026-09-18): stdout sözleşmesi TEK JSON — hatırlatma yalnız stderr'e
+        print(KAPI_HATIRLATMA, file=sys.stderr)
     return kod
 
 

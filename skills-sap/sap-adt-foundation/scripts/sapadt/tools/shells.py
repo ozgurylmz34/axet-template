@@ -324,7 +324,7 @@ def gonder(adt, ist: KabukIstegi, transport: str) -> tuple[int, str]:
     basliklar = adt._get_headers(ist.accept, ist.content_type)
     basliklar.update(ist.ek_basliklar)
     r = adt._request_with_csrf_retry("post", adt.url + ist.path, headers=basliklar,
-                                     params={"corrNr": transport}, data=ist.govde.encode("utf-8"))
+                                     params={"corrNr": transport} if transport else {}, data=ist.govde.encode("utf-8"))
     return int(getattr(r, "status_code", 0) or 0), str(getattr(r, "text", "") or "")
 
 

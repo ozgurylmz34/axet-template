@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.2.0
+SAP-CORE-ID: AXET-SAP-0.3.0
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -13,6 +13,8 @@ SAP-CORE-ID: AXET-SAP-0.2.0
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
 
 **Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok.
+
+**Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar.
 
 ## SAP çalışma disiplini
 - **Tetik cümleleri (duyunca DUR, yasak tablosuna bak):** A — "standart tabloya alan ekle", "VBAK'a custom field", "append yarat" · B — "VBAK'a kayıt ekle", "T001'i güncelle" · C — "yeni transport aç", "transport release et", "yeni paket yarat", "kilidi sil" · D ihmali — Z obje etiketi başka dilde ya da boş.

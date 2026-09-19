@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.3.0
+CORE-ID: AXET-CORE-0.4.0
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -8,8 +8,9 @@ CORE-ID: AXET-CORE-0.3.0
 ## 0. Oturum açılışı
 - İlk yanıttan ÖNCE bir kez oturum özetini çalıştır: proje `AGENTS.md` "Oturum" bölümündeki `session_brief.py` komutu
   (bölüm yoksa bu çekirdeğin bulunduğu template klonunun `scripts/session_brief.py`'si). Çalıştıramazsan nedenini yaz; özeti tahminle üretme.
+  Bu adım ilk mesajın türünden bağımsızdır: mesaj tek bir komut ya da dosya yolu olsa da ilk yanıttan önce koşulur.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.3.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.4.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir).
@@ -33,7 +34,9 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 ## 3. Ne zaman sorarsın, ne zaman ilerlersin
 - Makul bir varsayılan varsa ilerle, varsayımı raporda belirt. Yalnız sonucu değiştiren gerçek kararlarda sor: tek seferde, seçenekli, önerini belirterek (`ask_user`).
 - **Önce onay:** geri alınamaz ya da dışa dönük her iş — silme/üzerine yazma, `git push`, merge, deploy, e-posta/mesaj, paylaşılan sistemde yazma, toplu değişiklik. Bir işin onayı başka işe taşınmaz; "hepsini yap" gömülü onay sayılmaz.
-- **Altyapı değişikliği de onay ister:** çekirdek/skill kuralı, script, doğrulayıcı, izin kuralı (`permissions.rules`), denylist ya da aXet config'i değiştirmeden önce uyar ve bu değişiklik için ayrıca açık onay al. İzin sistemine kalıcı "allow" ekleme (özellikle SAP yazma, config ve izin dosyaları için); kuralları gevşeterek işi kolaylaştırma.
+- **Altyapı değişikliği de onay ister:** çekirdek/skill kuralı, script, doğrulayıcı, izin kuralı (`permissions.rules`), denylist ya da aXet config'i değiştirmeden önce uyar ve bu değişiklik için ayrıca açık onay al. İzin sistemine kalıcı "allow" ekleme (özellikle SAP yazma, config ve izin dosyaları için); kuralları gevşeterek işi kolaylaştırma. Bir denetim FAIL verince kuralı (regex, `.rules.md`, doğrulayıcı) değiştirerek geçmek de kuralı gevşetmektir — kullanıcıya bildir.
+- Bash izin penceresinde kullanıcıya "Allow for Session" önerme: bu onay o oturumdaki TÜM bash komutlarına yayılır, sorulması gereken (`ask`) komutlar da sorulmadan geçer (ölçüldü; `deny` kuralları geçerli kalır).
+- İstenenden fazlasını yapma: istenmeyen klasör/dosya kurma, istenenin ötesinde silme ("SAP'den sil" = yalnız SAP). Gerekirse ayrıca sor.
 - Onay isterken 5 unsur: ① ne tetikledi ② tam kapsam ve ne yapılmayacak ③ neden şimdi ④ onaylanmazsa ne olur ⑤ önerin ve gerekçesi.
 - Kullanıcı soru soruyorsa önce cevapla ve tartış; "şunu yapalım mı?" uygulama talimatı değildir.
 - ⚠ `axet-code run` ve `-y` modunda aXet izin SORMAZ; bu modlarda onay kuralları tamamen senin sorumluluğundadır.
@@ -45,9 +48,10 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 - Değiştirmeden önce etki alanını ölç: değişen fonksiyon/dosya/obje başka nerede kullanılıyor (`grep`, `code_graph`, `lsp_references`). Paylaşılan bir şeyi bozacaksan DUR ve sor.
 - Çevredeki koda benzer yaz (adlandırma, yorum yoğunluğu, desen). Yeni araç/soyutlama icat etmeden önce var olanı ara.
 - **"Tamam" demeden önce** tam kapsamı doğrula (`%verify-done`): her istek karşılandı mı, test/çalıştırma çıktısı var mı, ertelenen alt madde açıkça yazıldı mı.
-- Önemli bir kod/obje değişikliğini bitirince "tamam" demeden `%code-review` ile taze, bağımsız inceleme yaptır; BLOCKER varsa önce düzelt.
+- Önemli bir kod/obje değişikliğini bitirince "tamam" demeden `%code-review` ile taze, bağımsız inceleme yaptır; BLOCKER varsa önce düzelt. WARNING'i ve ÖLÇÜLEMEDİ/SKIP sonuçlarını raporda açıkça say; SKIP'i PASS diye yuvarlama.
 - Rapor: yapılan · nasıl doğrulandı (komut + sonuç) · yapılmayan/ertelenen · açık sorular. Başarısız testi başarılı gibi sunma.
 - Bir madde (açık iş, karar, bulgu) konuşmada kapanınca yazılı yerinde de aynı anda kapat; aynı açık maddeyi iki yerde tutma. Denemelerden sonra çalışan bir yöntem bulduysan `%remember` ile kaydet.
+- **Kabuk ortamı:** `bash` aracı Go tabanlıdır: `grep`/`head`/`tail`/`wc`/`type`/`dir` yoktur → `rg` kullan. `python -c` içinde Türkçe metin için `encoding="utf-8"` ya da `PYTHONIOENCODING=utf-8` ver. Kodlama hatası alınca metni ASCII'ye DÜŞÜRME; kodlamayı düzelt.
 
 ## 5. Kapsam dışı bir kusur görürsen
 - Bizim işimizin yan etkisi mi → düzelt.

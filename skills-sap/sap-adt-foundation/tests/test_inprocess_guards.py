@@ -66,7 +66,7 @@ class AracGuardlari(unittest.TestCase):
         a, c, q = self.atom, self.composite, self.query
         self.proje(self.dev)
         self.bekle("adt_post_shell std", a.adt_post_shell("class", "MARA", "$TMP", "T", "d"), "ADR_0005_A")
-        self.bekle("adt_post_shell transport boş", a.adt_post_shell("class", "ZAXET_X", "$TMP", "", "d"), "ADR_0005_C")
+        self.bekle("adt_post_shell transport boş", a.adt_post_shell("class", "ZAXET_X", "ZAXET_PKG", "", "d"), "ADR_0005_C")
         self.bekle("adt_push_source std", a.adt_push_source("MARA", "class", "x"), "ADR_0005_A")
         self.bekle("adt_push_source Z sınıf + std tablo DML (Yasak B, 2. katman)",
                    a.adt_push_source("ZAXET_X", "class", "METHOD m.\n  DELETE FROM likp WHERE vbeln = lv.\nENDMETHOD."),
@@ -82,6 +82,35 @@ class AracGuardlari(unittest.TestCase):
         self.bekle("adt_struct_create std", c.adt_struct_create("BAPIRET2", [{"name": "F", "type": "char10"}], "d", "$TMP", "T"), "ADR_0005_A")
         self.bekle("adt_syntax_check std", q.adt_syntax_check("SAPMV45A", "program"), "ADR_0005_A")
         self.bekle("adt_unit_run std", q.adt_unit_run("CL_X"), "ADR_0005_A")
+
+    def test_tmp_paketi_transport_istemez_yalniz_TAM_eslesmede(self):
+        """K-M (kullanıcı kararı 2026-09-18): `$TMP`'de yaratma araçları transport istemez.
+
+        `+`: guard'dan geçer ⇒ istemciye ulaşır (`_IstemciCagrildi`). `−`: `$TMPX`, `$tmp`,
+        `" $TMP"`, Z paketi hâlâ ADR_0005_C. `adt_struct_create` BİLEREK istisna dışı
+        (`create_structure` yaratmadan sonra transport'lu kilit alır — yarım obje riski)."""
+        a, c = self.atom, self.composite
+        self.proje(self.dev)
+        for ad, cagri in (
+                ("adt_post_shell", lambda: a.adt_post_shell("class", "ZAXET_X", "$TMP", "", "d")),
+                ("adt_domain_create", lambda: c.adt_domain_create("ZAXET_D", "CHAR", 10, "d", "$TMP", "")),
+                ("adt_dtel_create", lambda: c.adt_dtel_create("ZAXET_E", "ZAXET_D", "d", "$TMP", "",
+                                                              "a", "b", "c", "d"))):
+            # istemciye ulaştı mı: atom istisnayı yükseltir, bileşik araç yakalayıp sözlükte döndürür
+            try:
+                sonuc = cagri()
+            except _IstemciCagrildi:
+                sonuc = {"message": "istemci/ağ çağrıldı"}
+            self.assertIn("istemci/ağ çağrıldı", str(sonuc), f"{ad} $TMP transport'suz guard'da kaldı: {sonuc}")
+            H.kaydet(f"süreç-içi K-M + {ad} $TMP transport'suz", "_IstemciCagrildi", "_IstemciCagrildi", True)
+        for paket in ("$TMPX", "$tmp", " $TMP", "$TMP ", "ZAXET_PKG"):
+            self.bekle(f"K-M − adt_post_shell paket={paket!r}",
+                       a.adt_post_shell("class", "ZAXET_X", paket, "", "d"), "ADR_0005_C")
+            self.bekle(f"K-M − adt_domain_create paket={paket!r}",
+                       c.adt_domain_create("ZAXET_D", "CHAR", 10, "d", paket, ""), "ADR_0005_C")
+        self.bekle("K-M − adt_struct_create $TMP (istisna DIŞI)",
+                   c.adt_struct_create("ZAXET_S", [{"name": "F", "type": "char10"}], "d", "$TMP", ""),
+                   "ADR_0005_C")
 
     def test_qa_tier_and_pii(self):
         a, q = self.atom, self.query

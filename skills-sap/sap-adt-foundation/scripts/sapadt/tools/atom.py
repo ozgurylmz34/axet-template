@@ -1379,7 +1379,7 @@ def adt_post_shell(
         if str(object_type or "").strip().lower() in _PAKET_TIPLERI:
             raise GuardrailViolation("ADR_0005_C", f"Paket yaratma yasak (Kesin Yasak C): object_type={object_type}.")
         require_customer_namespace(name, what=object_type, object_type=object_type)
-        require_transport(transport, what=f"{object_type} create")
+        require_transport(transport, what=f"{object_type} create", package=package)
         require_tr_text(description, what=f"{object_type} description")
     except GuardrailViolation as gv:
         return gv.as_dict()

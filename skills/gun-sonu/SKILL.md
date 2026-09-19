@@ -25,6 +25,8 @@ description: >
 2. **Checkpoint:** biten (dosya yolları + doğrulama komutu ve sonucu) · yarım kalan (dosya/adım, neden durdu) ·
    yarın ilk somut adım · açık sorular. Doğrulanmamışı `DOĞRULANMADI` yaz. Sonucu beklenen bir alt görev varsa
    sonucunu al ya da "yarım" yaz.
+   Bugün bir kural, denetim, regex, `.rules.md` ya da izin değiştiyse checkpoint'e NE OLDUĞUYLA yaz:
+   "kural değişikliği: <dosya> <eski → yeni> · kullanıcı onayı: var/yok". "Hata düzeltildi" diye nötrleştirme.
 3. **Paket `SESSION_NOTES.md`** (SAP projesinde bir pakette çalışıldıysa): `## Kayıtlar` altına **en üste** yeni kayıt —
    Yapıldı (SAP objesi: push / aktivasyon / sistemden okuma doğrulaması) · Sıradaki · Bloklayanlar · Yeni ders.
 4. **İş listesi** `.axet-code/memory/project_is-listesi.md`:

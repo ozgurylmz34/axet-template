@@ -24,6 +24,10 @@
 | Salt okunur, basit liste | `CL_SALV_TABLE` (factory) — az kod (`r_salv_table` parametresi, `programs-includes.md` §2) |
 | Düzenlenebilir / özel toolbar / hücre olayı / kolon kişiselleştirme | `CL_GUI_ALV_GRID` + `CL_GUI_DOCKING_CONTAINER` (ya da custom container) |
 
+⚠ Kanonik şablon `CL_GUI_ALV_GRID` üzerinedir. `CL_SALV_*` ailesine geçersen metot ve parametre adlarını şablondan
+DEĞİL SALV API'sinden doğrula (davranış testi 2026-09-18: var olmayan bir `SET_SAVE` metodu yazıldı, ancak
+aktivasyonda yakalandı).
+
 ## 3. Field catalog — DDIC yapısı mı, manuel mi? (ÖNCE SOR)
 
 İkisi de template-first'e uygundur; hangisinin kullanılacağı **bir karardır, sessizce seçilmez**: kurmadan önce

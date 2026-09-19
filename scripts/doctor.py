@@ -792,7 +792,9 @@ def template_bulgulari(olc: dict) -> list[tuple[str, str]]:
       · **INFO** — `%guncelle`'nin kendi git kimliğiyle attığı commit'ler. Klon `origin`'e push EDİLMEZ
         (motor `origin/main`'den geçici kopyaya çekilir) → bu satırlar yapısal olarak hiçbir zaman
         temizlenemez. Her oturumda temizlenemeyen bir WARN, TÜM WARN'ları değersizleştirir.
-        Bilgi kaybı yok: dosya yolları satırda aynen listelenir.
+        Satırda dosya SAYISI tam yazılır; yollar ilk `_kisalt` sınırına (8) kadar listelenir, fazlası `…` ile
+        kesilir (Z10: eski metin "bilgi kaybı yok, aynen listelenir" diyordu — 10 dosyada 2'si satırda yoktu).
+        Tam liste için satırın sonundaki git komutu (`status`/`diff` ya da `log -p`).
       · Hiçbir sınıf FAIL üretmez → doctor'ın çıkış kodu değişmez (yeni kapı açılmadı; ADR 0019).
     """
     out: list[tuple[str, str]] = []

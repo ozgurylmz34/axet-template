@@ -46,6 +46,7 @@ from sapadt import project as _project
 from sapadt import redact as _redact
 from sapadt._conn import get_active_tier
 from sapadt.guardrails import (
+    TMP_MUAF_ARACLAR,
     GuardrailViolation,
     reject_standard_delete,
     require_customer_namespace,
@@ -429,7 +430,9 @@ def check_write(tool: str, proj, *, obje_adi=None, object_type=None, ek_obje_adl
         return red(*dml)
     if require_transport_flag if require_transport_flag is not None else transport_gerekli(tool, tool_args):
         try:
-            require_transport(transport if isinstance(transport, str) else None, what=f"{tool}")
+            require_transport(transport if isinstance(transport, str) else None, what=f"{tool}",
+                              package=(tool_args or {}).get("package")
+                              if tool in TMP_MUAF_ARACLAR else None)
         except GuardrailViolation as gv:
             return red(gv.code, str(gv))
     dil = check_language(kok, cfg)

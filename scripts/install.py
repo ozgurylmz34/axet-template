@@ -184,9 +184,16 @@ def check_env() -> list[tuple[str, str, bool]]:
             results.append((tool, "BULUNAMADI (PATH)", False))
             continue
         try:
-            out = subprocess.run([exe, *args], capture_output=True, text=True, timeout=30,
-                                 stdin=subprocess.DEVNULL).stdout.strip().splitlines()
-            results.append((tool, out[0] if out else "?", True))
+            r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=30,
+                               stdin=subprocess.DEVNULL)
+            out = r.stdout.strip().splitlines()
+            if r.returncode != 0 or not out:
+                # PATH'te bulunmak çalışmak demek değil: rc≠0 ya da boş çıktı PASS sayılmaz
+                # (rc taraması 2026-09-18: bozuk git ortamında `[PASS] git: ?` basılıyordu).
+                hata = (r.stderr or "").strip().splitlines()
+                results.append((tool, f"ÇALIŞMIYOR (rc={r.returncode}): {hata[0] if hata else 'çıktı yok'}", False))
+            else:
+                results.append((tool, out[0], True))
         except Exception as exc:  # noqa: BLE001 — teşhis çıktısı
             results.append((tool, f"çalıştırılamadı: {exc}", False))
     rg = shutil.which("rg")

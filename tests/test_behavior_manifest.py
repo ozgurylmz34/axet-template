@@ -92,6 +92,10 @@ class ProjeManifestTest(GeciciTest):
         self.yaz(self.d / bm.MANIFEST, "{bozuk")
         r = self.bm("check")
         self.assertEqual(r.returncode, 2)
+        # rc=2'yi `yok` dalı da üretir: CLI'ın BOZUK'u YOK'tan ayırdığını da ölç (vakum koruması).
+        self.assertIn("[FAIL]", r.stdout, self.cikti(r))
+        self.assertIn("okunamadı", r.stdout, self.cikti(r))
+        self.assertNotIn("[YOK]", r.stdout, self.cikti(r))
         self.assertEqual(bm.proje_denetle(self.d)[0], "bozuk")
         self.yaz(self.d / bm.MANIFEST, json.dumps({"dosyalar": ["liste"]}))
         self.assertEqual(bm.proje_denetle(self.d)[0], "bozuk")

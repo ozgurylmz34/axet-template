@@ -597,3 +597,34 @@ class KlonKorumasiKaldirildiTest(GeciciTest):
                          "--uninstall klon edit deny'larını silmedi ya da kullanıcının kendi kuralını da sildi")
         self.assertEqual(kurallar.get("bash"), {"Bash(benim-komutum:*)": "allow"},
                          "--uninstall kullanıcının kendi bash kuralına dokundu")
+
+
+class OrtamDenetimiRcTest(unittest.TestCase):
+    """rc taraması 2026-09-18 (Z15): `check_env` araç çağrısının rc'sini okumuyordu ⇒ PATH'te
+    bulunan ama çalışmayan git (ölçüldü: bozuk XDG_CONFIG_HOME ile rc=128) `[PASS] git: ?` çıkıyordu.
+    Gerçek arıza ortamı yerine `subprocess.run` taklidi kullanılır (deterministik).
+    KAPSAM — bakılmayan: zaman aşımı/OSError dalı (değişmedi)."""
+
+    def _kos(self, rc: int, stdout: str, stderr: str = ""):
+        import install
+        from unittest import mock
+        sahte = subprocess.CompletedProcess([], rc, stdout=stdout, stderr=stderr)
+        with mock.patch.object(install.shutil, "which", return_value="arac"), \
+                mock.patch.object(install.subprocess, "run", return_value=sahte):
+            return {ad: (bilgi, ok) for ad, bilgi, ok in install.check_env()}
+
+    def test_rc_sifirdan_farkliysa_gecmez(self):
+        sonuc = self._kos(128, "", "fatal: unable to access config")
+        bilgi, ok = sonuc["git"]
+        self.assertFalse(ok, bilgi)
+        self.assertIn("ÇALIŞMIYOR (rc=128)", bilgi)
+        self.assertIn("fatal: unable to access config", bilgi)
+
+    def test_bos_cikti_gecmez(self):
+        bilgi, ok = self._kos(0, "")["git"]
+        self.assertFalse(ok, bilgi)
+
+    def test_kontrol_grubu_calisan_arac_gecer(self):
+        bilgi, ok = self._kos(0, "git version 2.55.0\n")["git"]
+        self.assertTrue(ok, bilgi)
+        self.assertEqual(bilgi, "git version 2.55.0")

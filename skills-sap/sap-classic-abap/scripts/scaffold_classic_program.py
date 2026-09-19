@@ -202,6 +202,9 @@ def main() -> int:
     if not m:
         print("[HATA] Ad deseni <GÖVDE>_P_<AD> ya da <GÖVDE>_R_<AD> olmalı, Z/Y ile başlamalı "
               "(sap-dev → references/naming.md §4.1).", file=sys.stderr)
+        # K-O① (2026-09-18): bu red sessizce aşılmıştı (ad desenine uymayan dosya elle yazıldı)
+        print("HATIRLATMA: bu reddi aşmak için dosyaları elle yazma, deseni ya da `.rules.md`'yi "
+              "DEĞİŞTİRME — adı kullanıcıyla netleştir (core/00-temel.md §3).", file=sys.stderr)
         return 2
     if len(prog) > PROGRAM_MAX:
         print(f"[HATA] Program adı {len(prog)} karakter; en fazla {PROGRAM_MAX} (include adı 30'u aşar).", file=sys.stderr)

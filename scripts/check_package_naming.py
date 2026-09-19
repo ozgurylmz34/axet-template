@@ -184,6 +184,14 @@ def denetle(proj: Path, files: list[str] | None = None, package: str | None = No
             sonuc.paket_sayisi += 1
             paket_denetle(pkg, None, sonuc)
         return sonuc, None
+    for pkg, liste in sorted(_grupla(proj, root, files).items()):
+        sonuc.paket_sayisi += 1
+        paket_denetle(pkg, liste, sonuc)
+    return sonuc, None
+
+
+def _grupla(proj: Path, root: Path, files: list[str]) -> dict[Path, list[Path]]:
+    """Paket klasörü → o pakete düşen dosyalar (obje klasörü altındakiler; diğerleri yok sayılır)."""
     gruplar: dict[Path, list[Path]] = {}
     root_r = root.resolve()
     for ham in files:
@@ -195,11 +203,22 @@ def denetle(proj: Path, files: list[str] | None = None, package: str | None = No
             continue
         if len(parcalar) >= 4 and parcalar[2] in OBJE_KLASORLERI:
             gruplar.setdefault(root_r / parcalar[0] / parcalar[1], []).append(p)
-    for pkg, liste in sorted(gruplar.items()):
-        sonuc.paket_sayisi += 1
-        paket_denetle(pkg, liste, sonuc)
-    return sonuc, None
+    return gruplar
 
+
+def okunan_kural_dosyalari(proj: Path, files: list[str]) -> set[Path]:
+    """`denetle(proj, files)`in DİSKTEN okuyacağı `.rules.md` yolları (çözülmüş). Tek kaynak: aynı gruplama
+    + `paket_denetle`in "obje yoksa kuralı okuma" kuralı. Kaynak kökü okunamazsa boş küme."""
+    root, err = npk.source_root(proj)
+    if err:
+        return set()
+    return {pkg / ".rules.md" for pkg, liste in _grupla(proj, root, files).items()
+            if any(obje_adi(f.name) is not None for f in liste)}
+
+
+# K-O① (davranış testi 2026-09-18): FAIL alan model `.rules.md` Naming regex'ini kendi adını kapsayacak
+# şekilde genişletip sessizce geçti. Metin davranışı garanti etmez; FAIL anında hatırlatır.
+KURAL_HATIRLATMA = ("HATIRLATMA: bu denetimi geçmek için kuralı / regex'i / `.rules.md`'yi DEĞİŞTİRME — reddi ve sebebini kullanıcıya bildir; kural değişikliği ayrı ve açık onay ister (core/00-temel.md §3).")
 
 KAPSAM = ("KAPSAM — bakılanlar: obje tipi klasörlerindeki obje kaynak dosyalarının adı (.rules.md Naming regex'i + "
           "include türetme + program ≤ 26) · bakılmayanlar: SAP'deki gerçek obje adları, klasörü olmayan tipler "
@@ -220,6 +239,8 @@ def main() -> int:
         return 2
     for ihlal in sonuc.ihlaller:
         print(f"[FAIL] {ihlal}")
+    if sonuc.ihlaller:
+        print(KURAL_HATIRLATMA)
     print(KAPSAM)
     print(f"SONUÇ: {len(sonuc.ihlaller)} ihlal · {sonuc.paket_sayisi} paket · {sonuc.taranan} obje dosyası tarandı · "
           f"{sonuc.bakilmayan} dosya obje kaynağı değil (bakılmadı)")

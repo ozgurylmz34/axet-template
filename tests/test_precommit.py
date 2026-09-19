@@ -117,6 +117,133 @@ class PrecommitTest(GeciciTest):
         r = self.denetle()
         self.assertEqual(r.returncode, 1, self.cikti(r))
         self.assertIn("paket adlandırma", r.stdout)
+        # K-O①: FAIL anında "kuralı değiştirme" hatırlatması basılır
+        self.assertIn("HATIRLATMA: düzeltme = içeriği düzeltmek", r.stdout)
+
+    # --- K-O② (2026-09-18): .rules.md Naming/istisna değişikliği WARN ---
+    KURAL = "SOURCE_CODES/SD/ZSD001_CLC/.rules.md"
+
+    def _ilk_commit(self) -> None:
+        self.git(self.d, "add", "-A")
+        r = self.commit()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+
+    def _class_satiri_genislet(self) -> str:
+        """Class satırının regex'ini `^Z[A-Z0-9_]+$`e genişletir; eski regex'i döndürür."""
+        metin = (self.d / self.KURAL).read_text(encoding="utf-8")
+        satir = next(s for s in metin.splitlines() if s.startswith("| Class"))
+        eski = satir.rsplit("`", 2)[1]
+        self.yaz(self.d / self.KURAL, metin.replace(satir, satir.replace(f"`{eski}`", "`^Z[A-Z0-9_]+$`")))
+        self.git(self.d, "add", self.KURAL)
+        return eski
+
+    def test_naming_genisletilirse_WARN_eski_yeni_gosterilir(self):
+        """Ölçülen vaka: FAIL alan model regex'i kendi adını kapsayacak şekilde genişletip aynı
+        commit'e koydu; adlandırma denetimi `.rules.md`'yi diskten okuduğu için GEÇTİ."""
+        self._ilk_commit()
+        eski = self._class_satiri_genislet()
+        self.stage("SOURCE_CODES/SD/ZSD001_CLC/classes/zcl_yanlis.clas.abap", ABAP_TEMIZ)
+        r = self.denetle()
+        self.assertEqual(r.returncode, 0, "WARN engellememeli: " + self.cikti(r))
+        uyari = [s for s in r.stdout.splitlines() if s.startswith("[WARN] kural değişikliği")]
+        self.assertEqual(len(uyari), 1, r.stdout)
+        self.assertIn(f"`{eski}` → `^Z[A-Z0-9_]+$`", uyari[0])
+        self.assertIn(self.KURAL, uyari[0])
+
+    def test_yalniz_obje_eklenirse_WARN_yok(self):
+        """KONTROL GRUBU: kural değişmeden obje eklemek uyarı üretmez."""
+        self._ilk_commit()
+        self.stage(SINIF, ABAP_TEMIZ)
+        r = self.denetle()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("kural değişikliği", r.stdout)
+
+    def test_ilk_kez_eklenen_rules_md_WARN_uretmez(self):
+        """Yeni paket: `.rules.md` HEAD'de yok ⇒ "genişleme" yok. Hem hiç commit'siz repo hem de
+        commit'li repoya eklenen ikinci paket."""
+        self.git(self.d, "add", "-A")
+        r = self.denetle()   # repo hiç commit almamış
+        self.assertNotIn("kural değişikliği", r.stdout, self.cikti(r))
+        self._ilk_commit()
+        self.paket(self.d, "ZSD002_CLC")
+        self.git(self.d, "add", "-A")
+        r = self.denetle()
+        self.assertIn("SOURCE_CODES/SD/ZSD002_CLC/.rules.md",
+                      self.git(self.d, "diff", "--cached", "--name-only").stdout, "kontrol: yeni kural staged")
+        self.assertNotIn("kural değişikliği", r.stdout, self.cikti(r))
+
+    def test_istisna_eklenirse_WARN(self):
+        """Aynı sınıf, başka kapı: adı regex'e uydurmak yerine "Bilinen istisnalar"a eklemek."""
+        self._ilk_commit()
+        metin = (self.d / self.KURAL).read_text(encoding="utf-8")
+        self.assertIn("## Bilinen istisnalar", metin, "kontrol: şablonda istisna bölümü var")
+        self.yaz(self.d / self.KURAL, metin.replace("## Bilinen istisnalar\n",
+                                                    "## Bilinen istisnalar\n- `ZCL_YANLIS` — deneme\n"))
+        self.git(self.d, "add", self.KURAL)
+        r = self.denetle()
+        self.assertIn("yeni istisna: ZCL_YANLIS", r.stdout, self.cikti(r))
+
+    def test_stagelenmemis_genisletme_de_WARN(self):
+        """Bug gate 2026-09-19 #3 (ölçüldü): adlandırma denetimi `.rules.md`'yi DİSKTEN okur, fark
+        denetimi STAGED içerikten ⇒ stage'lenmemiş genişletme denetimi geçiriyor, WARN hiç çıkmıyordu."""
+        self._ilk_commit()
+        self._class_satiri_genislet()
+        self.git(self.d, "reset", "-q", "--", self.KURAL)   # genişletme yalnız diskte
+        self.stage("SOURCE_CODES/SD/ZSD001_CLC/classes/zcl_yanlis.clas.abap", ABAP_TEMIZ)
+        r = self.denetle()
+        # kontrol grubu: adlandırma gerçekten diskteki genişletilmiş regex'le GEÇTİ (yoksa vaka yok)
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        uyari = [s for s in r.stdout.splitlines()
+                 if s.startswith("[WARN] kural değişikliği") and "STAGE'LENMEMİŞ" in s]
+        self.assertEqual(len(uyari), 1, r.stdout)
+        self.assertIn(self.KURAL, uyari[0])
+
+    def test_stagelenmemis_kural_ilgisiz_committe_WARN_uretmez(self):
+        """Kontrol grubu (ikinci tur, ölçüldü): pakette staged dosya yoksa o kuralı bu commit'te hiçbir
+        denetim okumaz ⇒ uyarı gürültüdür."""
+        self._ilk_commit()
+        self._class_satiri_genislet()
+        self.git(self.d, "reset", "-q", "--", self.KURAL)
+        self.stage("notlar/ilgisiz.md", "ilgisiz\n")
+        r = self.denetle()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("STAGE'LENMEMİŞ", r.stdout, self.cikti(r))
+
+    def test_stagelenmemis_kural_pakette_yalniz_obje_disi_dosya_varken_WARN_uretmez(self):
+        """Üçüncü tur (ölçüldü): pakette yalnız obje-dışı dosya (SESSION_NOTES.md) stage'liyken adlandırma
+        denetimi kuralı OKUMAZ ⇒ uyarı gürültüdür."""
+        self._ilk_commit()
+        self._class_satiri_genislet()
+        self.git(self.d, "reset", "-q", "--", self.KURAL)
+        self.stage("SOURCE_CODES/SD/ZSD001_CLC/SESSION_NOTES.md", "not\n")
+        r = self.denetle()
+        self.assertNotIn("STAGE'LENMEMİŞ", r.stdout, self.cikti(r))
+
+    def test_ascii_olmayan_yola_tasinan_rules_md_de_WARN(self):
+        """Üçüncü tur (ölçüldü): `-z`'siz `--name-status` ASCII olmayan yolu tırnaklıyordu ⇒ taşınan kural
+        "ilk kayıt" sayılıp uyarı çıkmıyordu."""
+        self._ilk_commit()
+        self._class_satiri_genislet()
+        self.git(self.d, "mv", "SOURCE_CODES/SD/ZSD001_CLC", "SOURCE_CODES/SD/ZSD001_ÇLC")
+        yeni = "SOURCE_CODES/SD/ZSD001_ÇLC/.rules.md"
+        r = self.denetle()
+        uyari = [s for s in r.stdout.splitlines() if s.startswith("[WARN] kural değişikliği") and yeni in s]
+        self.assertEqual(len(uyari), 1, self.cikti(r))
+
+    def test_yeniden_adlandirilan_rules_md_ilk_kayit_sayilmaz(self):
+        """Bug gate 2026-09-19 #3: paket klasörü taşınıp kural aynı commit'te genişletilirse `.rules.md`
+        HEAD'de yeni yolda yoktur ⇒ eskiden "ilk kayıt" sayılıp WARN atlanıyordu."""
+        self._ilk_commit()
+        self._class_satiri_genislet()
+        self.git(self.d, "mv", "SOURCE_CODES/SD/ZSD001_CLC", "SOURCE_CODES/SD/ZSD001_TASINDI")
+        yeni = "SOURCE_CODES/SD/ZSD001_TASINDI/.rules.md"
+        # kontrol grubu: git bunu gerçekten yeniden adlandırma olarak görüyor
+        durum = self.git(self.d, "diff", "--cached", "-M", "--name-status", "HEAD").stdout
+        self.assertTrue(any(s.startswith("R") and s.endswith(yeni) for s in durum.splitlines()), durum)
+        r = self.denetle()
+        uyari = [s for s in r.stdout.splitlines() if s.startswith("[WARN] kural değişikliği") and yeni in s]
+        self.assertEqual(len(uyari), 1, self.cikti(r))
+        self.assertIn("`^Z[A-Z0-9_]+$`", uyari[0])
 
     def test_sap_projesi_degilse_ad_ve_inceleme_atlanir(self):
         d = self.proje("genel")

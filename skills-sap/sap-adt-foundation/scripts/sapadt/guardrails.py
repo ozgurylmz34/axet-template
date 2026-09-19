@@ -71,8 +71,24 @@ def require_customer_namespace(name: str, *, what: str = "object", object_type: 
         )
 
 
-def require_transport(transport: str | None, *, what: str = "operation") -> None:
-    """ADR 0005 §C: transport zorunlu, asla varsayma."""
+YEREL_PAKET = "$TMP"
+# `package=` yalnız bu yaratma araçlarından geçirilir (K-M, kullanıcı kararı 2026-09-18). İçlerinde
+# transport isteyen başka adım YOK (ölçüldü: yalnız `corrNr` sorgu parametresi, transport boşsa
+# gönderilmez). `adt_struct_create` BİLEREK dışarıda: `create_structure` yaratmadan sonra
+# `lock_object(transport=)` çağırır ve o kilit transportsuz reddeder ⇒ yarım obje kalırdı.
+# Düzenleme araçları (push/description/msgclass) paketi bilmez — transport ister.
+TMP_MUAF_ARACLAR = frozenset({"adt_post_shell", "adt_domain_create", "adt_dtel_create"})
+
+
+def require_transport(transport: str | None, *, what: str = "operation",
+                      package: str | None = None) -> None:
+    """ADR 0005 §C: transport zorunlu, asla varsayma.
+
+    Tek istisna: `package` TAM OLARAK `$TMP` (yerel obje — SAP transport numarasını yok sayar,
+    ölçüldü: E071 kaydı 0). `$tmp`, `$TMP2`, `" $TMP"` istisna DEĞİLDİR (fail-closed).
+    """
+    if package == YEREL_PAKET:
+        return
     if not transport or not transport.strip():
         raise GuardrailViolation(
             "ADR_0005_C",

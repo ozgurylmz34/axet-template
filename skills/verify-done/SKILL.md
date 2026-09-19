@@ -16,6 +16,8 @@ Bir işi bitirdiğini söylemeden, başarı raporlamadan ya da commit önermeden
 5. **En az bir olumsuz durum dene.** Hatalı girdi, boş değer, yetkisiz durum — sessizce yanlış sonuç vermiyor mu?
 6. **Aracın kapsamını yaz.** "0 hata" yalnız aracın baktığı yüzey içindir; neye bakılmadığını belirt.
 7. **Ertelenenleri açıkça yaz.** Yapılamayan ya da sonraya bırakılan her alt madde raporda görünür olmalı.
+8. **Eylem beyanını çıktıyla göster.** "Commit edildi / push edildi / aktive edildi"yi komut çıktısı olmadan
+   (`git log -1 --oneline`, push çıktısı, sistemden okuma) rapora yazma; koşulmadıysa "koşulmadı" de.
 
 **Değişiklik birden çok katmanı ya da kardeş uygulamayı kesiyorsa** (silme/iptal, yetki, audit alanı, mesaj biçimi, kilit):
 işe başlarken ve "tamam" demeden önce `references/cok-katmanli-degisiklik.md` — kullanıcı gözünden kabul ölçütü, önce
@@ -27,6 +29,7 @@ Yapılan: <madde madde>
 Doğrulama: <komut> → <sonuç / sayı>
 Yapılmayan / ertelenen: <madde + neden>
 Açık soru: <varsa>
+Kural değişikliği: <dosya: eski → yeni · onay var/yok | yok>
 ```
 
 ## Rules

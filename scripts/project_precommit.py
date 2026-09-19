@@ -2,7 +2,8 @@
 """Proje pre-commit denetimi — `.githooks/pre-commit` çağırır (`git config core.hooksPath .githooks`).
 
 aXet'te hook yok: düzenleme anındaki denetimler burada commit anında koşar. YALNIZ staged içerik ve yollar
-taranır (`git show :yol`); çalışma ağacındaki kirlilik sonucu değiştirmez.
+taranır (`git show :yol`); çalışma ağacındaki kirlilik sonucu değiştirmez (tek istisna WARN'dır: stage'lenmemiş
+`.rules.md` değişikliği — adlandırma denetimi kuralları diskten okur).
 
 Kontroller (FAIL → commit ENGELLENİR):
   1. Kimlik dosyası: `.conn*` (`*.example` hariç) · kökte `conn/` altı (`*.example`, `README.md` hariç) ·
@@ -10,6 +11,9 @@ Kontroller (FAIL → commit ENGELLENİR):
   2. Staged içerikte açık sır deseni: özel anahtar, bilinen token biçimleri, URL içinde parola,
      tırnaklı parola/sır ataması, yapılandırma dosyasında `…PASSWORD=değer`. Yer tutucular (`<…>`, `${…}`) serbest.
   3. Paket adlandırma (SAP projesi): staged obje dosyaları `.rules.md` Naming regex'leri (check_package_naming.py).
+     + WARN (engellemez): staged `.rules.md` Naming tablosu / istisna listesi HEAD'e göre değiştiyse
+       (ilk kez eklenen `.rules.md` hariç; yeniden adlandırılanın kaynağıyla karşılaştırılır) — eski → yeni
+       satırlar gösterilir. Diskte stage'lenmemiş değişikliği olan `.rules.md` de WARN alır.
   4. `validators-local/*.py` (varsa): exit 0 geçer · 1 engeller · başka çıkış/zaman aşımı da engeller (koşmadı ≠ temiz).
   5. SAP kaynak incelemesi, çevrimdışı (SAP projesi): staged `.clas.abap` · `.ddls.asddls`/`.cds` · `.bdef` ·
      `.srvd` · `.tabl.*` dosyası yazma kapısının kullandığı reviewer zincirinden (sap-adt-foundation `run_review`)
@@ -196,6 +200,91 @@ def kontrol_paket_adlari(proj: Path, dosyalar: list[str], rapor: Rapor) -> None:
         rapor.add("PASS", f"paket adlandırma: {sonuc.taranan} obje dosyası uygun ({sonuc.paket_sayisi} paket)")
 
 
+def _naming_farki(eski: list[tuple[str, str]], yeni: list[tuple[str, str]]) -> list[str]:
+    """Obje tipi başına `eski → yeni` satırları (yalnız değişen satırlar)."""
+    giden, gelen = [x for x in eski if x not in yeni], [x for x in yeni if x not in eski]
+    satirlar = []
+    for tip in dict.fromkeys(t for t, _ in giden + gelen):
+        e = [f"`{r}`" for t, r in giden if t == tip]
+        y = [f"`{r}`" for t, r in gelen if t == tip]
+        satirlar.append(f"{tip}: {' '.join(e) or '(yok)'} → {' '.join(y) or '(silindi)'}")
+    return satirlar
+
+
+def kontrol_kural_degisikligi(proj: Path, dosyalar: list[str], rapor: Rapor) -> None:
+    """K-O② (kullanıcı kararı 2026-09-18): staged `.rules.md` Naming tablosu ya da istisna listesi
+    HEAD'e göre değiştiyse WARN (engellemez).
+
+    Ölçülen vaka: pre-commit adlandırma FAIL'i alan model `.rules.md` regex'ini kendi obje adını
+    kapsayacak şekilde genişletti ve aynı commit'e koydu — adlandırma denetimi `.rules.md`'yi
+    diskten okuduğu için geçti, kimse fark etmedi. İlk kez eklenen `.rules.md` (HEAD'de yok ya da
+    repo hiç commit almamış) WARN ÜRETMEZ: yeni pakette "genişleme" kavramı yoktur; her yeni pakette
+    uyarı basmak gerçek vakayı gürültüye gömerdi.
+    """
+    import check_package_naming as cpn
+    for yol in dosyalar:
+        if Path(yol).name != ".rules.md":
+            continue
+        # Yeniden adlandırılan `.rules.md` "ilk kayıt" SAYILMAZ (bug gate 2026-09-19 #3): HEAD'deki
+        # kaynağı `git diff --cached -M` ile bulunur ve karşılaştırma ondan yapılır.
+        eski_yol = _yeniden_adlandirma_kaynagi(proj, yol) or yol
+        r = subprocess.run(["git", "-C", str(proj), "cat-file", "-e", f"HEAD:{eski_yol}"],
+                           capture_output=True, stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            continue  # ilk kayıt (HEAD'de yok / hiç commit yok)
+        eski_k, eski_i = cpn.kurallari_oku(_git(proj, "show", f"HEAD:{eski_yol}").decode("utf-8", "replace"))
+        yeni_k, yeni_i = cpn.kurallari_oku(staged_icerik(proj, yol).decode("utf-8", "replace"))
+        fark = _naming_farki(eski_k, yeni_k)
+        eklenen_istisna = sorted(yeni_i - eski_i)
+        if eklenen_istisna:
+            fark.append(f"yeni istisna: {', '.join(eklenen_istisna)}")
+        if fark:
+            rapor.add("WARN", f"kural değişikliği: {yol} Naming/istisna değişti — " + " · ".join(fark)
+                      + " — kullanıcı onayı yoksa geri al: bir denetimi geçmek için kuralı genişletmek "
+                        "kuralı gevşetmektir (core/00-temel.md §3)")
+    # ⛔ Adlandırma denetimi `.rules.md`'yi DİSKTEN okur, yukarıdaki karşılaştırma ise STAGED içerikten
+    # (bug gate 2026-09-19 #3, ölçüldü): stage'lenmemiş bir regex genişletmesi denetimi geçirir ama
+    # commit'e girmediği için hiç WARN üretmezdi. Disk ≠ index olan izlenen `.rules.md` uyarılır —
+    # YALNIZ adlandırma denetiminin bu commit'te fiilen OKUDUĞU kural dosyasıysa (ikinci ve üçüncü tur,
+    # ölçüldü: ilgisiz commit, kökteki `.rules.md` ve pakette yalnız obje-dışı dosya stage'liyken de
+    # uyarı çıkıyordu). Küme `check_package_naming.okunan_kural_dosyalari` — denetimle TEK kaynak.
+    okunan = cpn.okunan_kural_dosyalari(proj, dosyalar)
+    if not okunan:
+        return
+    try:
+        kirli = _git(proj, "diff", "-z", "--name-only", "--", ":(glob)**/.rules.md").decode("utf-8", "replace")
+    except GitHatasi as e:
+        rapor.add("WARN", f"kural değişikliği: stage'lenmemiş `.rules.md` denetimi ÖLÇÜLEMEDİ ({e})")
+        return
+    for yol in filter(None, kirli.split("\0")):
+        if (proj / yol).resolve() not in okunan:
+            continue
+        rapor.add("WARN", f"kural değişikliği: {yol} diskte STAGE'LENMEMİŞ değişiklik var — adlandırma "
+                          "denetimi diskteki içeriği okudu, commit'e girecek kural bu DEĞİL. Değişiklik "
+                          "kasıtlıysa stage'le (yukarıdaki fark denetimi ona da bakar), değilse geri al.")
+
+
+def _yeniden_adlandirma_kaynagi(proj: Path, yol: str) -> str | None:
+    """Staged bir yeniden adlandırmanın HEAD'deki kaynak yolu; yoksa None (ilk kayıt, hiç commit yok)."""
+    # `-z` ŞART (üçüncü tur, ölçüldü): onsuz `core.quotePath` ASCII olmayan yolu tırnaklayıp kaçışlar ⇒
+    # eşleşme olmaz, taşınan kural "ilk kayıt" sayılır. `-z` çıktısı: durum, yol[, yeni yol] — NUL ayrık.
+    try:
+        cikti = _git(proj, "diff", "--cached", "-M", "--name-status", "-z", "HEAD").decode("utf-8", "replace")
+    except GitHatasi:
+        return None
+    parca = cikti.split("\0")
+    i = 0
+    while i < len(parca) and parca[i]:
+        durum = parca[i]
+        if durum[:1] in ("R", "C"):
+            if durum.startswith("R") and i + 2 < len(parca) and parca[i + 2] == yol:
+                return parca[i + 1]
+            i += 3
+        else:
+            i += 2
+    return None
+
+
 def kontrol_yerel_validatorler(proj: Path, dosyalar: list[str], rapor: Rapor) -> None:
     klasor = proj / VALIDATORS_LOCAL
     if not klasor.is_dir():
@@ -334,6 +423,7 @@ def main() -> int:
         sap = (proj / "sap-project.json").is_file()
         if sap:
             kontrol_paket_adlari(proj, dosyalar, rapor)
+            kontrol_kural_degisikligi(proj, dosyalar, rapor)
         kontrol_yerel_validatorler(proj, dosyalar, rapor)
         if sap:
             kontrol_sap_inceleme(proj, dosyalar, rapor)
@@ -354,6 +444,10 @@ def main() -> int:
     if fails:
         print("Düzelt ve tekrar commit et. Yanlış alarm ise kullanıcı kendi terminalinde karar verir "
               "(git commit --no-verify); aXet oturumu bu denetimi atlatmaz.")
+        # K-O① (2026-09-18): "düzelt" = İÇERİĞİ düzelt. Ölçülen vaka: model kuralı genişletip geçti.
+        print("HATIRLATMA: düzeltme = içeriği düzeltmek. Denetimi geçmek için kuralı / regex'i / "
+              "`.rules.md`'yi / validator'ı DEĞİŞTİRME — reddi ve sebebini kullanıcıya bildir; kural "
+              "değişikliği ayrı ve açık onay ister (core/00-temel.md §3).")
     return 1 if fails else 0
 
 

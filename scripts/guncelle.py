@@ -225,12 +225,22 @@ class Klon:
         if not tam.is_file():
             return None
         r = self.git("hash-object", "--path", yol, "--", str(tam))
-        return r.stdout.strip() or None
+        sha = r.stdout.strip()
+        if r.returncode != 0 or not sha:
+            # ⛔ Dosya VAR ama hash'lenemedi. None döndürmek "dosya yok" demektir: V7 → V2
+            # (otomatik ezme) olur ve `_yedeksiz_mi` "ezilecek içerik yok" deyip yedek almaz.
+            raise Dur(f"`git hash-object {yol}` başarısız (rc={r.returncode}): "
+                      f"{' '.join((r.stderr or '').split())[:300]} — dosya diskte VAR ama "
+                      f"okunamadı; durumu ÖLÇÜLEMEDİ, dokunulmadı.")
+        return sha
 
     def stdin_sha(self, yol: str, veri: bytes) -> str:
         komut = ["git", "-C", str(self.kok), "hash-object", "--path", yol, "--stdin"]
         r = subprocess.run(komut, cwd=str(self.kok), input=veri, capture_output=True)
-        return r.stdout.decode("ascii", "replace").strip()
+        sha = r.stdout.decode("ascii", "replace").strip()
+        if r.returncode != 0 or not sha:
+            raise Dur(f"`git hash-object --stdin` ({yol}) başarısız (rc={r.returncode})")
+        return sha
 
     def crlf_mi(self, yol: str) -> bool:
         r = self.git("check-attr", "eol", "--", yol)
@@ -260,6 +270,25 @@ class Klon:
         while ana != self.kok and ana.is_dir() and not any(ana.iterdir()):
             ana.rmdir()
             ana = ana.parent
+
+
+def yayin_durumu(git_rc, etiket: str) -> str:
+    """Bir yayının klonda İÇERİLİP içerilmediği — TEK KAYNAK (K-F, 2026-09-18).
+
+    `git_rc(*args) -> int` çağıranın git koşucusudur (motor `Klon.git`, `session_brief` kendi
+    kısa zaman aşımlı `_git`i) — ölçüm kuralı ortak, koşucu değil. Döner:
+      "icerildi"   etiket HEAD'in atası (taze klon / yayından sonra `kur.cmd` ile çekilmiş)
+      "bekliyor"   etiket çözülüyor ama HEAD'de değil (ya da ata testi hata verdi — güvenli taraf)
+      "cozulemedi" etiket klonda yok ⇒ içerilip içerilmediği ÖLÇÜLEMEZ
+    Neden ortak: `session_brief` ata testini YAPMIYORDU ⇒ yayını zaten içeren taze klonda
+    "1 güncelleme kalemi bekliyor" satırı `%guncelle` sonrasında bile KALICI kalıyordu
+    (motor o yayını plana hiç almadığı için kalem hiçbir zaman `uygulandi` olmuyordu).
+    """
+    if not etiket or git_rc("rev-parse", "--verify", "--quiet", f"{etiket}^{{commit}}") != 0:
+        return "cozulemedi"
+    if git_rc("merge-base", "--is-ancestor", etiket, "HEAD") == 0:
+        return "icerildi"
+    return "bekliyor"
 
 
 # --- durum dizini I/O -------------------------------------------------------------------------
@@ -403,9 +432,13 @@ def birlestir(klon: Klon, yol: str, t: bytes, l: bytes, y: bytes) -> tuple[bytes
              "-L", f"YEREL:{yol}", "-L", f"TABAN:{yol}", "-L", f"YENİ:{yol}",
              str(p_l), str(p_t), str(p_y)],
             cwd=str(dd), capture_output=True, stdin=subprocess.DEVNULL)
-    if r.returncode < 0:
-        raise Dur(f"git merge-file çalıştırılamadı: {yol}")
-    return r.stdout, max(0, r.returncode)
+    # merge-file: çakışma sayısı 127'de kırpılır, hata NEGATİF döner — Windows'ta 255 olarak
+    # görünür (ölçüldü, git 2.55). >127'yi "çakışma sayısı" saymak hatayı "ayrışma eşiği aşıldı"
+    # diye yanlış teşhis ediyordu (rc taraması 2026-09-18).
+    if r.returncode < 0 or r.returncode > 127:
+        hata = " ".join((r.stderr or b"").decode("utf-8", "replace").split())[:300]
+        raise Dur(f"git merge-file başarısız (rc={r.returncode}): {yol} — {hata or 'çıktı yok'}")
+    return r.stdout, r.returncode
 
 
 def fark_metni(a: bytes, b: bytes, a_ad: str, b_ad: str) -> str:
@@ -632,11 +665,12 @@ def komut_plan(b: Baglam, args) -> int:
     bekleyen_yayinlar, beyan, kalem_kaydi, cozulemeyen = [], {}, {}, []
     for yayin in b.yayinlar.get("yayinlar", []):
         etiket = yayin["etiket"]
-        if not k.var_mi(etiket):
+        durum_y = yayin_durumu(lambda *a: k.git(*a).returncode, etiket)
+        if durum_y == "cozulemedi":
             # Etiket çözülemiyorsa bu yayının İÇERİLİP içerilmediği de ÖLÇÜLEMEZ ⇒ bekleyen say.
             cozulemeyen.append(etiket)
             continue
-        if k.git("merge-base", "--is-ancestor", etiket, "HEAD").returncode == 0:
+        if durum_y == "icerildi":
             continue  # tüketici bu yayını gerçekten içeriyor (taze klon)
         bekleyen_yayinlar.append(etiket)
         for kalem in yayin.get("kalemler", []):
@@ -919,7 +953,7 @@ def komut_uygula(b: Baglam, args) -> int:
             hata = 1
             continue
 
-        gercek = k.disk_sha(hedef)
+        gercek = _yazim_sonrasi_sha(k, hedef)
         if gercek != beklenen:
             print(f"FAIL {yol}: yazıldı ama doğrulanamadı (beklenen {beklenen}, disk {gercek})",
                   file=sys.stderr)
@@ -1129,9 +1163,19 @@ def _yerel_kopya(k: Klon, yol: str) -> str | None:
     return aday.relative_to(k.kok).as_posix()
 
 
+def _yazim_sonrasi_sha(k: Klon, hedef: str) -> str | None:
+    """Yazım SONRASI geri okuma. `disk_sha` hash'leyemezse `Dur` atar; yazım olmuş olduğu için
+    burada akışı kesmek dosyayı durum kaydı olmadan bırakırdı ⇒ "doğrulanamadı" say (hiçbir
+    beklenen sha'ya eşit olmayan bir metin döner)."""
+    try:
+        return k.disk_sha(hedef)
+    except Dur as e:
+        return f"ÖLÇÜLEMEDİ ({e})"
+
+
 def _dogrula_ve_kaydet(k: Klon, kid: str, yol: str, hedef: str, vaka: str,
                        karar: str, beklenen: str | None) -> int:
-    gercek = k.disk_sha(hedef)
+    gercek = _yazim_sonrasi_sha(k, hedef)
     if gercek != beklenen:
         print(f"FAIL {yol}: yazıldı ama geri okunduğunda farklı "
               f"(beklenen {beklenen}, disk {gercek}).", file=sys.stderr)
@@ -1420,7 +1464,13 @@ def komut_butunluk(b: Baglam, args) -> int:
         y_sha = b.k.blob_sha(b.yeni_ref, yol)
         if y_sha is None:
             continue
-        l_sha = b.k.disk_sha(yol)
+        # disk_sha ölçemezse `Dur` fırlatır; yakalanmazsa `butunluk.json` HİÇ yazılmaz ve kapanış
+        # önceki koşumun bayat dosyasını okur (bug gate 2026-09-19 #4) ⇒ satır ÖLÇÜLEMEDİ olur.
+        try:
+            l_sha = b.k.disk_sha(yol)
+        except Dur as e:
+            guvence.append(f"WARN asgari güvence: {yol} ÖLÇÜLEMEDİ ({e})")
+            continue
         if l_sha is None:
             guvence.append(f"WARN asgari güvence: {yol} YERELDE YOK (yeni sürümde var)")
         elif l_sha != y_sha:
@@ -1528,14 +1578,71 @@ def _kapanis_git(b: Baglam, plan: dict, durum: dict, secili: set,
     # yol süzgeçten geçer, `git add` `fatal: pathspec ... did not match any files` der ve o
     # çağrıda HİÇBİR yolu stage etmez (kısmi başarı yoktur) ⇒ o koşumun tüm birleştirme sonucu
     # commit'e GİRMEZ. Ölçüldü (`--karar birlesik`): `core/00-temel.md` diskte v3, HEAD'de v1,
-    # `kapanis` yine rc=0. Silmeler `Klon.sil()` tarafından ZATEN stage'lidir.
+    # `kapanis` yine rc=0. Silmeleri normalde `Klon.sil()` stage'ler; onun `git rm --cached`'i
+    # başarısız olsa bile yol index'te kaldığı için `izlenen` kümesine girer ve `git add` silmeyi
+    # stage'ler (rc taraması 2026-09-18 ölçtü: `git add -- <silinmiş izlenen yol>` → `D`, rc=0).
     izlenen = k.izlenen_yollar(add_yollari)
-    add_yollari = [y for y in add_yollari if (k.kok / y).exists() or y in izlenen]
+    # ⛔ M-6 (kullanıcı kararı 2026-09-18, TASARIM §6): `--karar yerel` = "bu dosyaya DOKUNMA". Dosya
+    # daha önce İZLENMİYORSA (V7: kullanıcının kendi dosyası template'in yeni yolunda) kapanış onu
+    # git'e ekleyip commit'lemez — eskiden ekliyordu: içerik korunuyor ama dosya sessizce klonun
+    # geçmişine giriyordu. İzlenen bir dosyada `yerel` zaten "değişiklik yok" demektir.
+    # ⛔ Korunan küme (bug gate 2026-09-19, iki tur, ölçüldü):
+    #   · `karar == yerel` → eski VE yeni yol. Yeniden adlandırmalı V7'de kayıt `hedef_yol` olarak
+    #     ESKİ yolu tutar, kullanıcının dosyası ise YENİ yoldadır ⇒ yalnız `hedef_yol`a bakmak yanlış
+    #     yolu koruyordu.
+    #   · V7 (kullanıcının İZLENMEYEN dosyası template yolunda) + motor YAZMADI (`ertelendi`, karar
+    #     verilmemiş + `--kabul`) → aynı iki yol.
+    # ⚠ "Motor yazmadıysa HER izlenmeyen yol korunur" DENMEZ: V4R'de `birlesik` sonra `ertelendi`
+    # sırasında yeni yolu motor oluşturmuş, eski yolun silmesi zaten stage'lidir ⇒ yeni yolu dışarıda
+    # bırakmak HEAD'de iki yolu da yok eden YARIM taşıma üretiyordu (ikinci tur ölçümü).
+    # ⚠ Aynı sınıf `yerel` kararında da vardı (üçüncü tur, ölçüldü: V4R `birlesik` → `yerel`): YENİ yol
+    # yalnız taşıma GERÇEKLEŞMEDİYSE (eski yol hâlâ diskte ya da index'te) korunur. Taşıma olduysa yeni
+    # yolu motor yazmıştır; onu dışarıda bırakmak yine yarım taşıma olurdu.
+    # ⚠ V7'de "eski yol duruyor mu" sinyali YETMEZ (dördüncü tur, ölçüldü): kullanıcı eski yolu önceden
+    # kendisi silmişse işaret "taşındı" der ve kullanıcının yeni yoldaki dosyası commit'e girerdi. V7'nin
+    # tanımı içeriktir (yeni yoldaki disk ≠ template blob'u) ⇒ ayırt edici sinyal de içerik: motor yeni
+    # yola yalnız `yeniden-adlandir` ile YAZAR ve o zaman disk = blob olur. Ölçülemezse KORU (fail-closed).
+    def _kullanicinin(yol: str) -> bool:
+        try:
+            disk = k.disk_sha(yol)
+        except Dur:
+            return True
+        return disk is not None and disk != k.blob_sha(b.yeni_ref, yol)
+
+    def _korunan_yollar(d: dict) -> set:
+        kayit = durum["dosyalar"].get(d["yol"], {})
+        motor_yazdi = kayit.get("durum") in ("dogrulandi", "uygulandi")
+        v7 = d.get("vaka") == "V7"
+        if kayit.get("karar") != "yerel" and not (v7 and not motor_yazdi):
+            return set()
+        yollar = {d["yol"]}
+        yeni = d.get("yeni_yol")
+        if yeni:
+            eski_duruyor = (k.kok / d["yol"]).exists() or d["yol"] in izlenen
+            if (_kullanicinin(yeni) if v7 else eski_duruyor):
+                yollar.add(yeni)
+        return yollar
+    yerel_izlenmeyen = {y for kalem in plan["kalemler"] if kalem["id"] in secili
+                        for d in kalem["dosyalar"] for y in _korunan_yollar(d)} - izlenen
+    plan_yollari = list(add_yollari)   # süzgeçten ÖNCEKİ küme — hata dalında index'i bununla geri al
+    add_yollari = [y for y in add_yollari
+                   if ((k.kok / y).exists() or y in izlenen) and y not in yerel_izlenmeyen]
     if add_yollari:
         r_add = k.git("add", "--", *add_yollari)
         if r_add.returncode != 0:
+            # Index kapanıştan önceki yarım hâlinde bırakılmaz: `Klon.sil()` silmeleri ÖNCEDEN
+            # stage'lemişti. Kullanıcının sonraki elle `git commit`i bu yarım durumu commit'lemesin
+            # diye YALNIZ plandaki yollar HEAD'e geri alınır (çalışma ağacına dokunulmaz; kapanış
+            # yeniden koşunca silmeleri `izlenen_yollar` üzerinden yeniden stage'ler).
+            # ⚠ SÜZGEÇLİ liste YETMEZ: `Klon.sil()`in stage'lediği silme yolu ne diskte ne
+            # index'tedir ⇒ süzgeçten düşer; geri alma onu kaçırırdı. `git reset -- <yol>` HEAD'de
+            # ve index'te olmayan yolda da rc=0 döner (ölçüldü 2026-09-18) ⇒ tüm plan kümesi verilir.
+            r_reset = k.git("reset", "-q", "--", *plan_yollari)
+            geri = ("plandaki yolların index'i HEAD'e geri alındı, çalışma ağacı değişmedi"
+                    if r_reset.returncode == 0 else
+                    f"index geri ALINAMADI (elle: git reset -- <yollar>): {_tek_satir(r_reset.stderr)}")
             eksikler.append(f"kapanış `git add` başarısız — plandaki değişiklikler commit'e "
-                            f"GİRMEDİ: {_tek_satir(r_add.stderr)}")
+                            f"GİRMEDİ: {_tek_satir(r_add.stderr)} · {geri}")
             return 1
 
     # ⛔ ÇIKIŞ KODU SİNYALDİR, ÖLÇÜM DEĞİL. `git commit` rc=1 "commit edilecek bir şey yok"
@@ -1671,7 +1778,9 @@ def komut_kapanis(b: Baglam, args) -> int:
 
     if eksikler:
         rapor += ["", "## KAPANMADI — eksikler"] + [f"- {e}" for e in eksikler]
-    if kabul:
+    # M-1: koşul `kod`dur, `kabul` bayrağı DEĞİL. `--kabul` + git hatasında `kod` 1'e düşer; eskiden
+    # rapor hem "KAPANMADI" hem "onaylı açık FAIL ile kapandı" diyordu.
+    if kod == 3:
         rapor += ["", f"## Kullanıcı onaylı açık FAIL ile kapandı\n{args.kabul}"]
     rapor += ["", "KAPSAM — bakılanlar: plandaki seçili dosyaların disk durumu ve çakışma "
                   "işareti · özel adımların koşumu · önce/sonra ölçümünün YENİ kırmızıları · "
@@ -1779,7 +1888,11 @@ def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
     else:
         bilgi.append(gs.stdout.strip())
     # 5 — sığ klon
-    if klon.git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+    sig = klon.git("rev-parse", "--is-shallow-repository")
+    if sig.returncode != 0:
+        sorunlar.append(f"sığ klon denetimi ÖLÇÜLEMEDİ (git rev-parse rc={sig.returncode}): "
+                        f"{' '.join((sig.stderr or '').split())[:200]}")
+    elif sig.stdout.strip() == "true":
         sorunlar.append("sığ klon (--depth) — taban commit'leri eksik, 3-yollu karşılaştırma "
                         "yapılamaz. `kur.cmd -Sifirla` ya da tam klon gerekir.")
     # 6 — aXet sürümü
@@ -1801,7 +1914,14 @@ def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
 
 def komut_hazirla(b: Baglam | None, args, klon: Klon) -> int:
     klon.durum_dizini.mkdir(parents=True, exist_ok=True)
-    kirli = klon.git("status", "--porcelain", "--untracked-files=no").stdout.strip()
+    st = klon.git("status", "--porcelain", "--untracked-files=no")
+    if st.returncode != 0:
+        # Ölçülemeyen durum "temiz" sayılırsa anlık commit atlanır ve geri dönüş etiketi
+        # kullanıcının izlenen değişikliğini İÇERMEZ (rc taraması 2026-09-18, ölçüldü).
+        print(f"DUR: `git status` başarısız (rc={st.returncode}): {' '.join((st.stderr or '').split())[:300]} "
+              f"— yerel durum ölçülemedi, geri dönüş noktası atılmadı.", file=sys.stderr)
+        return 2
+    kirli = st.stdout.strip()
     if kirli:
         klon.git("add", "-u", kontrol=True)
         r = klon.git("commit", "--no-verify", "-q", "-m",
@@ -1820,7 +1940,7 @@ def komut_hazirla(b: Baglam | None, args, klon: Klon) -> int:
     f = klon.git("fetch", "--tags", "origin")
     if f.returncode != 0:
         print(f"DUR: `git fetch --tags` başarısız: {f.stderr.strip()} "
-              f"(ağ yok → şimdi güncellenemez)", file=sys.stderr)
+              f"(ağ ya da depo sorunu → şimdi güncellenemez)", file=sys.stderr)
         return 2
     print(f"Geri dönüş noktası: {etiket}")
     return 0

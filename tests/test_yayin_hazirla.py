@@ -15,8 +15,11 @@ taraması, DISLANANLAR listesinin kendisi, NOTICE glob doğrulaması, ASCII dı�
 """
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from _helpers import AXET_HOME, GeciciTest
 
@@ -164,6 +167,35 @@ class YayinHazirlaGercekAgacTest(GeciciTest):
         r = self.calistir(BETIK, "--hedef", str(hedef), "--calisma-agaci", "--yalniz-tara",
                           cwd=AXET_HOME, timeout=600)
         self.assertEqual(r.returncode, 0, self.cikti(r))
+
+
+@unittest.skipUnless(BETIK.is_file(), "maintenance/yayin_hazirla.py yok (public sürümde maintenance/ dışlanır)")
+class KopyaHatasiTest(GeciciTest):
+    """Yayın ⓑ: kopyalama OSError'ı ham traceback değil, yolu ve sebebi söyleyen HATA olur.
+
+    Bu sınıf dosya başlığındaki "gerçek giriş noktası" ilkesinin BİLİNÇLİ istisnasıdır: gerçek MAX_PATH hatası
+    makinenin LongPathsEnabled ayarına bağlı, subprocess ile deterministik üretilemiyor ⇒ `copy2` taklit edilir."""
+
+    def modul(self):
+        spec = importlib.util.spec_from_file_location("yayin_hazirla_test", BETIK)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    def test_kopyalama_oserror_anlamli_hataya_doner(self):
+        m = self.modul()
+        with mock.patch.object(m.shutil, "copy2", side_effect=FileNotFoundError(2, "sistem yolu bulamadı")):
+            with self.assertRaises(SystemExit) as ctx:
+                m.kopyala(self.tmp / "h", "HEAD", calisma_agaci=True)
+        mesaj = str(ctx.exception.code)
+        self.assertIn("HATA: kopyalanamadı:", mesaj)
+        self.assertIn("FileNotFoundError", mesaj)
+        self.assertNotIn("MAX_PATH", mesaj)  # kısa yolda yanlış ipucu verilmez
+
+    def test_uzun_yolda_max_path_ipucu(self):
+        m = self.modul()
+        uzun = Path("C:/" + "k" * 300 + "/a.txt")
+        self.assertIn("MAX_PATH", str(m.kopya_hatasi(uzun, FileNotFoundError(2, "x")).code))
 
 
 if __name__ == "__main__":

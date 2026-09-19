@@ -102,6 +102,43 @@ class VakumTaraKalibrasyon(GeciciTest):
             '        self.assertEqual("V4c1", self.vaka)\n')
         self.assertIn("AD-GOVDE", cikti, f"'V4c1' geçmesi 'V4c' vaadini karşılamamalı:\n{cikti}")
 
+    def test_uzun_buyuk_harfli_vurgu_sozcugu_vaat_sayilmaz(self):
+        """DOĞRU NEGATİF (Z7 öncelik-2, 2026-09-18): büyük harfli Türkçe vurgu sözcüğü simge DEĞİLDİR.
+
+        37 mutantın 37'si ölmüşken bu sınıf 32 yanlış bulgu üretiyordu. Ürün kodu bu sözcüğü büyük
+        harfle içerse bile (mesajlarda geçer) 4 harften uzun parça vaat sayılmaz.
+        """
+        self.yaz(self.tmp / "scripts" / "urun.py", 'print("DOKUNMAZ")\n')
+        rc, cikti = self.tara(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_kural_ihlalinde_DOKUNMAZ(self):\n"
+            "        self.assertEqual(1, self.sonuc)\n")
+        self.assertNotIn("AD-GOVDE", cikti, f"vurgu sözcüğü vaat sayılmış — yanlış pozitif:\n{cikti}")
+
+    def test_kisa_cikti_etiketi_urunde_varsa_vaattir(self):
+        """DOĞRU POZİTİF: ad 'WARN' diyor, ürün gerçekten `[WARN]` basıyor, gövde onu ölçmüyor.
+
+        Süzgeç fazla geniş yapılırsa (her büyük harfli parça atılırsa) bu gerçek daraltma adayı kaybolur.
+        """
+        self.yaz(self.tmp / "scripts" / "urun.py", 'print("[WARN] eksik kart")\n')
+        rc, cikti = self.tara(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_olmayan_kart_icin_WARN(self):\n"
+            "        self.assertIn('eksik kart', self.cikti)\n")
+        self.assertIn("'WARN'", cikti, f"üründe geçen kısa etiket vaadi kayboldu — tarayıcı körleşmiş:\n{cikti}")
+
+    def test_kisa_turkce_sozcuk_urunde_gecse_de_vaat_sayilmaz(self):
+        """DOĞRU NEGATİF: 'HİÇ' katlanınca 'HIC' olur ve ürün mesajında büyük harfle geçer; etiket değildir."""
+        self.yaz(self.tmp / "scripts" / "urun.py", 'print("HİÇ basılmadı")\n')
+        rc, cikti = self.tara(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_bos_sinifta_satir_HIC_basilmaz(self):\n"
+            "        self.assertEqual(0, self.sayi)\n")
+        self.assertNotIn("AD-GOVDE", cikti, f"kısa Türkçe sözcük vaat sayılmış:\n{cikti}")
+
     # --- rc AYIRT EDİLEBİLİRLİĞİ boyutu ----------------------------------------------------------
 
     def test_sifirdan_farkli_rc_beklenip_sebep_dogrulanmazsa_bulgu(self):

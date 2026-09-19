@@ -26,13 +26,16 @@ Kullanım (kur.cmd aynı parametreleri geçirir):
                                    (junction/symlink) konmamışsa: git böyle bir bağın içine girip oradaki dosyaları
                                    yedeğe alabilir. Onay: "SIFIRLA" yazılır (-Evet geçer).
   kur.cmd -Kaldir                  global config'ten bu klonun kayıtlarını kaldır; bu klonda açılmış SAP'ye yazma
-                                   iznini de KAPATIR (izin dosyasını siler). Klon klasörü SİLİNMEZ.
+                                   iznini de KAPATIR (izin dosyasını siler). Klon klasörü SİLİNMEZ. -Hedef
+                                   verilmezse kaldırılan klon, bu kur.cmd'nin bulunduğu klasördür.
   -Evet          soruları otomatik "evet" yanıtlar (otomatik testler için)
   -WingetKapali  winget'i hiç çağırmaz; eksik araç için yalnız tarif yazar (otomatik testler için)
 
 Çıkış kodu: 0 tamam · 1 durduruldu/hata · 2 ön koşul eksik · 3 yeni terminal gerekli · 4 doctor FAIL gösterdi
 #>
-[CmdletBinding()]
+# PositionalBinding=$false: adsız argüman ("kur.cmd C:\x") eskiden SESSİZCE -Hedef oluyordu (K-A, ölçüldü 2026-09-18).
+# Artık hiçbir parametre konumdan bağlanmaz; adsız argümanlar $Fazla'ya düşer ve aşağıda DURDU ile reddedilir.
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [string]$Hedef = (Join-Path $env:USERPROFILE 'axet'),
     [string]$Kaynak = 'https://github.com/ozgurylmz34/axet-template.git',
@@ -40,7 +43,9 @@ param(
     [switch]$Sifirla,
     [switch]$DenemeModu,
     [switch]$Evet,
-    [switch]$WingetKapali
+    [switch]$WingetKapali,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Fazla
 )
 
 Set-StrictMode -Version 2
@@ -662,6 +667,15 @@ function Sifirla-Klon([string]$hedef, [string]$dal) {
 # =================================================================================================================
 try {
     # --- 0. Parametre doğrulama (hiçbir işlemden ÖNCE) -------------------------------------------------------------
+    if (@($Fazla | Where-Object { $_ }).Count -gt 0) {
+        Yaz "DURDU: adı verilmemiş argüman: $($Fazla -join ' ')"
+        Yaz '  Her değer parametre adıyla verilir. Klasör için: kur.cmd -Hedef "C:\klasör"'
+        Bitir 1
+    }
+    # -Kaldir'da -Hedef verilmediyse hedef BU betiğin klonudur: klonun içindeki kur.cmd -Kaldir, %USERPROFILE%\axet'i
+    # değil kendini kaldırmalı (K-B, ölçüldü 2026-09-18: başka klon denetlenip "klonu değil" diye durdu). Kur/güncelle
+    # akışının varsayılanı DEĞİŞMEZ: kur.cmd ilk kurulumda indirme klasöründen de çalışabilir, orası hedef olamaz.
+    if ($Kaldir -and -not $PSBoundParameters.ContainsKey('Hedef')) { $Hedef = $PSScriptRoot }
     # Ölçüldü: kur.cmd'ye tırnaklı ve sonu ters bölü ile biten bir yol verilince ("C:\c b\") Windows \" dizisini
     # kaçışlı tırnak sayar; sonraki bütün parametreler (-DenemeModu, -WingetKapali dahil) bu değerin içine düşer.
     foreach ($ciftAd in @(@('-Hedef', $Hedef), @('-Kaynak', $Kaynak))) {
@@ -950,11 +964,15 @@ try {
         # Config'teki kök de çözülüp çözülmüş hâlle karşılaştırılır: config junction'lı biçimi tutup kur gerçek yolla
         # çalışınca AKTİF klon "başka klon" sanılıyordu (ölçüldü). Kök çözülemezse o kök için ÖLÇÜLEMEDİ: öneri yok.
         $olculemeyen = @()
+        # "Config zaten bu klonu gösteriyor" yalnız config'te GERÇEKTEN bu klona eşit bir kayıt varsa basılır. Eskiden
+        # koşul "$onceki boş değil" idi: config'te yalnız BAYAT (klasörü silinmiş) kayıt varken de bu cümle basılıyordu
+        # (K-C, ölçüldü 2026-09-18).
+        $bukiKlon = $false
         foreach ($o in $onceki) {
-            if ((Yol-Esit $o $Hedef) -or (Yol-Esit $o $HedefGercek)) { continue }
+            if ((Yol-Esit $o $Hedef) -or (Yol-Esit $o $HedefGercek)) { $bukiKlon = $true; continue }
             $oGercek = Gercek-Yol $o
             if ($null -eq $oGercek) { $olculemeyen += $o; Yaz "  DİKKAT: config'teki klonla karşılaştırma ÖLÇÜLEMEDİ: $($script:GercekYolHata)"; continue }
-            if (-not (Yol-Esit $oGercek $HedefGercek)) { $baska += $o }
+            if (Yol-Esit $oGercek $HedefGercek) { $bukiKlon = $true } else { $baska += $o }
         }
         if ($olculemeyen.Count -gt 0) {
             Yaz "          config'te kayıtlı klon: $($olculemeyen -join ', ')"
@@ -976,7 +994,7 @@ try {
             Yaz '          çekirdek birden yüklenebilir. Önceki klonu artık kullanmayacaksan onun kayıtlarını PowerShell''de kaldır.'
             Yaz '          Bu komut o klonda açılmış SAP''ye yazma iznini de KAPATIR (izin dosyasını siler):'
             foreach ($b in $baska) { Yaz "            & `"$($script:PY)`" `"$(Join-Path $b 'scripts\install.py')`" --uninstall" }
-        } elseif ($onceki.Count -gt 0 -and $olculemeyen.Count -eq 0) {
+        } elseif ($bukiKlon -and $olculemeyen.Count -eq 0) {
             Yaz '  Config zaten bu klonu gösteriyor; kayıtlar yenilenecek.'
         }
     }

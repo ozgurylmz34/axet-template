@@ -285,7 +285,10 @@ class DoctorTest(GeciciTest):
         f.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
         r = self.doctor(d)
         self.assertEqual(r.returncode, 1, r.stdout)
-        self.var(r, "FAIL", "sap-project.json geçersiz: sap_profile")
+        # ⚠ Aynı metin `SAP satırı ↔ sap-project.json ÖLÇÜLEMEDİ (…)` FAIL satırının parantezinde de
+        # geçer ⇒ `self.var(... parca)` o satırla da sağlanırdı. Ölçüt: satır bu metinle BAŞLAR.
+        self.assertTrue(any(s.startswith("[FAIL] sap-project.json geçersiz: sap_profile")
+                            for s in self.satirlar(r)), r.stdout)
 
     def test_sap_profil_dogrulayici_yoksa_olculemedi(self):
         d = self.sap_proje()

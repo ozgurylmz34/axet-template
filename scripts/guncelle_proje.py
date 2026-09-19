@@ -68,6 +68,13 @@ def _simdi() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+def _git_deposu_mu(kok: Path) -> bool:
+    """`git remote` rc≠0'ı iki sebepten ayırır: proje hiç git deposu değil (bilgi, gürültü değil)
+    ↔ depo var ama okunamadı (ÖLÇÜLEMEDİ). rc tek başına ayırt etmez: bozuk `.git/config` de
+    "not a git repository" gibi 128 döner. Ölçüt `.git`in kökte ya da bir üst dizinde varlığıdır."""
+    return any((d / ".git").exists() for d in (kok, *kok.parents))
+
+
 def _norm(veri: bytes | None) -> bytes | None:
     """CRLF → LF. Proje dosyası platform satır sonuyla, blob LF ile yazılır (ölçülmüş tuzak)."""
     return None if veri is None else veri.replace(b"\r\n", b"\n")
@@ -76,6 +83,13 @@ def _norm(veri: bytes | None) -> bytes | None:
 def _ozet(veri: bytes | None) -> str | None:
     n = _norm(veri)
     return None if n is None else hashlib.sha256(n).hexdigest()
+
+
+def _yazilacak(rel: str, veri: bytes) -> bytes:
+    """Diske yazılacak içerik: metin LF'e normalize edilir, İKİLİ dosya ASLA (bug gate 2026-09-19
+    ikinci tur). `_norm` baytlardaki `\\r\\n`'yi siler — PNG başlığı bile `\\r\\n` içerir — ve doğrulama
+    iki tarafı da normalize ettiği için bozulma SESSİZ geçerdi."""
+    return veri if ikili_mi(rel, [veri]) else (_norm(veri) or b"")
 
 
 def ikili_mi(yol: str, ornekler) -> bool:
@@ -163,6 +177,12 @@ class Proje:
         tam.parent.mkdir(parents=True, exist_ok=True)
         if rel == "AGENTS.md" and self.damga_gerekli:
             veri_lf = self._damgala(veri_lf)
+        # İkili ölçütü `ikili_mi` (uzantı + NUL) — yalnız UnicodeDecodeError DEĞİL: geçerli UTF-8 olan
+        # ikili dosya metin sayılıp `write_text` ile satır sonu çevrilerek BOZULUYORDU (bug gate
+        # 2026-09-19 ikinci tur, ölçüldü: LF satır sonu CRLF'e döndü). new_project ile aynı ölçüt.
+        if ikili_mi(rel, [veri_lf]):
+            tam.write_bytes(veri_lf)
+            return
         try:
             metin = veri_lf.decode("utf-8")
         except UnicodeDecodeError:
@@ -246,6 +266,8 @@ class Baglam:
             ham = self.k.icerik(commit, kaynak)
             if ham is None:
                 continue
+            if ikili_mi(rel, [ham]):
+                return ham          # ikili: yer tutucu ikame edilmez (new_project ile aynı ölçüt)
             try:
                 metin = ham.decode("utf-8")
             except UnicodeDecodeError:
@@ -416,7 +438,11 @@ def _paket_sablonu_satiri(b: Baglam) -> str:
     if not b.taban_commit:
         return "paket şablonu: taban bilinmiyor, karşılaştırılmadı (K5: kapsam dışı)"
     r = b.k.git("diff", "--name-only", b.taban_commit, b.yeni_commit, "--", PAKET_SABLONU)
-    degisen = [s.strip() for s in r.stdout.splitlines() if s.strip()] if r.returncode == 0 else []
+    if r.returncode != 0:
+        # rc≠0 "değişiklik yok" demek değildir (rc taraması 2026-09-18).
+        return (f"paket şablonu: karşılaştırma ÖLÇÜLEMEDİ (git diff rc={r.returncode}) "
+                "(K5: kapsam dışı)")
+    degisen = [s.strip() for s in r.stdout.splitlines() if s.strip()]
     if not degisen:
         return "paket şablonu: değişiklik yok (K5: kapsam dışı)"
     return ("paket şablonunda değişiklik var (K5 — kapsam DIŞI, dokunulmadı): "
@@ -516,7 +542,7 @@ def komut_uygula(b: Baglam, args) -> int:
                 durum_kaydet(p, rel, vaka=kod, durum="bekliyor", not_="yeni içerik yok")
                 hata = 1
                 continue
-            p.yaz(rel, _norm(y) or b"")
+            p.yaz(rel, _yazilacak(rel, y))
             beklenen = _ozet(b.govde(rel, y))
         gercek = _ozet(b.govde(rel, p.oku(rel)))
         if gercek != beklenen:
@@ -619,7 +645,7 @@ def komut_isaretle(b: Baglam, args) -> int:
             tam = p.kok / rel
             shutil.move(str(tam), str(tam.with_name(tam.name + ".yerel")))
             print(f"Senin dosyan korundu: {rel}.yerel")
-        p.yaz(rel, _norm(y) or b"")
+        p.yaz(rel, _yazilacak(rel, y))
         return _dogrula_ve_kaydet(b, rel, d["vaka"], args.karar, _ozet(b.govde(rel, y)))
 
     # birlesik
@@ -745,11 +771,15 @@ def komut_kapanis(b: Baglam, args) -> int:
     rapor += ["", "## Sayaçlar", ", ".join(f"{a}={c}" for a, c in plan["sayaclar"].items()),
               "", "## Damga", damga_satiri,
               "", "## Paket şablonu", plan["paket_sablonu"]]
-    if b.k.git("-C", str(p.kok), "remote").returncode == 0:
-        pass
     ekip = subprocess.run(["git", "-C", str(p.kok), "remote"], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
-    if ekip.returncode == 0 and ekip.stdout.strip():
+    if ekip.returncode != 0 and not _git_deposu_mu(p.kok):
+        rapor += ["", "## Ekip reposu", "Proje bir git deposu değil — ekip reposu yok."]
+    elif ekip.returncode != 0:
+        rapor += ["", "## Ekip reposu",
+                  f"ÖLÇÜLEMEDİ (git remote rc={ekip.returncode}) — proje bir ekip reposuysa bu "
+                  "değişiklikler commit'le ekip arkadaşlarına gider; commit KULLANICININ onayıyla atılır."]
+    elif ekip.stdout.strip():
         rapor += ["", "## Ekip reposu",
                   "Bu değişiklikler proje reposuna commit edilecek; ekip arkadaşların pull edince "
                   "onlara da gelir. Commit KULLANICININ onayıyla atılır; push asla."]
@@ -828,7 +858,12 @@ def komut_onkontrol(b: Baglam, args) -> int:
 
     r = subprocess.run(["git", "-C", str(p.kok), "remote"], capture_output=True, text=True,
                        stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
-    if r.returncode == 0 and r.stdout.strip():
+    if r.returncode != 0 and not _git_deposu_mu(p.kok):
+        bilgi.append("ekip reposu: proje bir git deposu değil")
+    elif r.returncode != 0:
+        bilgi.append(f"ekip reposu denetimi ÖLÇÜLEMEDİ (git remote rc={r.returncode}) — proje bir "
+                     "ekip reposuysa değişiklikler commit'le ekibe gider.")
+    elif r.stdout.strip():
         bilgi.append("EKİP REPOSU UYARISI: bu değişiklikler proje reposuna commit edilecek; "
                      "ekip arkadaşların pull edince onlara da gelir. Commit kullanıcının "
                      "onayıyla atılır; push asla.")
