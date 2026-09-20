@@ -33,6 +33,35 @@ from pathlib import Path
 
 BURASI = Path(__file__).resolve().parent
 AXET_HOME = BURASI.parent
+
+# Yayın anında ÜRETİLEN, kaynak depoda bulunmayan yollar. Tüketicinin klonunda VARDIR
+# (yayın aracı yazar); kaynak depoda yoktur, çünkü hükmü yayın koşumu üretir.
+YAYINDA_URETILEN = ("guncelle/ci-durum.json",)
+
+
+def eksik_yollar(kaynaklar: dict, muafiyet: tuple | None = None) -> list:
+    """Backtick içinde anılan repo yollarından diskte OLMAYANLAR. `## Örnek` bölümü ölçülmez.
+
+    `muafiyet` yalnız kontrol grubu içindir: muafiyeti KAPATIP aynı girdinin yakalandığını
+    göstermek, muafiyetin gerçekten bir iş yaptığını kanıtlar."""
+    muaf = YAYINDA_URETILEN if muafiyet is None else muafiyet
+    eksik = []
+    for ad, metin in kaynaklar.items():
+        metin = re.sub(r"^## Örnek\b.*?(?=^## |\Z)", "", metin, flags=re.M | re.S)
+        for aday in re.findall(r"`([A-Za-z0-9_./-]+\.(?:py|md|json))`", metin):
+            if aday.startswith(".axet-guncelleme") or "/" not in aday:
+                continue  # koşum anında üretilen yol · örnek dosya adı (dizinsiz)
+            if (AXET_HOME / aday).exists():
+                continue
+            if aday in muaf:
+                # Muafiyet KENDİ KENDİNİ SINIRLAR: yol VARSA bir üstteki dal zaten geçirdi,
+                # yani bu dal ancak yol gerçekten yokken çalışır. (Z17: gerekçesinden GENİŞ
+                # yazılan muafiyet kör noktaya döner.)
+                continue
+            eksik.append(f"{ad}: {aday}")
+    return eksik
+
+
 if str(AXET_HOME / "scripts") not in sys.path:
     sys.path.insert(0, str(AXET_HOME / "scripts"))
 
@@ -436,15 +465,21 @@ class KartIddiaTutarliligi(unittest.TestCase):
         """
         kaynaklar = dict(self.kartlar)
         kaynaklar["GUNCELLE.md"] = (AXET_HOME / "GUNCELLE.md").read_text(encoding="utf-8")
-        eksik = []
-        for ad, metin in kaynaklar.items():
-            metin = re.sub(r"^## Örnek\b.*?(?=^## |\Z)", "", metin, flags=re.M | re.S)
-            for aday in re.findall(r"`([A-Za-z0-9_./-]+\.(?:py|md|json))`", metin):
-                if aday.startswith(".axet-guncelleme") or "/" not in aday:
-                    continue  # koşum anında üretilen yol · örnek dosya adı (dizinsiz)
-                if not (AXET_HOME / aday).exists():
-                    eksik.append(f"{ad}: {aday}")
+        eksik = eksik_yollar(kaynaklar)
         self.assertEqual([], eksik, f"diskte olmayan yol anılmış: {eksik}")
+
+    def test_KONTROL_uretilen_muafiyeti_baska_yolu_KAPSAMAZ(self) -> None:
+        """Kontrol grubu: muafiyet YAYINDA_URETILEN ile SINIRLI mı, yoksa "üretilmiş gibi
+        duran" her yolu mu yutuyor? Üçüncü iddia muafiyeti KAPATIP aynı girdinin yakalandığını
+        ölçer — o olmadan bu test, muafiyet tümden genişlese bile yeşil kalırdı."""
+        self.assertEqual([], eksik_yollar({"sahte": "`guncelle/ci-durum.json`"}),
+                         "muaf yol yakalanmamalıydı")
+        self.assertEqual(["sahte: guncelle/olmayan-uretilmis.json"],
+                         eksik_yollar({"sahte": "`guncelle/olmayan-uretilmis.json`"}),
+                         "muafiyet listede OLMAYAN yolu da yutuyor — kör nokta (Z17)")
+        self.assertEqual(["sahte: guncelle/ci-durum.json"],
+                         eksik_yollar({"sahte": "`guncelle/ci-durum.json`"}, muafiyet=()),
+                         "muafiyetsiz kolda yakalanmıyor ⇒ test hiçbir şey ölçmüyor")
 
     def test_onkontrolun_durdurdugu_durum_vaka_sebebi_gosterilmez(self) -> None:
         """Ön kontrol sığ klonu DURDURUYORSA, hiçbir kart onu kendi vakasının sebebi sayamaz."""

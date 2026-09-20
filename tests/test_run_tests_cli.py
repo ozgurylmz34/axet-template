@@ -72,5 +72,60 @@ class KosucuKullanimHatalari(unittest.TestCase):
         self.assertRegex(r.stdout, r"SONUÇ: [1-9]\d* test")
 
 
+class ParalelKosucu(unittest.TestCase):
+    """Paralel kol (2026-09-20) — hız için doğruluk feda edilmediğini ölçer.
+
+    Paralelliğin tek meşru gerekçesi duvar saatidir; ölçüm ANLAMI değişirse kazanç sahtedir.
+    En tehlikeli kusur sessizliktir: bir işçi çökerse ya da özetini basmazsa toplam "0 kırmızı"
+    görünür ve koşum YEŞİL çıkar. O yüzden çöken işçi burada `error` sayılır.
+    """
+
+    def test_paralel_ve_sirali_AYNI_test_sayisini_verir(self) -> None:
+        """Eşdeğerlik: dağıtım test kaybetmemeli (kayıp = sessiz kapsam daralması)."""
+        import re as _re
+        sayilar = {}
+        for bayrak in (["-j", "1"], ["-j", "4"]):
+            r = kos(BURASI / "run_tests.py", "-k", "guncelle_harita", *bayrak)
+            self.assertEqual(0, r.returncode, r.stdout[-500:] + r.stderr[-500:])
+            m = _re.search(r"SONUÇ: (\d+) test", r.stdout)
+            self.assertIsNotNone(m, r.stdout[-300:])
+            sayilar[bayrak[1]] = int(m.group(1))
+        self.assertEqual(sayilar["1"], sayilar["4"],
+                         f"paralel kol test kaybediyor/çoğaltıyor: {sayilar}")
+        self.assertGreater(sayilar["1"], 0, "kontrol grubu boş — ölçüm anlamsız")
+
+    def test_j_degersiz_cikis_2(self) -> None:
+        for arg in (["-j"], ["-j", "0"], ["-j", "abc"]):
+            with self.subTest(arg=arg):
+                r = kos(BURASI / "run_tests.py", *arg)
+                self.assertEqual(2, r.returncode, r.stdout[-300:])
+                self.assertIn("-j pozitif bir tamsayı ister", r.stderr)
+
+    def test_ozetsiz_isci_SESSIZ_YESIL_vermez(self) -> None:
+        """İşçi özet basmadan ölürse (çökme/kill) toplam YEŞİL görünmemeli."""
+        import importlib.util, unittest.mock as mock, subprocess as sp  # noqa: PLC0415
+        spec = importlib.util.spec_from_file_location("axet_run_tests", BURASI / "run_tests.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        sahte = sp.CompletedProcess(args=[], returncode=1, stdout="hicbir isaret yok", stderr="boom")
+        with mock.patch.object(m.subprocess, "run", return_value=sahte):
+            ozet = m._isci_kos(["a.B.c"])
+        self.assertEqual(1, ozet["error"], f"çöken işçi 'error' sayılmadı: {ozet}")
+        self.assertTrue(ozet["kirmizilar"], "çökme kırmızı listesine girmedi")
+
+    def test_KONTROL_ozet_basan_isci_normal_sayilir(self) -> None:
+        """Kontrol grubu: her işçiyi 'çöktü' sayan bir düzeltme de yukarıdaki testi geçerdi."""
+        import importlib.util, json as _json, unittest.mock as mock, subprocess as sp  # noqa: PLC0415
+        spec = importlib.util.spec_from_file_location("axet_run_tests2", BURASI / "run_tests.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        govde = {"test": 3, "failure": 0, "error": 0, "skip": 1, "kirmizilar": []}
+        sahte = sp.CompletedProcess(args=[], returncode=0,
+                                    stdout=m.ISARET + _json.dumps(govde), stderr="")
+        with mock.patch.object(m.subprocess, "run", return_value=sahte):
+            ozet = m._isci_kos(["a.B.c"])
+        self.assertEqual(govde, ozet)
+
+
 if __name__ == "__main__":
     unittest.main()

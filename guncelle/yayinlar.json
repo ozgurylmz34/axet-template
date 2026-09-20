@@ -350,6 +350,110 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.4.0",
+   "tarih": "2026-09-20",
+   "kalemler": [
+    {
+     "id": "0.4.0-01",
+     "baslik": "Ölçüm zaman aşımı artık ÇÖKME değil hüküm — 35 dakikalık ölçüm çöpe gitmiyor",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "`olc` içindeki test komutu zaman aşımına uğrarsa `subprocess.TimeoutExpired` yukarı kaçıyordu: koşum traceback ile ölüyor ve `olcum-once.json` HİÇ yazılmıyordu. Üstelik sınır 1800 sn, kök takımı ise 2411 sn sürüyordu ⇒ planında `test-kok` ya da `bakim-script-kok` sınıfı olan HER tüketicide ölçüm yapısal olarak imkânsızdı (canlı klonda ölçüldü: 34 dk 50 sn sonra çöktü). Artık sınır 5400 sn ve aşım `ÖLÇÜLEMEDİ — <n> sn zaman aşımı` olarak KAYDEDİLİR; akış durmaz, diğer komutlar ölçülmeye devam eder. Aynı disiplin özel adım kollarında da.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle"
+     ]
+    },
+    {
+     "id": "0.4.0-02",
+     "baslik": "Kök test takımı paralel koşuyor — güncelleme beklemesi duvar saatinde bölünüyor",
+     "tur": "yetenek",
+     "kritik": true,
+     "neden": "Takım tek işlemde 2411 sn (≈40 dk) sürüyordu ve bu süre tüketicinin `%guncelle` beklemesini doğrudan belirliyordu. Süre test SAYISINDAN değil, her testin kendi sahte yayın + tüketici klonunu git ile kurmasından geliyor. Testler artık `modul.Sınıf` kümelerine bölünüp ayrı işlemlerde koşuyor (varsayılan min(cpu, 8, küme)); izolasyon zaten testlerin tasarımında olduğu için ölçümün ANLAMI değişmez. `-j 1` sıralı kola döner. Çıkış sözleşmesi korundu: `-k` yazım hatası → çıkış 2, 0 test ≠ başarılı, özet basmadan ölen işçi `error` sayılır.",
+     "dosyalar": [
+      "tests/run_tests.py",
+      "tests/test_run_tests_cli.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k ParalelKosucu"
+     ]
+    },
+    {
+     "id": "0.4.0-03",
+     "baslik": "Kapsanan test komutu iki kez koşmuyor (filtresiz eşi varken `-k` atlanır)",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Aynı `cwd`'de hem `python tests/run_tests.py` hem `… -k <desen>` seçiliyse filtreli olan koşulmuyor: `-k` çalıştırıcıda `testNamePatterns` olur, yani yalnız süzer ⇒ filtreli koşum filtresizin ÖZ ALT KÜMESİDİR. Ölçülen israf (v0.3.0 planı, gerçek klon): tur başına 18 komutun 6'sı. Şartlar dar: aynı cwd · aynı taban argv · filtresiz eş AYNI ölçümde · değersiz `-k` dokunulmaz. Bayat/yazım hatalı desen tanısı BAĞIMSIZ katmanda (harita doğrulayıcı) ölçülmeye devam eder.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py",
+      "GUNCELLE.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle"
+     ]
+    },
+    {
+     "id": "0.4.0-04",
+     "baslik": "Önce-ölçüm turu, yerel değişiklik yokken CI hükmüyle ikame ediliyor",
+     "tur": "yetenek",
+     "kritik": true,
+     "neden": "Gerekçe hız DEĞİL doğruluk: `once` ESKİ, `sonra` YENİ test kodunu koşar (`tests/**` güncellemenin parçası olabilir) ⇒ testlerin kendisi değişirken 'fark = regresyon' çıkarımı kurulamaz. Planda YARGI VAKASI yokken uygulama sonrası ağaç yayınlanan ağacın aynısıdır ve onu CI temiz ortamda ölçmüştür; o yüzden taban `guncelle/ci-durum.json`'dan alınır ve `once` turu hiç koşmaz. Yargı vakası varsa ağaç farklıdır ⇒ ölçüm ZORUNLU. Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) normal ölçüme döner — ölçülemedi ≠ yeşil. CI tabanında `sonra`daki HER kırmızı yeni sayılır.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "GUNCELLE.md",
+      "tests/test_guncelle.py",
+      "tests/test_yayin_hazirla.py",
+      "tests/test_guncelle_kartlar.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle",
+      "python tests/run_tests.py -k CiDurumUret"
+     ]
+    },
+    {
+     "id": "0.4.0-05",
+     "baslik": "CI matrisi tek Python sürümüne daraltıldı; kurucu da ÖLÇÜLEN sürümü kuruyor",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "Hesabın Actions kotası doldu ve işler sıfır adımla 'failure' dönmeye başladı (tanı check-run annotation'ında, iş loglarında değil). Matris ['3.12','3.14'] → ['3.12'] (4 iş → 2 iş). Kurucu artık winget ile 3.12 kurar; 3.14 kuran bir kurucu her yeni kullanıcıyı doğrudan ölçülmemiş kola sokardı (asgari kapı ≥3.12 olarak kaldı, üst sürümler kabul edilir). ⚠ KAPSAM KAYBI: üst kol GERÇEK bir kusur ölçmüştü (glob harf duyarlılığı yalnız 3.14'te kırılmıştı); o sınıf artık CI'da ölçülmüyor. Kota çözülünce en ucuz geri koyma: yalnız main push'u ya da haftalık.",
+     "dosyalar": [
+      ".github/workflows/testler.yml",
+      "kur.ps1",
+      "tests/test_kur.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k kur"
+     ]
+    },
+    {
+     "id": "0.4.0-06",
+     "baslik": "Yayın üstverisi (CHANGELOG · yayın kataloğu · CI durumu) artık klona da ulaşıyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`CHANGELOG.md`, `guncelle/yayinlar.json` ve `guncelle/ci-durum.json` üretilen dosyalar oldukları için yayın kapsam denetiminden TÜMDEN muaftı; hiçbir kaleme bağlanmadıkları için `%guncelle` onları 'beyansız EYLEM' sayıp UYGULAMIYORDU. Ölçüldü: v0.1.0 · v0.2.0 · v0.3.0 → üçünde de klona ulaşmadılar, yani tüketicinin elindeki CHANGELOG ve yayın kataloğu ilk kurulumdan beri bayattı. Muafiyet kaldırıldı: üretilen dosyalar da beyan edilmek ZORUNDA (yayın aracı beyan edilmemişse durur) ve bu kalemle beyan ediliyorlar.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "tests/test_yayin_surumleri.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    }
+   ]
   }
  ]
 }

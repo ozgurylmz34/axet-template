@@ -200,3 +200,83 @@ class KopyaHatasiTest(GeciciTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CiDurumUretTest(unittest.TestCase):
+    """Z16 — yayına taşınan CI hükmü (`guncelle/ci-durum.json`) FAIL-SAFE üretilmeli.
+
+    ⛔ ÖLÇÜLEN SINIF: bu kaydı tüketici `%guncelle` okuyup `olc --asama once` turunu ikame
+    etmekte kullanır. Yanlışlıkla `hepsi_yesil: true` yazmak, ölçülmemiş bir güncellemeyi
+    "ölçüldü" saydırır ⇒ her belirsizlik dalı `false` yazmalı ve SEBEBİNİ söylemeli.
+
+    KAPSAM — bakılmayan: gerçek `gh` çağrısı ve ağ (burada taklit edilir) · `gh` çıktı
+    biçiminin gelecekte değişmesi · `_ci_os()`/`_ci_python()` (ayrı, workflow dosyasından okur).
+    """
+
+    ETIKET = "v9.9.9"
+    YESIL = ("Testler (kok · Python 3.12)\tsuccess\n"
+             "Testler (foundation · Python 3.12)\tsuccess\n")
+
+    def modul(self):
+        spec = importlib.util.spec_from_file_location("yayin_hazirla_ci", BETIK)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    def _uret(self, m, cikti: str, kod: int = 0, kapali: bool = False) -> dict:
+        with mock.patch.object(m, "git_sessiz_komut",
+                               side_effect=lambda argv: ((0, "git@github.com:o/r.git\n", "")
+                                                         if argv[0] == "git" else (kod, cikti, "hata"))):
+            kayit = m.ci_durum_uret("deadbee", self.ETIKET, None, kapali)
+        return kayit[self.ETIKET]
+
+    def test_1_hepsi_yesilse_TRUE(self):
+        m = self.modul()
+        y = self._uret(m, self.YESIL)
+        self.assertTrue(y["hepsi_yesil"], y)
+        self.assertEqual(len(y["takimlar"]), 2)
+        self.assertNotIn("not", y)
+
+    def test_2_KONTROL_tek_takim_kirmiziysa_FALSE_ve_ADINI_soyler(self):
+        m = self.modul()
+        y = self._uret(m, self.YESIL.replace("success", "failure", 1))
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("Testler (kok · Python 3.12)", y["not"])
+
+    def test_3_KONTROL_ci_hala_kosuyorsa_FALSE_ve_BEKLE_der(self):
+        m = self.modul()
+        y = self._uret(m, self.YESIL.replace("success", "null", 1))
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("kosuyor", y["not"].lower(),
+                      "null conclusion 'kırmızı' değil 'henüz bitmedi'dir — teşhis ayrılmalı")
+
+    def test_4_KONTROL_asgari_takim_eksikse_FALSE(self):
+        m = self.modul()
+        y = self._uret(m, "Baska Is\tsuccess\n")
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("asgari", y["not"])
+
+    def test_5_KONTROL_gh_hata_verirse_FALSE(self):
+        m = self.modul()
+        y = self._uret(m, "", kod=1)
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("okunamadi", y["not"])
+
+    def test_6_KONTROL_hic_check_run_yoksa_FALSE(self):
+        m = self.modul()
+        y = self._uret(m, "")
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("check-run", y["not"])
+
+    def test_7_KONTROL_kapaliysa_gh_HIC_SORULMAZ_ve_FALSE(self):
+        m = self.modul()
+        with mock.patch.object(m, "git_sessiz_komut",
+                               side_effect=AssertionError("gh çağrılmamalıydı")):
+            y = m.ci_durum_uret("deadbee", self.ETIKET, None, True)[self.ETIKET]
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("ci-durum-yok", y["not"])
+
+    def test_8_uretilen_dosyalar_ci_durumu_KAPSAR(self):
+        """Kapsam muafiyeti tek kaynaktan gelmeli; unutulursa kalem-diff FAIL verirdi."""
+        m = self.modul()
+        self.assertIn(m.CI_DURUM_YOLU, m.URETILEN_DOSYALAR)

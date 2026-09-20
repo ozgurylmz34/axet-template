@@ -52,6 +52,11 @@ def kalem(kid: str, **ek) -> dict:
     return k
 
 
+# Yayın aracının ürettiği dosyalar (yayin_hazirla.URETILEN_DOSYALAR ile aynı küme).
+# Z17 (2026-09-20) sonrası bunlar da kalem-diff kapsamındadır: beyan edilmezse yayın DURUR.
+URETILEN = ["CHANGELOG.md", "guncelle/yayinlar.json", "guncelle/ci-durum.json"]
+
+
 def yayinlar(*yayin: dict) -> dict:
     return {"surum": 1, "yayinlar": list(yayin)}
 
@@ -174,11 +179,27 @@ class SemaTest(YayinTemeli):
         self.assertEqual(rc, 1, c)
         self.assertIn("public'e girmeyen yolu bildiriyor", c)
 
-    def test_uretilen_dosya_beyani_fail(self):
-        bozuk = yayinlar(yayin("v0.1.0", kalem("0.1.0-01", dosyalar=["CHANGELOG.md"])))
+    def test_uretilen_dosya_beyani_ARTIK_SERBEST(self):
+        """Z17 (2026-09-20): üretilen dosyayı beyan etmek YASAK DEĞİL, ZORUNLU.
+
+        Eski kural tam tersini söylüyordu (*"bu dosyalar yayın aracının çıktısıdır, kaleme ait
+        değildir"*) ve `kapsam_dogrula` da onları denetimden muaf tutuyordu. İki kural birlikte
+        kapalı bir çember kuruyordu: beyan etmeyince dosya tüketiciye ULAŞMIYOR, beyan edince
+        şema hatası alıyordun. Ölçülen sonuç: v0.1.0 · v0.2.0 · v0.3.0 → üçünde de `CHANGELOG.md`
+        ve `guncelle/yayinlar.json` tüketici klonuna hiç ulaşmadı.
+        ⚠ Bu testin kendisi kör noktanın bekçisiydi: kuralı kaldıran biri ÖNCE bu testi kırar.
+        """
+        veri = yayinlar(yayin("v0.1.0", kalem("0.1.0-01", dosyalar=list(URETILEN))))
+        rc, c = self.dogrula(self.depo(veri))
+        self.assertEqual(rc, 0, c)
+        self.assertNotIn("üretilen dosyayı bildiriyor", c)
+
+    def test_KONTROL_dislanan_yol_hala_fail(self):
+        """Kontrol grubu: yol beyanı denetiminin TÜMÜ kalkmadı, yalnız üretilen-dosya kolu."""
+        bozuk = yayinlar(yayin("v0.1.0", kalem("0.1.0-01", dosyalar=["maintenance/IS-LISTESI.md"])))
         rc, c = self.dogrula(self.depo(bozuk))
         self.assertEqual(rc, 1, c)
-        self.assertIn("üretilen dosyayı bildiriyor", c)
+        self.assertIn("public'e girmeyen yolu bildiriyor", c)
 
     def test_etiket_bicimi_fail(self):
         rc, c = self.dogrula(self.depo(yayinlar(yayin("0.1.0", kalem("0.1.0-01")))))
@@ -367,7 +388,11 @@ class YayinAkisiTest(YayinTemeli):
         self.yaz(d / "guncelle" / "yayinlar.json",
                  json.dumps(yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
                                      yayin("v0.2.0", kalem("0.2.0-01", kritik=True,
-                                                           baslik="doctor: ikinci düzeltme"))),
+                                     baslik="doctor: ikinci düzeltme"),
+                                     # Z17: üretilen dosyalar da beyan edilmek ZORUNDA,
+                                     # yoksa tüketici klonuna hiç ulaşmazlar.
+                                     kalem("0.2.0-uv", baslik="yayın üstverisi",
+                                           dosyalar=list(URETILEN), test=[]))),
                             ensure_ascii=False, indent=1) + "\n")
         self.commitle(d, "ikinci yayin hazirligi")
         r = self.arac(d, "--hedef", str(yayinevi), "--origin", str(bare))
@@ -392,10 +417,19 @@ class YayinAkisiTest(YayinTemeli):
         pc = self.cikti(p)
         self.assertEqual(0, p.returncode, pc)
         plan = json.loads((eski / ".axet-guncelleme" / "plan.json").read_text(encoding="utf-8"))
-        idler = [k["id"] for k in plan["kalemler"]]
-        self.assertEqual(["0.2.0-01"], idler, f"plan yalnız yeni kalemi içermeli: {plan}")
-        self.assertTrue(plan["kalemler"][0]["kritik"], "kritik bayrağı motora geçmedi")
-        self.assertEqual(["scripts/doctor.py"], [x["yol"] for x in plan["kalemler"][0]["dosyalar"]])
+        idler = sorted(k["id"] for k in plan["kalemler"])
+        self.assertEqual(["0.2.0-01", "0.2.0-uv"], idler,
+                         f"plan yalnız YENİ yayının kalemlerini içermeli: {plan}")
+        kalem_01 = next(k for k in plan["kalemler"] if k["id"] == "0.2.0-01")
+        self.assertTrue(kalem_01["kritik"], "kritik bayrağı motora geçmedi")
+        self.assertEqual(["scripts/doctor.py"], [x["yol"] for x in kalem_01["dosyalar"]])
+        # Z17 regresyonu: üretilen dosyalar artık PLANA giriyor. Eskiden hiçbir kaleme
+        # bağlı olmadıkları için "beyansız EYLEM" sayılıp UYGULANMIYORLARDI — v0.1.0,
+        # v0.2.0 ve v0.3.0'ın ÜÇÜNDE DE ölçüldü (tüketicinin CHANGELOG'u ilk kurulumdan
+        # beri bayattı).
+        uv = next(k for k in plan["kalemler"] if k["id"] == "0.2.0-uv")
+        self.assertIn("CHANGELOG.md", [x["yol"] for x in uv["dosyalar"]],
+                      f"üretilen dosyalar plana girmedi: {uv}")
 
         # (c) tüketici klonunda CHANGELOG.md SINIFSIZ kalmamalı — sınıfsız yol harita denetiminde FAIL'dir
         # (haritada `belge-changelog`; geliştirme reposunda dosya yok, bu yüzden ancak BURADA ölçülebilir)

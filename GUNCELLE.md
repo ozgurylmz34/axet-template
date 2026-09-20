@@ -30,6 +30,8 @@ izlenmez.
 | 4 | Plan | `guncelle.py plan` | 0 (1 = güncel, bitir) | 2 → DUR |
 | 5 | Seçim | plan tablosunu göster → `guncelle.py sec --hepsi` ya da `--kalem/--cikar` | 0 | 2 → tutarsızlığı açıkla, yeniden sor |
 | 6 | Önce-ölçüm | `guncelle.py olc --asama once` | 0 | 2 → DUR (ölçülemeyen güncelleme yapılmaz) |
+| 6b | *(6'nın İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi:** planda **yargı vakası yoksa** ve yayının `guncelle/ci-durum.json` kaydı bu etiket için `hepsi_yesil: true` ise adım 6 **test koşmaz**, tabanı CI hükmünden alır ve `[İKAME]` + `KAPSAM` satırlarını basar. **Bu satırları kullanıcıya AYNEN aktar.** Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) **normal ölçüme döner** — *ölçülemedi ≠ yeşil*. | 0 | — |
+| 6c | *(6 ve 10'un İÇİNDE, otomatik — ayrı komut değil)* **Kapsanan komut ayıklaması:** aynı `cwd`'de hem `python tests/run_tests.py` hem `… -k <desen>` seçilmişse filtreli olan KOŞULMAZ (kapsamı filtresizin öz alt kümesidir) ve `[KAPSANDI] …` satırı basılır. **Bu satırı da kullanıcıya aktar** — atlanan komut sayısı ve adları oradadır. Filtresiz eş yoksa hiçbir şey atlanmaz. | 0 | — |
 | 7 | Otomatik vakalar | `guncelle.py uygula --otomatik`, sonra yazılan her dosyanın plandaki `kart` alanındaki kartları (`V1`/`V2`/… + `sinif-…`) oku ve ek adımlarını uygula | 0 | 1 → `guncelle.py durum` göster, DUR |
 | 8 | Yargı vakaları | her dosya için `guncelle.py kart <KOD>` → **kartın adımlarını uygula** (hangi komutun koşacağını KART söyler) → `guncelle.py isaretle <yol> --karar …` | her biri 0 | kartın DUR koşulu |
 | 9 | Özel adımlar | `guncelle.py ozel-adim <ad>` | 0 | kart talimatı (ör. `install.py --dry-run` hata → `geri-al`) |

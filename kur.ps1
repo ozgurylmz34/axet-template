@@ -78,7 +78,9 @@ $script:EskiDal = $null
 #     reddetme karari urllib'in surum katiligina devredilmis. Katilik 3.12'de VAR.
 #   * Destek takvimi: 3.10 EOL 31 Ekim 2026 (taban ilan edildiginden ~6 hafta sonra),
 #     3.12 Ekim 2028'e kadar destekli.
-# CI matrisi (.github/workflows/testler.yml) 3.12 + 3.14 kosar; bu deger onun tabanidir.
+# CI matrisi (.github/workflows/testler.yml) YALNIZ 3.12 kosar (2026-09-20 daraltmasi;
+# gerekce Actions kotasi, kapsam degil); bu deger onun TEK OLCULEN surumudur. Ust surumler
+# kapiyi gecer ama OLCULMEZ — bilincli kapsam daraltmasi, maintenance/IS-LISTESI.md Z18.
 $script:PyAsgari = [version]'3.12'
 
 function Yaz([string]$metin = '') { [Console]::Out.WriteLine($metin) }
@@ -790,8 +792,11 @@ try {
         Yaz "  EKSİK: Python $script:PyAsgari ya da üstü bulunamadı."
         $tarif = @("Kurulacak: Python 3 ($script:PyAsgari ya da üstü; kurulumda ""Add python.exe to PATH"" işaretli olsun).",
                    'Resmi indirme: https://www.python.org/downloads/windows/',
-                   'winget ile: winget install --id Python.Python.3.14 -e')
-        if (Winget-Kur 'Python' 'Python.Python.3.14' $tarif) {
+                   'winget ile: winget install --id Python.Python.3.12 -e')
+        # OLCULEN SURUMU KUR (2026-09-20): CI artik yalniz 3.12 kosuyor. Kurucu 3.14
+        # kurarsa her yeni kullanici DOGRUDAN olculmemis kola duserdi — kapi (>=3.12)
+        # ust surumlere izin verir, ama VARSAYILAN olarak olculen surum kurulur.
+        if (Winget-Kur 'Python' 'Python.Python.3.12' $tarif) {
             $python = Python-Bul -BilinenYerler
             if (-not $python) { $yeniTerminal = $true }
         }

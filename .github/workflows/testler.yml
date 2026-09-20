@@ -47,10 +47,16 @@ jobs:
         # Ayri kollara alinca duvar saati max(296, 393) ~ 6.6 dk'ya duser (11.8 dk'dan).
         # KAPSAM DEGISMEZ: ayni komutlar, ayni on kosullar, ayni matris.
         # Maliyet: toplam derleme suresi 1348 -> ~1430 sn (+%6, on kosullar iki kez kosuyor).
-        # NOT: hesabin Actions kotasi OLCULEMEDI (billing ucu 404 - token kapsami yok).
+        # NOT (2026-09-16): hesabin Actions kotasi OLCULEMEDI (billing ucu 404 - token
+        # kapsami yok). ⛔ 2026-09-20: O OLCULEMEYEN RISK GERCEKLESTI — kota doldu ve isler
+        # SIFIR adimla "failure" donmeye basladi (check-run annotation: "The job was not
+        # started because recent account payments have failed or your spending limit needs
+        # to be increased"). Tani is loglarinda DEGIL, annotation'dadir; `gh run rerun`
+        # cozmez. Matris bu yuzden daraltildi (asagi).
         takim: [kok, foundation]
-        # Taban + guncel birlikte kosar ki "su surumden itibaren destekleniyor" iddiasi
-        # OLCULMUS olsun, varsayilmis degil.
+        # TARIHCE — cift surum kolu NEDEN vardi: "su surumden itibaren destekleniyor"
+        # iddiasi VARSAYILMASIN, OLCULSUN diye. Ise de yaradi (asagidaki 3.9/3.10 vakalari).
+        # BUGUN TEK KOL: gerekce kota, kapsamin gereksizligi DEGIL.
         #
         # TABAN 3.9 -> 3.10 -> 3.12 · UST KOL 3.13 -> 3.14 (2026-09-16, kullanici karari).
         #
@@ -62,9 +68,13 @@ jobs:
         # 2. kusur 3.10'da HALA acikti. Yani "3.10 gecer" varsayimi olsaydi yanlis olurdu.
         # 3.12 SECIMI OLCULDU, varsayilmadi: yerelde Python 3.12.10 ile
         # test_f1_belirsiz_origin... GECTI ve urllib 'https://[SECRETTOKEN]/r' icin
-        # ValueError veriyor (katilik 3.12'de VAR). 3.14 olculmedi — ama depoda PEP 594'te
-        # kaldirilan modullerden hicbiri ve __annotations__/get_type_hints kullanimi YOK
-        # (tarandi), maruziyet dusuk. Duserse kanitla ayarlanacak.
+        # ValueError veriyor (katilik 3.12'de VAR).
+        # ⚠ UST KOLUN OLCTUGU GERCEK BIR KUSUR VARDI, kayit icin: `siniflandir.py` icindeki
+        # `test_yanlis_harfli_glob_deseni_yakalanir` YALNIZ 3.14'te kirilmisti (3.13+ ile
+        # `Path.glob` joker icermeyen parcalari DESENDEKI harfle donduruyor). Yani ust kol
+        # "fazlalik" degildi; bugun o SINIF kusur artik CI'da OLCULMUYOR. Kota cozulunce
+        # ust kolu geri koymanin en ucuz bicimi: yalniz `main` push'unda ya da haftalik
+        # `schedule` ile kosturmak (PR maliyeti artmaz, iddia olculmus kalir).
         #
         # Ilk daraltmanin gerekcesi: matris isini yapti ve
         # "3.9 destekleniyor" iddiasinin YANLIS oldugunu olctu (kosum #10, 3.9 kolu 4 failure;
@@ -81,7 +91,18 @@ jobs:
         # kur.ps1'e TEK DOGRULUK KAYNAGI konuldu ($script:PyAsgari). Buradaki taban ile
         # kur.ps1'in kapisi artik ayni seyi soyluyor; ikisi ayrilirsa test_kur.py:872,936
         # kirmiziya doner (mutasyonla dogrulandi).
-        python: ['3.12', '3.14']
+        # ⛔ 3.14 KOLU KALDIRILDI (2026-09-20, kullanici karari) — gerekce KOTA, kapsam degil.
+        # Olculdu: hesabin Actions kotasi doldu ve isler SIFIR adimla dusmeye basladi
+        # (check-run annotation: "The job was not started because recent account payments
+        # have failed or your spending limit needs to be increased"). Maliyet aritmetigi:
+        # PRIVATE repo + windows-latest (2x carpan) + kok takimi 2411 sn x 2 surum
+        # => kosum basina ~190 faturalanabilir dakika; 2000 dk'lik kota ~10 kosumda biter.
+        # 3.14 kolunu atmak kosum basina ~%45 dusuruyor.
+        # ⚠ KAPSAM KAYBI ACIKCA: "3.14'te de calisiyor" artik OLCULMUYOR, VARSAYILIYOR.
+        # 3.14'e ozgu bir kirilma CI'da degil, kullanicinin makinesinde ortaya cikar.
+        # Ucuz telafi (bugun YAPILMADI, acik kalem): 3.14 kolunu yalniz main push'unda ya da
+        # haftalik schedule'da kosturmak — PR maliyeti dusmeye devam eder, iddia olculmus kalir.
+        python: ['3.12']
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: 'utf-8'

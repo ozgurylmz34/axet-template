@@ -17,6 +17,7 @@ gerçek `doctor.py`/`install.py` davranışı (fixture'da sahte betikler koşar;
 """
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -1498,6 +1499,49 @@ class OlcumOlculemediTest(GuncelleTemel):
         self.assertEqual(r.returncode, 2, self.cikti(r))
         self.assertIn("ölçülemedi", self.cikti(r).lower())
 
+    # --- Z16/A: KABLOLAMA — ayıklama `olc` akışında GERÇEKTEN devrede mi? ------------------
+    def _filtreli_harita(self) -> str:
+        """Seçili bir sınıfa, filtresiz komutun `-k`'lı eşini EKLE (ikisi de aynı ölçümde)."""
+        harita = json.loads(HARITA.read_text(encoding="utf-8"))
+        eklendi = False
+        for s in harita["siniflar"]:
+            for kom in [x["komut"] for x in s.get("test", [])]:
+                if kom == "python tests/run_tests.py":
+                    s["test"].append({"komut": "python tests/run_tests.py -k ornek",
+                                      "cwd": ".", "on_kosul": None})
+                    eklendi = True
+                    break
+        self.assertTrue(eklendi, "fixture geçersiz: haritada filtresiz kök komutu yok")
+        kirpik = self.tmp / "harita-filtreli.json"
+        kirpik.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
+        return str(kirpik)
+
+    def test_kapsanan_filtreli_komut_OLC_akisinda_kosulmaz(self):
+        r = self.f.calistir("--harita", self._filtreli_harita(), "olc", "--asama", "once")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("[KAPSANDI]", self.cikti(r),
+                      "ayıklama kablolanmamış: `olc` filtreli komutu yine koşuyor")
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        kimlikler = [x["kimlik"] for x in veri["testler"]]
+        self.assertIn(".::python tests/run_tests.py", kimlikler)
+        self.assertNotIn(".::python tests/run_tests.py -k ornek", kimlikler,
+                         f"kapsanan komut yine ölçüme girdi: {kimlikler}")
+
+    def test_KONTROL_filtresiz_es_yokken_filtreli_komut_KOSULUR(self):
+        """Kontrol grubu: ayıklama ayrım yapıyor mu, yoksa her `-k`'yı mı atıyor?"""
+        harita = json.loads(HARITA.read_text(encoding="utf-8"))
+        for s in harita["siniflar"]:
+            s["test"] = [{"komut": "python tests/run_tests.py -k ornek", "cwd": ".",
+                          "on_kosul": None}] if s.get("test") else []
+        kirpik = self.tmp / "harita-yalniz-filtreli.json"
+        kirpik.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
+        r = self.f.calistir("--harita", str(kirpik), "olc", "--asama", "once")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("[KAPSANDI]", self.cikti(r))
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        self.assertEqual([x["kimlik"] for x in veri["testler"]],
+                         [".::python tests/run_tests.py -k ornek"])
+
     def test_hicbir_test_betigi_kosturulamazsa_cikis_2(self):
         for y in ("tests/run_tests.py", "scripts/doctor.py"):
             (self.f.tuketici / y).unlink()
@@ -2244,3 +2288,291 @@ class ButunlukMuhruTest(V4YayinKarisimi, AkisTest):
         self.assertEqual(b.get("plan", {}).get("yeni_etiket"), "v3")
         d = json.loads((self.f.durum_dizini() / "durum.json").read_text(encoding="utf-8"))
         self.assertEqual(d.get("plan", {}).get("yeni_etiket"), "v3")
+
+
+class CiTabaniTest(GuncelleTemel):
+    """Z16 — `once` turu, YARGI VAKASI YOKKEN yayının CI hükmüyle ikame edilir (2026-09-20).
+
+    ⛔ ÖLÇÜLEN SINIF (hız değil, DOĞRULUK): `once` ve `sonra` aynı testleri koşmuyor.
+    `komut_olc` testleri klon kökünde koşar ve `tests/**` güncellemenin parçası olabilir ⇒
+    `once` ESKİ test kodunu, `sonra` YENİ test kodunu ölçer; `yeni_kirmizilar` ikisini komut
+    kimliği bazında karşılaştırır. Testlerin kendisi değişirken "fark = regresyon" çıkarımı
+    kurulamaz. CI ise yeni testleri yeni ürüne karşı temiz ortamda ölçmüştür.
+
+    Kontrol grubu fixture'a gömülü: `senaryolari_uygula()` ÇAĞRILMAZSA yargı vakası yoktur
+    (ikame beklenir), ÇAĞRILIRSA vardır (ölçüm beklenir).
+
+    KAPSAM — bakılmayan: gerçek `gh` çağrısı (yayın tarafı ayrı ölçülür) · `sonra` turunun
+    süresi · CI kaydının doğruluğu (yayıncı kendi hükmünü beyan eder, bu bir güven sınırıdır).
+    """
+
+    ETIKET = "v3"
+    YESIL_TAKIMLAR = [{"ad": "Testler (kok · Python 3.12)", "sonuc": "success"},
+                      {"ad": "Testler (foundation · Python 3.12)", "sonuc": "success"}]
+
+    def _ci_yayinla(self, kayit) -> None:
+        """Sahte public'e `guncelle/ci-durum.json` koyar; v3 etiketini o commit'e taşır."""
+        h = self.f.public / "guncelle" / "ci-durum.json"
+        h.parent.mkdir(parents=True, exist_ok=True)
+        h.write_text(json.dumps({"surum": 1, "yayinlar": kayit}, ensure_ascii=False, indent=1) + "\n",
+                     encoding="utf-8", newline="\n")
+        self.git(self.f.public, "add", "-A")
+        self.git(self.f.public, "commit", "-q", "-m", "ci-durum")
+        self.git(self.f.public, "tag", "-f", "v3")
+        self.git(self.f.tuketici, "fetch", "-q", "--tags", "--force", "origin")
+
+    def _yesil(self) -> dict:
+        return {self.ETIKET: {"kaynak_commit": "abc1234", "hepsi_yesil": True,
+                              "isletim_sistemi": "windows-latest", "python": ["3.12"],
+                              "takimlar": list(self.YESIL_TAKIMLAR)}}
+
+    def _olc_once(self) -> tuple[subprocess.CompletedProcess, dict]:
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        r = self.f.calistir("olc", "--asama", "once")
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        return r, veri
+
+    # --- ① ikame OLMALI --------------------------------------------------------------------
+    def test_1_yesil_ci_ve_yargi_yokken_IKAME_EDILIR(self):
+        self._ci_yayinla(self._yesil())
+        r, veri = self._olc_once()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(veri.get("kaynak"), "ci", veri)
+        self.assertEqual(veri.get("testler"), [], "ikamede hiçbir test KOŞMAMALI")
+        self.assertEqual(veri.get("etiket"), self.ETIKET)
+        self.assertIn("İKAME", self.cikti(r))
+        self.assertIn("KAPSAM", self.cikti(r), "ikame de kapsam beyanı basmalı")
+
+    # --- ② KONTROL: ikame OLMAMALI (dördü de fail-safe dalı) --------------------------------
+    def test_2_KONTROL_ci_durumu_YOKKEN_normal_olcer(self):
+        r, veri = self._olc_once()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("kaynak", veri, "ci-durum.json yokken ikame OLMAMALI")
+        self.assertTrue(any(t["cikis"] is not None for t in veri["testler"]), veri["testler"])
+
+    def test_3_KONTROL_hepsi_yesil_False_ise_olcer(self):
+        kayit = self._yesil()
+        kayit[self.ETIKET]["hepsi_yesil"] = False
+        self._ci_yayinla(kayit)
+        _r, veri = self._olc_once()
+        self.assertNotIn("kaynak", veri, "hepsi_yesil False iken ikame OLMAMALI")
+
+    def test_4_KONTROL_takimlardan_biri_kirmiziysa_olcer(self):
+        kayit = self._yesil()
+        kayit[self.ETIKET]["takimlar"][0]["sonuc"] = "failure"
+        self._ci_yayinla(kayit)
+        _r, veri = self._olc_once()
+        self.assertNotIn("kaynak", veri,
+                         "hepsi_yesil True olsa BİLE tek kırmızı takım ikameyi engellemeli")
+
+    def test_5_KONTROL_baska_etiketin_kaydi_ISE_YARAMAZ(self):
+        self._ci_yayinla({"v99": self._yesil()[self.ETIKET]})
+        _r, veri = self._olc_once()
+        self.assertNotIn("kaynak", veri, "etiket tutmuyorsa ikame OLMAMALI")
+
+    def test_6_KONTROL_yargi_vakasi_VARSA_yesil_CI_ye_ragmen_olcer(self):
+        self._ci_yayinla(self._yesil())
+        self.senaryolari_uygula()          # yerel değişiklikler ⇒ yargı vakaları
+        _r, veri = self._olc_once()
+        self.assertNotIn("kaynak", veri,
+                         "yerel değişiklik varsa birleşmiş ağaç hiç test edilmemiştir ⇒ ÖLÇ")
+
+
+class CiTabaniKirmiziTest(unittest.TestCase):
+    """Z16 — CI tabanıyla `yeni_kirmizilar` SESSİZ SAHTE-YEŞİL vermemeli.
+
+    CI tabanında `testler` boştur. Eşleme dalı bu durumda hiçbir kimlik bulamaz ve her testi
+    `continue` ile atlardı ⇒ her şey kırmızıyken bile "yeni kırmızı yok" denirdi.
+    """
+
+    def _kur(self, tmp: Path, once: dict, sonra: dict):
+        import guncelle  # noqa: PLC0415
+        d = tmp / ".axet-guncelleme"
+        d.mkdir(parents=True, exist_ok=True)
+        for ad, veri in (("olcum-once.json", once), ("olcum-sonra.json", sonra)):
+            (d / ad).write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
+        klon = guncelle.Klon(tmp)
+        return guncelle.yeni_kirmizilar(klon)
+
+    def test_1_ci_tabani_altinda_kirmizi_YAKALANIR(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            yeni = self._kur(
+                Path(td),
+                {"asama": "once", "kaynak": "ci", "testler": []},
+                {"asama": "sonra", "testler": [{"kimlik": ".::python tests/run_tests.py",
+                                                "cikis": 1, "failure": 2}]})
+            self.assertEqual(yeni, [".::python tests/run_tests.py"])
+
+    def test_2_KONTROL_ci_tabani_altinda_hepsi_yesilse_bos(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            yeni = self._kur(
+                Path(td),
+                {"asama": "once", "kaynak": "ci", "testler": []},
+                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": 0, "failure": 0}]})
+            self.assertEqual(yeni, [])
+
+    def test_3_KONTROL_olculemedi_yeni_kirmizi_SAYILMAZ(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            yeni = self._kur(
+                Path(td),
+                {"asama": "once", "kaynak": "ci", "testler": []},
+                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": None, "failure": None}]})
+            self.assertEqual(yeni, [], "ÖLÇÜLEMEDİ ayrı bir hükümdür, 'yeni kırmızı' değildir")
+
+    def test_4_KONTROL_normal_taban_davranisi_DEGISMEDI(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            yeni = self._kur(
+                Path(td),
+                {"asama": "once", "testler": [{"kimlik": "a", "cikis": 0, "failure": 0}]},
+                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": 1, "failure": 1}]})
+            self.assertEqual(yeni, ["a"])
+class KapsananKomutTest(unittest.TestCase):
+    """Z16/A — filtresiz eşi koşarken `-k` filtreli komut TEKRAR koşulmamalı.
+
+    Ölçülmüş israf (2026-09-20, v0.3.0 planı, gerçek klon): tur başına 18 komuttan 6'sı
+    `python tests/run_tests.py -k …` ve listede FİLTRESİZ `python tests/run_tests.py` de var.
+    Kapsama ilişkisi çalıştırıcının semantiğinden gelir (`run_tests.py` `-k`'yı
+    `testNamePatterns` yapar = yalnız süzer), sezgiden değil.
+    """
+
+    def _ayikla(self, komutlar):
+        import guncelle  # noqa: PLC0415
+        testler = [{"komut": k, "cwd": c} for c, k in komutlar]
+        kalan, dusen = guncelle._kapsananlari_ayikla(testler)
+        return [t["komut"] for t in kalan], dusen
+
+    def test_1_filtresiz_es_varsa_filtreli_DUSER(self):
+        kalan, dusen = self._ayikla([
+            (".", "python tests/run_tests.py -k kur"),
+            (".", "python tests/run_tests.py"),
+            (".", "python tests/run_tests.py -k install"),
+        ])
+        self.assertEqual(kalan, ["python tests/run_tests.py"])
+        self.assertEqual(len(dusen), 2, f"iki filtreli komut düşmeliydi: {dusen}")
+
+    def test_2_KONTROL_filtresiz_es_YOKSA_filtreli_KALIR(self):
+        kalan, dusen = self._ayikla([
+            (".", "python tests/run_tests.py -k kur"),
+            (".", "python tests/run_tests.py -k install"),
+        ])
+        self.assertEqual(len(kalan), 2, "filtresiz eş yokken hiçbir şey düşmemeli")
+        self.assertEqual(dusen, [])
+
+    def test_3_KONTROL_farkli_cwd_KAPSAMAZ(self):
+        kalan, _ = self._ayikla([
+            ("skills/x", "python tests/run_tests.py -k kur"),
+            (".", "python tests/run_tests.py"),
+        ])
+        self.assertEqual(len(kalan), 2, "farklı cwd farklı ağaçtır; kapsama iddiası kurulamaz")
+
+    def test_4_KONTROL_farkli_calistirici_KAPSAMAZ(self):
+        kalan, _ = self._ayikla([
+            (".", "python skills-sap/sap-adt-foundation/tests/run_tests.py -k a"),
+            (".", "python tests/run_tests.py"),
+        ])
+        self.assertEqual(len(kalan), 2, "başka çalıştırıcının filtresi bu çalıştırıcıyla kapsanmaz")
+
+    def test_5_KONTROL_degersiz_k_DUSURULMEZ(self):
+        kalan, dusen = self._ayikla([
+            (".", "python tests/run_tests.py -k"),
+            (".", "python tests/run_tests.py"),
+        ])
+        self.assertEqual(len(kalan), 2, "değersiz `-k` süzme iddiası kurmaz; dokunulmaz")
+        self.assertEqual(dusen, [])
+
+    def test_6_KONTROL_filtresiz_komut_ASLA_dusmez(self):
+        kalan, dusen = self._ayikla([
+            (".", "python tests/run_tests.py"),
+            (".", "python scripts/doctor.py"),
+            (".", "python -m unittest discover -s skills-sap/sap-code-review/tests"),
+        ])
+        self.assertEqual(len(kalan), 3)
+        self.assertEqual(dusen, [])
+
+    def test_7_gercek_haritada_israf_OLCULUR_ve_ayiklanir(self):
+        """Kanıt testi: gerçek `harita.json`'daki komut evreninde ayıklama bir şeyi düşürüyor mu?"""
+        import guncelle  # noqa: PLC0415
+        harita = json.loads((BURASI.parent / "guncelle" / "harita.json").read_text(encoding="utf-8"))
+        gorulen, testler = set(), []
+        for s in harita["siniflar"]:
+            for t in s.get("test", []):
+                anahtar = (t["komut"], t.get("cwd", "."))
+                if anahtar not in gorulen:
+                    gorulen.add(anahtar)
+                    testler.append(t)
+        kalan, dusen = guncelle._kapsananlari_ayikla(testler)
+        self.assertGreater(len(dusen), 0,
+                           "gerçek haritada filtresiz `tests/run_tests.py` ile birlikte gelen "
+                           "filtreli komutlar var; hiçbiri düşmediyse ayıklama kablolanmamıştır")
+        self.assertTrue(all("-k" in d for d in dusen), f"yalnız filtreli komut düşmeli: {dusen}")
+        self.assertEqual(len(kalan) + len(dusen), len(testler))
+class ZamanAsimiTest(unittest.TestCase):
+    """Ölçüm komutu zaman aşımına uğrarsa ÇÖKMEZ, `ÖLÇÜLEMEDİ` yazılır (2026-09-20 vakası).
+
+    Gerçek vaka: bir tüketici klonunda `olc --asama once` 34 dk 50 sn koştu ve
+    `subprocess.TimeoutExpired` yukarı kaçtı ⇒ traceback, `olcum-once.json` HİÇ yazılmadı,
+    35 dakikalık ölçüm çöpe gitti. Kök takımı CI'da 2411 sn sürüyordu, `_run`'ın varsayılanı
+    1800 sn'ydi: ölçüm YAPISAL OLARAK imkânsızdı ve bunu hiçbir test söylemiyordu.
+    """
+
+    def _kur(self, td: str, patlat: bool):
+        import types, subprocess as sp  # noqa: PLC0415
+        import guncelle  # noqa: PLC0415
+        kok = Path(td)
+        (kok / "tests").mkdir(parents=True)
+        (kok / "tests" / "run_tests.py").write_text(
+            "print('ok')\n", encoding="utf-8")
+        klon = guncelle.Klon(kok)
+        klon.durum_dizini.mkdir(parents=True, exist_ok=True)
+        plan = {"yeni_etiket": "v9", "kalemler": [
+            {"id": "9-01", "dosyalar": [{"yol": "tests/test_x.py", "sinif": "test-kok",
+                                         "vaka": "V1"}]}]}
+        (klon.durum_dizini / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (klon.durum_dizini / "secim.json").write_text(
+            json.dumps({"kalemler": ["9-01"]}), encoding="utf-8")
+        harita = {"siniflar": [{"sinif": "test-kok", "glob": ["tests/*"],
+                                "test": [{"komut": "python tests/run_tests.py", "cwd": ".",
+                                          "on_kosul": None}]}]}
+        gercek = guncelle._run
+
+        def sahte(args, cwd, **kw):
+            if patlat and args and str(args[-1]).endswith("run_tests.py"):
+                raise sp.TimeoutExpired(args, kw.get("timeout", 0))
+            return gercek(args, cwd, **kw)
+
+        return guncelle, types.SimpleNamespace(k=klon, harita=harita), sahte
+
+    def test_1_zaman_asimi_COKMEZ_OLCULEMEDI_yazilir(self):
+        import tempfile, unittest.mock as mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as td:
+            g, b, sahte = self._kur(td, patlat=True)
+            with mock.patch.object(g, "_run", sahte):
+                rc = g.komut_olc(b, argparse.Namespace(asama="once"))
+            self.assertEqual(rc, 2, "hiçbir komut ölçülemediyse çıkış 2 olmalı (ÖLÇÜLEMEDİ ≠ temiz)")
+            veri = json.loads((b.k.durum_dizini / "olcum-once.json").read_text(encoding="utf-8"))
+            self.assertTrue(veri["testler"], "kayıt YAZILMALI — çökmede hiç yazılmıyordu")
+            self.assertIsNone(veri["testler"][0]["cikis"])
+            self.assertIn("zaman aşımı", veri["testler"][0]["not"])
+
+    def test_2_KONTROL_zaman_asimi_yokken_normal_olculur(self):
+        import tempfile, unittest.mock as mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as td:
+            g, b, sahte = self._kur(td, patlat=False)
+            with mock.patch.object(g, "_run", sahte):
+                rc = g.komut_olc(b, argparse.Namespace(asama="once"))
+            self.assertEqual(rc, 0, "kontrol grubu kırmızıysa asıl ölçüm anlamsız")
+            veri = json.loads((b.k.durum_dizini / "olcum-once.json").read_text(encoding="utf-8"))
+            self.assertEqual(veri["testler"][0]["cikis"], 0)
+
+    def test_3_olcum_zaman_asimi_kok_takimi_suresini_KAPSAR(self):
+        """Sabitin değeri kanıta bağlı: gözlenen en uzun kök koşumu 2411 sn (CI, 2026-09-20)."""
+        import guncelle  # noqa: PLC0415
+        self.assertGreater(
+            guncelle.OLCUM_ZAMAN_ASIMI, 2411,
+            "OLCUM_ZAMAN_ASIMI gözlenen en uzun kök takımı koşumunu (2411 sn) kapsamıyor — "
+            "ölçüm yapısal olarak imkânsız hâle gelir (2026-09-20 vakası)")

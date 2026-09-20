@@ -1,0 +1,27 @@
+{
+ "surum": 1,
+ "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
+ "yayinlar": {
+  "v0.4.0": {
+   "kaynak_commit": "ec1ea2a6c9882aaf495b7f15d9ec1e79cc8d9d5b",
+   "olcum_zamani": "2026-09-21T00:04:15",
+   "hepsi_yesil": false,
+   "depo": "ozgurylmz34/axet",
+   "takimlar": [
+    {
+     "ad": "Testler (foundation · Python 3.12)",
+     "sonuc": "failure"
+    },
+    {
+     "ad": "Testler (kok · Python 3.12)",
+     "sonuc": "failure"
+    },
+    {
+     "ad": "Kurulum dumani (install + doctor)",
+     "sonuc": "failure"
+    }
+   ],
+   "not": "yesil olmayan takim(lar): Testler (foundation · Python 3.12), Testler (kok · Python 3.12), Kurulum dumani (install + doctor)"
+  }
+ }
+}

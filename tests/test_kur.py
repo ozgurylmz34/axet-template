@@ -1091,7 +1091,11 @@ class KurTest(GeciciTest):
         self.assertEqual(r.returncode, 2, c)
         cagrilar = kayit.read_text(encoding="ascii", errors="replace")
         self.assertIn("Git.Git", cagrilar)
-        self.assertIn("Python.Python.3.14", cagrilar)
+        # ⛔ Kurucu OLCULEN surumu kurar: CI 2026-09-20'de yalniz 3.12 kosmaya daraltildi;
+        # 3.14 kuran bir kurucu her yeni kullaniciyi olculmemis kola sokardi.
+        self.assertIn("Python.Python.3.12", cagrilar)
+        self.assertNotIn("Python.Python.3.14", cagrilar,
+                         "kurucu artik olculmeyen bir surumu kurmamali")
         self.assertIn("winget Git kurulumunda hata verdi", c)
         self.assertIn("https://www.python.org/downloads/windows/", c)
         self.assertFalse(self.hedef.exists())
