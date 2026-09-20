@@ -458,11 +458,25 @@ def run_reviewer(task: Optional[str], artifact_path: Optional[str],
             raw = {}
 
     verdict = raw.get("verdict", "BLOCKER" if proc.returncode == 1 else "SKIP")
+    # ⚠ VERDICT SEMANTIĞI DEĞİŞMEZ (karar A, 2026-09-20) — burada YALNIZ TEŞHİS eklenir.
+    # rc ∉ (0, 1) + ayrıştırılabilir JSON yok ⇒ verdict SKIP olur ve `passed` True döner
+    # (`passed` = PASS ∪ SKIP), yani pre-flight KOŞMADAN SAP yazımı sürer. Bugüne kadar bunun
+    # NEDENİ hiçbir yere yazılmıyordu: `skip_reason` varsayılanı "" olduğu için kullanıcıya
+    # giden not "PRE-FLIGHT KOŞMADI ()" diye BOŞ çıkıyordu (`on_kontrol_ozeti`).
+    # Fail-closed'a çevirmek AYRI bir karardır (madde 1b): önce bu teşhisle rc uzayı ölçülecek.
+    turetilmis = "verdict" not in raw
+    skip_reason = str(raw.get("skip_reason", "") or "")
+    if verdict == "SKIP" and turetilmis:
+        kuyruk = " ".join((proc.stderr or "").split())[-300:]
+        skip_reason = (f"reviewer rc={proc.returncode}, JSON ayrıştırılamadı"
+                       + (f" | stderr: {kuyruk}" if kuyruk else " | stderr BOŞ"))
     return ReviewerResult(
         verdict=verdict,
         blocker_count=int(raw.get("blocker_count", 0)),
         warning_count=int(raw.get("warning_count", 0)),
         results=raw.get("results", []),
+        skipped=(verdict == "SKIP"),
+        skip_reason=skip_reason,
         raw=raw,
     )
 

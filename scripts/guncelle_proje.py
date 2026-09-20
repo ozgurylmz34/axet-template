@@ -76,8 +76,16 @@ def _git_deposu_mu(kok: Path) -> bool:
 
 
 def _norm(veri: bytes | None) -> bytes | None:
-    """CRLF → LF. Proje dosyası platform satır sonuyla, blob LF ile yazılır (ölçülmüş tuzak)."""
-    return None if veri is None else veri.replace(b"\r\n", b"\n")
+    """CRLF **ve tek-başına CR** → LF. Proje dosyası platform satır sonuyla, blob LF ile
+    yazılır (ölçülmüş tuzak).
+
+    ⛔ K1 (2026-09-20): gövde `new_project.satir_sonu_normalize`e devredildi — normalizasyon
+    artık TEK kaynak. Burası yalnız `CRLF` çeviriyordu, `new_project` ise tek-başına CR'yi de
+    çeviriyordu ⇒ tek-başına CR içeren şablonda iki taraf ayrışıyor ve dosya, aynı olduğu
+    hâlde "yerel değişmiş" (V3) sayılıyordu; V3 listelenmediği için güncelleme SESSİZCE
+    kayboluyordu. Gerekçenin tamamı ve ikili-dosya uyarısı o fonksiyonun docstring'inde.
+    """
+    return None if veri is None else np_.satir_sonu_normalize(veri)
 
 
 def _ozet(veri: bytes | None) -> str | None:

@@ -2046,3 +2046,201 @@ if __name__ == "__main__":
     if "--uret" in sys.argv:
         raise SystemExit(_uret_elle(sys.argv[sys.argv.index("--uret") + 1]))
     unittest.main()
+
+
+class V4YayinKarisimi:
+    """Sahte `fetch`: plan kurulduktan SONRA public'in v4 basmasi.
+
+    Iki karar da ayni suruklenmeyi kurar (madde 7 plana-sabitleme, madde 4 K2 muhur)
+    => kurulum tek yerde durur, kopyalanmaz.
+    """
+
+    def _v4_yayinla(self) -> None:
+        """Sahte `fetch`: public v4 basar, tüketici onu görür (plan ZATEN kurulmuştu)."""
+        yayinlar = json.loads(json.dumps(YAYINLAR))
+        yayinlar["yayinlar"].append({
+            "etiket": "v4", "tarih": "2026-03-01", "min_axet": "1.0.0",
+            "kalemler": [{"id": "4-01", "baslik": "çekirdek v4", "tur": "kural", "kritik": False,
+                          "neden": "—", "dosyalar": ["core/00-temel.md"], "gerektirir": [],
+                          "test": []}],
+        })
+        self.f._yaz(self.f.public, {
+            "core/00-temel.md": "# Çekirdek v4\nsatır1\nsatır2 net\n",
+            "guncelle/yayinlar.json": json.dumps(yayinlar, ensure_ascii=False, indent=1) + "\n",
+        })
+        self.git(self.f.public, "add", "-A")
+        self.git(self.f.public, "commit", "-q", "-m", "v4")
+        self.git(self.f.public, "tag", "v4")
+        self.git(self.f.tuketici, "fetch", "-q", "--tags", "origin")
+
+
+
+class IsaretlemePlanaSabitTest(V4YayinKarisimi, GuncelleTemel):
+    """Madde 7 (karar 2026-09-20) — `isaretle` PLANIN hedefini uygular, canlı ref'i değil.
+
+    Kusur: plan `yeni_etiket`i çiviliyordu (`plan["yeni_etiket"] = b.yeni_ref`) ama
+    `komut_isaretle` `b.yeni_ref`i okuyordu; `Baglam` her çağrıda onu YENİDEN hesaplar.
+    Plan ile işaretleme arasında bir `fetch` olursa İÇERİK yeni sürümden yazılır, MÜHÜR
+    eski sürümü der. Geriye sürüklenme için DUR vardı; İLERİ sürüklenme korumasızdı.
+
+    KONTROL GRUBU: ① sürüklenme YOKken davranış değişmemeli ② sürüklenmenin GERÇEKTEN
+    oluştuğu ölçülmeli (yoksa test sürüklenmeyi hiç kurmamış olabilir ve boşuna yeşil kalır).
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.senaryolari_uygula()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+
+    def test_1_fetch_plandan_SONRA_gelirse_plan_surumu_uygulanir(self):
+        self.assertEqual(self.f.plan()["yeni_etiket"], "v3", "ön koşul: plan v3 ile kuruldu")
+        self._v4_yayinla()
+        r = self.f.calistir("isaretle", "core/00-temel.md", "--karar", "yeni")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        govde = (self.f.tuketici / "core/00-temel.md").read_text(encoding="utf-8")
+        self.assertIn("# Çekirdek v3", govde, "PLANIN hedefi uygulanmalı")
+        self.assertNotIn("# Çekirdek v4", govde, "canlı ref SESSİZCE uygulanmamalı")
+
+    def test_2_suruklenme_kullaniciya_SOYLENIR(self):
+        self._v4_yayinla()
+        r = self.f.calistir("isaretle", "core/00-temel.md", "--karar", "yeni")
+        self.assertIn("PLANA sabitlendi", r.stderr, self.cikti(r))
+        self.assertIn("v3", r.stderr)
+
+    def test_3_KONTROL_suruklenme_GERCEKTEN_olustu(self):
+        """Sürüklenme kurulmadıysa test 1 boşuna yeşil kalır: v4'ün sonra GÖRÜNDÜĞÜNÜ ölç."""
+        onceki = self.git(self.f.tuketici, "tag", "-l").stdout
+        self._v4_yayinla()
+        sonraki = self.git(self.f.tuketici, "tag", "-l").stdout
+        self.assertNotIn("v4", onceki, "plan kurulurken v4 GÖRÜNMEMELİYDİ")
+        self.assertIn("v4", sonraki, "sahte fetch v4'ü getirmeliydi")
+
+    def test_4_KONTROL_suruklenme_YOKken_davranis_ayni(self):
+        """Yanlış pozitif yok: fetch olmadan not basılmaz, içerik yine v3."""
+        r = self.f.calistir("isaretle", "core/00-temel.md", "--karar", "yeni")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("PLANA sabitlendi", r.stderr)
+        self.assertIn("# Çekirdek v3", (self.f.tuketici / "core/00-temel.md").read_text(encoding="utf-8"))
+
+
+class KapanisYabanciStageTest(AkisTest):
+    """Madde 6 (karar B — "DUR + uyar", 2026-09-20) — kapanış commit'i pathspec ALMAZ.
+
+    `git commit --no-verify -q -m <mesaj>` index'te NE VARSA commit'ler. Kullanıcının
+    kapanıştan ÖNCE stage'lediği iş, ARACIN mesajıyla ve pre-commit KOŞMADAN commit'e
+    girerdi (PRE-EXISTING). Seçenek A (commit'e pathspec vermek) reddedildi: aracın kendi
+    listesi eksik kalırsa kendi değişikliğini sessizce commit'lemezdi = YENİ sessiz kayıp.
+
+    KONTROL GRUBU: yabancı stage YOKken kapanış eskisi gibi commit atmalı — yoksa bu test
+    "kapanış artık hiç commit atmıyor"u da yeşil sayardı.
+    """
+
+    def _kapanisa_hazirla(self) -> None:
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+
+    def _head(self) -> str:
+        return self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip()
+
+    def test_1_KONTROL_yabanci_stage_YOKken_kapanis_commit_atar(self):
+        self._kapanisa_hazirla()
+        once = self._head()
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotEqual(self._head(), once, "kapanış commit'i atılmalıydı")
+
+    def test_2_yabanci_stage_varsa_commit_ATILMAZ(self):
+        self._kapanisa_hazirla()
+        benim = self.f.tuketici / "benim-isim.txt"
+        benim.write_text("kullanıcının kendi işi\n", encoding="utf-8")
+        self.git(self.f.tuketici, "add", "--", "benim-isim.txt")
+        once = self._head()
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertEqual(self._head(), once, "HEAD ilerlemiş = yabancı iş commit'lendi")
+
+    def test_3_mesaj_yolu_ve_cozumu_soyler(self):
+        self._kapanisa_hazirla()
+        (self.f.tuketici / "benim-isim.txt").write_text("x\n", encoding="utf-8")
+        self.git(self.f.tuketici, "add", "--", "benim-isim.txt")
+        r = self.f.calistir("kapanis")
+        cikti = r.stdout + r.stderr
+        self.assertIn("ATILMADI", cikti)
+        self.assertIn("benim-isim.txt", cikti, "hangi yol yüzünden durdu SÖYLENMELİ")
+        self.assertIn("git restore --staged", cikti, "çözüm adımı SÖYLENMELİ")
+
+    def test_4_kullanicinin_isi_index_te_DURUR(self):
+        """Araç kullanıcının stage'ine DOKUNMAZ: reddeder, ama işini index'ten atmaz."""
+        self._kapanisa_hazirla()
+        (self.f.tuketici / "benim-isim.txt").write_text("x\n", encoding="utf-8")
+        self.git(self.f.tuketici, "add", "--", "benim-isim.txt")
+        self.f.calistir("kapanis")
+        stage = self.git(self.f.tuketici, "diff", "--cached", "--name-only").stdout
+        self.assertIn("benim-isim.txt", stage, "kullanıcının stage'i korunmalı")
+
+
+class ButunlukMuhruTest(V4YayinKarisimi, AkisTest):
+    """Madde 4 / K2 (karar: "mühürle, fail-closed", 2026-09-20).
+
+    `durum_dizini` döngüler arası TEMİZLENMİYOR ve bu bilerçedir (`uygulanan.json`
+    döngüler-üstü, `:458`). Sonuç: ÖNCEKİ turdan kalan `butunluk.json` kapanışta
+    "bütünlük turu koştu" sayılıyordu = SAHTE YEŞİL — üstelik NORMAL akışla tetikleniyordu
+    (`%guncelle`'yi ikinci kez koşmak). Çare SİLMEK değil MÜHÜRLEMEK: döngü-kapsamlı dosya
+    kendi plan kimliğini taşır; uymayan "ölçülmedi"dir (ölçülmedi ≠ temiz).
+    """
+
+    BAYAT = "BU TUR İÇİN ÖLÇÜLMEDİ"
+
+    def _tur1_butunluge_kadar(self) -> None:
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+
+    def _kapanis_ciktisi(self):
+        r = self.f.calistir("kapanis")
+        return r, r.stdout + r.stderr
+
+    def test_1_KONTROL_ayni_turda_bayat_uyarisi_YOK(self):
+        """Yanlış pozitif kontrolü: damga uyuyorsa kapanış eskisi gibi geçer."""
+        self._tur1_butunluge_kadar()
+        r, cikti = self._kapanis_ciktisi()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn(self.BAYAT, cikti)
+
+    def test_2_onceki_turdan_kalan_butunluk_SAHTE_YESIL_vermez(self):
+        self._tur1_butunluge_kadar()
+        self.assertEqual(self.f.calistir("kapanis").returncode, 0, "ön koşul: tur 1 temiz kapanır")
+        self._v4_yayinla()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0, "tur 2 planı kurulmalı")
+        self.assertEqual(self.f.plan()["yeni_etiket"], "v4", "ön koşul: tur 2 hedefi v4")
+        # tur 2'de `butunluk` KOŞULMADI — eski butunluk.json hâlâ diskte
+        r, cikti = self._kapanis_ciktisi()
+        self.assertNotEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn(self.BAYAT, cikti, "bayat bütünlük 'koştu' sayılmamalı")
+        self.assertIn("v3", cikti, "hangi turun damgası olduğu söylenmeli")
+
+    def test_3_tur2de_butunluk_kosunca_bayat_uyarisi_KALKAR(self):
+        """Mühür bir duvar değil kapı: doğru turda koşulunca geçer."""
+        self._tur1_butunluge_kadar()
+        self.assertEqual(self.f.calistir("kapanis").returncode, 0)
+        self._v4_yayinla()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.f.calistir("butunluk")
+        _r, cikti = self._kapanis_ciktisi()
+        self.assertNotIn(self.BAYAT, cikti, "bu turda koşan bütünlük bayat SAYILMAMALI")
+
+    def test_4_damga_dosyaya_gercekten_yaziliyor(self):
+        """Kablolama: kapanışın okuduğu alan gerçekten ÜRETİLİYOR mu (kod ≠ kablolama)."""
+        self._tur1_butunluge_kadar()
+        b = json.loads((self.f.durum_dizini() / "butunluk.json").read_text(encoding="utf-8"))
+        self.assertEqual(b.get("plan", {}).get("yeni_etiket"), "v3")
+        d = json.loads((self.f.durum_dizini() / "durum.json").read_text(encoding="utf-8"))
+        self.assertEqual(d.get("plan", {}).get("yeni_etiket"), "v3")

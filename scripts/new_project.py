@@ -49,6 +49,26 @@ def _ikili_sablon_mu(rel: str, ham: bytes) -> bool:
     return Path(rel).suffix.lower() in guncelle.IKILI_UZANTI or b"\0" in ham[:8000]
 
 
+def satir_sonu_normalize(veri: bytes) -> bytes:
+    """METİN içeriğin satır sonu normalizasyonu — CRLF **ve tek-başına CR** → LF.
+
+    ⛔ TEK KAYNAK (K1, 2026-09-20). Eskiden iki yol AYRI normalize ediyordu: burası
+    (`read_text`in universal-newlines'ı taklit ederek) tek-başına CR'yi de çeviriyordu,
+    `guncelle_proje._norm` ise YALNIZ `CRLF`yi. Tek-başına CR içeren bir şablonda ikisi
+    farklı sonuç verir ⇒ proje dosyası ile şablon blob'u aynı olduğu hâlde "yerel değişmiş"
+    görünür. Sonucu SESSİZDİR: o dosya V3'e düşer ve V3 "listelenmez, yalnız sayılır" ⇒
+    güncelleme kullanıcıya hiç sorulmadan kaybolur.
+
+    ⚠ İKİLİ dosyaya UYGULANMAZ — PNG başlığı bile `CR LF` içerir. Çağıranın `ikili_mi`
+    ile ayırması şarttır (`guncelle_proje._yazilacak` ayırır; `new_project` `_ikili_sablon_mu`).
+    ⚠ Sıra önemli: önce `CRLF`, sonra kalan tek `CR`. Ters sırada `CRLF` → `LFLF` olurdu.
+
+    Bugün 0/791 dosyada tek-başına CR var (2026-09-20'de ölçüldü, ikili hariç; kapsam:
+    yalnız bu depo/bu dal) ⇒ sınıf teoriktir, bu yüzden YENİ GATE AÇILMADI (ADR 0019).
+    """
+    return veri.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def sablon_yollari(sap: bool) -> list[str]:
     """Projeye kurulan şablon dizinleri (klon-göreli). Tek kaynak: doctor ve guncelle_proje da bunu çağırır."""
     return ["templates/project"] + (["templates/project-sap"] if sap else [])
@@ -209,7 +229,9 @@ def main() -> int:
             try:
                 # `read_text()` ile AYNI satır sonu çevirisi (universal newlines): çevrilmezse CRLF şablon
                 # aşağıdaki `write_text` ile Windows'ta `\r\r\n` olur.
-                text = _doldur(ham.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n"), name)
+                # K1 (2026-09-20): çeviri artık `satir_sonu_normalize` — `guncelle_proje._norm` ile
+                # TEK kaynak. Elle yazılmış iki kopya tek-başına CR'de ayrışıyordu (bkz. fonksiyon notu).
+                text = _doldur(satir_sonu_normalize(ham).decode("utf-8"), name)
             except UnicodeDecodeError:
                 text = None
         if dst.exists():

@@ -108,8 +108,39 @@ def _pattern_is_ours(pattern: str) -> bool:
 # ve `--uninstall`'da silinir (tests/test_install.py::KlonKorumasiKaldirildiTest).
 
 
+def session_brief_allow() -> str:
+    """Her oturumun ilk işi olan açılış özeti komutunun BİREBİR metni (Z12, 2026-09-20).
+
+    ⛔ JOKER İÇERMEZ ve bu tesadüf DEĞİL, kuralın tek güvenlik dayanağıdır. Desen komut
+    metninin TAMAMINA uyar (`config/permissions.json` `_aciklama`) ⇒ joker olmayan desen,
+    zincire uzatılmış bir metinle (`… && git reset --hard`) EŞLEŞEMEZ. "Uzun allow kısa
+    deny'ı ezer" tırmanışı bu yüzden yapısal olarak kapalıdır — uzunluk sınırıyla değil.
+    Ortadaki bir `*` bile yeterdi: `python "*/scripts/session_brief.py"` deseni
+    `python "C:/x && git reset --hard && echo /scripts/session_brief.py"` metnine uyardı.
+
+    CANLI ÖLÇÜLDÜ (2026-09-20, aXet.code, XDG_CONFIG_HOME ile proje dışı lab config;
+    kanıt motor tarafında: komutun yazdığı işaret dosyası — model beyanı kanıt sayılmadı):
+      S0 kuralsız + birebir komut         → ÇALIŞTI   (düzenek sağlam)
+      S1 aday=DENY + birebir komut        → REDDEDİLDİ (desen bu metne UYUYOR)
+      S2 aday=DENY + zincirli komut       → ÇALIŞTI   (desen zincire UYMUYOR)
+      S3 aday=ALLOW + reset deny + zincir → REDDEDİLDİ (tırmanış YOK)
+      S4 aday=ALLOW + birebir komut       → ÇALIŞTI
+    ⛔ KAPSAM — bakılmayanlar: TUI davranışı (yalnız `run` modu ölçüldü) · global↔proje
+    seviye farkı · komutun farklı yazımları (tırnaksız, `py`/tam python yolu, ek argüman)
+    — bunlar eşleşmez ve SORULUR, yani fail-safe yönde kalır.
+
+    Metin `templates/project/AGENTS.md`'nin `_doldur`dan sonraki hâliyle AYNI olmak
+    ZORUNDA (new_project `<AXET_HOME>` → `as_posix()`); eşliği test denetler.
+    """
+    return 'python "' + (AXET_HOME / "scripts" / "session_brief.py").as_posix() + '"'
+
+
 def load_rules() -> dict:
-    return json.loads(PERMISSIONS_FILE.read_text(encoding="utf-8"))["rules"]
+    rules = json.loads(PERMISSIONS_FILE.read_text(encoding="utf-8"))["rules"]
+    # Klon yoluna bağlı olduğu için statik dosyada DURAMAZ; burada üretilir. `apply_ours` yazar,
+    # `strip_ours` aynı sözlüğü gördüğü için kaldırır ⇒ yaşam döngüsü kendiliğinden simetrik.
+    rules.setdefault("bash", {})[session_brief_allow()] = "allow"
+    return rules
 
 
 def sap_enabled(cfg: dict) -> bool:

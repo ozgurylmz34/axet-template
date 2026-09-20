@@ -282,6 +282,38 @@ def validator_yolu(script_name: str) -> Path:
     return HARICI_VALIDATORLER.get(script_name, VALIDATORS_DIR / script_name)
 
 
+# Windows MAX_PATH. `\\?\` önekli biçim bu sınırdan muaftır ama onu kullanmak bir DAVRANIŞ
+# kararıdır (bkz. aşağıdaki not) — burada yalnız TEŞHİS var.
+MAX_PATH_SINIRI = 259
+
+
+def uzun_yol_ipucu(yol: Path) -> str:
+    r""""Dosya yok" hükmünün sebebi YOLUN UZUNLUĞU olabilir — bunu söyle (2026-09-20).
+
+    ⛔ ÖLÇÜLEN SINIF: Windows'ta `LongPathsEnabled=0` iken (varsayılan) 259 karakteri aşan bir
+    yola **Python dosya yazamaz** ama **git yazar** (kendi `\\?\` yolunu kullanır). Uzun yollu
+    bir klonda validator dosyası bu yüzden DİSKTE DURUR, git onu izler, `git status` temizdir —
+    buna karşılık `Path.exists()` `False` döner. Kontrol grubuyla ölçüldü (aynı depo, iki hedef):
+    218 karakterlik yolda `exists()=True`, 365 karakterlik yolda `False`; `\\?\` önekiyle açılınca
+    dosyanın içeriği geliyor. `core.longpaths` fark etmiyor — o git tarafının ayarıdır.
+
+    ⛔ HÜKÜM DEĞİŞMEZ: bu dal zaten fail-CLOSED (`blocker_count = failed_blocker +
+    skipped_blocker`, ve `olcum_yok` verilmediği için çevrimdışı indirimi de kapsamaz).
+    Kusur güvenlikte değil TEŞHİSTE idi: mesaj "bulunamadı" deyince okuyan kişi gate'i
+    "kurulmamış/silinmiş" sanıp kurulumu onarmaya çalışıyordu — yanlış yön.
+
+    ⛔ Neden `\\?\` önekine geçilmedi: tek bir `exists()` çağrısını düzeltmek çekirdeğin geri
+    kalanındaki onlarca `.exists()`/`open()` kullanımıyla tutarsız bir ada yaratır; sorun "bu
+    satır" değil "uzun yol politikası"dır ve o ayrı bir karardır (ADR 0019 · üst akış Issue'su).
+    """
+    n = len(str(yol))
+    if n <= MAX_PATH_SINIRI:
+        return ''
+    return (f' ⚠ YOL UZUN ({n} > {MAX_PATH_SINIRI} karakter — Windows MAX_PATH): dosya DİSKTE '
+            f'DURUYOR olabilir; git onu yazabilir, Python göremez. Kurulumu onarmadan ÖNCE '
+            f'klonu daha kısa bir köke taşı (ya da LongPathsEnabled=1) ve yeniden ölç.')
+
+
 REPO_WIDE_SCANNERS = {
     # (T1.12, 2026-07-31: check_amdp_comment_apostrophe ÇIKARILDI — artık pozisyonel
     #  tek-artifact kabul ediyor; push-anı yalnız push edilen dosyayı tarar, repo-geneli
@@ -495,7 +527,7 @@ def main() -> int:
             results.append(sonuc_kaydi(
                 script_name, default_severity, 'SKIP', description,
                 message=f'PRE-FLIGHT KOŞMADI: {script_name} bulunamadı '
-                        f'(aranan: {script_path.parent}) — PASS SANMA.'))
+                        f'(aranan: {script_path.parent}) — PASS SANMA.{uzun_yol_ipucu(script_path)}'))
             continue
 
         # Tablo tipi için --type table extra arg

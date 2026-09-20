@@ -253,6 +253,103 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.3.0",
+   "tarih": "2026-09-20",
+   "kalemler": [
+    {
+     "id": "0.3.0-01",
+     "baslik": "%guncelle kapanış commit'i: aracın kendi dosyaları dışında bir şey varsa ATILMAZ",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Kapanış commit'i index'in TAMAMINI alıyordu; güncelleme sırasında index'te duran alakasız değişikliklerin 'guncelle: ... kalemler ...' commit'ine sessizce girmesi mümkündü. Artık index kapsamı ölçülür; aracın plan yolları dışında dosya varsa commit atılmaz. Kapsam ÖLÇÜLEMEZSE de durur (ölçülemedi != temiz).",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle"
+     ]
+    },
+    {
+     "id": "0.3.0-02",
+     "baslik": "Bütünlük mührü: önceki turdan kalan butunluk.json artık bu turun ölçümü sanılmıyor",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "butunluk.json ve durum.json plan mührü taşımıyordu; bir önceki güncelleme turundan kalan bayat bütünlük sonucu GÜNCEL ölçüm gibi okunabiliyordu (sahte güvence). Artık her ikisi plan mührüyle damgalanır ve mühür tutmazsa kapanış 'BU TUR İÇİN ÖLÇÜLMEDİ' der.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle"
+     ]
+    },
+    {
+     "id": "0.3.0-03",
+     "baslik": "Satır sonu normalizasyonu tek kaynaktan: CRLF ve tek başına CR",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Normalizasyon iki yerde ayrı yazılıydı ve tek başına CR (eski Mac satır sonu) işlenmiyordu; sessizce ayrışabilirdi. Artık new_project.satir_sonu_normalize tek kaynaktır, guncelle_proje ona delege eder. Bugün izlenen 791 dosyanın 0'ında tek-başına CR var - yeni gate AÇILMADI.",
+     "dosyalar": [
+      "scripts/new_project.py",
+      "scripts/guncelle_proje.py",
+      "tests/test_guncelle_proje.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle_proje"
+     ]
+    },
+    {
+     "id": "0.3.0-04",
+     "baslik": "Oturum özeti izin kuralı joker içermeyen TAM komutla üretiliyor",
+     "tur": "guvenlik",
+     "kritik": true,
+     "neden": "Kurulumun ürettiği bash allow kuralı joker içerseydi, aynı önekle başlayan başka komutlar da izinli olurdu (zincir yükseltme). Kural artık klonun mutlak yolundan türetilen tek ve TAM komuttur; joker yasağı testle zorlanır. Kurulumdan sonra aXet'i kapatıp açmak gerekir.",
+     "dosyalar": [
+      "scripts/install.py",
+      "tests/test_install.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k install"
+     ]
+    },
+    {
+     "id": "0.3.0-05",
+     "baslik": "Reviewer SKIP'i artık NEDENİNİ söylüyor (boş parantez yerine rc + stderr)",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Reviewer rc'si 0/1 dışındaysa ve JSON ayrıştırılamıyorsa verdict SKIP'e düşüyor, passed True dönüyor ve pre-flight KOŞMADAN SAP yazımı sürüyordu; kullanıcıya giden not ise 'PRE-FLIGHT KOŞMADI ()' diye BOŞ çıkıyordu. Artık rc ve stderr kuyruğu yazılır. VERDICT SEMANTİĞİ DEĞİŞMEDİ - fail-closed'a çevirmek ayrı bir karardır, önce rc uzayı bu teşhisle ölçülecek.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/_reviewer.py",
+      "skills-sap/sap-adt-foundation/tests/test_reviewer_skip_teshisi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k reviewer"
+     ]
+    },
+    {
+     "id": "0.3.0-06",
+     "baslik": "'validator bulunamadı' teşhisine Windows MAX_PATH ipucu",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Windows'ta LongPathsEnabled=0 iken 259 karakteri aşan yola Python dosya yazamaz ama git YAZAR; uzun yollu bir klonda validator diskte durur, git status temizdir, buna karşılık Path.exists() False döner. Eski mesaj yalnız 'bulunamadı' dediği için kullanıcı gate'i silinmiş sanıp kurulumu onarmaya çalışıyordu. Hüküm değişmedi (eksik BLOCKER gate hala BLOCKER + rc 1), yalnız teşhis eklendi.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/run_review.py",
+      "skills-sap/sap-adt-foundation/tests/test_uzun_yol_teshisi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k uzun_yol"
+     ]
+    }
+   ]
   }
  ]
 }

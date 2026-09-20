@@ -6,6 +6,7 @@ import fnmatch
 import json
 import shutil
 import subprocess
+import sys
 import unittest
 
 from _helpers import AXET_HOME, GeciciTest
@@ -121,6 +122,99 @@ class IzinDesenUzunlukTest(unittest.TestCase):
         self.assertEqual(len(ask_deny_uzunluk_ihlalleri(karisik)), 2, ask_deny_uzunluk_ihlalleri(karisik))
 
 
+def beklenen_klon_bash(klon) -> dict:
+    """Kurulumun o klondan yazması BEKLENEN `bash` kuralları — statik dosya + Z12 üretilen deseni.
+
+    ⛔ `guncel_kurallar()` tek başına artık YETMEZ: 2026-09-20'den beri bir kural klonun
+    YOLUNDAN üretiliyor (`install.session_brief_allow`, Z12) ve `permissions.json`da durmaz.
+    Beklentiyi statik dosyadan kuran test, kurulum DOĞRU çalışırken kırılır.
+    ⛔ Ama beklenti `install.load_rules()`a da SORULMAZ: beklentiyi ürünün kendi fonksiyonundan
+    almak testi totolojiye çevirir — fazladan ya da yanlış üretilmiş bir kuralı artık göremez
+    (ölçüm aracı kendini kanıtlamasın). Bu yüzden desen BURADA yeniden türetilir; metnin
+    ürünle eşliğini `OturumOzetiAllowTest.test_1/test_4` ayrıca ölçer.
+    """
+    return {**guncel_kurallar()["bash"],
+            'python "' + (klon / "scripts" / "session_brief.py").as_posix() + '"': "allow"}
+
+
+JOKERLER = ("*", "?", "[")
+
+
+def uretilen_izin_ihlalleri(kurallar: dict) -> list[str]:
+    """ÜRETİLEN (klon yoluna bağlı, permissions.json'da DURMAYAN) izin-verici desenlerin denetimi.
+
+    ⛔ Neden ayrı bir denetim: `IzinDesenUzunlukTest` `guncel_kurallar()` ile YALNIZ statik
+    dosyayı okur ⇒ `install.load_rules()`ın eklediği desenleri GÖRMEZ. Bu boşluk fark edilmeden
+    kalsaydı, üretilen her yeni izin kuralı uzunluk denetiminin tamamen dışında yaşardı.
+
+    Kural: üretilen izin-verici desen ya JOKERSİZDİR (o zaman tek bir komut metnine uyar; zincire
+    uzatılmış metinle eşleşemez — CANLI ölçüldü, `install.session_brief_allow` docstring'i) ya da
+    uzunluk kuralına uymak ZORUNDADIR. Joker girdiği anda muafiyetin dayanağı düşer.
+    """
+    statik = guncel_kurallar()
+    ihlal: list[str] = []
+    for alan, desenler in kurallar.items():
+        for desen, karar in desenler.items():
+            if karar not in ("allow", "ask") or desen in statik.get(alan, {}):
+                continue
+            if any(j in desen for j in JOKERLER):
+                ihlal += [f"üretilen izin deseni JOKER içeriyor ({alan}:{desen!r}) → {m}"
+                          for m in ask_deny_uzunluk_ihlalleri({alan: {**desenler, desen: karar}})
+                          if repr(desen) in m]
+    return ihlal
+
+
+class OturumOzetiAllowTest(unittest.TestCase):
+    """Z12 (karar 2026-09-20): her oturum sorulan açılış özeti komutuna joker-siz allow.
+
+    Muafiyet bilinçli: desen tüm deny'lardan UZUN (uzunluk kuralının ihlali gibi görünür) ama
+    JOKERSİZ olduğu için yalnız TEK bir komut metnine uyar ⇒ "uzun allow kısa deny'ı ezer"
+    tırmanışı yapısal olarak kapalı. Canlı ölçüm (S0-S4) `install.session_brief_allow`
+    docstring'inde. Muafiyetin bedeli `test_2`dir: joker girerse muafiyet düşer.
+    """
+
+    def _kurallar(self) -> dict:
+        import install
+        return install.load_rules()
+
+    def test_1_desen_JOKERSIZ(self):
+        import install
+        desen = install.session_brief_allow()
+        for j in JOKERLER:
+            self.assertNotIn(j, desen, f"desen joker içeriyor ({j!r}) → uzunluk muafiyetinin dayanağı düşer")
+        self.assertEqual(self._kurallar()["bash"].get(desen), "allow")
+
+    def test_2_joker_giren_uretilen_izin_deseni_YAKALANIR(self):
+        """Negatif test: muafiyet sessizce genişlemesin."""
+        sahte = {"bash": {"*git push -f*": "deny", "python */session_brief.py*": "allow"}}
+        self.assertTrue(uretilen_izin_ihlalleri(sahte), "jokerli üretilen allow yakalanmadı")
+        # KONTROL: jokersiz desen, deny'lardan UZUN olsa bile ihlal DEĞİL (muafiyetin kendisi)
+        temiz = {"bash": {"*git push -f*": "deny", 'python "C:/a/scripts/session_brief.py"': "allow"}}
+        self.assertEqual(uretilen_izin_ihlalleri(temiz), [])
+
+    def test_3_uretilen_kurallarin_TAMAMI_denetimden_geciyor(self):
+        self.assertEqual(uretilen_izin_ihlalleri(self._kurallar()), [])
+
+    def test_4_desen_AGENTS_md_komutuyla_AYNI(self):
+        """Kablolama: kural, şablonun gerçekten yazdığı komuta uymazsa hiçbir işe yaramaz."""
+        import install
+        import new_project
+        metin = (AXET_HOME / "templates" / "project" / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("session_brief.py", metin, "şablon ön koşulu")
+        self.assertIn(install.session_brief_allow(), new_project._doldur(metin, "PROJE"),
+                      "izin deseni AGENTS.md'nin yazdığı komutla birebir AYNI değil → kural hiç eşleşmez")
+
+    def test_5_yasam_dongusu_apply_sonra_strip(self):
+        import install
+        kurallar = self._kurallar()
+        desen = install.session_brief_allow()
+        cfg: dict = {}
+        install.apply_ours(cfg, kurallar, sap=False)
+        self.assertEqual(cfg["permissions"]["rules"]["bash"].get(desen), "allow")
+        install.strip_ours(cfg, kurallar)
+        self.assertNotIn("permissions", cfg, "kaldırma sonrası üretilen desen config'te KALMAMALI")
+
+
 class EmekliKuralTest(unittest.TestCase):
     """install.RETIRED_RULES ↔ güncel permissions.json ↔ git geçmişi."""
 
@@ -211,7 +305,7 @@ class InstallTest(GeciciTest):
         self.assertTrue(emekli, "eski ve güncel dosya aynı; test bir şey ölçmez")
         kurallar = self.oku()["permissions"]["rules"]
         self.assertEqual(sorted(emekli & set(kurallar["bash"])), [], "emekli desen config'te kaldı")
-        self.assertEqual(kurallar["bash"], {**guncel_kurallar()["bash"], "*benim-aracim*": "allow"})
+        self.assertEqual(kurallar["bash"], {**beklenen_klon_bash(self.klon), "*benim-aracim*": "allow"})
         # Uzunluk denetimi BİRLEŞİK config'te iki farklı şeyi ölçer; ikisi karıştırılmamalı:
         # (a) BİZİM kontrolümüzdeki desenler — kurulum bunların arasında bir ezme üretmemeli. Zorunlu.
         bizim = set(guncel_kurallar()["bash"])
@@ -563,7 +657,8 @@ class KlonKorumasiKaldirildiTest(GeciciTest):
         """Kaldırma YALNIZ `edit` alanını etkiledi: `bash` deny'ları (asıl koruma katmanı) aynen duruyor."""
         self.assertEqual(self.install().returncode, 0)
         bash = self.oku()["permissions"]["rules"]["bash"]
-        beklenen = json.loads((self.klon / "config" / "permissions.json").read_text(encoding="utf-8"))["rules"]["bash"]
+        # Beklenti klonun KENDİ `load_rules()`undan gelir; statik dosya üretilen deseni taşımaz (Z12).
+        beklenen = beklenen_klon_bash(self.klon)
         self.assertEqual(bash, beklenen)
         self.assertTrue([p for p, k in bash.items() if k == "deny"], "hiç deny kalmadı")
 

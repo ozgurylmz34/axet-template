@@ -1037,5 +1037,72 @@ class DamgaGovdeTest(unittest.TestCase):
         self.assertEqual(sap_stamp.govde(damgasiz), damgasiz)
 
 
+# =====================================================================================================
+# 9. TEK-BAŞINA CR (K1, karar 2026-09-20)
+# =====================================================================================================
+class TekBasinaCRTest(GeciciTest):
+    """`new_project` tek-başına CR'yi çeviriyordu, `guncelle_proje._norm` çevirmiyordu.
+
+    Mevcut `PlanTest.test_CRLF_proje_dosyasi_yerel_degismis_SAYILMAZ`ın kardeşi: o CRLF'i
+    ölçer, bu tek-başına CR'i. Sonucun SESSİZ olması bu maddeyi önemli kılıyor — ayrışan
+    dosya V3'e düşer ve V3 "listelenmez, yalnız sayılır" ⇒ güncelleme sorulmadan kaybolur.
+
+    KAPSAM — bakılmayanlar: ikili dosyada davranış (ayrı ölçüt `ikili_mi` ile ayrılır,
+    `_yazilacak` testleri kapsar) · Linux/macOS (Windows'ta ölçüldü) · gerçek tüketici klonu.
+    """
+
+    CR_YOL = "templates/project/cr-li.md"
+    REL = "cr-li.md"
+
+    def _klon(self, v1: bytes) -> SahteKlon:
+        return SahteKlon(self, self.tmp).uret(ikili={self.CR_YOL: v1})
+
+    @staticmethod
+    def _tek_cr_var(ham: bytes) -> bool:
+        """CRLF'leri düşürdükten sonra geriye CR kalıyor mu — CRLF ile karışmaz."""
+        return b"\r" in ham.replace(b"\r\n", b"")
+
+    def test_1_KONTROL_fixture_gercekten_tek_basina_CR_uretiyor(self):
+        """Ön koşul ölçümü: bu satır olmadan 2. test 'hiç tetiklenmediği için' de geçerdi."""
+        f = self._klon(b"# CR\rbir\n")
+        self.assertTrue(self._tek_cr_var((f.home / self.CR_YOL).read_bytes()),
+                        "fixture ön koşulu: ŞABLONDA tek-başına CR olmalı")
+        self.assertFalse(self._tek_cr_var((f.proje / self.REL).read_bytes()),
+                         "new_project tek-başına CR'yi çevirmeli (V3 sahte-farkın kaynağı)")
+
+    def test_2_tek_basina_CR_li_dosya_yerel_degismis_SAYILMAZ(self):
+        """Kullanıcı DOKUNMADI, şablon ilerledi ⇒ vaka V1 (otomatik al) olmalı.
+
+        Kusurluyken proje dosyası (CR→LF) ile taban blob'u (CR duruyor) ayrışır, dosya
+        "kullanıcı değiştirmiş" sayılır ve V1 olmaktan çıkar.
+        """
+        f = self._klon(b"# CR\rbir\n")
+        f.ilerlet({self.CR_YOL: "# CR\riki\n"})
+        r = f.onayla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        r = f.calistir("plan")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(f.vakalar().get(self.REL), "V1", self.cikti(r))
+
+    def test_3_KONTROL_ayni_klonda_CRsiz_dosya_da_V1(self):
+        """Yanlış pozitif kontrolü: V1 sonucunu üreten şey CR değil, 'kullanıcı dokunmadı'."""
+        f = self._klon(b"# CR\rbir\n")
+        f.ilerlet({self.CR_YOL: "# CR\riki\n",
+                   "templates/project/proje-recetesi.ornek.md": "# Reçete v2\nA\nB\nC\n"})
+        self.assertEqual(f.onayla().returncode, 0)
+        r = f.calistir("plan")
+        self.assertEqual(f.vakalar().get("proje-recetesi.ornek.md"), "V1", self.cikti(r))
+
+    def test_4_iki_yol_TEK_normalizasyona_bagli(self):
+        """Kablolama: davranış eşitliği tesadüf değil, `_norm` gerçekten devrediyor mu?"""
+        sys.path.insert(0, str(GERCEK_SCRIPTS))
+        import guncelle_proje as gp
+        import new_project as np
+        ornek = b"a\rb\r\nc\n"
+        self.assertEqual(np.satir_sonu_normalize(ornek), b"a\nb\nc\n")
+        self.assertEqual(gp._norm(ornek), np.satir_sonu_normalize(ornek))
+        self.assertIsNone(gp._norm(None))
+
+
 if __name__ == "__main__":
     unittest.main()
