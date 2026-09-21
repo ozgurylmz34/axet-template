@@ -454,6 +454,7 @@
         {"komut": "python -m unittest discover -s skills-sap/sap-code-review/tests -t skills-sap/sap-code-review/tests", "cwd": ".", "on_kosul": "bu skill'de run_tests.py YOK — 2026-09-16 ölçümü: 115 test, 0 failure, 0 error, 1 skip (70'i kapı defteri/karne takımı). Skip = test_abaplint_run.SmokeTests.test_offline_run_finds_unreachable_code (env kapısı ABAPLINT_SMOKE=1). FAIL BEKLENMEZ — kırmızı görürsen gerçek regresyondur, normalleştirme"},
         {"komut": "python -m unittest discover -s skills-sap/sap-gui-scripting/tests -t skills-sap/sap-gui-scripting/tests", "cwd": ".", "on_kosul": "bu skill'de run_tests.py YOK — 2026-09-15 ölçümü: 31 test OK"},
         {"komut": "python skills-sap/sap-fs-ts-docs/tests/run_tests.py", "cwd": ".", "on_kosul": null},
+        {"komut": "python skills-sap/sap-ui5-user-guide/tests/run_tests.py", "cwd": ".", "on_kosul": null},
         {"komut": "python skills-sap/sap-abapgit-delivery/tests/run_tests.py", "cwd": ".", "on_kosul": null},
         {"komut": "python skills-sap/sap-ui5-fiori/tests/run_tests.py", "cwd": ".", "on_kosul": "Node/Playwright kurulu değilse SKIP"},
         {"komut": "python skills/office-docs/tests/run_tests.py", "cwd": ".", "on_kosul": "isteğe bağlı pip paketleri yoksa SKIP"},
@@ -641,6 +642,7 @@
       "test": [
         {"komut": "python skills-sap/sap-adt-foundation/tests/run_tests.py", "cwd": ".", "on_kosul": "izole TMP önerilir"},
         {"komut": "python skills-sap/sap-fs-ts-docs/tests/run_tests.py", "cwd": ".", "on_kosul": null},
+        {"komut": "python skills-sap/sap-ui5-user-guide/tests/run_tests.py", "cwd": ".", "on_kosul": null},
         {"komut": "python skills-sap/sap-abapgit-delivery/tests/run_tests.py", "cwd": ".", "on_kosul": null}
       ],
       "risk": "orta",

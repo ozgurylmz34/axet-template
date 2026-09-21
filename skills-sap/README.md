@@ -18,6 +18,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | `sap-gui-scripting` | Veri yalnız SAP GUI ekranında görünüyorsa (ALV, tablo kontrolü, ekran alanı): model script yazar, geliştirici çalıştırır (ecc, s4_private) |
 | `sap-abapgit-delivery` | Değişikliği abapGit ZIP olarak hazırla (kesin yasak + Yasak B taramasıyla); içe aktarımı geliştirici yapar |
 | `sap-fs-ts-docs` | FS/TS/KD yazımı ve incelemesi, izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü PDF, TS öncesi canlı teyit turu |
+| `sap-ui5-user-guide` | Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (KD): yalnız mock veri, Chrome'a sabit playwright-cli keşfi, çekim senaryosu, kare kare görsel kontrol, HTML + PDF |
 
 aXet.code yerel MCP yapılandırmasını yok sayar (ölçüldü). SAP işlemleri bu yüzden MCP ile değil,
 `sap-adt-foundation` skill'indeki Python CLI ile yapılır.

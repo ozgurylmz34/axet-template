@@ -54,5 +54,5 @@ def profil_tool(available_on: tuple = ("all",)):
 
 def load_all_tools() -> dict[str, ToolSpec]:
     """Araç modüllerini import et (dekoratörler REGISTRY'yi doldurur)."""
-    from sapadt.tools import atom, composite, description, diag, meta, msgclass, query, screen  # noqa: F401
+    from sapadt.tools import atom, composite, ddic, description, diag, meta, msgclass, query, screen, textpool  # noqa: F401
     return REGISTRY

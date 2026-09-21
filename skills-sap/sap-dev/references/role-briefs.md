@@ -30,6 +30,8 @@
 
 (Alt ajan için: "KULLANICIDAN İSTE" adımını sen yapamazsın. Yasağa değen her durumda o kalemi durdur ve
 yanıtının ilk satırına `ENGEL:` yaz.)
+(A'daki "DTEL adı" = standart objeye eklenecek append alanının DTEL'i. Yeni Z DDIC objesi adı yasak değildir:
+S2'deki kurala göre ÖNERİ olarak döner.)
 ```
 
 ### S2 — SAP'ye yazma yok: yalnız okuma sınıfı CLI araçları
@@ -44,6 +46,7 @@ OKUMA sınıfı (serbest): ping, adt_get, adt_msgclass_read, adt_search_objects,
   adt_feature_probe, adt_lock_check, adt_unit_run (YALNIZ allow_risky_tests=false).
 YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, adt_delete, adt_publish_service,
   adt_classrun, adt_domain_create, adt_dtel_create, adt_struct_create, adt_screen_generate,
+  adt_table_create, adt_ttyp_create, adt_textpool_write,
   adt_syntax_check (adına rağmen yazmadır: bekleyen temiz sürümü AKTİVE EDER),
   adt_unit_run + allow_risky_tests=true (kalıcı veri değiştirebilir).
 - Hiçbir komuta `--sap-write` / `--scope` ekleme. `install.py` çalıştırma.
@@ -64,7 +67,10 @@ YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, ad
   <.rules.md "Bilinen istisnalar" / bağımlılıklar — yoksa "yok">
 - Paket kuralı genel adlandırma standardıyla çelişirse paket kuralı geçerlidir; çelişkiyi raporda belirt.
 - Transport: alt ajan transport kullanmaz, yaratmaz, önermez.
-- Yeni obje adı, program TITLE'ı, DTEL/append alanı adı: sen önermezsin; gerekiyorsa açık kalem olarak yaz.
+- Program TITLE'ı ve standart objeye append alanı adı: sen önermezsin; gerekiyorsa açık kalem olarak yaz.
+- Yeni Z obje adı (DDIC dahil): adlandırma standardına ve paket öneklerine uygun ÖNERİ olarak döndürebilirsin; her adı
+  okuma araçlarıyla canlıda kontrol et (varsa başka ad) ve raporda "ONAY BEKLİYOR" diye işaretle. O adla obje yaratmazsın;
+  onayı lider kullanıcıdan alır.
 ```
 
 ### S4 — SAP'ye özgü kanıt kuralları (genel şablon §5'e ek)
@@ -129,8 +135,9 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
 - Desen: paketteki ya da sistemdeki ÇALIŞAN benzer objeden doğrula ve onun yolunu izle; sıfırdan icat etme.
   İş içeriği (alanlar, kurallar, akış) spesifikasyondan gelir.
 - Standart tabloya veri yazan kod YAZMA (yasak B): BAPI → RFC FM → BDC → kullanıcıdan manuel; bulamazsan ENGEL.
-- Yeni DDIC tablo: yaratmazsın; alan + veri elemanı + anahtar tasarımını ÖNERİ olarak döndürürsün. Yeni DTEL/append
-  alanı adı önermezsin (yer tutucu bırak, açık kalem yaz). İstemci alanı `mandt : mandt`.
+- Yeni DDIC tablo: yaratmazsın; alan + veri elemanı + anahtar tasarımını ÖNERİ olarak döndürürsün. Yeni Z DTEL/domain/tablo
+  adını ÖNERİ olarak verebilirsin (canlıda kontrol edilmiş, "ONAY BEKLİYOR"); standart objeye append alanı adını önermezsin
+  (yer tutucu bırak, açık kalem yaz). İstemci alanı `mandt : mandt`; yönetim alanları tasarımda listelenir.
 - Clean core: released CDS/API varsa onu kullan. `adt_atc_check` okuma sınıfıdır; Priority 1 bulguları raporla.
 - Tutar/miktar (decimal) değerini dış API gövdesine metin olarak çevirirken `WRITE ... TO` kullanma (kullanıcı ayarına göre ayraç değişir).
 - Yerel sözdizimi doğrulaması: bu devirde belgelenmiş ayrı bir derleyici komutu yoktur; gömülü inceleme ana oturumun

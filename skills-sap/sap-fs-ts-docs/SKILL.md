@@ -90,6 +90,7 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 1. Geliştirme bitmiş ve kullanıcı testinden geçmiş olmalı. Uygulamanın **ekran envanterini** çıkar (UI5: `webapp/view/*.xml` +
    `webapp/fragment/*.xml`; klasik: ekran numaraları + açılır pencereler) ve her birini KD'de bir bölüme eşle.
 2. Ekran görüntülerini **gerçek arayüz + temiz örnek veriyle** üret (`references/pdf-with-screenshots.md` §A).
+   Freestyle UI5 (OData V2) uygulamasında mock ortamı, keşif, çekim senaryosu ve kare kontrolü dahil uçtan uca akış: `%sap-ui5-user-guide`.
    Kirli test kaydı, gerçek müşteri/kişi verisi görüntüye girmez.
 3. Şablonu doldur: arka plan sonucu, adım adım akışlar, alan rehberi, butonlar, mesajlar + aksiyon, grid varsa §4-A.
 4. Klasik GUI programıysa ikinci ayak F1 yardımıdır: KD'den türetilir, SAP'ye yazımı `%sap-classic-abap` işidir.

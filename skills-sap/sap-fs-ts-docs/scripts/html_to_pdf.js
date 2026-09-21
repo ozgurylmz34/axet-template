@@ -7,7 +7,7 @@
  *
  * Ortam değişkenleri:
  *   PLAYWRIGHT_CORE_PATH  playwright-core klasörü (mevcut kuruluma yönlendirme)
- *   PDF_BROWSER_CHANNEL   msedge (varsayılan) | chrome | chromium
+ *   PDF_BROWSER_CHANNEL   chrome (varsayılan, sistem Chrome'u) | msedge | chromium (paketli; indirme gerektirir)
  *
  * Çıkış: 0 başarılı · 2 eksik bağımlılık / kullanım hatası · 1 üretim hatası.
  */
@@ -63,13 +63,13 @@ async function main(argv) {
   const pw = resolvePlaywrightCore();
   if (!pw) { console.error("HATA: " + INSTALL); return 2; }
   const { chromium } = require(pw);
-  const channel = process.env.PDF_BROWSER_CHANNEL || "msedge";
+  const channel = process.env.PDF_BROWSER_CHANNEL || "chrome";
   const fileUrl = "file:///" + IN.split(path.sep).join("/");
   let browser;
   try {
     browser = await chromium.launch({ channel: channel === "chromium" ? undefined : channel, headless: true, args: ["--no-sandbox"] });
   } catch (e) {
-    console.error("HATA: tarayıcı başlatılamadı (kanal " + channel + "). Edge/Chrome kurulu olmalı ya da PDF_BROWSER_CHANNEL ayarlanmalı.\n" + e.message);
+    console.error("HATA: tarayıcı başlatılamadı (kanal " + channel + "). Chrome kurulu olmalı ya da PDF_BROWSER_CHANNEL ile kurulu bir kanal (ör. msedge) seçilmeli.\n" + e.message);
     return 2;
   }
   try {

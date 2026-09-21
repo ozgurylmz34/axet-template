@@ -82,6 +82,9 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 
 ### 6. Silme akışı (UI)
 - **Önce oku:** `references/delete-flow-ui.md` · backend guard `%sap-rap` → `references/delete-guard.md`.
+- **Duruma bağlı pasiflik** (onaylı kayıtta Düzenle/Sil/aksiyon kapalı): kural backend'de feature control'dür
+  (`%sap-rap` → `references/feature-control.md` §6); freestyle UI `$metadata`'daki path özelliğine (`sap:updatable-path` …)
+  `enabled`/`editable` bağlar — kendiliğinden uygulanmaz, UI'da gizlemek tek başına kural değildir.
 - **Yap:** seçim temizliği tek giriş noktasında (`rowsUpdated` değil); pending guard = `onSave` payload'ı (başlık dahil);
   sıralı `remove`; çok satırlı mesaj; onay dialogu.
 - **Doğrula:** §5 minimum runtime testi; **test verisi yaratma**, guard'ı kanıtlanmamış kayıtta silme deneme.

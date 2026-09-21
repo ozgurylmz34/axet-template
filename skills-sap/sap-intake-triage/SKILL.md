@@ -52,7 +52,10 @@ Tam protokol, kriterler ve örnekler: `references/protocol.md` — ilk kullanım
    - **S0:** soru yok, artefakt yok. Tek satır "şöyle anladım, şunu yapıyorum" + etki kontrolü → düzelt → doğrula.
    - **S1:** yalnız kritik/belirsiz noktayı, araştırmayla bilgilenmiş olarak sor (`ask_user`, tek seferde, seçenekli, önerili).
    - **S2:** `.axet-code/intake/<id>.md` artefaktını üret (şablon: `templates/intake-artifact.md`, şema: `references/s2-artifact-schema.md`)
-     → kabul kriterleri EARS → kullanıcıyla **madde madde MUTABAKAT** → işareti kullanıcı onayından sonra koy → ancak sonra build.
+     → kabul kriterleri EARS → sistem sürümü karşılaştırması → yeni Z adları (öneri + canlı kontrol + ad başına ONAY) →
+     **kural taraması** (ilgili checklist'lerin BLOCKER satırları; sapma kullanıcıya SORULUR) → öz-tutarlılık → kullanıcıyla
+     **madde madde MUTABAKAT** → işareti kullanıcı onayından sonra koy → ancak sonra build (ayrıntı: `references/protocol.md` §6).
+   - "Araç / yöntem yok" demeden önce TR + EN eş anlamlılarla büyük/küçük harf duyarsız ikinci arama (`protocol.md` §4 kalite kilidi).
 7. **Çıkışta:** öğrenilen ders/desen `%remember` ile (projeye özelse proje hafızası, her projede geçerliyse ekip hafızası önerisi).
 
 ## ⛔ Kapsam beyanı — SAP'ye her yazmada zorunlu (kullanıcı kararı)

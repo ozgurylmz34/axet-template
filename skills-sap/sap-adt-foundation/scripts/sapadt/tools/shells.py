@@ -48,8 +48,9 @@ DESTEKLENMEYEN = {
     "domain": "Domain için adt_domain_create composite aracını kullan.",
     "dataelement": "Data element için adt_dtel_create composite aracını kullan.",
     "structure": "Yapı için adt_struct_create composite aracını kullan.",
-    "table": "Z tablo kabuğu yaratma bu araçta yok (tablo tasarımı açık onay ister). Kullanıcı açar; "
-             "sonra adt_get → adt_push_source(object_type='tabl').",
+    "table": "Z tablo için adt_table_create composite aracını kullan (kabuk + kilitli DDL yazımı + aktivasyon + "
+             "readback tek çağrıda). Tablo tasarımı (ad, alanlar, DTEL, anahtar) önce kullanıcıya gösterilip AÇIK "
+             "onay alınır — sap-cds-ddic references/tables-structures.md §3.",
 }
 _DESTEKSIZ_ESANLAM = {
     "ddlx": "ddlx", "metadataextension": "ddlx", "mde": "ddlx",

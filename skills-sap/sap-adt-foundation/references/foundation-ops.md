@@ -106,6 +106,8 @@ cli adt_get '{"name":"ZCL_DEMO_CLASS","object_type":"class","include_source":fal
 ### 3.2 Composite DDIC araçları
 `adt_domain_create`, `adt_dtel_create`, `adt_struct_create`: guard → varlık ön-kontrolü → create → activate
 → verify; sonuç `steps` alanında.
+2026-09-21 eki: `adt_table_create` (kabuk + kilitli DDL + aktif DDL readback) ve `adt_ttyp_create` (iki kanallı readback + boş satır tipinde
+bir kez düzeltme) aynı politikayla (atomik yaratma, geri alma yok) — `tool-catalog.md`; `s4_private`, canlı DOĞRULANMADI.
 - Otomatik geri alma YOK (bilinçli): aktivasyon düşerse obje inaktif kalır; kullanıcı düzelt-aktive-et ya da sil kararı verir.
 - **Domain (2026-09-13):** `adt_domain_create` ağdan önce argümanları denetler (`steps.pre_flight`; BLOCKER → `preflight_blocker`) ve çıktı uzunluğunu
   formülle gönderir: CHAR/NUMC/DATS/TIMS/CLNT = length · INT1 4 · INT2 6 · INT4 11 · INT8 20 · DEC/QUAN/CURR = length+4. Yanlış çıktı uzunluğu

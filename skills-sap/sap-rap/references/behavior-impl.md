@@ -56,13 +56,20 @@ ENDCLASS.
 - **Action sonucu boş dönüyor** (`Success:false`, alanlar boş): sonuç satırına `%cid = <key>-%cid` ekle (action korelasyonu;
   function'da gerekmez).
 
-## 3. Early numbering (NR objesi + CHAR key) — ÇALIŞAN
+## 3. Early numbering — numara aralığı (number range / NR objesi, SNRO · NRIV · NROB, `NUMBER_GET_NEXT`) + CHAR key — ÇALIŞAN
+
+> Eş anlamlılar (arama için): number range · numara aralığı · numara aralığı objesi · NR objesi · nrng · SNRO (işlem) ·
+> NROB (NR objesi tanımı) · NRIV (aralık durumu) · `NUMBER_GET_NEXT` · early numbering · belge / talep / sipariş numarası.
+> Yeni belgeye numara vermenin onaylı yolu budur; `MAX( ) + 1`, sayaç tablosu ya da determination ile numara **verme**
+> (`checklists.md` §A numara kaynağı satırı BLOCKER). NR objesi yoksa DUR, kullanıcıdan iste.
 
 - BDEF root karakteristiğinde `early numbering` (yoksa `The operation "CREATE" is not activated for entity …`).
 - Handler gövdesi: tüketici numara verdiyse koru (idempotent; `mapped-order` `%cid` + key) → yoksa
   `CALL FUNCTION 'NUMBER_GET_NEXT' EXPORTING nr_range_nr = '01' object = '<NR_OBJESI>'` → `mapped-order` (`%cid` + `OrderId`).
   Hata → `failed` + `reported` (`new_message_with_text`).
-- NR objesi **kullanıcının** alanıdır: AI yaratmaz, yalnız FM ile tüketir; yoksa runtime hatası → kullanıcıya bildir.
+- NR objesi **kullanıcının** alanıdır: AI yaratmaz (SNRO'da kullanıcı açar), yalnız FM ile tüketir; yoksa runtime hatası →
+  kullanıcıya bildir. Ad gerekiyorsa `%sap-dev` → `naming.md` §4.7'ye uygun (≤ 10 karakter) **öneri** sunulabilir: adı canlıda
+  kontrol et, varsa başka ad öner, kullanıcı açıkça onaylamadan kullanma. Aralık numarası (`nr_range_nr`) kullanıcıdan gelir.
 - Aktivasyon: önce BDEF'ler (create aktif olsun) → sonra BDEF'ler + sınıf birlikte. Uçtan uca kanıt: numarasız POST → 201 ve
   numara NR'dan atanmış.
 - **DENENEN — BAŞARISIZ:** numarayı `determination … on save { create; }` ile vermek → `BEHAVIOR_CONTRACT_VIOLATION

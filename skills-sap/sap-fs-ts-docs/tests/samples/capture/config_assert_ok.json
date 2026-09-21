@@ -1,0 +1,13 @@
+{
+  "url": "http://localhost:8080/index.html?sap-ui-language=tr",
+  "steps": [
+    {"do": "wait_ui5"},
+    {"do": "assert_no_busy"},
+    {"do": "assert_no_busy", "timeout": 15000},
+    {"do": "assert_text", "text": "Siparişler"},
+    {"do": "assert_text", "text": "Kaydet", "selector": "footer"},
+    {"do": "assert_in_viewport", "selector": "[id$='listPage']"},
+    {"do": "assert_in_viewport", "selector": "[id$='table']", "partial": true},
+    {"do": "shot", "name": "kd-01-liste.png"}
+  ]
+}

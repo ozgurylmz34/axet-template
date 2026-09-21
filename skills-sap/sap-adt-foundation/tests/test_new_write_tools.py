@@ -361,14 +361,46 @@ class YeniYazmaYollari(unittest.TestCase):
                     "ok · sıra · aktivasyon yok", f"ok={r.get('ok')} err={r.get('error')} sıra={sira}", ok)
 
     def test_B2_bdef_transport_yok_ve_ccdef(self):
+        # Z41 (2026-09-21): ccdef artık yazılabilir segment — transportsuz ccdef ağ öncesi Yasak C ile reddedilir
+        # (eskiden `unsupported_type` idi). Uydurma segment hâlâ desteklenmez.
         adt, _ = self.kur(lambda c: AssertionError("ağ"))
         r1 = self.atom.adt_push_source("ZAXET_I_X", "bdef", "managed;")
-        r2 = self.atom.adt_push_source("ZCL_AXET_BP", "ccdef", "* x", transport=TR)
+        r2 = self.atom.adt_push_source("ZCL_AXET_BP", "ccdef", "* x")
         r3 = self.atom.adt_push_source("ZAXET_MSG", "msag", "x", transport=TR)
-        ok = (r1.get("code") == "ADR_0005_C" and r2.get("error") == "unsupported_type"
+        ok = (r1.get("code") == "ADR_0005_C" and r2.get("code") == "ADR_0005_C"
               and r3.get("error") == "unsupported_type" and adt.cagri == [])
-        self.kaydet("B bdef transportsuz / ccdef / msag push → ağ öncesi red", "C · unsupported · unsupported",
-                    f"{r1.get('code')} · {r2.get('error')} · {r3.get('error')} · çağrı={len(adt.cagri)}", ok)
+        self.kaydet("B bdef transportsuz / ccdef transportsuz / msag push → ağ öncesi red", "C · C · unsupported",
+                    f"{r1.get('code')} · {r2.get('code')} · {r3.get('error')} · çağrı={len(adt.cagri)}", ok)
+
+    def test_B2b_ccdef_ccmac_push_yolu(self):
+        """Z41: ccdef/ccmac ccimp ile AYNI yoldan (`push_class_include`) yazılır. Yazma yolu canlıda ÖLÇÜLDÜ
+        (DEV, 2026-09-21: PUT /includes/definitions ve /includes/macros + aktivasyon + readback eşit; kontrol grubu
+        ccimp) → dördü de `write_path_measured: true`."""
+        canli = {}
+
+        def yon(c):
+            if c["method"] == "GET" and "/includes/" in c["path"]:
+                seg = c["path"].rsplit("/", 1)[-1]
+                return Yanit(200, canli.get(seg, "* eski\n"))
+            return Yanit(500, "")
+        adt, ist = self.kur(yon)
+        orig = ist.push_class_include
+
+        def push(**kw):
+            s = orig(**kw)
+            canli[kw["include_kind"]] = ist.include_canli
+            return s
+        ist.push_class_include = push
+        sonuc = {}
+        for tip, seg in (("ccdef", "definitions"), ("ccmac", "macros"), ("ccimp", "implementations")):
+            self.atom.adt_get("ZCL_AXET_BP", tip)
+            r = self.atom.adt_push_source("ZCL_AXET_BP", tip, f"* {tip} yeni\n", transport=TR)
+            lib = [c for c in adt.cagri if c["path"] == "push_class_include" and c["params"]["kind"] == seg]
+            sonuc[tip] = (r.get("ok"), r.get("include"), r.get("write_path_measured"), len(lib))
+        ok = (sonuc["ccdef"] == (True, "definitions", True, 1) and sonuc["ccmac"] == (True, "macros", True, 1)
+              and sonuc["ccimp"] == (True, "implementations", True, 1))
+        self.kaydet("B ccdef/ccmac → push_class_include(definitions|macros) · write_path_measured=true (canlı)",
+                    "ccdef/ccmac/ccimp ok+true", sonuc, ok)
 
     def test_B3_ccimp_push(self):
         canli = {"t": "CLASS lhc_x DEFINITION.\nENDCLASS.\n"}

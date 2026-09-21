@@ -29,6 +29,7 @@ bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 |---|---|
 | `python-docx`, `python-pptx`, `openpyxl` (`pip install --user …`) | `%office-docs`, `%office-slides`, `%office-excel` |
 | `markdown`, `Pillow` + Edge/Chrome (PDF baskısı) | `%sap-fs-ts-docs` (PDF, ekran görüntüsü) |
+| Chrome + `@playwright/cli` ve `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde; tarayıcı indirilmez) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
 | Node.js + `playwright-core` (proje içinde), `@abaplint/cli` (npx önbelleği) | `%sap-ui5-fiori` ui-smoke, `%sap-code-review` abaplint |
 
 İlk kez kuruyorsan adım adım rehber: [`docs/onboarding.md`](docs/onboarding.md) (kurulumdan sonra aXet içinde `%onboard`).

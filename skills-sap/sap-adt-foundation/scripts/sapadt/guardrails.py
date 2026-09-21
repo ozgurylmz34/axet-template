@@ -77,7 +77,10 @@ YEREL_PAKET = "$TMP"
 # gönderilmez). `adt_struct_create` BİLEREK dışarıda: `create_structure` yaratmadan sonra
 # `lock_object(transport=)` çağırır ve o kilit transportsuz reddeder ⇒ yarım obje kalırdı.
 # Düzenleme araçları (push/description/msgclass) paketi bilmez — transport ister.
-TMP_MUAF_ARACLAR = frozenset({"adt_post_shell", "adt_domain_create", "adt_dtel_create"})
+# 2026-09-21: `adt_ttyp_create` eklendi (POST + aktivasyon + gerekirse If-Match PUT; kilit YOK, corrNr yalnız
+# transport verilirse gider — `adt_post_shell(ttyp)` ile aynı POST). `adt_table_create` BİLEREK dışarıda:
+# DDL yazımı stateful kilit ister, transportsuz kilit canlı ÖLÇÜLMEDİ (yapı aracıyla aynı gerekçe).
+TMP_MUAF_ARACLAR = frozenset({"adt_post_shell", "adt_domain_create", "adt_dtel_create", "adt_ttyp_create"})
 
 
 def require_transport(transport: str | None, *, what: str = "operation",

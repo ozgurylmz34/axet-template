@@ -20,7 +20,8 @@
 | Muhatap alanları müşteri/satıcı diye sınıflandı; generic BP VH yok | BLOCKER | value-help §2 |
 | Audit alanları tespit edildi; kural (create → hepsi, update → yalnız `updated_*`) kullanıcıya teyit ettirildi | BLOCKER | behavior-impl §5 |
 | Kilit kararı yazılı: ETag / draft / uygulama-seviyesi | BLOCKER | draft-and-locks §1 |
-| Numara kaynağı: NR objesi kullanıcıdan; `early numbering` planlandı; determination ile numara yok; `numbering : managed` yalnız UUID | BLOCKER | behavior-impl §3 |
+| Numara kaynağı: numara aralığı (NR objesi, SNRO) kullanıcıdan; `early numbering` + `NUMBER_GET_NEXT` planlandı; `MAX+1` / determination ile numara yok; `numbering : managed` yalnız UUID | BLOCKER | behavior-impl §3 |
+| Duruma bağlı düzenlenebilirlik/silme/aksiyon/kalem ekleme backend'de **feature control** ile zorlanıyor (`features : instance` + `get_instance_features`); yalnız UI'da gizlemek yetmez; durum kuralı yetkiyle (`auth-unauthorized`) kurulmuyor — yetki yalnız KİM sorusu için | BLOCKER | feature-control §1-§2 |
 | Aggregation gerekiyorsa ayrı yardımcı view + association (root'ta `group by` yok) | BLOCKER | layering §3 |
 | İfadeler (`cast`/`coalesce`/`case`) interface'te, projection düz | BLOCKER | layering §3 |
 | Mevcut çalışan bir RAP objesi okundu (BDEF + CCIMP `adt_grep_source`); "main boş" yanlış alarm değil | WARNING | behavior-impl §1 |
@@ -65,6 +66,7 @@
 | Kontrol | Önem |
 |---|---|
 | BDEF'teki her determination/validation/action ↔ CCIMP `lhc_*` metodu | BLOCKER |
+| BDEF'teki her `( features : instance )` ↔ CCIMP `FOR INSTANCE FEATURES` metodu ve sonuçta ilgili bileşen (`%update`/`%delete`/`%action-…`/`%assoc-…`/`%field-…`); kalem kuralı kalemde ayrıca (feature control) | BLOCKER |
 | `BY \_assoc` okumasında key olmayan alan tüketiliyorsa `ALL FIELDS WITH` / `FIELDS ( … ) WITH` | BLOCKER |
 | Delete validation `READ ENTITIES` ile değil `keys` ile | BLOCKER |
 | Audit determination idempotent guard'lı, `IN LOCAL MODE`, root + child | BLOCKER |
@@ -95,6 +97,7 @@
 | SRVB aktive → publish `published:true` | BLOCKER |
 | `$metadata`'da yeni alan/entity/function import tip kapsamlı doğrulandı (kullanıcıdan) | BLOCKER |
 | Uçtan uca: deep create 201 + numara + validasyon reddi (DEV, onaylı) | BLOCKER |
+| Feature control varsa: kapalı kayda PATCH/DELETE → ret + açık kayda aynı istek → 204 (kontrol grubu; feature-control §7) | BLOCKER |
 | Buffer başarısı değil kalıcılık geri okunarak doğrulandı | BLOCKER |
 | Silme kontrolü varsa `delete-guard.md` §8 runtime seti | BLOCKER |
 | `%code-review` yapıldı; `%verify-done` ile tam kapsam | BLOCKER |

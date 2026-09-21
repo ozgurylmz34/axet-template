@@ -34,22 +34,23 @@ description: >
 Kaynak: `sap_adt_cli.py --list` + `%sap-adt-foundation` → `references/tool-catalog.md`. `--list` otoritedir (araç sayısı değişir).
 `ttyp`/`ddls`/`enqu`/`msag` kabuk yolları, `adt_activate` `enqu`, `adt_msgclass_write` ve `adt_domain_create` ön kontrolü 2026-09-13'te eklendi: **çevrimdışı test edildi, canlı DOĞRULANMADI**
 → her adımda readback atlanmaz.
+`adt_table_create` ve `adt_ttyp_create` 2026-09-21'de eklendi (yalnız `s4_private`; çevrimdışı test edildi, canlı DOĞRULANMADI).
 
 | Obje | Yaratma | Değiştirme | Okuma / doğrulama |
 |---|---|---|---|
 | Domain | `adt_domain_create` | **araç yok** (sabit değer ekleme = güncelleme) | `adt_get` `doma` |
 | Data element | `adt_dtel_create` | **araç yok** (domain bağı değiştirme) | `adt_get` `dtel` |
 | Structure | `adt_struct_create` → gerekirse `adt_push_source` `structure` | `adt_push_source` `structure` | `adt_get` `structure` + `DD03L` alan sayısı |
-| Table type | `adt_post_shell` `ttyp` (`extra.row_type`) → `adt_activate` `ttyp` | **araç yok** (satır tipi düzeltme) | `adt_get` `ttyp` + `DD40L.ROWTYPE` |
-| Z tablo | **araç yok** (kabuk; `adt_post_shell` `tabl` → `unsupported_type`) | `adt_push_source` `tabl` | `adt_get` `tabl` + `DD03L` alan sayısı |
+| Table type | `adt_ttyp_create` (yaratma + aktivasyon + iki kanal readback + boş satır tipinde bir kez düzeltme) | **araç yok** (mevcut tipi değiştirme) | `adt_get` `ttyp` + `DD40L` |
+| Z tablo | `adt_table_create` (kabuk + kilitli DDL + aktivasyon + readback) | `adt_push_source` `tabl` | `adt_get` `tabl` + `DD03L` alan sayısı |
 | CDS (DDLS) | `adt_post_shell` `ddls` (yalnız metadata kabuğu) | `adt_push_source` `ddls` + `adt_activate` | `adt_get` `ddls` + `adt_inactive_objects` + satır sayımı |
 | Lock object | `adt_post_shell` `enqu` (`extra`) → `adt_activate` `enqu` | **araç yok** | okuma aracı yok → `adt_search_objects` ENQUEUE_/DEQUEUE_ (tip filtresiz) — DOĞRULANMADI |
 | Mesaj sınıfı | `adt_post_shell` `msag` (kabuk) | `adt_msgclass_read` → `adt_msgclass_write` (yalnız `s4_private`; birleştirir, değiştirme `allow_overwrite`, silme `delete_numbers`) | `adt_msgclass_read` |
 
 **"araç yok" görünce:** DUR → kullanıcıya bildir. Yöntem ilgili referansta "protokol notu" olarak durur; **ham
 REST ile SAP'ye yazan script yazılmaz** (yazma yolu yalnız CLI). Kaynak tabanlı objelerde: CDS kabuğu
-`adt_post_shell` `ddls` → `adt_get` → `adt_push_source` → `adt_activate` → readback; Z tablo kabuğunu hâlâ **kullanıcı**
-Eclipse ADT / SE11 ile açar, sonrası aynı zincir. XML tabanlı objelerde table type ve lock object kabuğu CLI ile açılıp aktive
+`adt_post_shell` `ddls` → `adt_get` → `adt_push_source` → `adt_activate` → readback; Z tablo `adt_table_create` ile tek
+çağrıda (2026-09-21 öncesi kabuğu kullanıcı açıyordu). XML tabanlı objelerde table type ve lock object kabuğu CLI ile açılıp aktive
 edilir; mesaj ekleme `adt_msgclass_write` ile (başka profilde kullanıcı SE91'de); table type satır tipi düzeltme ve domain/DTEL güncelleme işini kullanıcı GUI'de yapar, sen sistemden
 okuyarak doğrularsın. `adt_post_shell` `structure`/`tabl`/`doma`/`dtel` → `unsupported_type` (yapı/domain/DTEL için composite araçlar).
 
@@ -65,15 +66,17 @@ okuyarak doğrularsın. `adt_post_shell` `structure`/`tabl`/`doma`/`dtel` → `u
 ### 2. Tasarımı göster, açık onay al
 | İş | Kullanıcıya gösterilecek |
 |---|---|
-| Yeni Z tablo | Tüm alanlar · her alanın DTEL'i · anahtar · uzunluk · delivery class · data maintenance · CURR/QUAN referans alanları |
-| Yeni domain / DTEL | Ad (kullanıcıdan) · tip/uzunluk/ondalık · sabit değerler · 4 etiket (spesifikasyondan, `master_language`'de) |
+| Yeni Z tablo | Ad önerisi (≤ 16, canlı kontrollü) · tüm alanlar · her alanın DTEL'i · anahtar · uzunluk · yönetim alanları (oluşturan/zaman, son değiştiren/zaman, RAP ETag alanı) · delivery class · data maintenance · CURR/QUAN referans alanları |
+| Yeni domain / DTEL | Ad önerisi (canlı kontrollü, kullanıcı onaylar) · tip/uzunluk/ondalık · sabit değerler · 4 etiket (spesifikasyondan, `master_language`'de) |
 | Yeni / değişen CDS | View türü · kaynak tablo/view listesi (released mi, `#CHECK` mi) · `sqlViewName` (classic) · tüketiciler |
 | Alan silme / rename / tip değişikliği | Yazma yolu analizi (alana yazan kod var mı) · etkilenen CDS/servis/UI · veri kaybı riski |
 | Lock object | Birincil tablo · kilit modu · kilit parametresi alanları |
 | Mesaj sınıfı | **Nihai tam** mesaj listesi (yazma tüm listeyi değiştirir) |
 | Value help CDS | Ortak paket mi, paket-yerel mi → **kullanıcıya sor**; generic master VH kopyalanmaz |
 
-DTEL / append alanı adını önerme; açıklama ve etiketleri tahmin etme (kesin yasak A/D).
+Yeni Z DDIC adı (domain, DTEL, tablo, yapı, tablo tipi …): önce yeniden kullanım; değilse standarda uygun **öner** →
+canlıda kontrol et (`adt_search_objects` / `adt_get`; varsa başka ad) → tablo hâlinde sun → **açık onay** (`%sap-dev` §6).
+Standart objeye append alanı adını önerme; açıklama ve etiketleri tahmin etme (kesin yasak A/D).
 
 ### 3. Yaz — bağımlılık sırasıyla
 Sıra: **domain → DTEL → structure / table type → Z tablo → lock object → CDS (alt view'dan üste)**; mesaj sınıfı bağımsız.
@@ -84,9 +87,9 @@ Her yazma: `--sap-write --scope S0|S1|S2` + gerekçe/intake (`%sap-adt-foundatio
 | Domain | `adt_domain_create` → readback: çıktı uzunluğu, sabit değerler | `domain-dtel.md` §1-§3 |
 | DTEL | `adt_dtel_create` → readback: `typeName`, 4 etiket, `masterLanguage` | `domain-dtel.md` §1, §4 |
 | Structure | `adt_struct_create` → yer tutucu kaldıysa `adt_get` → `adt_push_source` `structure` (tam DDL, yorumsuz) → `adt_activate` → readback | `tables-structures.md` §1 |
-| Z tablo | Kabuk (kullanıcı) → `adt_get` `tabl` → `adt_push_source` `tabl` → `adt_activate` → readback | `tables-structures.md` §3 |
+| Z tablo | Tasarım onayı → `adt_table_create` → `DD03L` alan sayısı | `tables-structures.md` §3 |
 | CDS | `adt_post_shell` `ddls` ya da mevcut view → `adt_get` `ddls` → `adt_push_source` `ddls` → `adt_activate` (bağımlılar `also` ile) → readback | `cds.md` §1 |
-| Table type | `adt_post_shell` `ttyp` (`extra.row_type`) → `adt_activate` `ttyp` → `DD40L.ROWTYPE`; boşsa düzeltmeyi kullanıcı SE11'de yapar | `tables-structures.md` §2 |
+| Table type | Önce hazır standart tip var mı · ad + satır tipi + anahtar onayı → `adt_ttyp_create` (`ok:false` = FAIL; hâlâ boşsa kullanıcı SE11) | `table-types.md` |
 | Lock object | `adt_post_shell` `enqu` (`extra`: birincil tablo, kilit alanları, mod) → `adt_activate` `enqu` → ENQUEUE_/DEQUEUE_ + inaktif ölçümü | `lock-objects.md` §1, §4 |
 | Mesaj sınıfı | Kabuk `adt_post_shell` `msag` → `adt_msgclass_read` (pull kaydı) → nihai listeyi kullanıcıya göster → `adt_msgclass_write` → readback (`s4_private` dışı: mesajları kullanıcı SE91'de girer) | `message-class.md` §2 |
 
@@ -111,6 +114,7 @@ başarısız denemelerden sonra çalışan yeni yöntem → `%remember`.
 | `references/cds.md` | CDS yaratma/güncelleme yolu, inline-source boş kabuk tuzağı, `sqlViewName`, DCL `#CHECK` sessiz 0 satır, replacement tablo, 14 sözdizimi/aktivasyon tuzağı (union, cast, concat, currency_conversion, sanal element…) |
 | `references/domain-dtel.md` | Domain ve DTEL yaratma, çıktı uzunluğu formülü, built-in tipli DTEL, güncelleme protokolü, başarısız yollar |
 | `references/tables-structures.md` | Structure (yer tutucu ve yorum tuzakları), table type (`ROWTYPE` boş), Z tablo DDL kuralları, CURR/QUAN referansı, alan ekleme/silme |
+| `references/table-types.md` | Tablo tipi: ne zaman gerekir (FM `TABLES`/RFC, `RETURNING`, önce standart tip), ad, `adt_ttyp_create`, iki kanallı readback + düzeltme, anahtar ↔ `DEFAULT KEY`/`EMPTY KEY`, RFC'de ortaya çıkan gizli hatalar, başarısız yollar |
 | `references/lock-objects.md` | Lock object protokolü, üretilen ENQUEUE/DEQUEUE fonksiyonları, aktivasyonsuz obje tuzağı |
 | `references/message-class.md` | Mesaj sınıfı okuma, mesaj ekleme protokolü, yerine-yazma semantiği, başarısız yollar |
 | `references/checklists.md` | Tip bazında "yazmadan önce" kontrol listeleri |

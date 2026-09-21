@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="ZBC000_DEMO_SRV" xml:lang="tr" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="SalesOrder" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="SalesOrder"/>
+        </Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Sipariş"/>
+        <Property Name="Customer" Type="Edm.String" MaxLength="10" sap:label="Müşteri" sap:value-list="standard"/>
+        <Property Name="CustomerName" Type="Edm.String" MaxLength="20" sap:label="Müşteri Adı"/>
+        <Property Name="City" Type="Edm.String" MaxLength="12" sap:label="Şehir"/>
+        <Property Name="Phone" Type="Edm.String" MaxLength="16" sap:label="Telefon"/>
+        <Property Name="TotalAmount" Type="Edm.Decimal" Precision="7" Scale="2" sap:unit="Currency" sap:label="Toplam Tutar"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="5" sap:label="Para Birimi" sap:semantics="currency-code"/>
+        <Property Name="OrderDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date" sap:label="Sipariş Tarihi"/>
+        <Property Name="Status" Type="Edm.String" MaxLength="1" sap:label="Durum"/>
+        <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Yaratma Zamanı"/>
+        <Property Name="Urgent" Type="Edm.Boolean" sap:label="Acil"/>
+        <NavigationProperty Name="ToItems" Relationship="ZBC000_DEMO_SRV.assoc_Order_Item" FromRole="FromRole_assoc_Order_Item" ToRole="ToRole_assoc_Order_Item"/>
+      </EntityType>
+      <EntityType Name="SalesOrderItem" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="SalesOrder"/>
+          <PropertyRef Name="ItemNo"/>
+        </Key>
+        <Property Name="SalesOrder" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Sipariş"/>
+        <Property Name="ItemNo" Type="Edm.String" Nullable="false" MaxLength="6" sap:label="Kalem"/>
+        <Property Name="Material" Type="Edm.String" MaxLength="18" sap:label="Malzeme"/>
+        <Property Name="MaterialName" Type="Edm.String" MaxLength="15" sap:label="Malzeme Tanımı"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Precision="13" Scale="3" sap:unit="Unit" sap:label="Miktar"/>
+        <Property Name="Unit" Type="Edm.String" MaxLength="3" sap:label="Ölçü Birimi" sap:semantics="unit-of-measure"/>
+        <Property Name="NetAmount" Type="Edm.Decimal" Precision="7" Scale="2" sap:unit="Currency" sap:label="Net Tutar"/>
+        <Property Name="Currency" Type="Edm.String" MaxLength="5" sap:label="Para Birimi" sap:semantics="currency-code"/>
+      </EntityType>
+      <EntityType Name="CustomerVH" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="Customer"/>
+        </Key>
+        <Property Name="Customer" Type="Edm.String" Nullable="false" MaxLength="10" sap:label="Müşteri"/>
+        <Property Name="CustomerName" Type="Edm.String" MaxLength="40" sap:label="Müşteri Adı"/>
+        <Property Name="City" Type="Edm.String" MaxLength="40" sap:label="Şehir"/>
+        <Property Name="Logo" Type="Edm.Binary" sap:label="Logo"/>
+      </EntityType>
+      <Association Name="assoc_Order_Item" sap:content-version="1">
+        <End Type="ZBC000_DEMO_SRV.SalesOrder" Multiplicity="1" Role="FromRole_assoc_Order_Item"/>
+        <End Type="ZBC000_DEMO_SRV.SalesOrderItem" Multiplicity="*" Role="ToRole_assoc_Order_Item"/>
+        <ReferentialConstraint>
+          <Principal Role="FromRole_assoc_Order_Item">
+            <PropertyRef Name="SalesOrder"/>
+          </Principal>
+          <Dependent Role="ToRole_assoc_Order_Item">
+            <PropertyRef Name="SalesOrder"/>
+          </Dependent>
+        </ReferentialConstraint>
+      </Association>
+      <EntityContainer Name="ZBC000_DEMO_SRV_Entities" m:IsDefaultEntityContainer="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="SalesOrderSet" EntityType="ZBC000_DEMO_SRV.SalesOrder" sap:content-version="1"/>
+        <EntitySet Name="SalesOrderItemSet" EntityType="ZBC000_DEMO_SRV.SalesOrderItem" sap:content-version="1"/>
+        <EntitySet Name="CustomerVHSet" EntityType="ZBC000_DEMO_SRV.CustomerVH" sap:content-version="1"/>
+        <AssociationSet Name="assoc_Order_Item_set" Association="ZBC000_DEMO_SRV.assoc_Order_Item" sap:content-version="1">
+          <End EntitySet="SalesOrderSet" Role="FromRole_assoc_Order_Item"/>
+          <End EntitySet="SalesOrderItemSet" Role="ToRole_assoc_Order_Item"/>
+        </AssociationSet>
+        <FunctionImport Name="ReleaseOrder" ReturnType="ZBC000_DEMO_SRV.SalesOrder" EntitySet="SalesOrderSet" m:HttpMethod="POST">
+          <Parameter Name="SalesOrder" Type="Edm.String" Mode="In" MaxLength="10"/>
+        </FunctionImport>
+      </EntityContainer>
+      <Annotations Target="ZBC000_DEMO_SRV.SalesOrder/Customer" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="com.sap.vocabularies.Common.v1.ValueList">
+          <Record>
+            <PropertyValue Property="Label" String="Müşteri"/>
+            <PropertyValue Property="CollectionPath" String="CustomerVHSet"/>
+            <PropertyValue Property="SearchSupported" Bool="true"/>
+            <PropertyValue Property="Parameters">
+              <Collection>
+                <Record Type="com.sap.vocabularies.Common.v1.ValueListParameterInOut">
+                  <PropertyValue Property="LocalDataProperty" PropertyPath="Customer"/>
+                  <PropertyValue Property="ValueListProperty" String="Customer"/>
+                </Record>
+                <Record Type="com.sap.vocabularies.Common.v1.ValueListParameterOut">
+                  <PropertyValue Property="LocalDataProperty" PropertyPath="CustomerName"/>
+                  <PropertyValue Property="ValueListProperty" String="CustomerName"/>
+                </Record>
+              </Collection>
+            </PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

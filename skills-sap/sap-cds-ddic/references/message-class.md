@@ -88,7 +88,7 @@ Metin XML kaçışlı (`&` `<` `>` `"`).
 Arka uç iki yol izliyor: `If-Match` varsa ETag karşılaştırması açılır ve ardından enqueue yeniden kontrol edilir; kontrol kendi kilidimizi
 "başka oturum" sayar (**self-collision** → 403). `If-Match` yoksa ETag kontrolü atlanır ve yalnız query'deki `lockHandle` doğrulanır.
 Eclipse ADT RFC üzerinden konuştuğu için bu HTTP yolunu görmez. Aynı kural DTEL güncellemesi (`domain-dtel.md` §5.3) ve Z tablo
-kaynak PUT'unda (`tables-structures.md` §3.2) geçerlidir; **table type PUT'u istisnadır** (`tables-structures.md` §2.3). Genelleme yapma.
+kaynak PUT'unda (`tables-structures.md` §3.2) geçerlidir; **table type PUT'u istisnadır** (`table-types.md` §4.3). Genelleme yapma.
 
 ### 3.5 Yerine yazma semantiği
 PUT gövdesindeki mesaj listesi mevcut listenin **yerine geçer**: 5 mesaj varken 3 mesajlık PUT → 3 mesaj kalır. Mesaj eklemek =

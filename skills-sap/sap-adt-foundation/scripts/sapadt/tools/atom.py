@@ -1167,7 +1167,8 @@ _KABUK_SONRAKI_ADIM = {
     "enqu": ("Kilit objesi İNAKTİF ve ENQUEUE_/DEQUEUE_ FM'leri üretilmemiş durumda. Sıradaki: "
              "adt_activate(object_type='enqu')."),
     "ttyp": ("Sıradaki: adt_activate(ttyp) → adt_sql_query ile DD40L.ROWTYPE dolu mu doğrula (ROWTYPE NULL "
-             "kalabilir)."),
+             "kalabilir). Yeni tablo tipi için tercih: adt_ttyp_create (yaratma + aktivasyon + iki kanallı "
+             "readback + boş satır tipi düzeltmesi tek çağrıda)."),
 }
 
 
@@ -1311,21 +1312,36 @@ def _yeni_kabuk(tip: str, object_type: str, name: str, package: str, transport: 
             "exists_after": s["var"], "exists_probe": s["sonda"], "client_log": log_text}
 
 
+def _varlik_olcumu(name: str, object_type: str) -> tuple[Optional[bool], str, dict]:
+    """`_varlik_sondasi` + ham `adt_get` yanıtı (ör. tablo/yapı kardeş ucunda bulunduysa `resolved_type`).
+
+    ⛔ Tablo/yapı kardeş ucu (2026-09-21): ilk uç 404 verip KARDEŞ uç ÖLÇÜLEMEDİYSE (`sibling_probe: unavailable:…`)
+    `adt_get` `exists:false` döner ama yokluk yalnız ilk uç için kanıtlıdır → burada `None` (ÖLÇÜLEMEDİ). Eskiden
+    `False` dönüyordu: aynı adlı tablo/yapı orada duruyor olabilirken yaratma kapısı "yok" okuyordu.
+    """
+    try:
+        p = adt_get(name=name, object_type=object_type, include_source=False)
+    except Exception as exc:  # noqa: BLE001 — teshis bozulmasin
+        return None, "unavailable:%s" % type(exc).__name__, {}
+    if p.get("ok") is True and p.get("exists") is True:
+        return True, "checked_found", p
+    if p.get("ok") is True and p.get("exists") is False:
+        kardes = p.get("sibling_probe")
+        if isinstance(kardes, str) and kardes.startswith("unavailable"):
+            return None, "unavailable:sibling_%s" % kardes.split(":", 1)[-1], p
+        return False, "checked_absent", p
+    return None, "unavailable:%s" % (p.get("error") or "bilinmeyen"), p
+
+
 def _varlik_sondasi(name: str, object_type: str) -> tuple[Optional[bool], str]:
     """Create hatasi SONRASI objenin GERCEKTEN var olup olmadigini olc.
 
     Uc-degerli: `True` (var) · `False` (yok) · `None` (OLCULEMEDI — "yok" DEGIL).
     ⛔ `None`'i "yaratilmadi" diye okuma; bu ayrimin kaybi kaydin ta kendisidir.
+    Tablo/yapıda kardeş uç ölçülemezse de `None` (bkz. `_varlik_olcumu`).
     """
-    try:
-        p = adt_get(name=name, object_type=object_type, include_source=False)
-    except Exception as exc:  # noqa: BLE001 — teshis bozulmasin
-        return None, "unavailable:%s" % type(exc).__name__
-    if p.get("ok") is True and p.get("exists") is True:
-        return True, "checked_found"
-    if p.get("ok") is True and p.get("exists") is False:
-        return False, "checked_absent"
-    return None, "unavailable:%s" % (p.get("error") or "bilinmeyen")
+    var, sonda, _p = _varlik_olcumu(name, object_type)
+    return var, sonda
 
 
 @profil_tool()
@@ -1463,9 +1479,14 @@ def adt_post_shell(
 
 # ── aXet 2026-09-13: kaynak yazma — tipe özel yollar (IMPLEMENTATION.md §14.3) ─────────────────
 _BDEF_TIPLERI = frozenset({"bdef", "behaviordefinition"})
-# Yazma yolu canlı ölçülmüş alt-include segmentleri: testclasses (adt-classes.md §24.8) ·
-# implementations (adt-rap.md §32.6h + object_types Q283 PUT). definitions/macros yalnız GET ölçüldü.
-_YAZILABILIR_INCLUDE = frozenset({"testclasses", "implementations"})
+# Yazılabilir alt-include segmentleri. Yazma yolu CANLI ölçülmüş: testclasses (adt-classes.md §24.8) ·
+# implementations (adt-rap.md §32.6h + object_types Q283 PUT). Z41 (2026-09-21): definitions (CCDEF) ve
+# macros (CCMAC) AYNI yoldan (`push_class_include`: yoksa POST iskelet → PUT gövde → bayt readback) açıldı.
+# YAZMA yolu CANLI ÖLÇÜLDÜ (2026-09-21, DEV, bir Z sınıfı): PUT /includes/definitions ve /includes/macros →
+# sınıf aktivasyonu → aktif readback eşit (bytes_live/verified); kontrol grubu aynı turda ccimp (implementations).
+# ⇒ Ölçülmemiş yazma segmenti KALMADI; küme boş tutulur (yeni segment eklenirse ÖNCE buraya, ölçülünce çıkar).
+_YAZILABILIR_INCLUDE = frozenset({"testclasses", "implementations", "definitions", "macros"})
+_YAZMA_OLCULMEDI_INCLUDE: frozenset = frozenset()
 _PUSH_DESTEKSIZ = {
     "srvb": "SRVB kaynak metni taşımaz; yayın için adt_publish_service.",
     "servicebinding": "SRVB kaynak metni taşımaz; yayın için adt_publish_service.",
@@ -1627,7 +1648,7 @@ def adt_push_source(
     Args:
         name: Object name (Z*/Y*).
         object_type: 'class', 'ddls', 'prog', 'tabl', ... · aXet: 'bdef' (LOCK→PUT→UNLOCK, aktive
-            ETMEZ; transport zorunlu) · 'ccimp'/'ccau' (sınıf alt-include'u — `name` = ANA SINIF;
+            ETMEZ; transport zorunlu) · 'ccimp'/'ccau'/'ccdef'/'ccmac' (sınıf alt-include'u — `name` = ANA SINIF;
             transport zorunlu; ana sınıf aktive edilir) · 'func' (FM kaynağı; fonksiyon grubu canlıdan
             çözülür ve Z/Y olmalı; aktive edilir). 'srvb'/'msag'/'enqu' → unsupported_type.
         source: Source body text (full content; partial diffs not supported).
@@ -1663,7 +1684,7 @@ def adt_push_source(
     if sinif_include and include_kind not in _YAZILABILIR_INCLUDE:
         return {"ok": False, "error": "unsupported_type", "name": name, "type": object_type,
                 "message": (f"'{include_kind}' alt-include'una YAZMA yolu canlı ölçülmedi (yalnız GET ölçüldü); "
-                            f"desteklenen: {', '.join(sorted(_YAZILABILIR_INCLUDE))} (ccimp/ccau).")}
+                            f"desteklenen: {', '.join(sorted(_YAZILABILIR_INCLUDE))} (ccau/ccimp/ccdef/ccmac).")}
     if tip in _PUSH_DESTEKSIZ:
         return {"ok": False, "error": "unsupported_type", "name": name, "type": object_type,
                 "message": f"adt_push_source '{object_type}' desteklenmiyor: {_PUSH_DESTEKSIZ[tip]}"}
@@ -1806,6 +1827,7 @@ def adt_push_source(
                 resp["function_group"] = fm_grubu
             if sinif_include:
                 resp["include"] = include_kind
+                resp["write_path_measured"] = include_kind not in _YAZMA_OLCULMEDI_INCLUDE
             if not resp["ok"] and result.get("error"):
                 resp["error"] = "push_failed"
                 resp["message"] = str(result.get("error"))[:800]

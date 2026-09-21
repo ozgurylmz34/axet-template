@@ -1312,3 +1312,31 @@ B1'in 4 zinciri artık ALT KÜME) · `B1e` (elle-liste → koddan türeyen küme
 **DOĞRULANMADI:** gerçek SAP'ye karşı hiçbir süre · 900 sn üst sınırın pratikte anlamlılığı · Windows dışı davranış ·
 canlı gate'lerin (`check_table_field_drop`, `check_sap_active_version`, `check_sap_struct_consistency`,
 `check_standard_table_fields`) KENDİ içlerine bütçe eklenmesinin etkisi (eklenmedi; zincir katmanı kesiyor).
+
+## 21. DDIC şeridi — Z tablo, tablo tipi, metin havuzu, `ccdef`/`ccmac` (2026-09-21, Z38-Z41)
+
+Kaynak reçeteler (çekirdek playbook: Z tablo bölümü, tablo tipi bölümü, metin havuzu "6 zorunlu cephe"; ilgili ders + kontrol
+listesi maddeleri) okundu, genelleştirilerek taşındı. **Hiçbiri canlı SAP'de yazılarak ölçülmedi** (şerit brifinginde canlı yazma onayı yok);
+yalnız okuma kalibrasyonu canlı yapıldı (DD40L kolonları + XML ↔ DD40L eşlemesi, standart tablo tipinde).
+
+| Dosya | Ne |
+|---|---|
+| `tools/ddic.py` | `adt_table_create`, `adt_ttyp_create` (`available_on=("s4_private",)`) |
+| `tools/textpool.py` | `adt_textpool_write` (`s4_private`) |
+| `lib/utils/ddic_tablo.py` | tablo ön kontrolü (T1-T9) · DDL render · aktif DDL readback kıyası (varsayılan `client : abap.clnt` kabuğunu yakalar) |
+| `lib/utils/ddic_ttyp.py` | tablo tipi ön kontrolü (Y1-Y6) · POST/düzeltme XML'i · XML okuyucu · DD40L sorgusu · iki kanal kıyası |
+| `lib/utils/textpool.py` | metin havuzu ön kontrolü (P1-P7) · CRLF yük üretimi · ayrıştırma · silinecek giriş · aktif readback kıyası |
+| `lib/sap_adt_lib.py` | `create_table_with_ddl`: kabuk POST (DDL'siz) → stateful LOCK → PUT (If-Match yok, corrNr = kilit CORRNR) → UNLOCK finally; hata `stage` taşır |
+| `_reviewer.py` | `run_reviewer_tablo` + `COMPOSITE_TOOL_TO_TASK["adt_table_create"] = "table_creation"` |
+| `gate.py` / `guardrails.py` / `hints.py` / `tools/shells.py` / `tools/atom.py` | transport listesi, reviewer listesi, `TMP_MUAF_ARACLAR += adt_ttyp_create`, ipucu tipleri, `table` desteksiz metni, ttyp sonraki adım, `_YAZILABILIR_INCLUDE += definitions, macros` + `write_path_measured` |
+
+Kararlar: `adt_table_create` `$TMP`'de de transport ister (transportsuz kilit ölçülmedi; yapı aracıyla aynı gerekçe — canlı ölçüm planında ayrı
+adım, sonuca göre lider açar) · tablo tipinde birincil ölçü DD40L, iki kanal çelişkisi FAIL, düzeltme tek sefer · metin havuzunda başlıklar
+desteklenmez, canlıdaki girişi silecek PUT `allow_remove` olmadan yazılmaz · `ccdef`/`ccmac` yazma yolu ölçülmediği için yanıt beyan eder.
+
+Testler: `tests/test_ddic_textpool.py` (19) + `test_new_write_tools.py` B2 güncellendi, B2b eklendi. Red-first: taban kopyada `ImportError`
+(ddic) ve B2/B2b FAIL. Mutasyonlar (repo dışı kopya) ve kırılan testler: düzeltme dalı silindi → Y2 + Y3 · kanal çelişkisi dalı → Y4 ·
+tablo PUT'a If-Match → T1 · varsayılan kabuk tespiti → T2 · `=?` kontrolü → P3 · PROG/PX aktivasyonu → P1 · silme koruması → P2 ·
+ccdef/ccmac çıkarıldı → B2 + B2b.
+
+**DOĞRULANMADI:** üç aracın canlı yazma yolu · `ccdef`/`ccmac` PUT · tablo tipi düzeltme PUT'u · `keyComponents` POST biçimi · transportsuz tablo kilidi.

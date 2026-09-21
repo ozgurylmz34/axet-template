@@ -72,9 +72,19 @@ Klasik program (rapor, module pool, Dynpro) tüm kodu tek `REPORT` gövdesinde t
   `…textelements.symbols.v1`, selections `…textelements.selections.v1`); `text/plain` → 406 ve sunucu doğru tipi
   gövdede yazar — tipi tahmin etme, 406 gövdesini oku.
 
-**aXet'te araç yok: `push_textpool.py` (metin havuzu yazma) — script aktarımı bekliyor.** CLI'de bu uçlara yazan
-araç yoktur; ham REST ile yazma. Seçenek: metinleri `master_language`'de hazırlayıp kullanıcıya ver, kullanıcı
-SE38 → Git → Metin elemanları ekranında girer ve kaydeder/aktive eder; sonra ekranı KAPATIR.
+**aXet aracı: `adt_textpool_write` (2026-09-21; yalnız `s4_private`; çevrimdışı test edildi, canlı DOĞRULANMADI).** Yukarıdaki altı
+noktayı araç uygular; biçimi de araç üretir (yapılı girdi):
+```
+cli adt_textpool_write --args-file tp.json --sap-write --scope S1 --reason "<gerekçe>"
+```
+`tp.json`: `{"name":"ZSD001_P_ORNEK","transport":"<TRANSPORT>","symbols":[{"key":"B01","text":"<metin>"}],
+"selections":[{"name":"P_BUKRS","text":"<metin>"}]}` — `max_length` verilmezse metnin uzunluğu; aşım ağa gitmeden BLOCKER (DS512).
+- PUT alt kaynağın **tamamını** değiştirir: canlıda olup girdide olmayan giriş silinecekse araç `would_remove_entries` ile durur.
+  Mevcut girişleri girdiye ekle; silme gerçekten isteniyorsa kullanıcı onayıyla `allow_remove=true`.
+- `ok:true` yalnız `?version=active` okumasında her beklenen giriş aynı metinle varsa; `=?` / eksik / farklı → `readback_mismatch`.
+- `lock_failed` = kilit alınamadı ya da gerçek tutamaç yok → yazılmadı; kilit silinmez (kesin yasak C), sahibini kullanıcıya bildir.
+- Liste başlıkları (headings) araçta yok (biçim belgelenmedi) ve diğer profillerde araç kapalı → metinleri `master_language`'de
+  hazırlayıp kullanıcıya ver; kullanıcı SE38 → Git → Metin elemanları ekranında girer, kaydeder/aktive eder, ekranı KAPATIR.
 
 ## 4. Program açıklaması (TRDIRT) değişikliği
 Kaynak araç setinde ADT'den değiştirilemedi (metadata PUT/kilit yolu 406/404/403; aynı objeye kaynak push'u

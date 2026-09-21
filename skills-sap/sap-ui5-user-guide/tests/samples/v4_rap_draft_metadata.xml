@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_COMMON',Version='0001',SAP__Origin='LOCAL')/$value">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="SAP__common"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="com.sap.gateway.srvd.zbc000_ui_order.v0001" Alias="SAP__self" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="DraftAdministrativeDataType">
+        <Key>
+          <PropertyRef Name="DraftUUID"/>
+        </Key>
+        <Property Name="DraftUUID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="CreationDateTime" Type="Edm.DateTimeOffset" Precision="7"/>
+        <Property Name="InProcessByUser" Type="Edm.String" MaxLength="12"/>
+      </EntityType>
+      <EntityType Name="OrderType">
+        <Key>
+          <PropertyRef Name="OrderUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="OrderUUID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="OrderID" Type="Edm.String" Nullable="false" MaxLength="8"/>
+        <Property Name="CustomerID" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="Description" Type="Edm.String" Nullable="false" MaxLength="30"/>
+        <Property Name="OrderDate" Type="Edm.Date"/>
+        <Property Name="GrossTotal" Type="Edm.Decimal" Nullable="false" Precision="9" Scale="2"/>
+        <Property Name="CurrencyCode" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="OverallStatus" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="City" Type="Edm.String" Nullable="false" MaxLength="40"/>
+        <Property Name="LocalLastChangedAt" Type="Edm.DateTimeOffset" Precision="7"/>
+        <Property Name="Attachment" Type="Edm.Stream"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" Nullable="false"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" Nullable="false"/>
+        <NavigationProperty Name="DraftAdministrativeData" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.DraftAdministrativeDataType" ContainsTarget="true"/>
+        <NavigationProperty Name="SiblingEntity" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType"/>
+        <NavigationProperty Name="_Item" Type="Collection(com.sap.gateway.srvd.zbc000_ui_order.v0001.ItemType)" Partner="_Order"/>
+      </EntityType>
+      <EntityType Name="ItemType">
+        <Key>
+          <PropertyRef Name="ItemUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="ItemUUID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="ParentUUID" Type="Edm.Guid" Nullable="false"/>
+        <Property Name="ItemPosition" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="ProductName" Type="Edm.String" Nullable="false" MaxLength="20"/>
+        <Property Name="Quantity" Type="Edm.Int32" Nullable="false"/>
+        <Property Name="QuantityUnit" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="UnitPrice" Type="Edm.Decimal" Nullable="false" Precision="9" Scale="2"/>
+        <Property Name="GrossAmount" Type="Edm.Decimal" Nullable="false" Precision="9" Scale="2"/>
+        <Property Name="CurrencyCode" Type="Edm.String" Nullable="false" MaxLength="3"/>
+        <Property Name="DeliveryDate" Type="Edm.Date"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" Nullable="false"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" Nullable="false"/>
+        <NavigationProperty Name="DraftAdministrativeData" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.DraftAdministrativeDataType" ContainsTarget="true"/>
+        <NavigationProperty Name="SiblingEntity" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.ItemType"/>
+        <NavigationProperty Name="_Order" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType" Nullable="false" Partner="_Item">
+          <ReferentialConstraint Property="ParentUUID" ReferencedProperty="OrderUUID"/>
+        </NavigationProperty>
+      </EntityType>
+      <EntityType Name="CustomerVHType">
+        <Key>
+          <PropertyRef Name="CustomerID"/>
+        </Key>
+        <Property Name="CustomerID" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="CustomerName" Type="Edm.String" Nullable="false" MaxLength="40"/>
+        <Property Name="City" Type="Edm.String" Nullable="false" MaxLength="40"/>
+      </EntityType>
+      <EntityType Name="StatusVHType">
+        <Key>
+          <PropertyRef Name="Status"/>
+        </Key>
+        <Property Name="Status" Type="Edm.String" Nullable="false" MaxLength="10"/>
+        <Property Name="StatusText" Type="Edm.String" Nullable="false" MaxLength="60"/>
+      </EntityType>
+      <Action Name="Activate" EntitySetPath="_it" IsBound="true">
+        <Parameter Name="_it" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType" Nullable="false"/>
+        <ReturnType Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType" Nullable="false"/>
+      </Action>
+      <Action Name="releaseOrder" EntitySetPath="_it" IsBound="true">
+        <Parameter Name="_it" Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType" Nullable="false"/>
+        <ReturnType Type="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType" Nullable="false"/>
+      </Action>
+      <EntityContainer Name="Container">
+        <EntitySet Name="Order" EntityType="com.sap.gateway.srvd.zbc000_ui_order.v0001.OrderType">
+          <NavigationPropertyBinding Path="SiblingEntity" Target="Order"/>
+          <NavigationPropertyBinding Path="_Item" Target="Item"/>
+        </EntitySet>
+        <EntitySet Name="Item" EntityType="com.sap.gateway.srvd.zbc000_ui_order.v0001.ItemType">
+          <NavigationPropertyBinding Path="SiblingEntity" Target="Item"/>
+          <NavigationPropertyBinding Path="_Order" Target="Order"/>
+        </EntitySet>
+        <EntitySet Name="Customer" EntityType="com.sap.gateway.srvd.zbc000_ui_order.v0001.CustomerVHType"/>
+        <EntitySet Name="ZBC000_I_StatusVH" EntityType="com.sap.gateway.srvd.zbc000_ui_order.v0001.StatusVHType"/>
+      </EntityContainer>
+      <Annotations Target="SAP__self.Container/Order">
+        <Annotation Term="SAP__common.DraftRoot">
+          <Record>
+            <PropertyValue Property="ActivationAction" String="com.sap.gateway.srvd.zbc000_ui_order.v0001.Activate"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="SAP__self.OrderType/CustomerID">
+        <Annotation Term="SAP__common.Label" String="Müşteri"/>
+        <Annotation Term="SAP__common.ValueList">
+          <Record>
+            <PropertyValue Property="CollectionPath" String="Customer"/>
+            <PropertyValue Property="Parameters">
+              <Collection>
+                <Record Type="SAP__common.ValueListParameterInOut">
+                  <PropertyValue Property="LocalDataProperty" PropertyPath="CustomerID"/>
+                  <PropertyValue Property="ValueListProperty" String="CustomerID"/>
+                </Record>
+              </Collection>
+            </PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="SAP__self.OrderType/OverallStatus">
+        <Annotation Term="SAP__common.Label" String="Durum"/>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

@@ -66,12 +66,15 @@ Her şeyi değil, ilgili olanı oku.
 | Web/doküman araştırması (SAP Help, not, public kod) | `%research` |
 | SAP'ye CLI ile yazılmayacak teslim (abapGit ZIP; içe aktarımı geliştirici yapar) | `%sap-abapgit-delivery` |
 | FS/TS/KD yazımı, doküman incelemesi, kullanıcı kılavuzu PDF'i, TS build öncesi canlı teyit | `%sap-fs-ts-docs` |
+| Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (mock veriyle çekim, HTML + PDF) | `%sap-ui5-user-guide` |
 
 **Araç sınırı (otorite `--list` + `%sap-adt-foundation` → `tool-catalog.md`):** 2026-09-13'te eklenen yollar — kabuk
 `ddls`/`srvd`/`bdef`/`fugr`/`func`/`msag`/`enqu`/`ttyp`, push `bdef`/`ccimp`/`ccau`/`func`, klasik ekran
 `adt_screen_generate`, mesaj yazma `adt_msgclass_write` ve açıklama değiştirme `adt_set_description` (ikisi yalnız `s4_private`),
 okuma `adt_revisions`/`adt_object_structure`/`adt_system_info`, bağlantı teşhisi `sap_doctor`, domain ön kontrolü — çevrimdışı test edildi, canlı
-DOĞRULANMADI (`fugr`/`func`/ekran yalnız `ecc`/`s4_private`). Hâlâ yok: DDLX/DCL/SRVB ve Z tablo kabuğu, table type satır tipi düzeltme, FM RFC-enable, metin havuzu,
+DOĞRULANMADI (`fugr`/`func`/ekran yalnız `ecc`/`s4_private`). 2026-09-21 eki (yalnız `s4_private`, çevrimdışı test edildi, canlı
+DOĞRULANMADI): Z tablo `adt_table_create`, tablo tipi `adt_ttyp_create` (satır tipi düzeltmesi dahil), metin havuzu `adt_textpool_write`,
+push `ccdef`/`ccmac`. Hâlâ yok: DDLX/DCL/SRVB, FM RFC-enable, metin havuzu başlıkları,
 `$metadata` okuma. İlgili skill'in araç tablosu yolu söyler; araç yoksa işi kullanıcı SAP GUI/ADT'de yapar,
 okuma/doğrulama CLI ile yapılır.
 
@@ -90,8 +93,9 @@ kapsam beyanıyla yaz, sistemden tekrar okuyarak doğrula, inaktif obje kalmadı
 | Transport | Yaratılmaz, uydurulmaz; kullanıcıdan istenir. İş bir transporta bağlıysa aynısıyla devam edilir. |
 | Paket | Yaratılmaz; hangisinin kullanılacağı sorulur. |
 | Yeni program / include | Yaratmadan önce TITLE istenir; include TITLE'ına tip soneki eklenir (`references/naming.md` §6). |
-| Yeni DDIC tablo | Alanlar, her alanın data element'i, anahtar ve uzunluklar gösterilir; açık onay alınır. İstemci alanı `mandt : mandt`. |
-| DTEL / append alanı adı | AI önermez; kullanıcı belirler. |
+| Yeni DDIC tablo | Alanlar, her alanın data element'i, anahtar ve uzunluklar gösterilir; açık onay alınır. İstemci alanı `mandt : mandt`. Yönetim alanları (oluşturan/zaman, son değiştiren/zaman, RAP'ta ETag için yerel son değişiklik zamanı) tasarımda listelenir. |
+| Yeni Z DDIC objesinin adı (domain, data element, tablo, yapı, tablo tipi, kilit objesi, arama yardımı…; NR objesi dahil) | Öneri sunabilirsin, ama sırayla: ① önce yeniden kullanım — released/standart ya da mevcut Z obje yeterli mi (`references/naming.md` §5) ② değilse adlandırma standardına ve paket `.rules.md` öneklerine uygun ad (`references/naming.md` §4; uzunluk: genel ≤ 30, tablo ≤ 16, NR objesi ≤ 10) ③ **her adı canlıda kontrol et** (`adt_search_objects` / `adt_get`; NR objesi için sistemdeki NR tanımı) — varsa başka ad öner ④ tablo hâlinde sun (ad · tip · amaç · canlı kontrol sonucu) ⑤ kullanıcının **açık onayı** olmadan o adla yaratma. Genel mutabakat ("devam et") ad onayı sayılmaz: tablo açıkça onaylanır, intake'te ad başına `ONAY` kutusu. |
+| Standart objeye append alanı / append yapı adı | AI önermez; kullanıcı belirler (kesin yasak A — çekirdekteki "DTEL adı" ifadesi bu append alanının DTEL'idir). |
 | Z obje açıklama ve etiketleri | Spesifikasyondan ya da eski sistemden alınır; tahmin edilmez. |
 | Spesifikasyon ↔ eski sistem kaynağı | Spesifikasyon karar otoritesidir; eski kaynak yalnız yapı deseni (join, formül) için okunur. Spesifikasyonda silinen alan kaynağa girmez. Spesifikasyon yoksa eski sisteme kendiliğinden dönme: kullanıcıdan onay iste. |
 

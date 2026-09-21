@@ -156,7 +156,9 @@ yeni biçimle** yaratılır.
 Yeni alan tiplerken yeni obje yaratmadan önce mevcudu ara:
 1. Released standart data element.
 2. Mevcut Z data element (bu paket ya da ortak paket) — kopya yaratma.
-3. Yoksa yeni Z data element: 4 etiket `master_language`'de ve tam (kesin yasak D); adı kullanıcıdan.
+3. Yoksa yeni Z data element: 4 etiket `master_language`'de ve tam (kesin yasak D). Adı bu standarda uygun
+   **önerebilirsin**; canlıda kontrol et (varsa başka ad), kullanıcı açıkça onaylamadan yaratma (`SKILL.md` §6).
+   Standart objeye append alanının adı ise önerilmez (§4.6, kesin yasak A).
 4. Son çare ilkel tip (`abap.char(n)` …) — tercih edilmez.
 
 Ortak master/value-help CDS için yerel kopya yaratılmaz: ortak view yeniden kullanılır, association kurulur.

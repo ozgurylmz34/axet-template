@@ -35,6 +35,12 @@ denetler; kapı yalnız yolu denetler: proje-göreli, `.axet-code/intake/` altı
 | 7 | Açık kararlar / riskler | — | Karar bekleyen her madde; yoksa "yok" |
 | 8 | **MUTABAKAT** | ✅ (işaretli) | Kullanıcı onayından sonra işaretlenir |
 
+**Ek bölümler (şablonda var, script bakmaz — manuel kontrol; kurallar `protocol.md` §6 S2 adım 1):** Sistem sürümü ·
+Etkilenen objeler altındaki ad/canlı kontrol/`ONAY: [ ]` tablosu · Tablo yönetim alanları · Kural taraması · Öz-tutarlılık.
+Tablo satırları (`|` ile başlayan) alan değerine katılmaz; zorunlu alanın **ilk satırı** yine doldurulmalıdır.
+⚠ Bu bölümlerdeki kutulara (`[ ]`) `mutabakat` ya da `sign-off` kelimesi yazma: o satırda `[x]` olursa script onu kullanıcı
+onayı sayar.
+
 ## Script ne arar
 Tüm kontroller koşar ve **bütün bulgular birlikte**, adlarıyla raporlanır (kaynak kapı ilk bulguda duruyordu; aXet script'i
 durmaz). Herhangi bir bulgu = çıkış 1. İstisna: dosya yoksa yalnız o bulgu döner; prior-art biçimi yalnız alan varsa ve doluysa denetlenir.
@@ -106,6 +112,10 @@ python <TEMPLATE>/skills-sap/sap-intake-triage/scripts/check_intake_signoff.py .
 |---|---|
 | Etkilenen Z objeler canlı doğrulandı mı (hafıza hipotezi değil)? Her obje için araç çıktısı referansı var mı? | engelleyici |
 | Kabul kriterleri EARS kalıbında ve test edilebilir mi? | uyarı |
+| Her yeni Z obje adı canlıda kontrol edildi ve `ONAY` kutusu kullanıcı onayıyla işaretli mi? | engelleyici |
+| Kural taraması dolu mu; sapan her karar kullanıcıya soruldu mu? | engelleyici |
+| Sistem sürümü karşılaştırıldı mı (fark / okunamadı → soruldu)? | uyarı |
+| Öz-tutarlılık: riskler ve kabul kriterleri son kararlarla uyumlu mu? | engelleyici |
 
 ## Script'in kapsam beyanı (neye bakmaz)
 İçeriğin doğruluğu · objelerin gerçekten canlı doğrulandığı · EARS kalitesi · mutabakatın gerçekten kullanıcıdan geldiği ·

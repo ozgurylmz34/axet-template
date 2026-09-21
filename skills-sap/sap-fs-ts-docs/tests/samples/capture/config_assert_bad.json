@@ -1,0 +1,11 @@
+{
+  "url": "http://localhost:8080/index.html",
+  "steps": [
+    {"do": "assert_no_busy", "timeout": "10"},
+    {"do": "assert_text"},
+    {"do": "assert_text", "text": "   "},
+    {"do": "assert_text", "text": "x", "selector": 5},
+    {"do": "assert_in_viewport"},
+    {"do": "shot", "name": "kd-01.png"}
+  ]
+}

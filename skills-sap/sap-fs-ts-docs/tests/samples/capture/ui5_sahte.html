@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Sahte UI5 sayfası (capture_kd_screens doğrulama adımları testi)</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  #ust { height: 120px; }
+  #asagi { position: absolute; top: 3000px; left: 0; width: 200px; height: 50px; }
+  #yarim { position: absolute; top: 0; left: -100px; width: 200px; height: 50px; }
+  #gizli { display: none; }
+  #sapUiBusyIndicator { visibility: hidden; }
+</style>
+</head>
+<body>
+<!-- UI5 çalışma zamanının yalnız capture_kd_screens.js busyProbe'unun okuduğu yüzeyi taklit eder:
+     sap.ui.core.Element.registry.filter · sap.ui.require("sap/ui/core/BusyIndicator") · getBusy/getDomRef/getId ·
+     #sapUiBusyIndicator · .sapUiLocalBusyIndicator blok katmanı. Senaryo ?durum=<ad> ile seçilir. -->
+<div id="ust"><h1 id="baslik">Siparişler</h1><footer id="alt">Kaydet · İptal</footer></div>
+<div id="tablo" class="">Tablo</div>
+<div id="asagi">Aşağıda</div>
+<div id="yarim">Yarım</div>
+<div id="gizli">Gizli metin</div>
+<div id="sapUiBusyIndicator"></div>
+<script>
+(function () {
+  var durum = new URLSearchParams(location.search).get("durum") || "bos";
+  if (durum === "ui5yok") return;
+  function kontrol(id, mesgul) {
+    return { getId: function () { return id; }, getBusy: function () { return mesgul(); },
+             getDomRef: function () { return document.getElementById(id); } };
+  }
+  var tabloMesgul = durum === "yerel" || durum === "yerel-kapanir";
+  var kontroller = [kontrol("baslik", function () { return false; }),
+                    kontrol("tablo", function () { return tabloMesgul; }),
+                    kontrol("gizli", function () { return durum === "gizli-mesgul"; })];
+  var popupAcik = durum === "global";
+  var BI = { bOpenRequested: durum === "global-bekliyor", oPopup: { isOpen: function () { return popupAcik; } } };
+  window.sap = { ui: { core: { Element: { registry: { filter: function (f) { return kontroller.filter(f); } } } },
+                       require: function (ad) { return ad === "sap/ui/core/BusyIndicator" ? BI : undefined; } } };
+  if (durum === "yerel" || durum === "yerel-kapanir") {
+    var k = document.createElement("div");
+    k.className = "sapUiLocalBusyIndicator";
+    k.textContent = "…";
+    document.getElementById("tablo").appendChild(k);
+    document.getElementById("tablo").className = "sapUiLocalBusy";
+  }
+  if (durum === "artik-sinif") {
+    // UI5 unblock blok katmanını siler, ebeveyndeki sapUiLocalBusy sınıfını silmez → meşgul SAYILMAMALI
+    document.getElementById("tablo").className = "sapUiLocalBusy";
+  }
+  if (durum === "global-dom") {
+    document.getElementById("sapUiBusyIndicator").style.visibility = "visible";
+    document.getElementById("sapUiBusyIndicator").style.height = "10px";
+  }
+  // Freestyle sap.m: BusyDialog (iç Dialog 'sapMBusyDialog' sınıfı + isOpen) ve sap.m.BusyIndicator (.sapMBusyIndicator)
+  if (durum === "busydialog" || durum === "busydialog-dom") {
+    var d = document.createElement("div");
+    d.id = "bd-Dialog";
+    d.className = "sapMDialog sapMBusyDialog";
+    d.innerHTML = '<div class="sapMBusyIndicator" id="bd-busyInd">…</div>';
+    document.body.appendChild(d);
+    if (durum === "busydialog") {
+      kontroller.push({ getId: function () { return "bd-Dialog"; }, getBusy: function () { return false; },
+        getDomRef: function () { return d; }, isA: function (t) { return t === "sap.m.Dialog"; },
+        hasStyleClass: function (c) { return c === "sapMBusyDialog"; }, isOpen: function () { return true; } });
+    }
+  }
+  if (durum === "m-busy" || durum === "m-busy-gizli") {
+    var m = document.createElement("div");
+    m.id = "yukleniyor";
+    m.className = "sapMBusyIndicator";
+    m.textContent = "…";
+    if (durum === "m-busy-gizli") m.style.display = "none";
+    document.getElementById("ust").appendChild(m);
+  }
+  if (durum === "yerel-kapanir") {
+    setTimeout(function () {
+      tabloMesgul = false;
+      var b = document.querySelector("#tablo .sapUiLocalBusyIndicator");
+      if (b) b.remove();
+    }, 800);
+  }
+})();
+</script>
+</body>
+</html>

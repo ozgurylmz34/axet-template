@@ -50,7 +50,7 @@ Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A)
 |---|---|---|---|
 | DE-REUSE-1 | Önce released standart DTEL arandı; varsa yeni yaratılmıyor | BLOCKER | `naming.md` §5 |
 | DE-REUSE-2 | Aynı işi gören mevcut Z DTEL/domain arandı (`adt_search_objects`); kopya yok | BLOCKER | `naming.md` §5 |
-| DE-NAME | Domain `…_D_…`, DTEL `…_E_…`; **ad kullanıcıdan** | BLOCKER | `naming.md` §4.7 |
+| DE-NAME | Domain `…_D_…`, DTEL `…_E_…`; ad önerisi canlıda kontrol edildi (varsa başka ad) ve **kullanıcı açıkça onayladı** (`%sap-dev` §6) | BLOCKER | `naming.md` §4.7 |
 | DE-LANG | Oturum dili = `master_language`; yaratma sonrası metadata'dan `masterLanguage` okunacak | BLOCKER | kesin yasak D |
 | DE-LABEL | 4 etiket (kısa ≤10 · orta ≤20 · uzun ≤40 · başlık ≤55) tam ve dolu | BLOCKER | `domain-dtel.md` §1.2 |
 | DE-TEXT | Açıklama/etiket spesifikasyondan ya da eski sistemden; tahmin yok | BLOCKER | SAP çekirdeği |
@@ -112,6 +112,11 @@ Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponla
 | Ad `…_TT_…`; satır tipi (yapı) sistemde aktif | BLOCKER |
 | Yaratma sonrası `DD40L.ROWTYPE` dolu ve doğru yapı | BLOCKER |
 | RFC/`TABLES` parametresinde yapı değil table type kullanılıyor | BLOCKER |
+| Ek (2026-09-21, `table-types.md`): önce hazır standart tip arandı (ör. `BAPIRET2_T`); yeni tip gerçekten gerekli | WARNING |
+| Ek: ad canlıda `exists:false` ölçüldü; ad, kısa metin, satır tipi, erişim türü ve anahtar kullanıcıya gösterilip açık onay alındı | BLOCKER |
+| Ek: iki kanal readback — `DD40L` (ROWTYPE/DATATYPE, ACCESSMODE, KEYDEF, KEYKIND) **ve** ADT XML aynı şeyi söylüyor; biri boş biri dolu = FAIL | BLOCKER |
+| Ek: `adt_ttyp_create` `ok:false` (ör. `row_type_empty_after_repair`, `readback_unmeasured`) "tamam" diye raporlanmadı | BLOCKER |
+| Ek: tipi `TABLES` üzerinden içeride tam tipli parametreye devreden FM'e veren çağıran `WITH EMPTY KEY` değil `WITH DEFAULT KEY` kullanıyor (DDIC standart anahtar = `DEFAULT KEY`) | BLOCKER |
 
 ## 6. Lock object
 *(Kaynakta ayrı liste yok; `lock-objects.md`'den türetildi.)*

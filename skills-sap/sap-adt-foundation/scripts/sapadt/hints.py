@@ -44,9 +44,11 @@ GRUP_REFERANSLARI = {
 }
 # araç → obje tipi (sap_worktype_hint.py:36-40 + aXet araçları)
 ARAC_TIPI = {"adt_dtel_create": "dtel", "adt_domain_create": "doma", "adt_struct_create": "struct",
+             "adt_table_create": "tabl", "adt_ttyp_create": "ttyp", "adt_textpool_write": "prog",
              "adt_publish_service": "srvb", "adt_msgclass_write": "msag", "adt_screen_generate": "screen"}
 # kaynak metni taşıyan araç → kod inceleme skill'i; servis yayını → UI5 skill'i (ikisi de YAZILIYOR)
-ARAC_EK_REFERANS = {"adt_push_source": ("sap-code-review/SKILL.md",), "adt_publish_service": ("sap-ui5-fiori/SKILL.md",)}
+ARAC_EK_REFERANS = {"adt_push_source": ("sap-code-review/SKILL.md",), "adt_publish_service": ("sap-ui5-fiori/SKILL.md",),
+                    "adt_ttyp_create": ("sap-cds-ddic/references/table-types.md",)}
 
 
 def tip_grubu(otype) -> str | None:
@@ -60,7 +62,7 @@ def tip_grubu(otype) -> str | None:
         return "rap"
     if t.startswith(("doma", "dtel")) or t in ("dataelement", "domain"):
         return "ddic-dd"
-    if t.startswith("struct") or t.startswith("tabl") or t == "stru":
+    if t.startswith("struct") or t.startswith("tabl") or t in ("stru", "ttyp"):
         return "ddic-st"
     if t.startswith("prog") or "report" in t or "dynpro" in t or t in ("include", "incl"):
         return "classic"

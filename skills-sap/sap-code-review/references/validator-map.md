@@ -49,6 +49,7 @@ Bileşik araçlar (`COMPOSITE_TOOL_TO_TASK`):
 | `adt_struct_create` | `struct_creation` | yazılacak `fields[]` DDL'i (yazma yolunun aynı render'ı) her çağrıda `struct_fields_dtel` ile yazmadan önce denetlenir; `artifact_path` verilirse artefaktın `struct_creation` zinciri de koşar, hükümler birleşir; verilen yol yoksa `artifact_not_found` → BLOCKER |
 | `adt_domain_create` | `domain_creation_csv` | artefakt yolu verilmezse reviewer SKIP; formül kuralları araç içinde ayrıca koşar |
 | `adt_dtel_create` | `dtel_creation` | artefakt yolu verilmezse reviewer SKIP |
+| `adt_table_create` | `table_creation` | (2026-09-21) araç `fields[]`'ten kurduğu ve SAP'ye PUT edeceği DDL'in kendisini her çağrıda zincirden geçirir (dosya yazılamazsa BLOCKER); artefakt argümanı yok |
 
 ## 2. Görev → validator zinciri
 Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki önem (verdict'e böyle sayılır).

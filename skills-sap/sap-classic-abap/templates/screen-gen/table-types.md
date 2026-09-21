@@ -5,6 +5,8 @@
 > → `adt_activate` `ttyp` (`%sap-adt-foundation` → `references/tool-catalog.md`). **Hâlâ araç yok:** satır tipini düzeltme
 > (`ROWTYPE` boş kalırsa kullanıcı SE11'de düzeltir). Ham REST ile yaratılmaz. Yeni DDIC objesi = ad + kısa metin
 > **kullanıcı onayıyla** (kesin yasak D: `master_language`'de, boş değil — boş açıklama `ADR_0005_D` ile reddedilir).
+> **2026-09-21:** `s4_private`'ta tercih edilen yol `adt_ttyp_create` (yaratma + aktivasyon + iki kanallı readback + boş satır tipinde
+> bir kez düzeltme; canlı DOĞRULANMADI) — `%sap-cds-ddic` → `references/table-types.md` §3. Aşağıdaki kabuk yolu diğer profiller için durur.
 
 ## Neden tablo tipi şart
 FM imzasındaki `TABLES it_buttons TYPE …` / `TABLES it_fields TYPE …` satırları **tablo tipi** ister. Yapı adı yazılırsa
@@ -52,6 +54,6 @@ sap_adt_cli.py adt_inactive_objects
 ```
 - Beklenen: `exists:true`; metadata'da satır tipi ve `masterLanguage`. Tablo tipinin kaynak (`source/main`) ucu yoktur (yalnız XML).
 - Zorunlu: `sap_adt_cli.py adt_sql_query --args-json '{"query":"SELECT typename, rowtype FROM dd40l WHERE typename LIKE '"'"'ZBC000_TT_SCREEN_%'"'"'","row_limit":5}'`
-  → iki satır, `ROWTYPE` = ilgili yapı (`%sap-cds-ddic` → `tables-structures.md` §2.2: satır tipi sessizce boş kalabilir).
+  → iki satır, `ROWTYPE` = ilgili yapı (`%sap-cds-ddic` → `table-types.md` §4: satır tipi sessizce boş kalabilir).
 - Metadata satır tipini göstermiyorsa bu **ölçülemedi** demektir, "doğru" değil → kullanıcıya SE11'de satır tipini teyit ettir.
 - `adt_get` DDIC varlığında tek başına karar dayanağı değildir → `adt_search_objects {"query":"ZBC000_TT_SCREEN_*"}` ile çapraz kontrol.

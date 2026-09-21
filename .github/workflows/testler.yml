@@ -215,6 +215,16 @@ jobs:
         if: matrix.takim == 'kok'
         run: python -m unittest discover -s skills-sap/sap-code-review/tests -v
 
+      # Z49 (2026-09-21): belge skill'lerinin takimlari CI'da HIC kosmuyordu (yalniz tuketici
+      # guncellemesinde, harita.json uzerinden). Tarayici testleri varsayilan kapali, indirme yok.
+      - name: Belge skill takimlari (sap-fs-ts-docs + sap-ui5-user-guide)
+        if: matrix.takim == 'kok'
+        run: |
+          python skills-sap/sap-fs-ts-docs/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python skills-sap/sap-ui5-user-guide/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: SAP ADT foundation takimi
         if: matrix.takim == 'foundation'
         run: python skills-sap/sap-adt-foundation/tests/run_tests.py

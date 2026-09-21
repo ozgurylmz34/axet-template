@@ -605,6 +605,227 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.0",
+   "tarih": "2026-09-21",
+   "kalemler": [
+    {
+     "id": "0.5.0-01",
+     "baslik": "Yeni skill: `%sap-ui5-user-guide` — mock veriyle ekran görüntülü kullanıcı kılavuzu (HTML + PDF)",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Freestyle SAPUI5 + OData V2 (RAP) uygulamasını yerelde mock veriyle çalıştırıp Playwright ile ekranları çeker ve kullanıcı kılavuzunu `%sap-fs-ts-docs` boru hattıyla HTML ve PDF'e çevirir. Ortam kontrolü (`kd_ortam.py check`) eksik bağımlılığı kurmaz, yalnız komutunu yazar; `kd_ortam.py config` tarayıcıyı sistemdeki Chrome'a sabitler. `mock_veri.py` servis metadata'sından (V2 ve V4) tutarlı, kurgusal Türkçe veri üretir; aynı tohum aynı veriyi verir, elle düzeltilmiş dosyayı ezmez. Yerel sunucular yalnız 127.0.0.1'e bağlanır (şirket bilgisayarında güvenlik duvarı penceresi açılmasın diye).",
+     "dosyalar": [
+      "skills-sap/sap-ui5-user-guide/SKILL.md",
+      "skills-sap/sap-ui5-user-guide/references/akis.md",
+      "skills-sap/sap-ui5-user-guide/references/gorsel-kontrol.md",
+      "skills-sap/sap-ui5-user-guide/references/kesif-playwright-cli.md",
+      "skills-sap/sap-ui5-user-guide/references/mock-ortam.md",
+      "skills-sap/sap-ui5-user-guide/references/tuzaklar.md",
+      "skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py",
+      "skills-sap/sap-ui5-user-guide/scripts/mock_veri.py",
+      "skills-sap/sap-ui5-user-guide/tests/_common.py",
+      "skills-sap/sap-ui5-user-guide/tests/run_tests.py",
+      "skills-sap/sap-ui5-user-guide/tests/samples/v2_rap_draft_metadata.xml",
+      "skills-sap/sap-ui5-user-guide/tests/samples/v2_rap_siparis_metadata.xml",
+      "skills-sap/sap-ui5-user-guide/tests/samples/v2_siparis_metadata.xml",
+      "skills-sap/sap-ui5-user-guide/tests/samples/v4_rap_draft_metadata.xml",
+      "skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py",
+      "skills-sap/sap-ui5-user-guide/tests/test_mock_veri.py",
+      "skills-sap/sap-ui5-user-guide/tests/test_skill_structure.py",
+      "README.md",
+      "skills-sap/README.md",
+      "skills-sap/sap-dev/SKILL.md",
+      "NOTICE",
+      "guncelle/harita.json",
+      "tests/test_run_tests_cli.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-ui5-user-guide/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.0-02",
+     "baslik": "Ekran çekimi: doğrulama adımları ve Chrome varsayılanı",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "`capture_kd_screens.js` çekimden önce ekranın hazır olduğunu doğrulayabiliyor: `assert_no_busy` (meşgul göstergesi yok), `assert_text` (metin görünüyor), `assert_in_viewport` (öğe görünür alanda). Tutmayan adım FAIL sayılır ve script 1 ile çıkar — yarım yüklenmiş ekranın kılavuza girmesi engellenir. Ekran çekimi ve PDF üretimi varsayılan olarak sistemdeki Chrome'u kullanır (ortam değişkeniyle değiştirilebilir).",
+     "dosyalar": [
+      "skills-sap/sap-fs-ts-docs/scripts/capture_kd_screens.js",
+      "skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js",
+      "skills-sap/sap-fs-ts-docs/scripts/doc_tools.py",
+      "skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md",
+      "skills-sap/sap-fs-ts-docs/SKILL.md",
+      "skills-sap/sap-fs-ts-docs/tests/test_capture_assert.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_doc_tools_tarayici.py",
+      "skills-sap/sap-fs-ts-docs/tests/samples/capture/config_assert_bad.json",
+      "skills-sap/sap-fs-ts-docs/tests/samples/capture/config_assert_ok.json",
+      "skills-sap/sap-fs-ts-docs/tests/samples/capture/ui5_sahte.html"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.0-03",
+     "baslik": "aXet artık kendi kararıyla Playwright tarayıcısı indiremiyor",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Tarayıcı açıkça belirtilmediğinde aXet `npx playwright-cli install-browser` çalıştırıp izin sormadan ~1 GB tarayıcı indirdi (ölçüldü). İzin kurallarına bu indirme komutlarını reddeden desenler eklendi; sistemdeki Chrome kullanılır. Canlı ölçüldü: gerçek indirme komutu reddedildi, tarayıcı klasörü oluşmadı; tarayıcı indirmeyen Playwright komutları çalışmaya devam ediyor.",
+     "dosyalar": [
+      "config/permissions.json",
+      "tests/test_install.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_install"
+     ]
+    },
+    {
+     "id": "0.5.0-04",
+     "baslik": "CI belge skill'lerinin testlerini de koşuyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`sap-fs-ts-docs` ve `sap-ui5-user-guide` testleri CI'da hiç koşmuyordu, yalnız kullanıcının güncelleme turunda koşuyordu. Kullanıcı tarafında davranış değişikliği yoktur.",
+     "dosyalar": [
+      ".github/workflows/testler.yml"
+     ],
+     "gerektirir": [],
+     "test": []
+    },
+    {
+     "id": "0.5.0-05",
+     "baslik": "Yayın kataloğu ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    },
+    {
+     "id": "0.5.0-06",
+     "baslik": "SAP kesin yasak A netleşti: Z DDIC adı önerilebilir (canlı kontrol + onay); çekirdeğe `find` kısıtı (CORE 0.5.0, SAP 0.4.0)",
+     "tur": "kural",
+     "kritik": true,
+     "neden": "Eski metin \"Append alanı / DTEL adını sen önermezsin\" Z DDIC objelerini de kapsıyor gibi okunuyordu; aXet bir RAP işinde doğru önerdiği Z DTEL adlarını bu yüzden geri çekti. Yeni metin: standart objeye eklenecek append yapı / alan / DTEL adını yine önermezsin; Z DDIC adlarında (domain, DTEL, tablo, yapı, tablo tipi) önce hazır DTEL'e bakılır, değilse standarda uygun ad önerilir, her ad canlı sistemde kontrol edilir ve kullanıcının açık onayı olmadan yaratılmaz. Çekirdek kabuk notuna: `bash` içindeki `find` `-iname` ve `-maxdepth` desteklemez (hata \"dosya yok\" sanılmamalı) → `rg --files --iglob`. SAP projelerinde `AGENTS.md` damgası ancak `%guncelle-proje` ile yenilenir.",
+     "dosyalar": [
+      "core/sap/00-sap.md",
+      "core/00-temel.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k sap_stamp",
+      "python tests/run_tests.py -k sap_skill_bilgi",
+      "python scripts/doctor.py"
+     ]
+    },
+    {
+     "id": "0.5.0-07",
+     "baslik": "RAP bilgisi ve intake şablonu: numara aralığı tarifi bulunur, feature control, Z DDIC ad akışı, kural taraması",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Bir RAP değerlendirme koşusunda aXet numara aralığı tarifini bulamadı (aradığı kelimeler bölüm başlığında yoktu) ve MAX+1 uydurdu; onaylı kaydın salt-okunurluğunu \"yalnız UI'da\" diye kapsam dışına attı; sistem sürümünü kontrol etmedi. Düzeltmeler: `sap-rap` §3 başlığı ve skill açıklaması eş anlamlıları taşır (number range, NRIV, SNRO, NUMBER_GET_NEXT…); yeni `feature-control.md` (instance features ↔ authorization ayrımı, kalem create, handler, kontrol listesi); Z DDIC ad kuralı skill'lerde tutarlı hâle getirildi; intake şablonuna sistem sürümü, ad önerisi + canlı kontrol + ad başına onay, tablo yönetim alanları, kural taraması ve öz-tutarlılık bölümleri; protokole \"yok demeden önce TR+EN ikinci arama\" kuralı. Yeni onay kutuları intake mutabakatı sayılmaz (testle ölçüldü).",
+     "dosyalar": [
+      "skills-sap/sap-abapgit-delivery/SKILL.md",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-cds-ddic/SKILL.md",
+      "skills-sap/sap-cds-ddic/references/cds.md",
+      "skills-sap/sap-cds-ddic/references/checklists.md",
+      "skills-sap/sap-cds-ddic/references/domain-dtel.md",
+      "skills-sap/sap-code-review/references/checklist-abap.md",
+      "skills-sap/sap-dev/SKILL.md",
+      "skills-sap/sap-dev/references/naming.md",
+      "skills-sap/sap-dev/references/role-briefs.md",
+      "skills-sap/sap-fs-ts-docs/references/doc-checklist.md",
+      "skills-sap/sap-intake-triage/SKILL.md",
+      "skills-sap/sap-intake-triage/references/protocol.md",
+      "skills-sap/sap-intake-triage/references/s2-artifact-schema.md",
+      "skills-sap/sap-intake-triage/templates/command-intake.md",
+      "skills-sap/sap-intake-triage/templates/intake-artifact.md",
+      "skills-sap/sap-odata-backend/references/backend-coding.md",
+      "skills-sap/sap-odata-backend/references/dpc-crud.md",
+      "skills-sap/sap-rap/SKILL.md",
+      "skills-sap/sap-rap/references/behavior-impl.md",
+      "skills-sap/sap-rap/references/checklists.md",
+      "skills-sap/sap-rap/references/feature-control.md",
+      "skills-sap/sap-rap/references/layering-and-bdef.md",
+      "skills-sap/sap-ui5-fiori/SKILL.md",
+      "templates/package/.rules.md.tmpl",
+      "tests/test_sap_skill_bilgi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k sap_skill_bilgi"
+     ]
+    },
+    {
+     "id": "0.5.0-08",
+     "baslik": "SAP DDIC yazma araçları: Z tablo, tablo tipi, metin havuzu, ccdef/ccmac",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "aXet Z tablo yaratamıyordu (kullanıcı Eclipse'e yönlendiriliyordu); tablo tipi kabuğu satır tipini sessizce boş bırakabiliyordu ve düzeltme aracı yoktu; metin havuzu yazılamıyordu; sınıfın yerel tanım/makro include'ları itilemiyordu. Yeni araçlar: `adt_table_create` (kabuk → kilit → kaynak → aktivasyon → sistemden geri okuma; alan/anahtar tasarımı önce kullanıcıya gösterilir), `adt_ttyp_create` (satır tipi DD40L'den ve XML'den iki kanalla doğrulanır, boşsa bir kez If-Match ile düzeltilip yeniden doğrulanır, yine boşsa FAIL — asla sahte OK), `adt_textpool_write` (metin sembolleri + seçim metinleri; mevcut girdiyi silme ancak açık izinle), `adt_push_source` artık `ccdef`/`ccmac` kabul eder. Hepsi SAP-yazma kapısından ve transport kuralından geçer; kesin yasaklar aynen geçerli. Yeni rehber: `sap-cds-ddic/references/table-types.md`. Canlı DEV ölçümü (2026-09-21/22, `$TMP`, test objeleri yaratılıp silindi): Z tablo yaratma ve geri okuma doğru (3/3 alan); yapı tipli tablo tipi doğru; ilkel tablo tipinde (CHAR 10, DEC 15,2) SAP ilk yaratımda tanımı düşürüp CHAR/1 bırakıyor — araç bunu fark edip bir kez düzeltiyor, DD40L'de istenen tip doğrulandı; metin havuzu yazıldı ve program aktivasyonu nihai (metin içeriği yalnız aracın kendi okumasıyla doğrulandı); ccdef/ccmac itme ve aktivasyon doğru. Ölçülmeyen: `$TMP` dışında transportsuz tablo muafiyeti.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/SKILL.md",
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills-sap/sap-adt-foundation/references/profiles.md",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/_app.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/_reviewer.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/guardrails.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/hints.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/object_types.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddic_tablo.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddic_ttyp.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/textpool.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/ddic.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/shells.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/textpool.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/tests/test_new_write_tools.py",
+      "skills-sap/sap-cds-ddic/references/message-class.md",
+      "skills-sap/sap-cds-ddic/references/table-types.md",
+      "skills-sap/sap-cds-ddic/references/tables-structures.md",
+      "skills-sap/sap-classic-abap/SKILL.md",
+      "skills-sap/sap-classic-abap/references/programs-includes.md",
+      "skills-sap/sap-classic-abap/templates/screen-gen/table-types.md",
+      "skills-sap/sap-code-review/references/validator-map.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.0-09",
+     "baslik": "KRİTİK: `adt_struct_create` var olan bir yapının üzerine yazabiliyordu — düzeltildi",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Önceki tüm sürümlerde (v0.4.2 dahil) `adt_struct_create`, aynı adlı bir yapı SAP'de zaten varsa onu yeni alanlarla EZEBİLİYORDU: ön kontrol yapıyı yanlış uçta arıyordu (hep \"yok\" görüyordu) ve SAP \"zaten var\" dediğinde araç kilitleyip kaynağı yeniden yazıp aktive ediyordu. Artık: ön kontrol yapı ve tablo uçlarının ikisine de bakar; ölçemezse yaratmaz (`exists_unmeasured`); SAP \"zaten var\" derse hiçbir şey yazılmaz (`already_exists`). Canlı DEV'de doğrulandı: aynı adla farklı alanlarla ikinci çağrı reddedildi, DD03L'de alanlar değişmedi. Ne yapmalısınız: bu araçla daha önce yapı yarattıysanız ve aynı adı ikinci kez kullandıysanız, o yapının alanlarını SAP'de kontrol edin. Ek: metin havuzu aracı, program aktivasyonu doğrulanamadığında artık başarı yerine `ok:false` döner.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/tests/test_verdict_reviewer_k1_d1.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    }
+   ]
   }
  ]
 }

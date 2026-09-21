@@ -56,7 +56,7 @@ description: >
   (SAP'ye yazmaz; include adlarını ve CLI sırasını yazdırır).
 - **CLI sırası:** include kabukları (`include`) → program kabuğu (`prog`) → boş kaynak push → **tek** `adt_activate` + `also`
   (önce include'lar) → gerçek kaynaklar → tekrar aktivasyon. `programType="I"` ile include yaratma (K-11).
-- **Metin havuzu** (seçim metinleri, `TEXT-xxx`): CLI'de araç yok → metinleri hazırla, kullanıcı SE38'de girer (`programs-includes.md` §3).
+- **Metin havuzu** (seçim metinleri, `TEXT-xxx`): `adt_textpool_write` (yalnız `s4_private`; canlı DOĞRULANMADI); başlıklar ve diğer profiller → metinleri hazırla, kullanıcı SE38'de girer (`programs-includes.md` §3).
 - **Doğrula:** inaktif 0; seçim ekranı adları ≤ 8 (yalnız aktivasyon yakalar).
 
 ### 3. Fonksiyon grubu + fonksiyon modülü

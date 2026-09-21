@@ -88,7 +88,8 @@ class Kapi(unittest.TestCase):
         self.assertEqual(set(yazma), {"adt_activate", "adt_classrun", "adt_delete", "adt_domain_create",
                                       "adt_dtel_create", "adt_post_shell", "adt_publish_service",
                                       "adt_push_source", "adt_struct_create", "adt_syntax_check",
-                                      "adt_screen_generate", "adt_msgclass_write", "adt_set_description"})
+                                      "adt_screen_generate", "adt_msgclass_write", "adt_set_description",
+                                      "adt_table_create", "adt_ttyp_create", "adt_textpool_write"})
         mw = tools["adt_msgclass_write"]
         ok_mw = (mw["available_on"] == ["s4_private"] and mw.get("requires_transport") is True
                  and {a["name"] for a in mw["args"]} == {"name", "transport", "messages", "delete_numbers",
@@ -192,6 +193,12 @@ class Kapi(unittest.TestCase):
             "adt_msgclass_write": {"name": "VL", "transport": TR,
                                    "messages": [{"no": "001", "text": "Standart sınıfa yazılmaz"}]},
             "adt_set_description": {"name": "MARA", "object_type": "class", "description": "Standart", "transport": TR},
+            "adt_table_create": {"name": "MARA", "description": "Standart", "package": "$TMP", "transport": TR,
+                                 "fields": [{"name": "MANDT", "type": "mandt", "key": True}]},
+            "adt_ttyp_create": {"name": "BAPIRET2_T", "description": "Standart", "package": "$TMP",
+                                "transport": TR, "row_type": "BAPIRET2"},
+            "adt_textpool_write": {"name": "SAPMV45A", "transport": TR,
+                                   "symbols": [{"key": "B01", "text": "Standart"}]},
         }
         _rc, _d, out, _e = H.run_cli(HOME_OPT, ["--list"])
         yazma = {t["name"] for t in json.loads(out)["result"]["tools"] if t["class"] == "write"}

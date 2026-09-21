@@ -282,7 +282,21 @@ class K1ProgIntfZinciri(_Taban):
 
 # ═════════════════════════════════════ D1 ═════════════════════════════════════════════════════════
 class _Istemci:
-    """`_exists` için: obje VAR der → araç `already_exists` ile döner (yazma yok)."""
+    """Ön kontrol için: obje VAR der → araç `already_exists` ile döner (yazma yok).
+
+    2026-09-21: `adt_struct_create` ön kontrolü `_exists` (metadata) yerine üç değerli `adt_get(structure)` sondasıdır
+    (`/ddic/structures/<ad>/source/main` GET) → sahte oturum 200 döner. Oturum yokken sonda ÖLÇÜLEMEDİ olur
+    (`exists_unmeasured`) — bu testlerin beklediği "reviewer koştu, yazma yok" durağı `already_exists`'tir."""
+    url = "http://sahte-istemci.invalid"
+
+    class _Oturum:
+        verify = False
+
+        def get(self, *_a, **_k):
+            from types import SimpleNamespace
+            return SimpleNamespace(status_code=200, text="define structure zaxet_s_demo {\n  a : abap.char(1);\n}\n")
+
+    session = _Oturum()
 
     def get_object_metadata(self, name, object_type=None):
         return '<adtcore:mainObject adtcore:version="active"/>'

@@ -162,7 +162,7 @@ bir yardımcıya program/servis adı verilmez.
   - FM **Remote-Enabled** işaretli olmalı (SE37 processing type; ADT'den ayarlanamadı → kullanıcı işaretler), yoksa
     `CALL_FUNCTION_NOT_REMOTE`.
   - `TABLES` parametresi: ADT push `STRUCTURE` kabul etmez; `TYPE` sonrasında **tablo tipi** gerekir (yapı adı →
-    `Type <X> is not a table type`). Yeni tablo tipi = yeni DDIC objesi, adı kullanıcıdan.
+    `Type <X> is not a table type`). Yeni tablo tipi = yeni DDIC objesi, adı kullanıcı onaylı (`%sap-dev` §6).
   - Çağıranda `EXCEPTIONS system_failure = 1 MESSAGE <değişken>` → değişken karakter tipli (C/N/D/T), `string` değil.
   - RAP tarafı ayrıntısı: `%sap-rap`.
 

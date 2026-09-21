@@ -2,11 +2,14 @@
 name: sap-rap
 description: >
   Use when building or changing an ABAP RAP stack on S/4HANA: CDS view entity layering for RAP,
-  behavior definition (managed/unmanaged, lock and etag, numbering, determinations, validations,
-  actions), behavior pool and CCIMP handlers, EML against own or released business objects,
-  service definition/binding and publish, draft or document lock, value-help placement, delete
-  guards. Triggers: "RAP", "BDEF", "behavior", "CCIMP", "EML", "MODIFY ENTITIES", "service
-  binding", "SRVB publish", "draft", "belge kilidi", "silme kontrolü". Do not use for plain CDS or
+  behavior definition (managed/unmanaged, lock and etag, early numbering with a number range /
+  numara aralığı / NR object via SNRO, NROB, NRIV and NUMBER_GET_NEXT, determinations,
+  validations, actions, dynamic instance feature control vs instance authorization), behavior
+  pool and CCIMP handlers, EML against own or released business objects, service
+  definition/binding and publish, draft or document lock, value-help placement, delete guards.
+  Triggers: "RAP", "BDEF", "behavior", "CCIMP", "EML", "MODIFY ENTITIES", "service binding",
+  "SRVB publish", "draft", "belge kilidi", "silme kontrolü", "numara aralığı", "belge numarası",
+  "feature control". Do not use for plain CDS or
   DDIC work without behavior (use sap-cds-ddic), classic SEGW/DPC services or dialog programs,
   UI5 code, triaging a NEW request (use sap-intake-triage first) or ECC systems.
 ---
@@ -46,8 +49,12 @@ released BO EML / BAPI; liste/rapor/VH → **davranışsız query CDS**. Ayrınt
 2. Mevcut çalışan bir RAP objesi var mı → `adt_get` ile oku; behavior pool'un `source/main`'i **boştur**, handler'lar
    CCIMP'tedir (`references/behavior-impl.md` §1).
 3. Okunacak standart tablo için released CDS successor'ı; value-help envanteri (ortak mı yerel mi → **kullanıcıya sor**);
-   audit alanları (kural teyidi); kilit ihtiyacı (ETag / draft / uygulama-seviyesi); numara kaynağı (NR objesi kullanıcıdan).
-4. Tüm etiket/açıklamalar spesifikasyondan, `master_language`'de; tahmin yok.
+   audit alanları (kural teyidi); kilit ihtiyacı (ETag / draft / uygulama-seviyesi); numara kaynağı (numara aralığı / NR
+   objesi kullanıcıdan — `references/behavior-impl.md` §3).
+4. Duruma bağlı kural var mı ("onaylanınca değiştirilemez", "yalnız taslakken silinir", "onaylıya kalem eklenmez") →
+   backend'de **feature control** (`references/feature-control.md`); kim yapabilir sorusu ayrıca **authorization**. Yalnız UI'da
+   gizlemek yetmez.
+5. Tüm etiket/açıklamalar spesifikasyondan, `master_language`'de; tahmin yok.
 
 ### 3. Yazma sırası
 Her adım `%sap-adt-foundation` akışıyla: güncel kaynağı `adt_get` ile çek → kapsam beyanıyla yaz → sistemden oku → inaktif
@@ -120,13 +127,17 @@ etme/atma — raporla.
 | `references/draft-and-locks.md` | ETag / draft / uygulama-seviyesi kilit kararı, kilit reçetesi, `ENQUEUE_READ` |
 | `references/value-help.md` | Ortak ya da yerel VH, muhatap (müşteri/satıcı) kuralı, released CDS tercihi |
 | `references/delete-guard.md` | Silme kontrolünün katmanları, delete validation tuzakları, 50 karakter mesaj sınırı, runtime kabul |
+| `references/feature-control.md` | Duruma bağlı düzenlenebilirlik: dynamic instance feature control (update/delete/action/alan/kalem ekleme), `get_instance_features` sonucu, feature control ↔ authorization ayrımı, OData V2 / freestyle UI'a yansıması |
 | `references/checklists.md` | Yazmadan önce · yazarken · kapanış kontrol listeleri; yazma kapısının neye bakıp neye bakmadığı |
 | `references/troubleshoot.md` | Belirti → kök neden → çözüm indeksi |
 
 ## Rules
 - Tahmin yok: annotation, BDEF sözdizimi, alan adı ve handler imzası çalışan bir artefakttan (sistemdeki Z RAP objesi, bu
   referanslar) doğrulanır; released BO'da alan yazılamıyorsa önce projeksiyon CDS kaynağını oku.
-- Transport, paket, NR objesi, SM59 destination, kilit tablosu adı, DTEL adı **kullanıcıdan** gelir; sen yaratmazsın/önermezsin.
+- Transport, paket, NR objesi (ve aralık numarası), SM59 destination **kullanıcıdan** gelir; sen yaratmazsın/önermezsin.
+  Yeni Z DDIC objesi (domain, DTEL, tablo …) ve NR objesi için **ad önerebilirsin**: adlandırma standardına uygun, canlıda
+  kontrol edilmiş (varsa başka ad), tablo hâlinde sunulmuş ve kullanıcı açıkça onaylamış olmalı (`%sap-dev` §6). Standart
+  objeye append alanının adını önermezsin (kesin yasak A).
 - Standart tabloya `MODIFY ENTITIES`/SQL yazma yok; standart belge released BO EML ya da BAPI ile. Standart objeye
   `extension`/append yok.
 - Behavior handler içinde `COMMIT ENTITIES`, `COMMIT WORK`, `ROLLBACK WORK`, `BAPI_TRANSACTION_COMMIT` ve `MESSAGE` yok

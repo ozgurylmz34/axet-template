@@ -90,34 +90,9 @@ DTEL'in domain'i değişirse (ör. sil-yeniden-yarat) bağımlı tablo + CDS + y
 
 ## 2. Table type (TTYP)
 
-### 2.1 CLI yolu
-**Yaratma CLI'de var (2026-09-13; çevrimdışı test edildi, canlı DOĞRULANMADI)** — `%sap-adt-foundation` → `tool-catalog.md` → `adt_post_shell` (`ttyp`):
-1. Satır tipi (yapı/DTEL) önce aktif olmalı.
-2. `cli adt_post_shell '{"object_type":"ttyp","name":"ZSD001_TT_ORDER","package":"<PAKET>","transport":"<TRANSPORT>","description":"<metin>","extra":{"row_type":"ZSD001_S_ORDER"}}' --sap-write ...`
-   → yanıtta `row_type_live` (canlı `typeName` okuması) ve `exists_after`.
-3. `cli adt_activate '{"name":"ZSD001_TT_ORDER","object_type":"ttyp"}' --sap-write ...`
-4. §2.2 doğrulaması — `row_type_live` dolu olsa da atlanmaz.
-
-**Hâlâ araç yok:** satır tipini düzeltme (If-Match'li PUT, §2.3 — reçete var, araç yok). `ROWTYPE` boş ya da yanlışsa kullanıcı
-SE11'de düzeltir; sen §2.2'yi yeniden koşarsın. (Önceki araç setindeki yaratma script'i 403 CSRF veriyordu.)
-
-### 2.2 ZORUNLU doğrulama — `ROWTYPE` boş kalabilir
-SAP table type'ı yaratıp satır tipini XML'den **sessizce almayabilir**: obje oluşur, `ROWTYPE` boş kalır; ABAP'ta tip kullanılınca
-anlaşılmaz bir çalışma zamanı hatası çıkar.
-```
-cli adt_sql_query '{"query":"SELECT typename, rowtype FROM dd40l WHERE typename = '\''ZSD001_TT_ORDER'\''","row_limit":5}'
-```
-Beklenen: `ROWTYPE` = doğru yapı adı. Boşsa kullanıcıya bildir (düzeltme = satır tipini yeniden yazıp aktive etmek). Ayrıca `adt_get` `ttyp` ile XML'de `rowType/typeName` dolu mu.
-
-### 2.3 Protokol notu
-- `POST /sap/bc/adt/ddic/tabletypes?corrNr=<TRANSPORT>`; `Content-Type`/`Accept`: `application/vnd.sap.adt.tabletype.v1+xml`
-  (v2 ya da başkası 415); namespace `xmlns:ttyp="http://www.sap.com/dictionary/tabletype"` (başkası 415); CSRF yalnız `/sap/bc/adt/discovery`'den (başka uç 403).
-- Gövde: `ttyp:rowType` (`typeKind=dictionaryType`, `typeName=<YAPI>`, `builtInType` sıfırlar, `rangeType`), `initialRowCount`,
-  `accessType=standard`, `primaryKey` (`standard`, `nonUnique`).
-- `400` + `ExceptionResourceAlreadyExists` → var, aktivasyona geç.
-- Satır tipi düzeltme: GET ile ETag → aynı XML ile PUT **`If-Match: <etag>` İLE** → yeniden aktive → yeniden `DD40L`.
-  ⚠ Bu, "DDIC PUT'ta If-Match gönderme" kuralının **istisnasıdır** (farklı uç ve içerik tipi; ETag yolu burada doğru çalışıyor).
-- `TABLES p TYPE x`'te `x` table type olmalı (yapı verilirse RFC işaretlenince `FL 387` — `%sap-adt-foundation` → `known-errors-adt.md` K-15).
+**Bu bölüm taşındı → [`table-types.md`](table-types.md)** (2026-09-21; tek komutluk yaratma `adt_ttyp_create`, iki kanallı readback,
+boş satır tipi düzeltmesi, DENENEN-BAŞARISIZ tablosu, anahtar tanımı ↔ ABAP `DEFAULT KEY`/`EMPTY KEY`, RFC'de ortaya çıkan gizli hatalar).
+Kısaca: tablo tipi yaratmadan önce hazır standart tip var mı bak (ör. mesaj tablosu `BAPIRET2_T`); yarattıktan sonra `ROWTYPE` **ölçülmeden** "tamam" denmez.
 
 ---
 
@@ -132,13 +107,28 @@ data maintenance · CURR/QUAN referansları. Onaysız yaratma yok (onaysız yara
 - Tablo adı **en fazla 16 karakter** (uzunsa SAP "daha kısa ad seç" ile reddetti) — genel 30 karakter sınırından dardır.
 - Audit alanları (`created_by` … `last_changed_at`) varsa bloğu **en sonda** tut; RAP tarafında otomatik doldurma ayrı konudur.
 
-### 3.2 Yaratma — kabuk için aXet'te araç yok
-**aXet'te araç yok:** yeni Z tablo kabuğu — `adt_post_shell` `tabl` → `unsupported_type` (`%sap-adt-foundation` → `tool-catalog.md`
-→ `adt_post_shell` "Desteklenmez"). Önceki araç setindeki tablo yaratma script'i alınmadı.
-
-**aXet'te ara yol:** kullanıcı onaylı tasarımla tabloyu Eclipse ADT'de (varsayılan iskeletle) doğru paket/transportta açar → `cli adt_get '{"name":"ZSD001_T_ORDER","object_type":"tabl"}'` →
-`cli adt_push_source '{"name":"ZSD001_T_ORDER","object_type":"tabl","source":"<tam DDL>","transport":"<TRANSPORT>"}'` →
-`cli adt_activate '{"name":"ZSD001_T_ORDER","object_type":"tabl"}'` → §3.5. (Varsayılan iskeletin içeriği DOĞRULANMADI; push tam kaynağı yazar.)
+### 3.2 Yaratma — `adt_table_create` (2026-09-21; yalnız `s4_private`; çevrimdışı test edildi, canlı DOĞRULANMADI)
+§3.1 onayı alındıktan sonra **tek komut** (`%sap-adt-foundation` → `tool-catalog.md` → `adt_table_create`):
+```
+cli adt_table_create --args-file tablo.json --sap-write --scope S1 --reason "<gerekçe>"
+```
+`tablo.json`:
+```
+{"name":"ZSD001_T_ORDER","description":"<master_language metni>","package":"<PAKET>","transport":"<TRANSPORT>",
+ "delivery_class":"A","data_maintenance":"RESTRICTED",
+ "fields":[{"name":"MANDT","type":"mandt","key":true},
+           {"name":"ORDER_NO","type":"ZSD001_E_ORDNO","key":true},
+           {"name":"MEINS","type":"meins"},
+           {"name":"MENGE","type":"menge_d","unit_field":"MEINS","unit_kind":"quantity"}]}
+```
+Araç sırayla: ön kontrol (ad ≤ 16, ilk alan `MANDT`, anahtar bayrağı bool, birim referansı çözülebilir) → §3.3 kurallarıyla DDL render →
+reviewer `table_creation` o DDL üzerinde (Z/Y DTEL var ve aktif mi, CURR/QUAN referansı) → kabuk POST (**DDL'siz**) → aynı oturumda kilit →
+`source/main` PUT (**If-Match yok**, corrNr = kilit yanıtındaki CORRNR) → kilidi bırak → aktivasyon → aktif DDL readback.
+- `transport` **`$TMP` paketinde de zorunlu** (transportsuz kilit canlı ölçülmedi; ölçüm planda — sonuca göre muafiyet açılabilir).
+- Kilit yanıtı `$TMP`'de `CORRNR` döndürmez (canlı 2026-09-21, DEV: tablo, yapı, program, metin havuzu, sınıf — hiçbirinde); etkin transport verilen değerdir.
+- `partial_shell` = kabuk SAP'de VAR, DDL yazılamadı (kilit/PUT reddi ya da obje yabancı transportta). Araç silmez; kullanıcıya göster, onayıyla `adt_delete` + yeniden dene.
+- `readback_mismatch` + `default_shell_client_field` = canlıda varsayılan `client : abap.clnt` kabuğu duruyor → DDL sessizce kaybolmuş; "aktif" deme.
+- Kapsam: mevcut tabloyu değiştirmez (§3.4 ayrı yol).
 
 **DENENEN — BAŞARISIZ:**
 | Yöntem | Sonuç |
@@ -149,6 +139,7 @@ data maintenance · CURR/QUAN referansları. Onaysız yaratma yok (onaysız yara
 | `@AbapCatalog.enhancement.category` eksik | `400 "Can't save due to errors in source"` |
 | QUAN referansı nitelenmemiş (`'voleh'`) | aktivasyon `annotation uncomplete` |
 | Anahtar olmayan alanda `not null` | bazı durumlarda aktivasyon çakışması |
+| Kabuk sonrası `adt_push_source` `object_type=tabl` (ayrı kilit) | `invalid lock handle` (önceki araç seti) → kilit `adt_table_create` içinde tutulur |
 
 **Protokol notu:** kabuk `POST /sap/bc/adt/ddic/tables?corrNr=<TRANSPORT>`, `application/vnd.sap.adt.tables.v2+xml; charset=utf-8`,
 gövde `<blue:blueSource adtcore:type="TABL/DT" adtcore:masterLanguage="…">` + `packageRef` (DDL yok) → kilit

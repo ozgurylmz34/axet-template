@@ -265,8 +265,9 @@ def normalize_object_type(object_type):
 #                    HTTP 200 (iki Z sinifi: 1914 / 2006 bayt, ETag var)
 #   definitions    : ÖLÇÜLDÜ (Q283) — 2026-09-13 salt-GET HTTP 200, 165 bayt (iki Z sinifi, ETag var)
 #   macros         : ÖLÇÜLDÜ (Q283) — 2026-09-13 salt-GET HTTP 200, 106 bayt (iki Z sinifi, ETag var)
-#   ⚠ definitions/macros icin olculen SEGMENT ADIDIR (uc cozuluyor + icerik donuyor);
-#     bu iki segmentte YAZMA (PUT) yolu bu evde OLCULMEDI.
+#   ⚠ definitions/macros icin 2026-09-13'te olculen SEGMENT ADIDIR (uc cozuluyor + icerik donuyor);
+#     YAZMA (PUT) yolu 2026-09-21'de CANLI OLCULDU (DEV, bir Z sinifi: PUT + sinif aktivasyonu + aktif
+#     readback esit; kontrol grubu ayni turda implementations).
 #   KONTROL GRUBU (ayni tur, ayni siniflar): sinif metadata'sinin `includeType` listesinde
 #     OLMAYAN `testclasses` -> HTTP 404 · uydurma segment adi -> HTTP 400 (404 DEGIL) ⇒ 200
 #     her segmente donmuyor. Yeni segment eklersen ayni yontemle olc (tahmini "olculdu" yazma).
@@ -290,14 +291,14 @@ CLASS_INCLUDE_TYPES = {
         'abap_include': 'CCDEF',
         'file_extension': '.ccdef.abap',
         'description': 'Class local definitions include',
-        'olculdu': True,     # 2026-09-13 GET 200, 165 B (Q283; yazma yolu olculmedi)
+        'olculdu': True,     # 2026-09-13 GET 200, 165 B (Q283) + 2026-09-21 PUT/aktivasyon/readback (DEV)
     },
     'macros': {
         'segment': 'macros',
         'abap_include': 'CCMAC',
         'file_extension': '.ccmac.abap',
         'description': 'Class macros include',
-        'olculdu': True,     # 2026-09-13 GET 200, 106 B (Q283; yazma yolu olculmedi)
+        'olculdu': True,     # 2026-09-13 GET 200, 106 B (Q283) + 2026-09-21 PUT/aktivasyon/readback (DEV)
     },
 }
 

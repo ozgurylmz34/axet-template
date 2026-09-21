@@ -75,6 +75,12 @@ Dönen "yok / yapılamaz / blocker"ı kanıtsız kabul etme; kanıtlardan en az 
 - **Z obje hatırlanıyorsa CANLI DOĞRULA:** hafıza yazıldığı anın gerçeğini taşır; Z objeler değişir. Hafıza = **nereye bakacağın**,
   canlı sistem = **ne olduğu**. (c) bir Z objeyi işaret ediyorsa (b) ile teyit zorunlu.
 - **Prior-art "sanırım yaptık" değildir:** referansı bul ve doğrula; bulamazsan `yok` say (yanlış-pozitif kopyalamayı önler).
+- **"Araç / yöntem / tarif yok" demeden önce ikinci arama:** ilk arama 0 döndüyse **TR + EN eş anlamlılarla, büyük/küçük harf
+  duyarsız** ikinci arama yap (ör. numara → "number range|numara aralığı|NR objesi|SNRO|NRIV|NUMBER_GET_NEXT|early numbering";
+  salt-okunur → "feature control|read-only|salt okunur"). Skill içeriğinde `rg -i "<desen>" <klasör>`; ikinci arama da 0 ise
+  "yok" yaz ve iki aramanın desenini kanıt olarak ekle. ⚠ `bash` içindeki `find` Go tabanlıdır: `-iname` ve `-maxdepth`
+  desteklenmez (ölçüldü: `flag provided but not defined`) — bu hata çıktısını "dosya yok" sanma; dosya adı aramasında
+  `rg --files --iglob "*desen*"` (büyük/küçük harf duyarsız) kullan.
 
 ## 5. Kanıtlı değerlendir
 Domain + canlı sistem + prior-art birlikte → aksiyon: reuse mı yeni mi · mevcutla tutarlılık · uygulanacak geçmiş ders ·
@@ -84,8 +90,33 @@ blast-radius / risk. Kanıtsız ilerleme yok.
 - **S0:** soru yok. Makul varsayılanla yap; tek satır "şöyle anladım, yapıyorum". SAP yazmasında `--scope S0 --reason "…"`.
 - **S1:** yalnız kritik/belirsiz noktayı sor; makul varsayılan varsa varsay ve bildir. Soruyu adım 4 araştırmasıyla **bilgilenmiş**
   sor (`ask_user`: tek seferde, seçenekli, önerini belirterek). SAP yazmasında `--scope S1 --reason "…"`.
+  `ask_user` biçimi (ölçüldü, aXet araç hataları): `options` bir JSON **dizisi**dir (`[{"label":"…","description":"…"}, …]`),
+  metin/XML değil; **en az 2** seçenek; her seçenekte `label` dolu. Serbest metin gereken soruda (ör. transport numarası)
+  ikinci seçenek olarak "Başka değer yazacağım" ver.
 - **S2:**
   1. Artefaktı `.axet-code/intake/<id>.md` olarak üret (`templates/intake-artifact.md`; şema ve kontrol: `s2-artifact-schema.md`).
+     Şablondaki yeni bölümler (script bakmaz, manuel kontrol):
+     - **Sistem sürümü:** `sap-project.json` `release` ile canlı sistemin sürümünü karşılaştır. `adt_system_info` sürüm
+       **döndürmez** (`%sap-adt-foundation` → `tool-catalog.md`); okuma yolu: `adt_sql_query` ile `CVERS` (ör. bileşen
+       `S4CORE` / `SAP_BASIS`, alan `RELEASE`) — bu sorgu biçimi canlı **DOĞRULANMADI**, ilk kullanımda sonucu göster. Fark
+       varsa (ya da okunamadıysa) kullanıcıya sor; profil/sürüme bağlı kararlar buna göre verilir.
+     - **Etkilenen objeler tablosu:** her yeni Z obje için ad önerisi · canlı kontrol sonucu · `ONAY: [ ]`. Ad kuralı
+       `%sap-dev` §6: önce yeniden kullanım (standart/released/mevcut Z) → değilse standarda + paket `.rules.md` öneklerine
+       uygun ad (tablo ≤ 16, NR objesi ≤ 10, genel ≤ 30) → her adı canlıda kontrol et (`adt_search_objects` / `adt_get`;
+       varsa başka ad) → tabloyu sun → **ad başına açık onay**. Genel mutabakat ad onayı sayılmaz. Standart objeye append
+       alanı adı önerilmez (kesin yasak A).
+     - **Tablo yönetim alanları:** yeni tablo varsa oluşturan/zaman, son değiştiren/zaman ve RAP ETag alanı (yerel son
+       değişiklik zamanı) tasarımda alan adı + tipiyle listelenir (`%sap-rap` → `behavior-impl.md` §5, `draft-and-locks.md`).
+     - **Kural taraması (onaydan ÖNCE zorunlu):** iş tipine göre ilgili checklist'lerin **BLOCKER** satırlarını oku ve her
+       tasarım kararını *uyuyor / sapıyor (gerekçe)* diye işle. RAP → `%sap-rap` `references/checklists.md` §A (+ gerekiyorsa
+       `feature-control.md` §5); DDIC → `%sap-cds-ddic` `references/checklists.md`; UI5 → `%sap-ui5-fiori`
+       `references/checklists.md`; klasik → `%sap-classic-abap` `references/checklists.md`. Okunan dosyaları bölümüyle yaz.
+     - **Sapma kuralı:** standarttan sapan sadeleştirme (ör. numara aralığı yerine MAX+1, feature control yerine yalnız UI,
+       draft kararı) "risk" diye yazılıp geçilmez — kullanıcıya **sorulur** (`ask_user`, seçenekli, önerili); cevap
+       kural taraması tablosuna yazılır.
+     - **Öz-tutarlılık (onaya sunmadan önce):** bir karar değiştiyse riskler, kabul kriterleri ve obje tablosu da aynı turda
+       güncellenir (vaka 2026-09-21: karar değişti, riskler bölümü eski adları ve eski kararı taşımaya devam etti); "yok /
+       yapılamaz" diyen her madde ikinci aramadan geçmiş olmalı; `ONAY` kutusu boş yeni Z adı kalmamalı.
   2. Kabul kriterlerini EARS kalıbında yaz; her gereksinim test edilebilir olmadan build başlamaz (INVEST / Definition of Ready).
      Backend ve frontend için ayrı hazır-olma tanımı.
   3. Yeni programda ekran + fonksiyonel spesifikasyonu iste, eski sistem/uygulama ile sentezle.
@@ -107,6 +138,9 @@ Modüle özgü yeni tuzak → modül paketine satır önerisi. Döngü: girişte
 |---|---|---|
 | Etkilenen Z objeler canlı doğrulandı mı (hafızadan değil)? | artefakttaki her obje için araç çıktısı referansı | engelleyici |
 | Kabul kriterleri EARS kalıbında ve test edilebilir mi? | her kriter için "nasıl test edilir" cevaplanabiliyor mu | uyarı |
+| Yeni Z obje adları önerildi + canlı kontrol edildi + ad başına ONAY alındı mı? | obje tablosunda araç çıktısı ve işaretli `ONAY` | engelleyici |
+| Kural taraması yapıldı mı; sapmalar soruldu mu? | okunan checklist'ler + karar tablosu | engelleyici |
+| Artefakt kendi içinde tutarlı mı? | Öz-tutarlılık satırı; riskler bölümü son kararları taşıyor | engelleyici |
 
 ## Değerlendirme — protokol gerçek katkı mı, plasebo mu?
 Değer iddia değil ölçümle doğrulanır: **protokol var / yok masa testi.** Aynı temsili talep (ör. "satış siparişi kalem raporu +

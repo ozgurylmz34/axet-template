@@ -40,7 +40,8 @@ description: >
 1. **Çalışma alanı:** önerilen `<source_root>/<MODÜL>/<PAKET>/abapgit/`. Geliştiriciden SAP'de abapGit ile
    paketin **güncel** ZIP'ini iste (adımlar: `references/abapgit-delivery.md` §2) ve `unpack` ile aç.
 2. **Düzenle:** yalnız çalışma alanındaki dosyalar. Yeni nesne gerekiyorsa meta dosyasını (`<ad>.<tip>.xml`) aynı
-   tipte SAP'den gelmiş bir nesneden kopyala; alan adı ya da değer uydurma. DTEL/append adı önerme: adı kullanıcı verir.
+   tipte SAP'den gelmiş bir nesneden kopyala; alan adı ya da değer uydurma. Standart objeye append alanı adı önerme; yeni Z DDIC adı
+   (DTEL, domain …) yalnız `%sap-dev` §6 kuralıyla: standarda uygun öneri + canlı kontrol + kullanıcının açık onayı.
 3. **Denetle ve paketle:** `pack --root WS --all --project-dir <PROJE_KÖKÜ>`. FAIL varsa ZIP üretilmez; FAIL'i
    atlatmak için dosya adını/klasörü değiştirme, sebebini kullanıcıya açıkla.
 4. **Teslim et:** ZIP yolunu, dosya listesini, WARN satırlarını ve scriptin bastığı geliştirici adımlarını ver.

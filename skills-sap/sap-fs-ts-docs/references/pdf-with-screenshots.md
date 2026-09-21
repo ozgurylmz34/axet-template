@@ -10,7 +10,7 @@
 | Python `markdown` | `build_doc_pdf.py`, `build_kd_pdf.py` | `python -m pip install markdown` |
 | Python `Pillow` | yalnız `build_kd_pdf.py` görsel kırpma (`--trim-from`) | `python -m pip install Pillow` |
 | Node.js + `playwright-core` | `html_to_pdf.js`, `capture_kd_screens.js` | proje klasöründe `npm install playwright-core` ya da `PLAYWRIGHT_CORE_PATH` ile mevcut kuruluma yönlendir |
-| Edge ya da Chrome | PDF ve ekran çekimi (`--channel msedge` varsayılan) | sistemde kurulu olmalı; `DOC_TOOLS_BROWSER` / `PDF_BROWSER_CHANNEL` ile değiştirilir |
+| Chrome (sistem kurulumu) | PDF ve ekran çekimi (varsayılan kanal `chrome`; tarayıcı indirilmez) — marp slaytı Edge kuruluysa Edge'i kullanır | sistemde kurulu olmalı; `DOC_TOOLS_BROWSER` / `PDF_BROWSER_CHANNEL` ile değiştirilir (ör. `msedge`) |
 | `mmdc` (Mermaid CLI) | yalnız Markdown'da ```` ```mermaid ```` bloğu varsa | `npm i -g @mermaid-js/mermaid-cli` |
 | `marp` | yalnız eğitim slaytı | `npm i -g @marp-team/marp-cli` |
 
@@ -51,7 +51,9 @@ Durum: `python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/doc_tools.py check`.
 }
 ```
 Adımlar: `goto` · `wait_ui5` · `wait` (`ms` ya da `selector`) · `click` · `eval` · `set_model` (görünüm adı deseni + model adı +
-`data` ya da `data_file`) · `shot` (`selector` ya da tam sayfa; `optional:true` başarısızlığı durdurmaz). Script sonunda her çekimi
+`data` ya da `data_file`) · `assert_no_busy` (açık meşgul göstergesi yok) · `assert_text` (`text`, isteğe bağlı `selector`) ·
+`assert_in_viewport` (`selector` görünür alanda) · `shot` (`selector` ya da tam sayfa; `optional:true` başarısızlığı durdurmaz).
+Tutmayan `assert_*` adımı FAIL sayılır. Script sonunda her çekimi
 `OK/FAIL` listeler ve **FAIL varsa çıkış 1** verir. Seçiciler `[id$='--<id>']` biçiminde yeniden çizime dayanıklıdır; kimliksiz
 paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.
 **Çok uygulamalı paralel mock tuzağı:** aynı anda iki mock sunucu + paylaşılan tarayıcı → sekme başka porta kayar. Her çekimde
@@ -151,6 +153,6 @@ python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/verify_doc_html.py docs/KD-S
 | F4 penceresi boş | değer yardımı varlığının veri dosyası yok | her F4 varlığına `data/<Varlık>.json` |
 | F4 ikonu seçiciyle bulunmuyor | ikon erişilebilir referans vermiyor | `eval` ile kontrolü bul → `fireValueHelpRequest()` |
 | Dolu fiyat/bakiye alanları boş | fonksiyon içe aktarımı mock'ta yok | model verisi enjeksiyonu ya da arayüzü sürerek doldur |
-| `marp --pdf` takılıyor | açık Chrome profiliyle çakışma | Edge (`doc_tools` Edge'i tercih eder) |
+| `marp --pdf` takılıyor | açık Chrome profiliyle çakışma | Edge (`doc_tools` marp için Edge'i tercih eder; diğer araçlar Chrome) |
 | `mmdc` "Chrome bulunamadı" / JSON kaçış hatası | kendi tarayıcısını indirmemiş; Windows yolu ters bölü | `doc_tools` sistem tarayıcısını ileri eğik çizgiyle verir |
 | `gen_field_table` 0 alan | başlık annotation'ındaki `{` gövde sanıldı | gövde araması `define`'dan sonra başlar (script'te düzeltili) |

@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="1.0" xmlns:edmx="http://schemas.microsoft.com/ado/2007/06/edmx" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:sap="http://www.sap.com/Protocols/SAPData">
+  <edmx:Reference Uri="/sap/opu/odata/IWFND/CATALOGSERVICE;v=2/Vocabularies(TechnicalName='%2FIWBEP%2FVOC_COMMON',Version='0001',SAP__Origin='LOCAL')/$value" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+    <edmx:Include Namespace="com.sap.vocabularies.Common.v1" Alias="Common"/>
+  </edmx:Reference>
+  <edmx:DataServices m:DataServiceVersion="2.0">
+    <Schema Namespace="cds_zbc000_ui_order_d2" xml:lang="tr" sap:schema-version="1" xmlns="http://schemas.microsoft.com/ado/2008/09/edm">
+      <EntityType Name="OrderType" sap:label="Sipariş" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="OrderUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="OrderUUID" Type="Edm.Guid" Nullable="false" sap:label="Sipariş UUID" sap:quickinfo="Sipariş UUID"/>
+        <Property Name="OrderID" Type="Edm.String" MaxLength="10" sap:display-format="NonNegative" sap:label="Sipariş No"/>
+        <Property Name="CustomerID" Type="Edm.String" MaxLength="10" sap:display-format="UpperCase" sap:label="Müşteri" sap:value-list="standard"/>
+        <Property Name="CustomerName" Type="Edm.String" MaxLength="40" sap:label="Müşteri Adı" sap:creatable="false" sap:updatable="false"/>
+        <Property Name="City" Type="Edm.String" MaxLength="25" sap:label="Şehir"/>
+        <Property Name="OrderDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date" sap:label="Sipariş Tarihi"/>
+        <Property Name="OverallStatus" Type="Edm.String" MaxLength="1" sap:display-format="UpperCase" sap:label="Durum" sap:value-list="fixed-values"/>
+        <Property Name="TotalAmount" Type="Edm.Decimal" Precision="15" Scale="2" sap:unit="CurrencyCode" sap:label="Toplam Tutar"/>
+        <Property Name="CurrencyCode" Type="Edm.String" MaxLength="5" sap:label="Para Birimi" sap:semantics="currency-code"/>
+        <Property Name="Note" Type="Edm.String" MaxLength="80" sap:label="Not"/>
+        <Property Name="CreatedBy" Type="Edm.String" MaxLength="12" sap:display-format="UpperCase" sap:label="Yaratan"/>
+        <Property Name="LocalLastChangedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Son Değişiklik"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false" sap:label="Aktif mi" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" sap:label="Aktif kaydı var" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" sap:label="Taslağı var" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <NavigationProperty Name="DraftAdministrativeData" Relationship="cds_zbc000_ui_order_d2.assoc_D0A1" FromRole="FromRole_assoc_D0A1" ToRole="ToRole_assoc_D0A1"/>
+        <NavigationProperty Name="SiblingEntity" Relationship="cds_zbc000_ui_order_d2.assoc_S1B1" FromRole="FromRole_assoc_S1B1" ToRole="ToRole_assoc_S1B1"/>
+        <NavigationProperty Name="to_Item" Relationship="cds_zbc000_ui_order_d2.assoc_7A1F0C2E" FromRole="FromRole_assoc_7A1F0C2E" ToRole="ToRole_assoc_7A1F0C2E"/>
+        <NavigationProperty Name="to_Customer" Relationship="cds_zbc000_ui_order_d2.assoc_1B3D9E44" FromRole="FromRole_assoc_1B3D9E44" ToRole="ToRole_assoc_1B3D9E44"/>
+      </EntityType>
+      <EntityType Name="ItemType" sap:label="Sipariş Kalemi" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="ItemUUID"/>
+          <PropertyRef Name="IsActiveEntity"/>
+        </Key>
+        <Property Name="ItemUUID" Type="Edm.Guid" Nullable="false" sap:label="Kalem UUID"/>
+        <Property Name="OrderUUID" Type="Edm.Guid" sap:label="Sipariş UUID"/>
+        <Property Name="ItemPosition" Type="Edm.String" MaxLength="4" sap:display-format="NonNegative" sap:label="Kalem"/>
+        <Property Name="Product" Type="Edm.String" MaxLength="18" sap:display-format="UpperCase" sap:label="Ürün"/>
+        <Property Name="ProductName" Type="Edm.String" MaxLength="40" sap:label="Ürün Adı"/>
+        <Property Name="Quantity" Type="Edm.Decimal" Precision="13" Scale="3" sap:unit="QuantityUnit" sap:label="Miktar"/>
+        <Property Name="QuantityUnit" Type="Edm.String" MaxLength="3" sap:label="Birim" sap:semantics="unit-of-measure"/>
+        <Property Name="NetAmount" Type="Edm.Decimal" Precision="15" Scale="2" sap:unit="CurrencyCode" sap:label="Net Tutar"/>
+        <Property Name="CurrencyCode" Type="Edm.String" MaxLength="5" sap:label="Para Birimi" sap:semantics="currency-code"/>
+        <Property Name="DeliveryDate" Type="Edm.DateTime" Precision="0" sap:display-format="Date" sap:label="Teslim Tarihi"/>
+        <Property Name="IsActiveEntity" Type="Edm.Boolean" Nullable="false" sap:label="Aktif mi" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <Property Name="HasActiveEntity" Type="Edm.Boolean" sap:label="Aktif kaydı var" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <Property Name="HasDraftEntity" Type="Edm.Boolean" sap:label="Taslağı var" sap:creatable="false" sap:updatable="false" sap:filterable="false"/>
+        <NavigationProperty Name="DraftAdministrativeData" Relationship="cds_zbc000_ui_order_d2.assoc_D0A2" FromRole="FromRole_assoc_D0A2" ToRole="ToRole_assoc_D0A2"/>
+        <NavigationProperty Name="to_Order" Relationship="cds_zbc000_ui_order_d2.assoc_7A1F0C2E" FromRole="ToRole_assoc_7A1F0C2E" ToRole="FromRole_assoc_7A1F0C2E"/>
+      </EntityType>
+      <EntityType Name="I_DraftAdministrativeDataType" sap:label="Taslak Yönetim Verisi" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="DraftUUID"/>
+        </Key>
+        <Property Name="DraftUUID" Type="Edm.Guid" Nullable="false" sap:label="Taslak UUID"/>
+        <Property Name="DraftEntityType" Type="Edm.String" MaxLength="30" sap:label="Taslak Varlık"/>
+        <Property Name="CreationDateTime" Type="Edm.DateTimeOffset" Precision="7" sap:label="Yaratma"/>
+        <Property Name="InProcessByUser" Type="Edm.String" MaxLength="12" sap:label="İşleyen"/>
+      </EntityType>
+      <EntityType Name="ZBC000_I_CustomerVHType" sap:label="Müşteri Değer Yardımı" sap:value-list="true" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="CustomerID"/>
+        </Key>
+        <Property Name="CustomerID" Type="Edm.String" Nullable="false" MaxLength="10" sap:display-format="UpperCase" sap:label="Müşteri"/>
+        <Property Name="CustomerName" Type="Edm.String" MaxLength="40" sap:label="Müşteri Adı"/>
+        <Property Name="City" Type="Edm.String" MaxLength="25" sap:label="Şehir"/>
+      </EntityType>
+      <EntityType Name="ZBC000_I_StatusVHType" sap:label="Durum Değer Yardımı" sap:value-list="true" sap:content-version="1">
+        <Key>
+          <PropertyRef Name="Status"/>
+        </Key>
+        <Property Name="Status" Type="Edm.String" Nullable="false" MaxLength="1" sap:display-format="UpperCase" sap:label="Durum"/>
+        <Property Name="StatusText" Type="Edm.String" MaxLength="60" sap:label="Durum Metni"/>
+      </EntityType>
+      <Association Name="assoc_D0A1" sap:content-version="1">
+        <End Type="cds_zbc000_ui_order_d2.OrderType" Multiplicity="1" Role="FromRole_assoc_D0A1"/>
+        <End Type="cds_zbc000_ui_order_d2.I_DraftAdministrativeDataType" Multiplicity="0..1" Role="ToRole_assoc_D0A1"/>
+      </Association>
+      <Association Name="assoc_D0A2" sap:content-version="1">
+        <End Type="cds_zbc000_ui_order_d2.ItemType" Multiplicity="1" Role="FromRole_assoc_D0A2"/>
+        <End Type="cds_zbc000_ui_order_d2.I_DraftAdministrativeDataType" Multiplicity="0..1" Role="ToRole_assoc_D0A2"/>
+      </Association>
+      <Association Name="assoc_S1B1" sap:content-version="1">
+        <End Type="cds_zbc000_ui_order_d2.OrderType" Multiplicity="1" Role="FromRole_assoc_S1B1"/>
+        <End Type="cds_zbc000_ui_order_d2.OrderType" Multiplicity="0..1" Role="ToRole_assoc_S1B1"/>
+      </Association>
+      <Association Name="assoc_7A1F0C2E" sap:content-version="1">
+        <End Type="cds_zbc000_ui_order_d2.OrderType" Multiplicity="1" Role="FromRole_assoc_7A1F0C2E"/>
+        <End Type="cds_zbc000_ui_order_d2.ItemType" Multiplicity="*" Role="ToRole_assoc_7A1F0C2E"/>
+        <ReferentialConstraint>
+          <Principal Role="FromRole_assoc_7A1F0C2E">
+            <PropertyRef Name="OrderUUID"/>
+          </Principal>
+          <Dependent Role="ToRole_assoc_7A1F0C2E">
+            <PropertyRef Name="OrderUUID"/>
+          </Dependent>
+        </ReferentialConstraint>
+      </Association>
+      <Association Name="assoc_1B3D9E44" sap:content-version="1">
+        <End Type="cds_zbc000_ui_order_d2.OrderType" Multiplicity="1" Role="FromRole_assoc_1B3D9E44"/>
+        <End Type="cds_zbc000_ui_order_d2.ZBC000_I_CustomerVHType" Multiplicity="0..1" Role="ToRole_assoc_1B3D9E44"/>
+        <ReferentialConstraint>
+          <Principal Role="ToRole_assoc_1B3D9E44">
+            <PropertyRef Name="CustomerID"/>
+          </Principal>
+          <Dependent Role="FromRole_assoc_1B3D9E44">
+            <PropertyRef Name="CustomerID"/>
+          </Dependent>
+        </ReferentialConstraint>
+      </Association>
+      <EntityContainer Name="cds_zbc000_ui_order_d2_Entities" m:IsDefaultEntityContainer="true" sap:message-scope-supported="true" sap:supported-formats="atom json xlsx">
+        <EntitySet Name="Order" EntityType="cds_zbc000_ui_order_d2.OrderType" sap:searchable="true" sap:content-version="1"/>
+        <EntitySet Name="Item" EntityType="cds_zbc000_ui_order_d2.ItemType" sap:content-version="1"/>
+        <EntitySet Name="I_DraftAdministrativeData" EntityType="cds_zbc000_ui_order_d2.I_DraftAdministrativeDataType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>
+        <EntitySet Name="ZBC000_I_CustomerVH" EntityType="cds_zbc000_ui_order_d2.ZBC000_I_CustomerVHType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>
+        <EntitySet Name="ZBC000_I_StatusVH" EntityType="cds_zbc000_ui_order_d2.ZBC000_I_StatusVHType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>
+        <AssociationSet Name="assoc_7A1F0C2E" Association="cds_zbc000_ui_order_d2.assoc_7A1F0C2E" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1">
+          <End EntitySet="Order" Role="FromRole_assoc_7A1F0C2E"/>
+          <End EntitySet="Item" Role="ToRole_assoc_7A1F0C2E"/>
+        </AssociationSet>
+        <AssociationSet Name="assoc_1B3D9E44" Association="cds_zbc000_ui_order_d2.assoc_1B3D9E44" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1">
+          <End EntitySet="Order" Role="FromRole_assoc_1B3D9E44"/>
+          <End EntitySet="ZBC000_I_CustomerVH" Role="ToRole_assoc_1B3D9E44"/>
+        </AssociationSet>
+        <FunctionImport Name="releaseOrder" ReturnType="cds_zbc000_ui_order_d2.OrderType" EntitySet="Order" m:HttpMethod="POST" sap:action-for="cds_zbc000_ui_order_d2.OrderType" sap:applicable-path="releaseOrder_ac">
+          <Parameter Name="OrderUUID" Type="Edm.Guid" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="OrderActivate" ReturnType="cds_zbc000_ui_order_d2.OrderType" EntitySet="Order" m:HttpMethod="POST" sap:action-for="cds_zbc000_ui_order_d2.OrderType">
+          <Parameter Name="OrderUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="OrderEdit" ReturnType="cds_zbc000_ui_order_d2.OrderType" EntitySet="Order" m:HttpMethod="POST" sap:action-for="cds_zbc000_ui_order_d2.OrderType">
+          <Parameter Name="OrderUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="OrderPrepare" ReturnType="cds_zbc000_ui_order_d2.OrderType" EntitySet="Order" m:HttpMethod="POST" sap:action-for="cds_zbc000_ui_order_d2.OrderType">
+          <Parameter Name="OrderUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+        <FunctionImport Name="OrderDiscard" ReturnType="cds_zbc000_ui_order_d2.OrderType" EntitySet="Order" m:HttpMethod="POST" sap:action-for="cds_zbc000_ui_order_d2.OrderType">
+          <Parameter Name="OrderUUID" Type="Edm.Guid" Mode="In"/>
+          <Parameter Name="IsActiveEntity" Type="Edm.Boolean" Mode="In"/>
+        </FunctionImport>
+      </EntityContainer>
+      <Annotations Target="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/Order" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.DraftRoot">
+          <Record>
+            <PropertyValue Property="ActivationAction" String="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/OrderActivate"/>
+            <PropertyValue Property="EditAction" String="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/OrderEdit"/>
+            <PropertyValue Property="PreparationAction" String="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/OrderPrepare"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/Item" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.DraftNode">
+          <Record>
+            <PropertyValue Property="PreparationAction" String="cds_zbc000_ui_order_d2.cds_zbc000_ui_order_d2_Entities/OrderPrepare"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="cds_zbc000_ui_order_d2.OrderType/CustomerID" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.ValueList">
+          <Record>
+            <PropertyValue Property="Label" String="Müşteri"/>
+            <PropertyValue Property="CollectionPath" String="ZBC000_I_CustomerVH"/>
+            <PropertyValue Property="SearchSupported" Bool="true"/>
+            <PropertyValue Property="Parameters">
+              <Collection>
+                <Record Type="Common.ValueListParameterInOut">
+                  <PropertyValue Property="LocalDataProperty" PropertyPath="CustomerID"/>
+                  <PropertyValue Property="ValueListProperty" String="CustomerID"/>
+                </Record>
+                <Record Type="Common.ValueListParameterDisplayOnly">
+                  <PropertyValue Property="ValueListProperty" String="CustomerName"/>
+                </Record>
+              </Collection>
+            </PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="cds_zbc000_ui_order_d2.OrderType/OverallStatus" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+        <Annotation Term="Common.ValueList">
+          <Record>
+            <PropertyValue Property="CollectionPath" String="ZBC000_I_StatusVH"/>
+            <PropertyValue Property="Parameters">
+              <Collection>
+                <Record Type="Common.ValueListParameterOut">
+                  <PropertyValue Property="LocalDataProperty" PropertyPath="OverallStatus"/>
+                  <PropertyValue Property="ValueListProperty" String="Status"/>
+                </Record>
+              </Collection>
+            </PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>

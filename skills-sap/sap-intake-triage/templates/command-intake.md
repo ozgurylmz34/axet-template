@@ -12,7 +12,9 @@ SAP geliştirme talebi alımı (intake triage) başlatıyoruz.
    - Kanıtlı değerlendir; kapsamla orantılı soru sor.
 4. Sınıf S2 ise:
    - `templates/intake-artifact.md`'yi temel alarak `.axet-code/intake/<YYYYMMDD-kisa-ad>.md` dosyasını oluştur ve tüm alanları
-     araştırma sonuçlarıyla doldur (şema: `references/s2-artifact-schema.md`).
+     araştırma sonuçlarıyla doldur (şema: `references/s2-artifact-schema.md`). Sistem sürümü, yeni Z adları (öneri + canlı
+     kontrol + ad başına ONAY), tablo yönetim alanları, kural taraması ve öz-tutarlılık bölümlerini `references/protocol.md`
+     §6 S2 adım 1'e göre doldur; standarttan sapan her kararı kullanıcıya sor.
    - Artefaktı kullanıcıyla madde madde gözden geçir; mutabakat işaretini yalnız kullanıcının açık onayından sonra koy.
    - Şema dosyasındaki kontrol komutunu çalıştır ve sonucunu göster.
 5. SAP'ye yazma bu komutun parçası DEĞİLDİR. Yazma aşamasında her CLI yazma çağrısı kapsam beyanı taşır

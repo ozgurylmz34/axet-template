@@ -148,6 +148,9 @@ kullanıcıya aktar, ne gerektiğini söyle.
   Mesaj sınıfı mesajları: `adt_msgclass_read` → `adt_msgclass_write` (birleştirir; mevcut mesajı değiştirme/silme yalnız açık argümanla, `s4_private`).
   `adt_push_source` ek tipleri: `bdef` (aktive etmez), `ccimp`/`ccau` (`name` = ana sınıf), `func`. Klasik ekran: `adt_screen_generate`.
   Kısa açıklama değişikliği: `adt_set_description` (class/bdef/srvd/ddls/ddlx/dcl, `s4_private`; obje inaktife düşer → dönüşteki `state`'e bak).
+  2026-09-21 (yalnız `s4_private`; canlı DEV 2026-09-21: tablo yaratma `ok` — aktif, readback 3/3 · tablo tipi yapı satırlı onarım yolu `ok` ·
+  metin havuzu yazma `ok`; ilkel satırlı ttyp onarımı ve metin havuzu `activation_final` henüz ÖLÇÜLMEDİ): Z tablo `adt_table_create` · tablo tipi `adt_ttyp_create` · metin havuzu `adt_textpool_write` ·
+  `adt_push_source` `ccdef`/`ccmac` (yazma yolu canlı ölçüldü 2026-09-21 → yanıtta `write_path_measured:true`). Ayrıntı: `references/tool-catalog.md`.
   Program açıklaması ADT ile değişmez → kullanıcı SE38'de değiştirir.
   CSV / `.cds` klasöründen çok obje (domain, dtel, cds, enqu, msag): `scripts/sap_adt_populate.py` — aynı kapı + reviewer hattından geçer,
   önce `--dry-run`; tablo türü yok (`references/foundation-ops.md` §9).

@@ -14,6 +14,7 @@ yeniden dağıtmadan önce depo sahibine danışın.
   - skills-sap/sap-classic-abap/templates/alv-temp*.prog.abap   (ALV şablonları)
   - skills-sap/sap-dev/references/naming.md   (adlandırma kılavuzu uyarlaması)
   - skills-sap/sap-fs-ts-docs/
+  - skills-sap/sap-ui5-user-guide/references/   (kullanıcı kılavuzu tuzak tablosu ve akış uyarlaması)
   - skills-sap/sap-abapgit-delivery/
   - skills/office-excel/
   - skills/office-docs/

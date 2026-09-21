@@ -72,7 +72,7 @@ ENDFUNCTION.
 - İmza **satır-içi ABAP deyimleriyle** yazılır; kaynak standarttaki `*"` yorum bloğu imza ADT push'unda reddedilir
   (`400 Parameter comment blocks are not allowed`) → `%sap-adt-foundation` → `references/known-errors-adt.md` K-15.
 - `TABLES` parametresinde `STRUCTURE` ADT push'unda reddedilir; `TYPE <tablo tipi>` kullan (K-15). Örnekteki
-  `bapiret2_t`'nin tablo tipi olduğu bilinir; kendi yapın için tablo tipi yoksa yeni DDIC (ad kullanıcıdan).
+  `bapiret2_t`'nin tablo tipi olduğu bilinir; kendi yapın için tablo tipi yoksa yeni DDIC (ad: öneri + canlı kontrol + kullanıcı onayı, `%sap-dev` §6).
 - FM ve fonksiyon grubu adları `%sap-dev` naming §4.4; FM push ayrıntısı `%sap-classic-abap`.
 - RAP'ten ayrı LUW ile çağrılacak FM'in Remote-Enabled işareti: `references/dpc-crud.md` §4.
 

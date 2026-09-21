@@ -2,7 +2,9 @@
 
 > Kaynak: ekip ADT playbook'unun domain/DTEL bölümü + domain/DTEL kontrol listesi + ilgili ekip dersleri; aXet CLI'ye uyarlandı.
 > ADT geneli: `%sap-adt-foundation` (`foundation-ops.md` §3.2 composite araçlar, §3.3 `master_language`).
-> Adlandırma: domain `ZSD001_D_<AD>`, DTEL `ZSD001_E_<AD>` (`%sap-dev` → `naming.md` §4.7). **DTEL adını AI önermez.**
+> Adlandırma: domain `ZSD001_D_<AD>`, DTEL `ZSD001_E_<AD>` (`%sap-dev` → `naming.md` §4.7). **Ad önerisi kuralı:**
+> önce yeniden kullanım; yeni Z domain/DTEL adını standarda uygun öner → canlıda kontrol et (varsa başka ad) → tablo hâlinde
+> sun → kullanıcının açık onayı olmadan yaratma (`%sap-dev` §6). Standart objeye append alanı adı önerilmez (kesin yasak A).
 > Alan tipleme sırası (released standart DTEL → mevcut Z DTEL → yeni Z DTEL → ilkel tip): `naming.md` §5.
 > Ölçümler S/4HANA (`s4_private`) sistemlerde yapıldı.
 
@@ -124,7 +126,7 @@ Sıra: güncel XML'i GET → XML'de değiştir → kilit → PUT → kilidi bır
 ---
 
 ## 6. Yazmadan önce
-`checklists.md` §2 (yeniden kullanım önce, ad kullanıcıdan, 4 etiket tam, metin spesifikasyondan, aktivasyon öncesi okuma).
+`checklists.md` §2 (yeniden kullanım önce, ad önerisi canlı kontrollü + kullanıcı onaylı, 4 etiket tam, metin spesifikasyondan, aktivasyon öncesi okuma).
 
 - **Eski sistemden taşınan projede önce tam döküm, sonra kapsam kararı:** "bu eski Z objesi alınacak mı?" kararından ÖNCE ilgili
   eski sistem objelerini tam indir — yapı → DTEL → domain → (Z ise) değer tablosu, özyinelemeli. Hangisinin alınacağı sonra,

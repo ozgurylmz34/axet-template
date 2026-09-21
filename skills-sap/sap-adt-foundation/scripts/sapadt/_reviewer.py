@@ -293,6 +293,9 @@ COMPOSITE_TOOL_TO_TASK = {
     #   · `artifact_path=<ilgisiz artefakt (.clas.abap)>` → verdict PASS. Gate tek-dosya
     #     hedefinde repo taramaz (`_aday_dosyalar`: `hedef.is_file()` → [hedef]) ⇒ YANLIŞ-POZİTİF YOK.
     "adt_dtel_create": "dtel_creation",
+    # aXet 2026-09-21 (Z38): `adt_table_create` bu görevi artefakt BEKLEMEDEN, yazılacak DDL üzerinde HER çağrıda
+    # koşar (`run_reviewer_tablo`); bu satır görev beyanıdır (reviewer_tip_kapsam tazelik denetimi okur).
+    "adt_table_create": "table_creation",
 }
 
 
@@ -669,6 +672,28 @@ def run_reviewer_struct_alanlari(name: str, fields, description: str = "") -> Re
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(metin)
         return run_reviewer(STRUCT_ALANLAR_GOREVI, yol)
+    finally:
+        try:
+            os.unlink(yol)
+        except OSError:
+            pass
+
+
+TABLO_GOREVI = "table_creation"
+
+
+def run_reviewer_tablo(ddl: str) -> ReviewerResult:
+    """`adt_table_create` her çağrıda (aXet 2026-09-21, Z38): SAP'ye PUT edilecek DDL'in KENDİSİ (`utils.ddic_tablo.
+    tablo_ddl_kaynagi`) `table_creation` zincirinden geçer (Z/Y + /ns/ DTEL var/aktif · CURR/QUAN nitelikli referans ·
+    eskimiş annotation). Denetlenen metin = yazılan metin; ayrı bir "gate DDL'i" yok. Dosya yazılamazsa BLOCKER."""
+    try:
+        fd, yol = tempfile.mkstemp(prefix="axet_tablo_", suffix=".tabl.asddls")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(ddl)
+    except Exception as exc:  # noqa: BLE001 — denetlenemiyorsa GEÇMEZ (fail-closed)
+        return ReviewerResult(verdict="BLOCKER", blocker_count=1, skip_reason=f"ddl_dosyasi_yazilamadi:{type(exc).__name__}")
+    try:
+        return run_reviewer(TABLO_GOREVI, yol)
     finally:
         try:
             os.unlink(yol)

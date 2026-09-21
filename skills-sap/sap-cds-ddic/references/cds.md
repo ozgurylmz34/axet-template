@@ -208,7 +208,7 @@ Dallar alan sayısı/sıra/tip bakımından birebir (literal cast'lerle hizala).
 **T5 · Conversion exit'li alan OData'ya açılınca yayın düşer.**
 `Do not use conversion exit <EXIT> for property <FIELD>` (ör. `/scwm/de_huident`, kur alanları). **Salt-okunur** alanda
 `cast( <alan> as abap.char(<n>) )` ile exit düşer (union'da iki dalda da). **Yazılabilir** alanda cast yasak (cast'li element
-hesaplanmış olur, eşlenemez/yazılamaz) → tek temiz yol alanın exit'siz Z DTEL'e çevrilmesi (tablo değişikliği + DTEL adı kullanıcıdan).
+hesaplanmış olur, eşlenemez/yazılamaz) → tek temiz yol alanın exit'siz Z DTEL'e çevrilmesi (tablo değişikliği + kullanıcı onaylı DTEL adı — `%sap-dev` §6).
 
 **T6 · JOIN'de kullanılan alanı silme/rename → üç adımlı geçiş.**
 Belirti: `Field <SQLVIEW>-X is still being used in join of <TÜKETİCİ>`; atomik ortak aktivasyon da `column <Y> is unknown`.

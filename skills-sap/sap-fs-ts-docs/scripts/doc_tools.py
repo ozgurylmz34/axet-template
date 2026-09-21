@@ -4,7 +4,9 @@
 Kanıtlı çağrı bilgisi (gerçek render ile doğrulanmış yöntem):
   - mmdc (Mermaid CLI) kendi Chromium'unu indirmeyebilir → sistem tarayıcısına yönlendirilir
     (puppeteer yapılandırması executablePath).
-  - marp --pdf/--pptx açık Chrome profiliyle takılabilir → varsayılan tarayıcı Edge (`--browser edge`).
+  - Genel varsayılan tarayıcı sistem Chrome'udur (ekran çekimi/PDF ile aynı kanal; mmdc dahil).
+  - İSTİSNA — marp --pdf/--pptx açık Chrome profiliyle takılabilir (kayıtlı tuzak) → marp için Edge kuruluysa
+    Edge (`--browser edge`) tercih edilir, yoksa Chrome.
   - Puppeteer yapılandırmasında Windows yolu ileri eğik çizgiyle yazılır (ters eğik çizgi JSON kaçışını bozar).
 
 Kütüphane:
@@ -42,30 +44,35 @@ _NPM_BIN = os.path.join(os.environ.get("APPDATA", ""), "npm") if os.environ.get(
 MERMAID_FENCE = re.compile(r"```mermaid[^\n]*\n(.*?)\n```[^\n]*\n?", re.S)
 
 
-def _browser_candidates():
+_CHROME = ("Google", "Chrome", "Application", "chrome.exe")
+_EDGE = ("Microsoft", "Edge", "Application", "msedge.exe")
+_PATH_ADLARI = {"chrome": ("google-chrome", "chrome"), "edge": ("msedge", "microsoft-edge")}
+
+
+def _browser_candidates(prefer="chrome"):
+    """Windows kurulum yolları; `prefer` ailesi önce (chrome | edge)."""
     roots = [os.environ.get("PROGRAMFILES(X86)"), os.environ.get("PROGRAMFILES"), os.environ.get("LOCALAPPDATA"),
              r"C:\Program Files (x86)", r"C:\Program Files"]
+    sira = (_CHROME, _EDGE) if prefer != "edge" else (_EDGE, _CHROME)
     out = []
-    for r in roots:
-        if not r:
-            continue
-        out.append(os.path.join(r, "Microsoft", "Edge", "Application", "msedge.exe"))
-    for r in roots:
-        if not r:
-            continue
-        out.append(os.path.join(r, "Google", "Chrome", "Application", "chrome.exe"))
+    for parca in sira:
+        for r in roots:
+            if r:
+                out.append(os.path.join(r, *parca))
     return out
 
 
-def find_browser():
-    """Kurulu Chromium tabanlı tarayıcı yolu (Edge önce). Yoksa None. `DOC_TOOLS_BROWSER` ile ezilir."""
+def find_browser(prefer="chrome"):
+    """Kurulu Chromium tabanlı tarayıcı yolu (varsayılan Chrome önce; `prefer="edge"` → Edge önce). Yoksa None.
+    `DOC_TOOLS_BROWSER` her iki durumda da ezer."""
     env = os.environ.get("DOC_TOOLS_BROWSER")
     if env and os.path.exists(env):
         return env
-    for p in _browser_candidates():
+    for p in _browser_candidates(prefer):
         if os.path.exists(p):
             return p
-    for name in ("msedge", "microsoft-edge", "google-chrome", "chrome", "chromium", "chromium-browser"):
+    aileler = ("chrome", "edge") if prefer != "edge" else ("edge", "chrome")
+    for name in _PATH_ADLARI[aileler[0]] + _PATH_ADLARI[aileler[1]] + ("chromium", "chromium-browser"):
         hit = shutil.which(name)
         if hit:
             return hit
@@ -86,7 +93,8 @@ def resolve_cli(name):
 
 
 def _browser_for_marp():
-    b = (find_browser() or "").lower()
+    """marp için: Edge kuruluysa edge (açık Chrome profiliyle takılma tuzağı), değilse chrome."""
+    b = (find_browser(prefer="edge") or "").lower()
     return "edge" if "edge" in b else "chrome"
 
 
@@ -165,7 +173,7 @@ def preprocess_mermaid_fences(md, out_dir, rel_prefix="screenshots", scale=2, pr
 # --------------------------------------------------------------------------- Marp
 
 def marp_build(md_path, fmt, out_path=None, theme=None, allow_local_files=True):
-    """Marp Markdown → pdf | pptx | html. PDF/PPTX için Edge tercih edilir."""
+    """Marp Markdown → pdf | pptx | html. PDF/PPTX için Edge tercih edilir (kayıtlı tuzak: açık Chrome profili)."""
     marp = resolve_cli("marp")
     if not marp:
         raise RuntimeError("marp bulunamadı. Kurulum: " + MARP_INSTALL)
@@ -182,7 +190,7 @@ def marp_build(md_path, fmt, out_path=None, theme=None, allow_local_files=True):
     if theme:
         cmd += ["--theme", theme]
     env = dict(os.environ)
-    browser = find_browser()
+    browser = find_browser(prefer="edge")
     if browser:
         env["CHROME_PATH"] = browser
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL, env=env)
@@ -212,7 +220,7 @@ def check():
     status["tarayıcı"] = find_browser()
     hints = {"python-markdown": "python -m pip install markdown", "Pillow": "python -m pip install Pillow",
              "node": "Node.js kurulmalı", "mmdc": MMDC_INSTALL, "marp": MARP_INSTALL,
-             "tarayıcı": "Edge ya da Chrome kurulmalı (ya da DOC_TOOLS_BROWSER)"}
+             "tarayıcı": "Chrome kurulmalı (Edge de kabul; ya da DOC_TOOLS_BROWSER)"}
     print("== doc_tools bağımlılık durumu ==")
     for k, v in status.items():
         print("  %-16s: %s" % (k, v if v else "YOK — " + hints[k]))

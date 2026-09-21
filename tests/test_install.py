@@ -548,6 +548,30 @@ HALA_ACIK_KACIS_BICIMLERI = [
 # `git --git-dir=/x/depo branch -D f` (yol `.git` ile bitmiyor) yine açıktır.
 
 
+# PLAYWRIGHT TARAYICI İNDİRMESİ (2026-09-21, canlı `axet-code run`, aXet.code 1.3.0, lab config XDG_CONFIG_HOME ile).
+# Kanıt motor tarafından: `.axet-code/axet-code.db` araç sonucu "denied by agent permission ruleset (rule
+# bash:"<desen>"=deny)" + BgJob satırı yok + işaret dosyası yok. Pozitif kontrol aynı koşumda reddedildi.
+PLAYWRIGHT_INDIRME_CANLI = [
+    ('echo "npx playwright-cli install-browser chromium" > t1.txt', "*install-browser*", "deny"),
+    ('echo "npx playwright install chromium" > t2.txt', "*playwright install*", "deny"),
+    ('echo "npx playwright-core install chrome" > t3.txt', "*playwright-core install*", "deny"),
+    ('echo "npx playwright@1.64.0 install" > t4.txt', "*playwright@* install*", "deny"),
+    ('echo "playwright-cli install-browser" > t5.txt', "*install-browser*", "deny"),
+    # GERÇEK komut (echo değil): reddedildi, %LOCALAPPDATA%\ms-playwright öncesi/sonrası aynı kaldı.
+    ("npx playwright-cli install-browser chromium", "*install-browser*", "deny"),
+]
+# Kontrol grubu — hiçbir kurala uymamalı. İlk dördü aynı canlı koşumlarda ÇALIŞTI (BgJob + işaret dosyası).
+PLAYWRIGHT_KONTROL_GRUBU = [
+    "npx playwright-cli --version > k1.txt",                              # canlı: çalıştı (gerçek komut, 0.1.21)
+    'echo "npm install --save-dev @playwright/cli@0.1.21" > k2.txt',       # canlı: çalıştı
+    'echo "npx playwright-cli install" > k3.txt',                          # canlı: çalıştı — skill kurulumu, indirme yok
+    'echo "npx playwright-cli screenshot --filename=kurulum.png" > k4.txt',  # canlı: çalıştı
+    "npx playwright-cli open http://localhost:8080/ --browser chrome",
+    "npx playwright-cli -s=kd goto http://localhost:8080/index.html",
+    "node capture_kd_screens.js kd.json",
+]
+
+
 def _eslesen_desenler(kurallar: dict, komut: str) -> list[tuple[str, str]]:
     """Komut metnine uyan (desen, karar) çiftleri. Ölçülen semantik: tam metne glob, harfe DUYARLI."""
     return [(p, karar) for p, karar in kurallar.get("bash", {}).items() if fnmatch.fnmatchcase(komut, p)]
@@ -561,7 +585,8 @@ class OlculmusDenyKapsamiTest(unittest.TestCase):
 
     def test_olculmus_desenler_duruyor_ve_esliyor(self):
         eksik = []
-        for komut, beklenen, karar in CANLI_OLCULEN_ESLESME + K11_EKLENEN_DENY + GIT_C_SIMULASYONLA_OLCULEN:
+        for komut, beklenen, karar in (CANLI_OLCULEN_ESLESME + K11_EKLENEN_DENY + GIT_C_SIMULASYONLA_OLCULEN
+                                       + PLAYWRIGHT_INDIRME_CANLI):
             gercek = self.kurallar.get("bash", {}).get(beklenen)
             if gercek != karar:
                 eksik.append(f"{beklenen!r} config/permissions.json'da {karar!r} değil ({gercek!r}) — canlı ölçümde "
@@ -575,7 +600,7 @@ class OlculmusDenyKapsamiTest(unittest.TestCase):
     def test_kontrol_grubu_hicbir_kurala_uymuyor(self):
         """Yanlış pozitif ölçümü: bu komutlar deny DE ask DA almamalı (ask = TUI'de gereksiz soru)."""
         ihlal = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}"
-                 for k in KONTROL_GRUBU_IZINLI if _eslesen_desenler(self.kurallar, k)]
+                 for k in KONTROL_GRUBU_IZINLI + PLAYWRIGHT_KONTROL_GRUBU if _eslesen_desenler(self.kurallar, k)]
         self.assertEqual(ihlal, [], "\n".join(ihlal))
 
     def test_git_c_disi_kacis_bicimleri_hala_acik(self):

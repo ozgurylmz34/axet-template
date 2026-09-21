@@ -83,7 +83,8 @@ CONDITIONAL_WRITE = {
                      "allow_risky_tests truthy ise yazma sınıfı (dangerous/critical testler kalıcı veri değiştirebilir)"),
 }
 REQUIRES_TRANSPORT = frozenset({"adt_post_shell", "adt_domain_create", "adt_dtel_create",
-                                "adt_struct_create", "adt_msgclass_write", "adt_set_description"})
+                                "adt_struct_create", "adt_msgclass_write", "adt_set_description",
+                                "adt_table_create", "adt_ttyp_create", "adt_textpool_write"})
 DELETE_TOOLS = frozenset({"adt_delete"})
 SCOPES = ("S0", "S1", "S2")
 REASON_MIN_LEN = 15
@@ -495,7 +496,8 @@ def review_preflight(task: str | None, artifact_path: str | None, ack_drop: str 
     return None, ozet
 
 
-_REVIEWER_ICEREN = frozenset({"adt_push_source", "adt_domain_create", "adt_dtel_create", "adt_struct_create"})
+_REVIEWER_ICEREN = frozenset({"adt_push_source", "adt_domain_create", "adt_dtel_create", "adt_struct_create",
+                              "adt_table_create"})
 
 
 def _olculemedi_eki(rv: dict) -> str:

@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.4.0
+CORE-ID: AXET-CORE-0.5.0
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -10,7 +10,7 @@ CORE-ID: AXET-CORE-0.4.0
   (bölüm yoksa bu çekirdeğin bulunduğu template klonunun `scripts/session_brief.py`'si). Çalıştıramazsan nedenini yaz; özeti tahminle üretme.
   Bu adım ilk mesajın türünden bağımsızdır: mesaj tek bir komut ya da dosya yolu olsa da ilk yanıttan önce koşulur.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.4.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.5.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir).
@@ -51,7 +51,7 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 - Önemli bir kod/obje değişikliğini bitirince "tamam" demeden `%code-review` ile taze, bağımsız inceleme yaptır; BLOCKER varsa önce düzelt. WARNING'i ve ÖLÇÜLEMEDİ/SKIP sonuçlarını raporda açıkça say; SKIP'i PASS diye yuvarlama.
 - Rapor: yapılan · nasıl doğrulandı (komut + sonuç) · yapılmayan/ertelenen · açık sorular. Başarısız testi başarılı gibi sunma.
 - Bir madde (açık iş, karar, bulgu) konuşmada kapanınca yazılı yerinde de aynı anda kapat; aynı açık maddeyi iki yerde tutma. Denemelerden sonra çalışan bir yöntem bulduysan `%remember` ile kaydet.
-- **Kabuk ortamı:** `bash` aracı Go tabanlıdır: `grep`/`head`/`tail`/`wc`/`type`/`dir` yoktur → `rg` kullan. `python -c` içinde Türkçe metin için `encoding="utf-8"` ya da `PYTHONIOENCODING=utf-8` ver. Kodlama hatası alınca metni ASCII'ye DÜŞÜRME; kodlamayı düzelt.
+- **Kabuk ortamı:** `bash` aracı Go tabanlıdır: `grep`/`head`/`tail`/`wc`/`type`/`dir` yoktur → `rg` kullan. `find` vardır ama `-iname` ve `-maxdepth` desteklemez (hata: `flag provided but not defined`) — bu hatayı "dosya yok" sanma; dosya adı aramasında `rg --files --iglob "*desen*"` kullan. `python -c` içinde Türkçe metin için `encoding="utf-8"` ya da `PYTHONIOENCODING=utf-8` ver. Kodlama hatası alınca metni ASCII'ye DÜŞÜRME; kodlamayı düzelt.
 
 ## 5. Kapsam dışı bir kusur görürsen
 - Bizim işimizin yan etkisi mi → düzelt.

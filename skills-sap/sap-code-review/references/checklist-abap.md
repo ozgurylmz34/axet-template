@@ -55,7 +55,7 @@
 
 | ID | Ne kontrol edilir | Nasıl | Önem | Otomasyon | Kaynak ders |
 |---|---|---|---|---|---|
-| BE-69 | FM `TABLES <p> TYPE <x>`'te `<x>` tablo tipi değil (transparan tablo/yapı) → normal FM'de tolere edilir, RFC yapılınca `FL 387`; `STRUCTURE` yazılırsa push `FUNC_ADT 015` | `TABLES` satırları → tipin tablo tipi (TTYP) olduğunu `adt_get` ile doğrula; yeni tablo tipi adı kullanıcıdan | BLOCKER | YOK | Ekip dersi; `%sap-odata-backend` dpc-crud §4 |
+| BE-69 | FM `TABLES <p> TYPE <x>`'te `<x>` tablo tipi değil (transparan tablo/yapı) → normal FM'de tolere edilir, RFC yapılınca `FL 387`; `STRUCTURE` yazılırsa push `FUNC_ADT 015` | `TABLES` satırları → tipin tablo tipi (TTYP) olduğunu `adt_get` ile doğrula; yeni tablo tipi adı kullanıcı onaylı (`%sap-dev` §6) | BLOCKER | YOK | Ekip dersi; `%sap-odata-backend` dpc-crud §4 |
 | BE-34 | S/4 satış belgesi key-user alanları (`ZZ1_*`) BAPI `EXTENSIONIN`'de `BAPE_VBAK` ile geçirilmiş → alanlar sessizce kaybolur; doğru yapı `BAPE_SDSALESDOC` (key/data/datax, `datax` bayrağı zorunlu) | Uzantı yapısı adı ve `datax` atamaları; yapıyı `adt_get` ile oku | BLOCKER | YOK — yalnız belge yaratma + alan geri okuması kanıtlar | Ekip dersi |
 | BE-37 | Key-user alanları `EXTENSIONIN`'e ham yapı imajıyla (`valuepart1..4`'e bölerek) geçirilmiş → S/4'te yok sayılır; serileştirme `CL_CFD_BAPI_MAPPING` ile | Mapping sınıfı kullanılıyor mu; imzayı `adt_get` ile doğrula, uydurma | BLOCKER | YOK — çalışma zamanı: yarat + alan geri okuması | Ekip dersi (BE-34'ü düzeltir) |
 
