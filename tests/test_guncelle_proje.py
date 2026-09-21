@@ -824,6 +824,64 @@ class AkisTest(ProjeTemel):
 # =====================================================================================================
 # 7. P2 İLE PAYLAŞIM (kopyalanmadı, çağrıldı)
 # =====================================================================================================
+class GuncellikTest(GeciciTest):
+    """`%guncelle` sonrası klon "geride" SAYILMAMALI (Z29, 2026-09-21 — kullanıcı canlıda yaşadı).
+
+    Motor yayınları MERGE etmez; kalemleri yerel commit'le uygular ⇒ `HEAD..origin/main` commit
+    sayısı güncellemeden sonra da > 0 kalır. Eski ölçüm bu yüzden her `%guncelle`'den sonra
+    `%guncelle-proje`'yi "klon N commit geride" diye DURDURUYORDU. Doğru ölçü `session_brief`
+    ile aynıdır (Q4): bekleyen YAYIN KALEMİ var mı.
+    """
+
+    def _kur(self) -> tuple[Path, Path]:
+        yukari, klon = self.tmp / "yukari", self.tmp / "klon"
+        yukari.mkdir()
+        g = self.git
+        g(yukari, "init", "-q", "-b", "main")
+        katalog = {"yayinlar": [{"etiket": "v0.1.0", "kalemler": [{"id": "k1"}]}]}
+        self.yaz(yukari / "guncelle" / "yayinlar.json", json.dumps(katalog))
+        self.yaz(yukari / "a.txt", "v1\n")
+        g(yukari, "add", "-A"); g(yukari, "commit", "-q", "-m", "v1"); g(yukari, "tag", "v0.1.0")
+        katalog["yayinlar"].append({"etiket": "v0.2.0", "kalemler": [{"id": "k2"}]})
+        self.yaz(yukari / "guncelle" / "yayinlar.json", json.dumps(katalog))
+        self.yaz(yukari / "a.txt", "v2\n")
+        g(yukari, "add", "-A"); g(yukari, "commit", "-q", "-m", "v2"); g(yukari, "tag", "v0.2.0")
+        g(self.tmp, "clone", "-q", str(yukari), str(klon))
+        g(klon, "reset", "-q", "--hard", "v0.1.0")
+        return yukari, klon
+
+    def _geride(self, klon: Path):
+        if str(GERCEK_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(GERCEK_SCRIPTS))
+        import guncelle_proje as gp  # noqa: PLC0415
+        return gp.Klon(klon).geride_mi()
+
+    def test_1_guncelle_sonrasi_klon_geride_degil(self) -> None:
+        _, klon = self._kur()
+        # motorun yaptığı: içeriği yerel commit'le uygula + uygulanan.json'a yaz
+        self.yaz(klon / "a.txt", "v2\n")
+        self.git(klon, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-am",
+                 "guncelle: v0.2.0 kalemler k2")
+        self.yaz(klon / ".axet-guncelleme" / "uygulanan.json",
+                 json.dumps({"surum": 1, "kalemler": {"k2": {"durum": "uygulandi"}}}))
+        self.assertGreater(int(self.git(klon, "rev-list", "--count", "HEAD..@{u}").stdout), 0,
+                           "kalibrasyon: commit sayısı hâlâ > 0 olmalı (hatanın koşulu)")
+        geride, ayrinti = self._geride(klon)
+        self.assertIs(geride, False, ayrinti)
+
+    def test_2_uygulanmamis_kalem_varsa_geride(self) -> None:
+        _, klon = self._kur()
+        geride, ayrinti = self._geride(klon)
+        self.assertIs(geride, True, ayrinti)
+        self.assertIn("k2", ayrinti)
+
+    def test_3_yayini_iceren_taze_klon_geride_degil(self) -> None:
+        _, klon = self._kur()
+        self.git(klon, "reset", "-q", "--hard", "v0.2.0")
+        geride, ayrinti = self._geride(klon)
+        self.assertIs(geride, False, ayrinti)
+
+
 class PaketSablonuRcTest(unittest.TestCase):
     """rc taraması 2026-09-18 (Z15): `git diff` rc≠0 "paket şablonu: değişiklik yok" diye
     okunuyordu. Taklit Baglam: `k.git` rc=128 döner; kontrol grubu rc=0 + boş çıktı."""

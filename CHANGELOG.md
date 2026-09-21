@@ -6,6 +6,50 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.4.2 — 2026-09-21
+
+### ★ 0.4.2-01 · Güncelleme kapanışı ürün dosyalarındaki `# =====` ayraçlarını çakışma sanmıyor (düzeltme)
+
+- **neden:** Kapanış ve işaretleme adımları git çakışma işaretlerini (`<<<<<<<`, `=======` …) dosyanın HER YERİNDE alt-dizi olarak arıyordu. aXet'in kendi dosyalarında bölüm ayracı olarak `# =====…` satırları ve işaret tanımının kendisi bulunduğu için, yerel değişikliği olmayan temiz bir güncelleme bile 7 dosyada 'çakışma işareti kaldı' diye FAIL veriyordu (v0.1.0 → v0.4.1 güncellemesinde kullanıcı makinesinde ölçüldü; 7 dosya yayınla bayt-bayt aynıydı). Artık yalnız SATIR BAŞINDA duran gerçek git işaretleri sayılır; gerçek bir 3-yollu çakışma bloğu eskisi gibi yakalanır. Aynı kontrol `%guncelle-proje`de de düzeltildi. Ürünün kendi içinde satır başında işaret taşıyan dosyalar (ör. vaka kartlarındaki örnek blok) yayındaki hâliyle karşılaştırılır; yalnız yayında OLMAYAN işaretler çakışma sayılır.
+- **dosyalar:** `scripts/guncelle.py`, `scripts/guncelle_proje.py`, `tests/test_guncelle.py`
+- **test:** `python tests/run_tests.py -k CakismaIsaretiTest`
+- **gerektirir:** —
+
+### ★ 0.4.2-02 · `%guncelle`den sonra `%guncelle-proje` artık 'klon geride' diye durmuyor (düzeltme)
+
+- **neden:** `%guncelle-proje` klonun güncel olup olmadığını commit sayısıyla (`HEAD..origin/main`) ölçüyordu. `%guncelle` ise yayınları birleştirmez, kalemleri yerel bir commit'le uygular ⇒ güncellemeden sonra da sayı sıfır olmuyor ve `%guncelle-proje` HER seferinde 'önce %guncelle çalıştır' diye duruyordu (kullanıcı makinesinde ölçüldü: içerik v0.4.1 ile aynı, yine de '4 commit geride'). Artık oturum özetiyle aynı ölçü kullanılır: uygulanmamış yayın kalemi var mı. Not: güncellemede bilerek SEÇMEDİĞİN bir kalem varsa o kalem hâlâ bekliyor sayılır ve `%guncelle-proje` yine önce `%guncelle` ister — bu doğru davranıştır.
+- **dosyalar:** `scripts/guncelle_proje.py`, `tests/test_guncelle_proje.py`
+- **test:** `python tests/run_tests.py -k GuncellikTest`
+- **gerektirir:** —
+
+### 0.4.2-03 · Her yayın öncesi CI'da gerçek güncelleme provası (düzeltme)
+
+- **neden:** Birim testleri kuralları küçük yapay girdilerle dener; kullanıcının yürüdüğü akışı (gerçek eski sürüm → yeni sürüm, gerçek içerik, `%guncelle` ardından `%guncelle-proje`) hiçbiri koşmuyordu — bu sürümdeki iki hata da oradan kaçtı. CI artık her değişiklikte aday yayını gerçek public geçmişin üstüne kurup temiz klonlarda güncelleme motorunu baştan sona koşuyor. Kullanıcı tarafında davranış değişikliği yoktur. Ayrıca CI'daki 'kullanıcı ağacı' testi artık yayın aracının ürettiği dosyaları da içeriyor (önceden içermediği için yalnız kullanıcı ağacında kırmızı olan bir test 3 yayın boyunca görünmedi).
+- **dosyalar:** `.github/workflows/testler.yml`
+- **test:** —
+- **gerektirir:** —
+
+### 0.4.2-05 · Güncelleme planı saniyeler içinde hazır (önce ~77 sn) (yetenek)
+
+- **neden:** Plan adımı her dosya için ayrı git süreçleri başlatıyordu: yaklaşık 470 dosyada 1455 süreç, Windows'ta süreç başına ~52 ms ⇒ ~77 sn (ölçüldü). Artık aynı bilgiler sürüm başına tek git çağrısıyla okunuyor: ~2 sn. Plan çıktısı eskisiyle BİREBİR aynı (aynı klonda eski ve yeni motorla üretilen plan dosyaları karşılaştırıldı). Önbellek yalnız plan adımının içinde yaşar; dosya yazan adımlar her zaman diskten taze okur.
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`
+- **test:** `python tests/run_tests.py -k TopluOkumaTest`
+- **gerektirir:** —
+
+### 0.4.2-06 · Kullanıcı klonunda kırmızı yanan bir kart testi düzeltildi (düzeltme)
+
+- **neden:** `test_guncelle_kartlar` içindeki bir kontrol, yayında üretilen `guncelle/ci-durum.json` dosyasının diskte OLMADIĞINI varsayıyordu; dosya her yayında üretildiği için test yalnız kullanıcı klonunda kırmızıydı (yerel değişiklikli güncellemelerde test turu bunu gürültü olarak gösterebilirdi). Kontrol artık diskte gerçekten olmayan sentetik bir yolla yapılıyor.
+- **dosyalar:** `tests/test_guncelle_kartlar.py`
+- **test:** `python tests/run_tests.py -k test_guncelle_kartlar`
+- **gerektirir:** —
+
+### 0.4.2-04 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.4.1 — 2026-09-21
 
 ### ★ 0.4.1-01 · Yerel değişikliği olmayan güncellemede test turu koşmaz — güncelleme dakikalar sürer (yetenek)

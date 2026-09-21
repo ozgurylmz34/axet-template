@@ -2463,6 +2463,100 @@ class CiSonrasiTest(GuncelleTemel):
         self.assertNotIn("kaynak", veri)
 
 
+class CakismaIsaretiTest(unittest.TestCase):
+    """v0.4.2 — çakışma işareti YALNIZ satır başında aranır (git'in yazdığı biçim).
+
+    ⛔ ÖLÇÜLEN KUSUR (v0.4.1, gerçek tüketici güncellemesi 2026-09-21): kapanış `=======`
+    alt-dizisini dosyanın HER YERİNDE arıyordu ⇒ `# =====…` bölüm ayracı taşıyan 7 dosya
+    (motorun kendisi dahil, yayın blob'uyla bayt-bayt aynı) FAIL verdi. Testler yakalamadı:
+    fixture dosyaları tek satırlık sentetik içerikti, gerçek ürün dosyası HİÇ taranmıyordu.
+    ⇒ pozitif kontrol olarak GERÇEK ürün dosyaları kullanılır.
+    """
+
+    def _f(self):
+        import guncelle  # noqa: PLC0415
+        return guncelle.cakisma_isaretleri
+
+    def test_1_GERCEK_urun_dosyalari_temiz_sayilir(self):
+        kok = BURASI.parent
+        yollar = ["scripts/guncelle.py", "scripts/guncelle_proje.py", "kur.ps1",
+                  "tests/test_guncelle.py", "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py"]
+        for yol in yollar:
+            with self.subTest(yol=yol):
+                metin = (kok / yol).read_text(encoding="utf-8", errors="replace")
+                self.assertIn("=======", metin, "kalibrasyon: dosya alt-diziyi taşımalı")
+                self.assertEqual([], self._f()(metin))
+
+    def test_2_KONTROL_gercek_git_cakisma_blogu_YAKALANIR(self):
+        blok = "a\n<<<<<<< yerel\nbizim\n||||||| taban\neski\n=======\nonlarin\n>>>>>>> v3\nb\n"
+        self.assertEqual(4, len(self._f()(blok)), self._f()(blok))
+        self.assertTrue(self._f()("x\r\n=======\r\ny\r\n"), "CRLF'li ayraç satırı da yakalanmalı")
+        self.assertTrue(self._f()("<<<<<<<\n"), "etiketsiz işaret de yakalanmalı")
+
+    def test_3_KONTROL_satir_ortasindaki_alt_dizi_isaret_DEGILDIR(self):
+        for metin in ("# =========\n", "x = '======='\n", "  =======\n", "a >>>>>>> b\n"):
+            with self.subTest(metin=metin):
+                self.assertEqual([], self._f()(metin))
+
+    def test_4_urunun_KENDI_isaretleri_referansla_temiz_sayilir(self):
+        """Bug gate 2026-09-21: `guncelle/kartlar/V4c.md` örnek bloğu satır başında GERÇEK işaret
+        taşır ⇒ yalnız satır başı kuralı o kart değiştiği ilk yayında her tüketicide sahte FAIL
+        verirdi. Yayın içeriği referans verilince yalnız FAZLA işaretler sayılır."""
+        kart = (BURASI.parent / "guncelle" / "kartlar" / "V4c.md").read_text(encoding="utf-8")
+        self.assertTrue(self._f()(kart), "kalibrasyon: kart satır başı işaret taşımalı")
+        self.assertEqual([], self._f()(kart, kart), "yayınla aynı kart temiz sayılmalı")
+        cakisik = kart + "\n<<<<<<< YEREL:x\nbiz\n||||||| TABAN:x\n=======\nonlar\n>>>>>>> YENİ:x\n"
+        self.assertEqual(4, len(self._f()(cakisik, kart)),
+                         "KONTROL: referansın üstüne eklenen gerçek çakışma bloğu yakalanmalı")
+
+    def test_5_ayrac_sonrasi_bosluk_da_yakalanir(self):
+        self.assertTrue(self._f()("a\n======= \nb\n"), "elle çözümde kalan '======= ' yakalanmalı")
+
+
+class TopluOkumaTest(GeciciTest):
+    """Z31 (2026-09-21): plan turu 1455 git süreci başlatıyordu (76 sn, ölçüldü) → toplu okuma.
+
+    Sözleşme: ① blok içinde cevaplar tek-tek yolla AYNI (dizin yolu, olmayan yol, değişmiş dosya)
+    ② önbellek YALNIZ blok içinde yaşar — bloktan sonra yazılan dosyanın hash'i TAZE okunur
+    (bayat hash doğrulamayı sessizce körleştirirdi).
+    """
+
+    def _klon(self):
+        import guncelle  # noqa: PLC0415
+        kok = self.tmp / "k"
+        kok.mkdir()
+        self.git(kok, "init", "-q", "-b", "main")
+        self.yaz(kok / "a.txt", "bir\n")
+        self.yaz(kok / "d" / "b.txt", "iki\n")
+        self.git(kok, "add", "-A")
+        self.git(kok, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c1")
+        self.yaz(kok / "a.txt", "degisti\n")
+        return guncelle.Klon(kok), kok
+
+    def test_1_blok_icinde_cevaplar_tek_tek_yolla_ayni(self):
+        k, _ = self._klon()
+        yollar = ["a.txt", "d/b.txt", "d", "yok.txt"]
+        tek = {y: (k.blob_sha("HEAD", y), k.disk_sha(y) if y != "d" else None) for y in yollar}
+        with k.toplu_okuma(yollar):
+            # Kalibrasyon SOMUT (bug gate 2026-09-21): `_disk` toplu çağrı düşse de `{}` olur ve
+            # her soru tek-tek yola düşse bile "cevaplar aynı" kendiliğinden doğru çıkar ⇒ önbelleğin
+            # GERÇEKTEN dolduğu ölçülmezse hız kazancı (Z31) sessizce geri kayabilir.
+            self.assertEqual({"a.txt", "d/b.txt"}, set(k._disk), "disk önbelleği dolmadı")
+            toplu = {y: (k.blob_sha("HEAD", y), k.disk_sha(y) if y != "d" else None)
+                     for y in yollar}
+            self.assertTrue(k._agaclar, "ağaç önbelleği kullanılmadı")
+        self.assertEqual(tek, toplu)
+        self.assertIsNotNone(tek["d"][0], "dizin yolu tree sha döndürmeli (rev-parse ile aynı)")
+
+    def test_2_bloktan_sonra_disk_hash_TAZE(self):
+        k, kok = self._klon()
+        with k.toplu_okuma(["a.txt"]):
+            once = k.disk_sha("a.txt")
+        self.yaz(kok / "a.txt", "yeniden yazildi\n")
+        self.assertIsNone(k._disk, "önbellek blok dışında KAPALI olmalı")
+        self.assertNotEqual(once, k.disk_sha("a.txt"), "yazımdan sonra bayat hash dönmemeli")
+
+
 class CiTabaniKirmiziTest(unittest.TestCase):
     """Z16 — CI tabanıyla `yeni_kirmizilar` SESSİZ SAHTE-YEŞİL vermemeli.
 

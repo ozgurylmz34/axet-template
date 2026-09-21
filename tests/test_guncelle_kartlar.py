@@ -477,9 +477,13 @@ class KartIddiaTutarliligi(unittest.TestCase):
         self.assertEqual(["sahte: guncelle/olmayan-uretilmis.json"],
                          eksik_yollar({"sahte": "`guncelle/olmayan-uretilmis.json`"}),
                          "muafiyet listede OLMAYAN yolu da yutuyor — kör nokta (Z17)")
-        self.assertEqual(["sahte: guncelle/ci-durum.json"],
-                         eksik_yollar({"sahte": "`guncelle/ci-durum.json`"}, muafiyet=()),
-                         "muafiyetsiz kolda yakalanmıyor ⇒ test hiçbir şey ölçmüyor")
+        # Muafiyetin İŞ YAPTIĞI, diskte gerçekten OLMAYAN sentetik bir yolla ölçülür: aynı yol
+        # muafiyet listesine girince susmalı (yukarıda, listede değilken yakalandı). Önceden bu kol
+        # `guncelle/ci-durum.json`'un diskte OLMADIĞINI varsayıyordu — o dosya her yayında
+        # ÜRETİLİR ⇒ test yalnız kullanıcının (public) ağacında kırmızıydı (Z33, 2026-09-21).
+        self.assertEqual([], eksik_yollar({"sahte": "`guncelle/olmayan-uretilmis.json`"},
+                                          muafiyet=("guncelle/olmayan-uretilmis.json",)),
+                         "muafiyet listedeki yolu susturmuyor ⇒ test hiçbir şey ölçmüyor")
 
     def test_onkontrolun_durdurdugu_durum_vaka_sebebi_gosterilmez(self) -> None:
         """Ön kontrol sığ klonu DURDURUYORSA, hiçbir kart onu kendi vakasının sebebi sayamaz."""

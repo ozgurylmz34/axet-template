@@ -170,14 +170,42 @@ jobs:
       # PUBLIC DUZEN — dislanacak yollar yayin_hazirla.DISLANANLAR'dan OKUNUR (sabit yazilmaz,
       # bayatlamasin). Silme COMMIT'lenir: test_kur fixture'i bu depoyu HEAD'den klonluyor.
       # `python -B`: import __pycache__ birakip maintenance/ klasorunu diriltmesin.
-      - name: Public duzen - dislananlari sil
-        if: matrix.takim == 'kok-public'
+      # URETILEN DOSYALAR (Z33, 2026-09-21): kullanici agacinda yayin aracinin URETTIGI dosyalar
+      # (CHANGELOG.md, guncelle/yayinlar.json, guncelle/ci-durum.json) da vardir; bu kol onlari
+      # uretmiyordu ⇒ yalniz yayinlanan agacta kirmizi olan bir test (ci-durum.json'un diskte
+      # OLMADIGINI varsayan) public CI'da 3 yayin boyunca kirmiziydi, burada gorunmedi. Artik ayni
+      # arac (`--yalniz-tara --ci-durum-yok`) calistirilip uretilenler agaca konur.
+      # BILINCLI YAN ETKI: `--yalniz-tara` yayin sizinti taramasini da kosar; BLOCKER (rc=1)
+      # bulursa bu kol KIRMIZI olur — yayinda zaten duracak bir sizinti PR'da gorunur.
+      # Public depoda bu adim ATLANIR (maintenance/ yok, agac ZATEN public) — orada `kok` kolu
+      # yayinlanan agacin kendisini olcer.
+      - name: Public duzen - dislananlari sil + uretilenleri koy
+        if: matrix.takim == 'kok-public' && hashFiles('maintenance/yayin_hazirla.py') != ''
         run: |
-          $d = python -B -c "import sys; sys.path.insert(0, 'maintenance'); import yayin_hazirla as y; print(' '.join(y.DISLANANLAR))"
+          $py = "import sys; sys.path.insert(0, 'maintenance'); import yayin_hazirla as y; print(' '.join"
+          $d = python -B -c "$py(y.DISLANANLAR))"
+          $u = python -B -c "$py(y.URETILEN_DOSYALAR))"
+          $hedef = Join-Path $env:RUNNER_TEMP 'yayin-agaci'
+          python -B maintenance/yayin_hazirla.py --hedef $hedef --yalniz-tara --ci-durum-yok
+          if ($LASTEXITCODE -ne 0) { throw "yayin_hazirla --yalniz-tara basarisiz (rc=$LASTEXITCODE)" }
+          foreach ($f in $u.Split(' ')) {
+            $ust = Split-Path $f
+            if ($ust) { New-Item -ItemType Directory -Force -Path $ust | Out-Null }
+            Copy-Item -Force (Join-Path $hedef $f) $f
+          }
           Write-Host "dislanan: $d"
+          Write-Host "uretilen: $u"
           git rm -r -q --ignore-unmatch $d.Split(' ')
+          git add -A -- $u.Split(' ')
+          if ($LASTEXITCODE -ne 0) { throw "uretilen dosyalar stage edilemedi (rc=$LASTEXITCODE)" }
           git -c user.name=ci -c user.email=ci@example.invalid commit -q -m public-duzen
+          if ($LASTEXITCODE -ne 0) { throw "public-duzen commit'i basarisiz (rc=$LASTEXITCODE)" }
           if (Test-Path maintenance) { throw "maintenance/ hala var - public duzen kurulamadi" }
+          # Diskte olmasi yetmez: test_kur fixture'i HEAD'den klonlar ⇒ dosya IZLENIYOR olmali (commit sonrasi index = HEAD).
+          foreach ($f in $u.Split(' ')) {
+            git ls-files --error-unmatch -- $f | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "uretilen dosya commit'te yok: $f" }
+          }
 
       - name: Kok takim
         if: matrix.takim == 'kok' || matrix.takim == 'kok-public'
@@ -213,3 +241,35 @@ jobs:
 
       - name: doctor.py
         run: python scripts/doctor.py
+
+  # YAYIN PROVASI (Z28, 2026-09-21) — aday yayini GERCEK public gecmisin ustune (yalniz runner'daki
+  # gecici klona, push KAPALI) kurar; son yayindan ve v0.1.0'dan temiz tuketici klonlarinda gercek
+  # `%guncelle` motorunu adim 2-14 kosar, ardindan eski surumle acilmis projede `guncelle_proje`.
+  # NEDEN: birim testleri kurallari yapay girdiyle dener; kullanicinin akisini hicbiri kosmuyordu.
+  # Olculdu: v0.4.0 (public agacta 20 kirmizi) ve v0.4.1 (kapanista sahte "cakisma isareti",
+  # `%guncelle-proje` "klon geride") kusurlarini kullanici buldu — ucu de bu akistaydi.
+  # Katalogda yayinlanmamis etiket yoksa "ATLANDI" der ve yesil doner (hukum YOK).
+  # Paralel kostugu icin bekleme suresini uzatmaz. Kapsam beyani aracin ciktisindadir.
+  # YALNIZ gelistirme deposunda: public agacta maintenance/ yoktur (DISLANANLAR) ve bu dosya
+  # public'e de gider — kosulsuz olsaydi her yayin push'unda "can't open file" ile kirmizi
+  # yanardi (bug gate 2026-09-21).
+  prova:
+    name: Yayin provasi (guncelle uctan uca)
+    if: github.repository == 'ozgurylmz34/axet'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: On kosul - Python bagimliliklari
+        run: python -m pip install --quiet -r skills-sap/sap-adt-foundation/scripts/requirements.txt
+
+      - name: Yayin provasi
+        run: python maintenance/yayin_provasi.py

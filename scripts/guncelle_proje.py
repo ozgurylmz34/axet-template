@@ -142,7 +142,44 @@ class Klon:
         return [s.strip() for s in r.stdout.splitlines() if s.strip()] if r.returncode == 0 else []
 
     def geride_mi(self) -> tuple[bool | None, str]:
-        """Klon upstream'in gerisinde mi. (None, sebep) = ÖLÇÜLEMEDİ."""
+        """Klonda uygulanmamış YAYIN KALEMİ var mı. (None, sebep) = ÖLÇÜLEMEDİ.
+
+        ⛔ Commit sayısı (`HEAD..@{u}`) ölçü DEĞİLDİR (Z29, 2026-09-21 — canlıda ölçüldü): `%guncelle`
+        yayınları merge etmez, kalemleri yerel commit'le uygular ⇒ güncellemeden sonra da sayı > 0
+        kalır ve bu kontrol her seferinde "ÖNCE %guncelle" diye DURUYORDU. Ölçü `session_brief` ile
+        aynıdır (Q4): `origin/main` kataloğundaki kalem ya yayını HEAD'de içerildiği için ya da
+        `uygulanan.json`'da kayıtlı olduğu için tamamdır (motorun plan kuralı, guncelle.py:717).
+        Katalog okunamazsa eski ölçüye düşülür (katalogsuz eski yayın)."""
+        r = self.git("show", "origin/main:guncelle/yayinlar.json")
+        katalog = None
+        if r.returncode == 0:
+            try:
+                katalog = json.loads(r.stdout)
+            except ValueError:
+                return None, "yayın kataloğu ayrıştırılamadı"
+        if isinstance(katalog, dict) and isinstance(katalog.get("yayinlar"), list):
+            uygulanan: dict = {}
+            f = self.kok / g.DURUM_DIZIN_ADI / "uygulanan.json"
+            if f.is_file():
+                try:
+                    u = json.loads(f.read_text(encoding="utf-8"))
+                except ValueError:
+                    return None, f"{f} ayrıştırılamadı"
+                if not isinstance(u, dict) or not isinstance(u.get("kalemler", {}), dict):
+                    return None, f"{f} beklenen biçimde değil"
+                uygulanan = u.get("kalemler") or {}
+            bekleyen = []
+            for yayin in katalog["yayinlar"]:
+                if not isinstance(yayin, dict):
+                    return None, "yayın kataloğunda beklenmeyen kayıt"
+                etiket = str(yayin.get("etiket") or "")
+                if g.yayin_durumu(lambda *a: self.git(*a).returncode, etiket) == "icerildi":
+                    continue
+                bekleyen += [k["id"] for k in yayin.get("kalemler") or []
+                             if isinstance(k, dict) and k.get("id") and k["id"] not in uygulanan]
+            if bekleyen:
+                return True, f"{len(bekleyen)} yayın kalemi uygulanmamış ({', '.join(bekleyen[:6])})"
+            return False, "bekleyen yayın kalemi yok"
         r = self.git("rev-list", "--count", "HEAD..@{u}")
         if r.returncode != 0:
             return None, "upstream tanımlı değil"
@@ -662,7 +699,7 @@ def komut_isaretle(b: Baglam, args) -> int:
         print(f"DUR: öneri dosyası yok — önce `guncelle_proje.py oneri {rel}`.", file=sys.stderr)
         return 2
     veri = oneri.read_bytes()
-    kalanlar = [i for i in g.CAKISMA_ISARETLERI if i in veri.decode("utf-8", "replace")]
+    kalanlar = g.cakisma_isaretleri(veri.decode("utf-8", "replace"))
     if kalanlar:
         print(f"FAIL {rel}: öneri dosyasında çakışma işareti duruyor ({', '.join(kalanlar)}). "
               f"Çakışmaları çöz, sonra yeniden işaretle.", file=sys.stderr)
@@ -738,7 +775,7 @@ def komut_kapanis(b: Baglam, args) -> int:
                 eksikler.append(f"{rel}: durum.json 'dogrulandi' diyor ama disk farklı")
             else:
                 ham = p.oku(rel)
-                if ham and any(i.encode() in ham for i in g.CAKISMA_ISARETLERI):
+                if ham and g.cakisma_isaretleri(ham.decode("utf-8", "replace")):
                     dv = "uygulandi"
                     eksikler.append(f"{rel}: çakışma işareti duruyor")
         if dv in ("bekliyor", "uygulandi"):
@@ -844,9 +881,9 @@ def komut_onkontrol(b: Baglam, args) -> int:
     if geride is None:
         bilgi.append(f"klon güncelliği: ÖLÇÜLEMEDİ ({ayrinti}) — önce `%guncelle` çalıştırıldığını varsayma")
     elif geride:
-        sorunlar.append(f"template klonu upstream'in {ayrinti} commit gerisinde — ÖNCE `%guncelle` (§9 ön koşulu)")
+        sorunlar.append(f"template klonu güncel değil: {ayrinti} — ÖNCE `%guncelle` (§9 ön koşulu)")
     else:
-        bilgi.append("klon güncelliği: upstream ile aynı")
+        bilgi.append(f"klon güncelliği: {ayrinti}")
 
     if p.kayit is None:
         bilgi.append("şablon sürüm kaydı YOK → taban içerik eşleştirmesiyle bulunacak "
