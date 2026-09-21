@@ -826,6 +826,153 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.1",
+   "tarih": "2026-09-22",
+   "kalemler": [
+    {
+     "id": "0.5.1-01",
+     "baslik": "`%guncelle-proje` eski SAP damgasını artık yeniliyor (şablon dosyaları değişmemiş olsa da)",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "v0.5.0 kesin yasak metnini `AXET-SAP-0.4.0` yaptı, ama `%guncelle-proje` SAP projesinin `AGENTS.md` damgasını YENİLEMİYORDU. Proje şablon dosyaları değişmediği için plan \"işlem gerektiren dosya yok\" deyip çıkıyor, damga eski sürümde kalıyor ve `doctor` FAIL veriyordu. Bu sürümle damga şablondan bağımsız ölçülür: eskiyse plan `DAMGA` kalemini gösterir, onaydan sonra kapanış damgayı yeniden basar. v0.5.0'a güncellediyseniz SAP projelerinizde `%guncelle-proje`yi TEKRAR koşun. Kapanıştaki `behavior_manifest.py generate --project-dir \"<proje>\"` komutunu kendi terminalinizde çalıştırın (aXet bunu sizin yerinize koşmaz). Elle çare: `python \"<AXET_HOME>/scripts/new_project.py\" <proje> --sap` ve ardından aynı `behavior_manifest.py generate` komutu. Damga bozuksa (birden fazla BASLA/BITIR) araç eskisi gibi DURUR. Proje onayı artık kesin yasak kanoniğine de bağlıdır: onaydan sonra kanonik değişirse eski onay düşer ve yeni damga ancak yeniden onayla yazılır.",
+     "dosyalar": [
+      "scripts/guncelle_proje.py",
+      "tests/test_guncelle_proje.py",
+      "skills/guncelle-proje/SKILL.md",
+      "guncelle/kartlar/sinif-kesin-yasak-kanonigi.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle_proje"
+     ]
+    },
+    {
+     "id": "0.5.1-02",
+     "baslik": "`%guncelle` ölçümü `python -m unittest` biçimli test komutlarını artık gerçekten koşuyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Ölçüm motoru komutun ikinci parçasını betik yolu sanıyordu. `python -m unittest discover -s …` komutlarında bu parça `-m` olduğu için adım hiç koşmadan \"ÖLÇÜLEMEDİ — -m yok\" yazılıyordu. Bu kusur bütünlük turundaki sap-code-review takımını ve `olc` ölçümünde 5 sınıfın 6 test komutunu etkiliyordu: skill-test (×2), validator-zincir-map, validator-runner, validator, validator-diger-skill. Bu sınıflar şimdiye dek hiç ölçülmemişti. Artık `-s` ile verilen dizin denetlenir ve komut koşulur; dizin gerçekten yoksa yine ÖLÇÜLEMEDİ yazılır.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle"
+     ]
+    },
+    {
+     "id": "0.5.1-03",
+     "baslik": "Yayın kataloğu ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    },
+    {
+     "id": "0.5.1-11",
+     "baslik": "KRİTİK: `adt_domain_create` / `adt_dtel_create` var olan objeyi \"yaratıldı\" diye raporlayıp aktive edebiliyordu — düzeltildi",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Aynı adla ikinci domain/DTEL yaratma çağrısı var olan objeyi 'yaratıldı' diye raporlayıp aktive edebiliyordu: varlık ön kontrolü hata aldığında \"yok\" sayıyordu, SAP yaratma isteğini \"zaten var\" (400/405 AlreadyExists) diye reddettiğinde ise kütüphane bunu başarı sayıyor ve araç aktivasyonu çağırıyordu. Artık ön kontrol üç değerlidir: var → `already_exists`, ölçülemedi → `exists_unmeasured` (yaratma isteği atılmaz), yok → yaratılır; SAP \"zaten var\" derse hiçbir şey aktive edilmez (`already_exists`). Çevrimdışı sahte istemciyle gösterildi (eski kodda: ret yanıtı → `ok:true` + 1 aktivasyon). ÖLÇÜLMEDİ: canlı SAP'de bu yolun başka birinin inaktif sürümünü gerçekten aktive edip etmediği. Ne yapmalısınız: bu araçlarla daha önce var olan bir adı yeniden kullandıysanız, o domain/DTEL'in SAP'deki tanımını ve aktivasyon geçmişini kontrol edin.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/tests/test_msgclass_domain.py",
+      "skills-sap/sap-adt-foundation/tests/test_populate_hat.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.1-12",
+     "baslik": "`adt_struct_create` / `adt_get`: var olan TABLO artık \"yapı\" diye raporlanmaz",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Canlı SAP var olan bir tabloyu yapı ucundan da 200 + `define table …` ile döndürür; bu yüzden aynı adlı tabloya çarpan `adt_struct_create` `existing_kind: structure` diyordu. Artık tür kaynağın ilk `define table|structure` anahtar sözcüğünden belirlenir (`existing_kind: table`); `adt_get` de istenen tip kaynakla uyuşmazsa `resolved_type` + `type_probe: source_keyword` + uyarı döner. Sahte istemci canlı davranışa çekildi; eski kodda test kırmızı. Tür aranmadan önce DDL yorumları (`/* … */`, `//`) atılır; yorumdaki eski bir `define structure` satırı türü yanıltmaz.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.1-13",
+     "baslik": "Sunucu hatası / bağlantı kopması sonrası sessiz yeniden deneme \"zaten var\"a çarparsa ayrı kod: `already_exists_after_retry`",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yaratma isteği 5xx/zaman aşımı/bağlantı hatası alınca kütüphane aynı isteği sessizce yeniden dener; ilk deneme objeyi SAP'de yaratmışsa ikinci deneme \"zaten var\" alır ve kullanıcıya başkasının objesine çarpmış gibi görünürdü. Artık domain, DTEL ve yapı araçları bu durumda `already_exists_after_retry` + `own_shell_possible: true` döner: kabuğu büyük olasılıkla önceki deneme yarattı (kanıtlanmadı) — `adt_get` ile bakın, kör tekrar yapmayın.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/tests/test_msgclass_domain.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.1-14",
+     "baslik": "DDIC yazma araçları: boş paket ağdan önce reddedilir, belirsiz sonuç açıkça söylenir, UNLOCK sonucu raporlanır",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Boş ya da yalnız boşluk `package` ile `adt_ttyp_create` SAP'ye yaratma isteği atıyor, `adt_table_create` kilit + DDL yazmaya kadar gidiyordu; artık tablo, tablo tipi ve yapı araçları bunu `validation_error` ile ağa hiç gitmeden reddeder. Tablo, tablo tipi onarımı ve metin havuzunda istek gönderilip yanıt yerine ağ istisnası geldiğinde mesaj artık \"yazıldığı / kilit durumu BELİRSİZ\" der ve `outcome_uncertain` alanı taşır (önceden \"yazılamadı\" gibi okunuyordu). `adt_push_source` fonksiyon modülü ve BDEF yolunda UNLOCK sonucu artık okunur: başarısızsa `unlock_ok: false` + `unlock_warning` (SM12; AI kilit silmez) — önceden FM'de hata yutuluyor, BDEF'te durum kodu okunmuyordu.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/ddic.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/textpool.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.1-15",
+     "baslik": "Kütüphane: CDS, fonksiyon grubu, fonksiyon modülü ve BDEF yaratmada \"zaten var\" artık başarı sayılmaz",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Kütüphanede SAP'nin 400/405 AlreadyExists yanıtını başarı sayan yedi dal vardı. Domain, DTEL ve yapı dışındaki dördü (CDS görünümü, fonksiyon grubu, fonksiyon modülü, BDEF) de artık `SAPObjectExistsError` fırlatır; BDEF'te bu ayrım önceden hiç yapılmıyordu. aXet araçları bu dört metodu doğrudan çağırmaz (arama ile bulunamadı); kütüphaneyi doğrudan kullanan betikler için davranış değişikliğidir.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    }
+   ]
   }
  ]
 }

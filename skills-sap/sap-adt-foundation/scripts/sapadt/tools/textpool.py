@@ -156,6 +156,12 @@ def adt_textpool_write(
         steps["lock"] = {"ok": tutamac not in _SAHTE_TUTAMAC, "log": buf.getvalue().strip()[:400]}
     except Exception as exc:  # noqa: BLE001
         steps["lock"] = {"ok": False, **_err_from_exc(exc)}
+        if getattr(exc, "status_code", None) is None:
+            # Z50 ⓒ: HTTP yanıtı YOK (ağ istisnası) — LOCK isteği SAP'ye ulaşıp kilit alınmış olabilir.
+            return {"ok": False, "error": "lock_failed", "outcome_uncertain": "lock", **temel,
+                    "message": "Metin öğeleri kilit isteği yanıt yerine AĞ İSTİSNASI verdi — kilidin alınıp alınmadığı "
+                               "BELİRSİZ (hiçbir şey yazılmadı). Kilit silinmez (Kesin Yasak C); kullanıcı SM12'de "
+                               "kendi kilidine bakar, sonra tekrar dener."}
         return {"ok": False, "error": "lock_failed", **temel,
                 "message": "Metin öğeleri kilidi alınamadı — hiçbir şey yazılmadı. Kilit silinmez (Kesin Yasak C); "
                            "sahibini kullanıcıya bildir."}
@@ -171,8 +177,10 @@ def adt_textpool_write(
     # 3) PUT her alt kaynak; UNLOCK finally (aktivasyondan ÖNCE).
     steps["put"] = {}
     put_hatasi = None
+    put_belirsiz = None   # Z50 ⓒ: PUT isteği gitti, yanıt yerine istisna geldi → yazıldığı BELİRSİZ
     try:
         for alt, _g in alt_girdi:
+            put_belirsiz = alt
             h = adt._get_headers(accept_type=tp.ALT_KAYNAK_CT[alt],
                                  content_type=tp.ALT_KAYNAK_CT[alt] + "; charset=utf-8")
             if etag.get(alt):
@@ -180,6 +188,7 @@ def adt_textpool_write(
             r = adt._request_with_csrf_retry("put", f"{kok}/source/{alt}", headers=h,
                                              params={"corrNr": etkin, "lockHandle": tutamac},
                                              data=yuk[alt].encode("utf-8"), timeout=60)
+            put_belirsiz = None
             kod = int(getattr(r, "status_code", 0) or 0)
             steps["put"][alt] = {"ok": kod in (200, 201, 204), "http_status": kod}
             if kod in (200, 201, 204):
@@ -189,8 +198,12 @@ def adt_textpool_write(
                 put_hatasi = alt
                 break
     except Exception as exc:  # noqa: BLE001
-        put_hatasi = put_hatasi or "exception"
+        put_hatasi = put_hatasi or put_belirsiz or "exception"
         steps["put"]["exception"] = _err_from_exc(exc)
+        if put_belirsiz and getattr(exc, "status_code", None) is None:
+            steps["put"][put_belirsiz] = {"ok": None, "outcome_uncertain": True}
+        else:
+            put_belirsiz = None
     finally:
         try:
             with _capture():
@@ -200,6 +213,14 @@ def adt_textpool_write(
             steps["unlock"] = {"ok": False, "reason": f"exception:{type(exc).__name__}"}
     kilit_uyari = None if steps["unlock"]["ok"] else (
         "Kilit AÇILAMADI — sonraki yazımlar kilit hatası alabilir. Kilit silinmez (Kesin Yasak C); kullanıcıya bildir.")
+    if put_hatasi and put_belirsiz:
+        out = {"ok": False, "error": "put_failed", "outcome_uncertain": "put", **temel,
+               "message": f"{put_belirsiz} PUT isteği gönderildi ama yanıt yerine AĞ İSTİSNASI geldi — yazılıp "
+                          "yazılmadığı BELİRSİZ (inaktif sürümde yeni metin olabilir); aktivasyon denenmedi. Kör tekrar "
+                          "YAPMA: önce canlı metni oku (aynı araç önce canlıyı okur; silinecek giriş kontrolü yeniden koşar)."}
+        if kilit_uyari:
+            out["unlock_warning"] = kilit_uyari
+        return out
     if put_hatasi:
         out = {"ok": False, "error": "put_failed", **temel,
                "message": f"{put_hatasi} PUT'u başarısız — aktivasyon denenmedi. steps.put'a bak "

@@ -1342,6 +1342,26 @@ def _komutu_coz(komut: str) -> list[str]:
     return parcalar
 
 
+def _betik_yolu(parcalar: list[str]) -> str | None:
+    """Ölçüm komutunun VARLIĞI önceden denetlenecek dosya/dizin argümanı; None = denetlenecek yol yok.
+
+    ⛔ Z54 (2026-09-22, canlı `butunluk.json`): üç çağrı yeri (`olc` · `ozel-adim` · `butunluk`)
+    `parcalar[1]`i koşulsuz betik yolu sayıyordu. `python -m unittest discover -s X` için
+    `parcalar[1]` = `-m` ⇒ `<kök>/-m` hiç yoktur ⇒ adım HER ZAMAN "ÖLÇÜLEMEDİ — -m yok" yazılıyor,
+    komut hiç koşmuyordu (harita.json'da 5 sınıf / 6 komut + bütünlükteki sap-code-review adımı).
+    `-m` biçiminde denetlenecek yol YALNIZ `-m unittest discover -s <dizin>`in dizinidir (başka
+    modülde `-s` başka anlam taşır: pytest'te "çıktıyı yakalama"); öbür `-m` çağrıları için ön denetim
+    yoktur, varlık rc ile hükme bağlanır."""
+    if len(parcalar) < 2:
+        return None
+    if parcalar[1] == "-m":
+        if parcalar[2:4] == ["unittest", "discover"] and "-s" in parcalar[4:]:
+            i = parcalar.index("-s", 2)
+            return parcalar[i + 1] if i + 1 < len(parcalar) else None
+        return None
+    return parcalar[1]
+
+
 _SONUC_DESEN = re.compile(r"(\d+)\s*failure", re.I)
 
 
@@ -1561,9 +1581,10 @@ def komut_olc(b: Baglam, args) -> int:
                                  "not": "ÖLÇÜLEMEDİ — cwd yok ('temiz' DEĞİL)"})
                 continue
             ilk = _komutu_coz(t["komut"])
-            if len(ilk) > 1 and not (calisma / ilk[1]).exists():
+            betik = _betik_yolu(ilk)
+            if betik is not None and not (calisma / betik).exists():
                 sonuclar.append({"kimlik": kimlik, "cikis": None, "failure": None,
-                                 "not": f"ÖLÇÜLEMEDİ — {ilk[1]} yok ('temiz' DEĞİL)"})
+                                 "not": f"ÖLÇÜLEMEDİ — {betik} yok ('temiz' DEĞİL)"})
                 continue
             try:
                 r = _run(ilk, calisma, env=env, timeout=OLCUM_ZAMAN_ASIMI)
@@ -1722,7 +1743,8 @@ def komut_ozel_adim(b: Baglam, args) -> int:
         cikislar = []
         for komut in komutlar:
             parcalar = _komutu_coz(komut)
-            if len(parcalar) > 1 and not (k.kok / parcalar[1]).exists():
+            betik = _betik_yolu(parcalar)
+            if betik is not None and not (k.kok / betik).exists():
                 cikislar.append({"komut": komut, "cikis": None,
                                  "not": "ÖLÇÜLEMEDİ — betik yok ('temiz' DEĞİL)"})
                 print(f"ATLANDI: {komut} (betik yok)")
@@ -1784,10 +1806,11 @@ def komut_butunluk(b: Baglam, args) -> int:
             adimlar.append({"ad": ad, "cikis": None, "not": "ATLANDI — koşul sağlanmadı"})
             return
         parcalar = _komutu_coz(komut)
-        if len(parcalar) > 1 and not (k.kok / parcalar[1]).exists():
+        betik = _betik_yolu(parcalar)
+        if betik is not None and not (k.kok / betik).exists():
             adimlar.append({"ad": ad, "cikis": None,
-                            "not": f"ÖLÇÜLEMEDİ — {parcalar[1]} yok ('temiz' DEĞİL)"})
-            print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ ({parcalar[1]} yok)")
+                            "not": f"ÖLÇÜLEMEDİ — {betik} yok ('temiz' DEĞİL)"})
+            print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ ({betik} yok)")
             return
         try:
             r = _run(parcalar, k.kok, env=env, timeout=OLCUM_ZAMAN_ASIMI)

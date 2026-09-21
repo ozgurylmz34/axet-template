@@ -136,6 +136,8 @@ def adt_table_create(
         _guard(name, package, transport, description, "table", False)
     except GuardrailViolation as gv:
         return gv.as_dict()
+    if _komp()._paket_bos_mu(package):   # Z50 ⓕ: ağ (varlık sondası dahil) öncesi
+        return _komp()._paket_reddi(name, obj_type)
     from utils.ddic_tablo import tablo_ddl_kaynagi, tablo_on_kontrol, tablo_readback_karsilastir  # type: ignore
     steps: dict[str, Any] = {}
     on = tablo_on_kontrol(name, description, fields, delivery_class, data_maintenance)
@@ -190,16 +192,28 @@ def adt_table_create(
         for k in ("corrnr_lock", "effective_transport", "put_status", "warnings", "unlock_ok"):
             if k in kismi:
                 steps["create"][k] = kismi[k]
+        belirsiz = getattr(exc, "outcome_uncertain", None)   # Z50 ⓒ: istek GİTTİ, yanıt yerine ağ istisnası
         if asama == "validate":
             return {"ok": False, "error": "validation_error", **temel,
                     "message": f"Ad/paket doğrulaması reddetti — SAP'ye gidilmedi (kabuk POST'u atılmadı): {exc}"}
         if asama in ("lock", "put"):
+            if belirsiz == "put":
+                durum = ("Tablo KABUĞU SAP'de yaratıldı; DDL PUT isteği gönderildi ama yanıt yerine AĞ İSTİSNASI geldi — "
+                         "DDL'in yazılıp yazılmadığı BELİRSİZ (kabuk varsayılan içerikte de olabilir, DDL yazılmış da). "
+                         "Kör tekrar YAPMA; önce adt_get(tabl) ile canlı kaynağa bak. Obje SİLİNMEDİ.")
+            elif belirsiz == "lock":
+                durum = ("Tablo KABUĞU SAP'de yaratıldı; KİLİT isteği gönderildi ama yanıt yerine AĞ İSTİSNASI geldi — "
+                         "kilidin alınıp alınmadığı BELİRSİZ (DDL yazılmadı). Kilit silinmez (Kesin Yasak C); kullanıcı "
+                         "SM12'de bakar. Kabuk SİLİNMEDİ.")
+            else:
+                durum = ("Tablo KABUĞU SAP'de yaratıldı ama DDL YAZILAMADI (%s aşaması). Kabuk varsayılan "
+                         "`client : abap.clnt` içeriğiyle İNAKTİF duruyor; SİLİNMEDİ." % asama)
             out = {"ok": False, "error": "partial_shell", **temel,
-                    "message": ("Tablo KABUĞU SAP'de yaratıldı ama DDL YAZILAMADI (%s aşaması). Kabuk varsayılan "
-                                "`client : abap.clnt` içeriğiyle İNAKTİF duruyor; SİLİNMEDİ. Seçenekler: sebebi "
-                                "düzeltip kabuğu kullanıcı onayıyla adt_delete ile sil ve aracı yeniden çalıştır. "
-                                "adt_push_source(tabl) ile DDL yazma kaynak çekirdekte 'invalid lock handle' "
-                                "verdi (aXet'te ÖLÇÜLMEDİ) — önerilmez." % asama)}
+                    "message": (durum + " Seçenekler: sebebi düzeltip kabuğu kullanıcı onayıyla adt_delete ile sil ve "
+                                "aracı yeniden çalıştır. adt_push_source(tabl) ile DDL yazma kaynak çekirdekte 'invalid "
+                                "lock handle' verdi (aXet'te ÖLÇÜLMEDİ) — önerilmez.")}
+            if belirsiz:
+                out["outcome_uncertain"] = belirsiz
             if kismi.get("unlock_ok") is False:
                 out["unlock_warning"] = _KILIT_UYARI
             return out
@@ -328,8 +342,8 @@ def _ttyp_duzelt(client, name: str, xml_govde: str, transport: str, etag: str) -
         r = adt._request_with_csrf_retry("put", adt.url + _ttyp_url(name), headers=basliklar,
                                          params={"corrNr": transport} if transport else {},
                                          data=xml_govde.encode("utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "reason": f"put_exception:{type(exc).__name__}"}
+    except Exception as exc:  # noqa: BLE001 — istek gitti, yanıt gelmedi (Z50 ⓒ): yazıldığı BELİRSİZ
+        return {"ok": False, "reason": f"put_exception:{type(exc).__name__}", "outcome_uncertain": True}
     kod = int(getattr(r, "status_code", 0) or 0)
     return {"ok": kod in (200, 201, 204), "http_status": kod, "body_head": (getattr(r, "text", "") or "")[:300]}
 
@@ -385,6 +399,8 @@ def adt_ttyp_create(
         _guard(name, package, transport, description, "ttyp", True)
     except GuardrailViolation as gv:
         return gv.as_dict()
+    if _komp()._paket_bos_mu(package):   # Z50 ⓕ: bu yol kütüphane paket doğrulamasından HİÇ geçmez (ham POST)
+        return _komp()._paket_reddi(name, obj_type)
     from utils.ddic_ttyp import ttyp_on_kontrol, ttyp_xml  # type: ignore
     steps: dict[str, Any] = {}
     on = ttyp_on_kontrol(row_type, builtin, access_type, key_definition, key_kind, key_components)
@@ -456,13 +472,20 @@ def adt_ttyp_create(
         steps["repair"] = _ttyp_duzelt(client, name, govde, transport, rb.get("_etag", ""))
         steps["repair"]["trigger"] = ilk_durum
         if not steps["repair"].get("ok"):
+            if steps["repair"].get("outcome_uncertain"):
+                belirsiz_ek = (" Düzeltme PUT'u gönderildi ama yanıt yerine AĞ İSTİSNASI geldi — yazıldığı BELİRSİZ "
+                               "(inaktif sürümde düzeltilmiş tanım olabilir); kör tekrar YAPMA, adt_get(ttyp) ile bak.")
+            else:
+                belirsiz_ek = ""
             if ilk_durum == "bos":
                 return {"ok": False, "error": "row_type_empty_repair_failed", **temel,
                         "message": "Satır tipi iki kanalda da BOŞ; If-Match'li PUT düzeltmesi BAŞARISIZ — obje "
-                                   "kullanılamaz (ABAP'ta belirsiz çalışma zamanı hatası verir). steps.repair'e bak."}
+                                   "kullanılamaz (ABAP'ta belirsiz çalışma zamanı hatası verir). steps.repair'e bak."
+                                   + belirsiz_ek}
             return {"ok": False, "error": "readback_mismatch_repair_failed", **temel,
                     "message": "Tablo tipi aktif ama tanımı istenenden FARKLI (" + "; ".join(rb.get("farklar") or [])
-                               + "); If-Match'li PUT onarımı BAŞARISIZ — obje SİLİNMEDİ. steps.repair'e bak."}
+                               + "); If-Match'li PUT onarımı BAŞARISIZ — obje SİLİNMEDİ. steps.repair'e bak."
+                               + belirsiz_ek}
         t2 = aktive_et("activate_2")
         if not t2.get("activated"):
             return {"ok": False, "error": "activation_failed_after_repair", **temel,

@@ -25,6 +25,8 @@ Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya s
 ## ⛔ Değişmezler
 1. **Her proje AYRI onaylanır.** Toplu tarama YOKTUR. Onay tek proje yoluna ve tek şablon sürümüne
    bağlanır; script bunu zorlar (`onay.json`). Başka projede "zaten onaylamıştı" diye devam etme.
+   Onay kesin yasak kanoniğine de bağlıdır: onaydan sonra kanonik değişirse onay düşer (yeni
+   damga kalemi eski onayla yazılmaz) → yeniden planla, yeniden onay iste.
 2. **Önce klon güncel olmalı** (`%guncelle`). `onkontrol` ölçer; DUR derse önce onu çöz.
 3. **Taban uydurma YASAK.** `VTB` (taban bilinmiyor) dosyada otomatik birleştirme yapılmaz;
    kullanıcı "yeniyi al / yereli koru / elle" seçer.
@@ -36,7 +38,7 @@ Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya s
 | # | Adım | Komut | Beklenen | FAIL'de |
 |---|---|---|---|---|
 | 1 | Ön kontrol | `guncelle_proje.py --proje <dizin> onkontrol` | 0 | 2 → sebebi aynen göster, DUR |
-| 2 | Plan (salt-okur, onaysız çalışır) | `… plan` | 0 plan var · 1 güncel (bitir) | 2 → DUR |
+| 2 | Plan (salt-okur, onaysız çalışır) | `… plan` | 0 plan var (dosya ve/veya `DAMGA` kalemi) · 1 güncel: ne dosya ne damga işi var (bitir) | 2 → DUR |
 | 3 | Onay — kullanıcı projenin ADINI yazar | `… onay --kabul "<PROJE_ADI>"` | 0 | 2 → ad yanlış, yeniden sor |
 | 4 | Otomatik vakalar (V1/V2/V5/V6) | `… uygula --otomatik` | 0 | 1 → `durum` göster, DUR |
 | 5 | Yargı vakaları (V4t/V4c/V4B/V7/VTB) | `… oneri <yol>` → sor → `… isaretle <yol> --karar …` | her biri 0 | aşağıdaki karar tablosu |
@@ -68,8 +70,19 @@ kullanıcıya projenin gerçek adını sor ve `--ad <AD>` ile yeniden planla. **
 birleştirilir, damga sonra yeniden basılır. Damga BOZUKSA (birden fazla BASLA/BITIR) script DURUR —
 kullanıcı tek blok bırakmadan güncelleme başlamaz.
 
+Damga, şablon dosyalarından BAĞIMSIZ ölçülür. `%guncelle` kanonik yasak metnini yükseltmiş ama
+şablon dosyaları aynı kalmış olabilir. O durumda plan `DAMGA` kalemini gösterir ve 0 döner; adımlar
+normal akar (onay → `uygula --otomatik` boş geçer → `kapanis` damgayı basar). *(Z55: v0.5.0'da
+plan bu vakada 1 dönüyordu ve damga eski kalıyordu.)* Kapanış raporundaki "Davranış yüzeyi
+DEĞİŞTİ" bölümünde tam komut yazar; kullanıcıya AYNEN ver.
+**Z48 kararı:** `guncelle-proje` behavior manifest'i KENDİSİ yenilemez. Davranış yüzeyi onayı
+bilinçli olarak kullanıcının kendi terminalinde kalır; sen `behavior_manifest.py generate`
+KOŞMAZSIN.
+
 ### Sonda kullanıcıya söylenecekler
-- Rapordaki "aXet'i kapat-aç" ve "kendi terminalinde `behavior_manifest.py generate`" satırları.
+- Rapordaki "aXet'i kapat-aç" satırı ve "Kullanıcının kendi terminalinde" bölümündeki TAM komut
+  (`behavior_manifest.py generate --project-dir "<proje>"`). Bölüm "GEREKLİ" diyorsa bu komut
+  koşulmadan `doctor` onaysız değişiklik gösterir.
 - Proje bir ekip reposuysa: "bu değişiklikler commit edilince ekip arkadaşlarına da gider".
 - Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN.
 

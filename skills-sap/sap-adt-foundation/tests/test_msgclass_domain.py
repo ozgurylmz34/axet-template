@@ -52,11 +52,18 @@ def _domain_adt_sinifi():
             self.debug_enabled = False
             self.cagri = []
             self.session = self
+            self.post_yanitlari = []   # sırayla dönen (kod, gövde); boşsa 201
 
         def post(self, url, headers=None, data=None, params=None, timeout=None, **kw):
             govde = data.decode("utf-8") if isinstance(data, bytes) else data
             self.cagri.append({"method": "POST", "path": url[len(self.url):], "params": dict(params or {}),
                                "headers": dict(headers or {}), "data": govde})
+            if self.post_yanitlari:
+                oge = self.post_yanitlari.pop(0)
+                if isinstance(oge, BaseException):   # POST gitti, yanıt yerine ağ istisnası (ör. bağlantı koptu)
+                    raise oge
+                kod, metin = oge
+                return Yanit(kod, metin)
             return Yanit(201, "", {"Location": "/sap/bc/adt/ddic/domains/x"})
 
         def _get_headers(self, accept_type="application/vnd.sap.adt.core.v1+xml", content_type=None):
@@ -71,17 +78,36 @@ def _domain_adt_sinifi():
 class DomainIstemci:
     def __init__(self, adt):
         self.adt_client = adt
-        self.md = 0
+        self.aktive_edildi = 0
+        self.ddic_on_kontrol = "404"   # "404" → yok · "500" → ölçülemedi · "var" → XML döner
+        self.ddic_cagri = 0
 
     def get_object_metadata(self, name, object_type=None):
-        self.md += 1
-        return None if self.md == 1 else '<doma:domain adtcore:version="active" adtcore:masterLanguage="TR"/>'
+        if not self.aktive_edildi:
+            return None
+        return '<doma:domain adtcore:version="active" adtcore:masterLanguage="TR"/>'
+
+    def get_ddic_object(self, object_type, name):
+        """`sap_client.get_ddic_object` taklidi: istisnayı yutar, sebebi stdout'a `[ERROR] [kod] …` basar."""
+        self.ddic_cagri += 1
+        if self.ddic_on_kontrol == "var":
+            return '<doma:domain adtcore:name="%s" adtcore:version="active"/>' % name
+        print("Fetching %s: %s" % (object_type, name))
+        print("[ERROR] [%s] %s" % (self.ddic_on_kontrol, "Object not found" if self.ddic_on_kontrol == "404"
+                                   else "Internal Server Error"))
+        return None
 
     def create_domain(self, **kw):
         from sap_client import SAPClient  # type: ignore
         return SAPClient.create_domain(self, **kw)
 
+    def create_dataelement(self, **kw):
+        self.adt_client.cagri.append({"method": "LIB", "path": "create_dataelement", "params": {}, "data": None,
+                                      "headers": {}})
+        return True
+
     def activate_object(self, name, object_type=None):
+        self.aktive_edildi += 1
         return True
 
 
@@ -274,6 +300,91 @@ class DomainVeMesajSinifi(unittest.TestCase):
         spec.loader.exec_module(v)
         self.kaydet("D5 validator formülü = utils.ddic_domain (tek kaynak)", "aynı fonksiyon",
                     v.expected_output_length.__module__, v.expected_output_length is ddic_domain.expected_output_length)
+
+    # ── Z51 ⓐ / Z52 (v0.5.1): domain/DTEL ön kontrolü üç değerli; AlreadyExists aktivasyon DEĞİL ──────────────
+    VAR_GOVDE = "<exc:exception><type id=\"ExceptionResourceAlreadyExists\"/><localizedMessage>AlreadyExists" \
+                "</localizedMessage></exc:exception>"
+
+    def _domain_kur(self, on_kontrol="404", post=None, gercek_retry=False):
+        import sap_adt_lib  # type: ignore
+        adt = _domain_adt_sinifi()()
+        adt.post_yanitlari = list(post or [])
+        if gercek_retry:
+            k = sap_adt_lib.SAPADTClient
+            adt.max_retries, adt.retry_delay = 3, 0.0
+            adt.retry_on_timeout = adt.retry_on_csrf_fail = adt.retry_on_5xx = True
+            adt._retry_request = k._retry_request.__get__(adt)
+        ist = DomainIstemci(adt)
+        ist.ddic_on_kontrol = on_kontrol
+        self.atom._get_client = lambda: ist
+        return adt, ist
+
+    def test_D6_domain_on_kontrol_uc_degerli(self):
+        sonuc = {}
+        for durum in ("500", "var", "404"):
+            adt, ist = self._domain_kur(on_kontrol=durum)
+            r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+            sonuc[durum] = (r.get("ok"), r.get("error"), len([c for c in adt.cagri if c["method"] == "POST"]),
+                            ist.aktive_edildi, str(r.get("steps", {}).get("pre_check")))
+        ok = (sonuc["500"][:4] == (False, "exists_unmeasured", 0, 0) and sonuc["500"][4].startswith("unavailable")
+              and sonuc["var"][:4] == (False, "already_exists", 0, 0)
+              and sonuc["404"][:4] == (True, None, 1, 1) and sonuc["404"][4] == "checked_absent")
+        self.kaydet("D6 domain ön kontrol: 500 → exists_unmeasured (POST 0) · var → already_exists · 404 → yarat",
+                    "unmeasured · exists · ok", str(sonuc), ok)
+
+    def test_D7_domain_post_zaten_var_aktivasyon_yok(self):
+        adt, ist = self._domain_kur(post=[(405, self.VAR_GOVDE)])
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        adt2, ist2 = self._domain_kur(post=[(500, "Internal Server Error"), (405, self.VAR_GOVDE)], gercek_retry=True)
+        r2 = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        post2 = [c for c in adt2.cagri if c["method"] == "POST"]
+        ok = (r.get("ok") is False and r.get("error") == "already_exists" and ist.aktive_edildi == 0
+              and r2.get("ok") is False and r2.get("error") == "already_exists_after_retry" and ist2.aktive_edildi == 0
+              and len(post2) == 2 and "adt_get" in str(r2.get("message")))
+        self.kaydet("D7 domain: POST 405 AlreadyExists → already_exists, aktivasyon YOK · 500→retry→405 → after_retry",
+                    "already_exists · after_retry · aktivasyon 0",
+                    f"{r.get('error')} akt={ist.aktive_edildi} · {r2.get('error')} akt={ist2.aktive_edildi} "
+                    f"post={len(post2)}", ok)
+
+    def test_D9_baglanti_hatasi_retry_sonrasi_zaten_var(self):
+        """Bug gate MEDIUM (v0.5.1): POST gitti, SAP işledi, yanıt gelmeden bağlantı koptu (ConnectionError) → kütüphane
+        yeniden dener → 405 AlreadyExists. Beklenen: `already_exists_after_retry` (5xx/zaman aşımı ile aynı sınıf) — log
+        'ÖNCEKİ DENEME' derken kodun düz `already_exists` demesi çelişkiydi.
+        Kontrol grupları: retry'sız 405 → düz `already_exists` · yalnız CSRF yeniden denemesi (istek işlenmedi) → düz
+        `already_exists`."""
+        import requests  # type: ignore
+        sonuc = {}
+        adt, ist = self._domain_kur(post=[requests.exceptions.ConnectionError("RemoteDisconnected: bağlantı koptu"),
+                                          (405, self.VAR_GOVDE)], gercek_retry=True)
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        sonuc["baglanti"] = (r.get("error"), r.get("own_shell_possible"), ist.aktive_edildi,
+                             len([c for c in adt.cagri if c["method"] == "POST"]))
+        adt, ist = self._domain_kur(post=[(405, self.VAR_GOVDE)], gercek_retry=True)
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        sonuc["retrysiz"] = (r.get("error"), r.get("own_shell_possible"), ist.aktive_edildi,
+                             len([c for c in adt.cagri if c["method"] == "POST"]))
+        adt, ist = self._domain_kur(post=[(403, "CSRF token validation failed"), (405, self.VAR_GOVDE)],
+                                    gercek_retry=True)
+        adt.fetch_csrf_token = lambda force_refresh=False: "tok2"
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        sonuc["csrf"] = (r.get("error"), r.get("own_shell_possible"), ist.aktive_edildi,
+                         len([c for c in adt.cagri if c["method"] == "POST"]))
+        ok = sonuc == {"baglanti": ("already_exists_after_retry", True, 0, 2),
+                       "retrysiz": ("already_exists", None, 0, 1),
+                       "csrf": ("already_exists", None, 0, 2)}
+        self.kaydet("D9 domain: bağlantı hatası → retry → 405 → after_retry · retry'sız / yalnız CSRF → already_exists",
+                    "after_retry · already_exists · already_exists", str(sonuc), ok)
+
+    def test_D8_dtel_on_kontrol_uc_degerli(self):
+        sonuc = {}
+        for durum in ("500", "var", "404"):
+            adt, ist = self._domain_kur(on_kontrol=durum)
+            r = self.comp.adt_dtel_create("ZAXET_E_X", "ZAXET_D_X", "Test alanı", "ZAXET_PKG", TR,
+                                          "Kısa", "Orta etiket", "Uzun etiket", "Başlık")
+            sonuc[durum] = (r.get("error"), [c["path"] for c in adt.cagri].count("create_dataelement"))
+        ok = sonuc == {"500": ("exists_unmeasured", 0), "var": ("already_exists", 0), "404": (None, 1)}
+        self.kaydet("D8 DTEL ön kontrol: 500 → exists_unmeasured (create 0) · var → already_exists · 404 → yarat",
+                    "unmeasured · exists · create 1", str(sonuc), ok)
 
     # ═════════════════════════════ MESAJ SINIFI ═══════════════════════════════════════════════════
     def _msag(self, msgs, *, ml="TR", put_gunceller=True, lock=None, get_durum=200, paket=True, put_durum=200):

@@ -40,6 +40,14 @@ DOMAIN_CSV = ("name,datatype,length,decimals,description,fixed_values\n"
               "ZAXET_D_MIKTAR,QUAN,15,3,Miktar alanı,\n")
 
 
+def _ddic_yok(object_type, name):
+    """`sap_client.get_ddic_object` taklidi — obje YOK: istisnayı yutar, sebebi stdout'a `[ERROR] [404] …` basar.
+    v0.5.1 (Z51 ⓐ): domain/DTEL ön kontrolü artık `adt_get` → `get_ddic_object` üzerinden üç değerli ölçer; bu yöntemi
+    taşımayan sahte istemci "ÖLÇÜLEMEDİ" (`exists_unmeasured`) üretir ve yaratma yoluna hiç girilmez."""
+    print("[ERROR] [404] Object not found: %s %s" % (object_type, name))
+    return None
+
+
 class _Sayac:
     def __init__(self):
         self.n = 0
@@ -383,7 +391,8 @@ class DomainTipBilgisi(_Ortak):
         for ad, cevap, parca in (("404", Yanit(404, ""), "domain bulunamadı: ZAXET_D_YOK"),
                                  ("503", Yanit(503, ""), "ÖLÇÜLEMEDİ")):
             lib = self._lib(cevap)
-            ist = types.SimpleNamespace(adt_client=lib, get_object_metadata=lambda name, object_type=None: None)
+            ist = types.SimpleNamespace(adt_client=lib, get_object_metadata=lambda name, object_type=None: None,
+                                        get_ddic_object=_ddic_yok)
             ist.create_dataelement = types.MethodType(SAPClient.create_dataelement, ist)
             self.atom._get_client = lambda i=ist: i
             with contextlib.redirect_stdout(io.StringIO()):
@@ -469,7 +478,7 @@ class BilinmeyenSonucHat(_Ortak):
         def create_domain(**kw):
             n["create"] += 1
             raise SAPConnectionError("Connection timeout after 3 attempts: read timed out")
-        ist = types.SimpleNamespace(get_object_metadata=lambda name, object_type=None: None,
+        ist = types.SimpleNamespace(get_object_metadata=lambda name, object_type=None: None, get_ddic_object=_ddic_yok,
                                     create_domain=create_domain)
         self.atom._get_client = lambda: ist
         d, kod = self._kos()

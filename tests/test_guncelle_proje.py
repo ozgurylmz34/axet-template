@@ -1162,5 +1162,137 @@ class TekBasinaCRTest(GeciciTest):
         self.assertIsNone(gp._norm(None))
 
 
+class Z55EskiDamgaGuncelSablonTest(ProjeTemel):
+    """⛔ Z55 (2026-09-22, canlı vaka): `%guncelle` kanonik SAP metnini yükseltti (core/sap/00-sap.md)
+    ama proje ŞABLON dosyaları değişmedi ⇒ `plan` "işlem gerektiren dosya yok" deyip rc=1 ile
+    plan.json YAZMADAN çıkıyordu; damgayı basan tek yer (`kapanis`) plan.json istediği için hiç
+    koşmuyordu. Proje eski `SAP-STAMP-ID` ile kaldı, `doctor` FAIL verdi.
+
+    Fixture gerçek vakayı kurar: klonda YALNIZ `core/sap/00-sap.md` ilerler (şablon commit'i aynı).
+    KAPSAM — bakılmayan: gerçek `doctor` çıktısı (yayın provası ölçer) · Linux/macOS.
+    """
+    sap = True
+    YENI_ID = "AXET-SAP-9.9.9"
+
+    def _kanonigi_yukselt(self) -> None:
+        import re  # noqa: PLC0415
+        yol = self.f.home / "core" / "sap" / "00-sap.md"
+        metin = yol.read_text(encoding="utf-8")
+        yeni = re.sub(r"^SAP-CORE-ID:\s*\S+", f"SAP-CORE-ID: {self.YENI_ID}", metin, count=1, flags=re.M)
+        self.assertNotEqual(yeni, metin, "fixture geçersiz: SAP-CORE-ID satırı yok")
+        with open(yol, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(yeni)
+        self.git(self.f.home, "add", "-A")
+        self.git(self.f.home, "commit", "-q", "-m", "kanonik yukseldi")
+
+    def test_1_eski_damga_guncel_sablonda_plan_0_ve_DAMGA_kalemi(self):
+        self._kanonigi_yukselt()
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        plan = self.f.plan()
+        self.assertEqual(plan["dosyalar"], [], "şablon dosyası değişmedi; kalem yalnız damga olmalı")
+        self.assertEqual(plan["damga"]["durum"], "farkli", plan.get("damga"))
+        self.assertIn(self.YENI_ID, plan["damga"]["ayrinti"])
+        self.assertIn("DAMGA", self.cikti(r), "kullanıcı plan tablosunda damga kalemini GÖRMELİ")
+
+    def test_2_akis_sonunda_damga_kanonik_ve_manifest_komutu_verilir(self):
+        self._kanonigi_yukselt()
+        self.assertEqual(self.planla().returncode, 0)
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        manifest = self.f.proje / ".axet-code" / "behavior-manifest.json"
+        once = manifest.read_bytes() if manifest.is_file() else None
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        metin = self.f.oku("AGENTS.md")
+        self.assertIn(f"SAP-STAMP-ID: {self.YENI_ID}", metin)
+        self.assertEqual(metin.count("AXET-SAP-YASAKLAR:BASLA"), 1)
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("damga: guncel", rapor)
+        self.assertIn("Davranış yüzeyi DEĞİŞTİ", rapor)
+        self.assertIn("AGENTS.md kesin yasak damgası yenilendi", rapor)
+        self.assertIn('behavior_manifest.py" generate --project-dir "', rapor)
+        self.assertIn(str(self.f.proje.resolve()), rapor)
+        # Z48: motor manifest'i KENDİSİ yenilemez — onay kullanıcının terminalinde kalır
+        sonra = manifest.read_bytes() if manifest.is_file() else None
+        self.assertEqual(once, sonra, "guncelle-proje behavior manifest'e DOKUNMAMALI (Z48)")
+
+    def test_3_KONTROL_damga_guncel_ve_sablon_guncelse_plan_1(self):
+        r = self.planla()
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertNotIn("DAMGA", self.cikti(r))
+        self.assertFalse((self.f.durum_dizini() / "plan.json").exists())
+
+    def test_4_NEGATIF_bozuk_damga_guncel_sablonda_da_DURDURUR(self):
+        self._kanonigi_yukselt()
+        m = self.f.oku("AGENTS.md")
+        self.f.yerel_degistir("AGENTS.md", m + "\n" + m)   # iki BASLA/BITIR → bozuk
+        r = self.planla()
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("damgası BOZUK", self.cikti(r))
+        self.assertFalse((self.f.durum_dizini() / "plan.json").exists(),
+                         "bozuk damgada plan YAZILMAMALI")
+        self.assertEqual(self.f.oku("AGENTS.md"), m + "\n" + m, "bozuk damgalı dosyaya DOKUNULMAMALI")
+
+    def test_5_KONTROL_damga_guncel_ama_dosya_yazildiysa_da_komut_verilir(self):
+        """Sebep listesi yalnız damgaya bağlı değil: şablon dosyası yazılınca da GEREKLİ bölümü çıkar."""
+        self.f.ilerlet()
+        self.assertEqual(self.planla().returncode, 0)
+        self.assertIsNone(self.f.plan()["damga"])
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.f.calistir("kapanis")
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("şablon dosyası yazıldı", rapor)
+        self.assertNotIn("damgası yenilendi", rapor)
+
+    # --- bug gate 2026-09-22 düzeltme turu -------------------------------------------------------
+    def test_6_BAYAT_ONAY_yeni_damga_kalemini_ACMAZ(self):
+        """MEDIUM probe'u birebir: onay + plan(1) → kanonik yükselir → YENİ ONAY OLMADAN plan(0,
+        DAMGA) → uygula → kapanış. Eski kodda damga ONAYSIZ yazılıyordu (AXET-SAP-9.9.9)."""
+        self.assertEqual(self.planla().returncode, 1)          # onay verildi, iş yok
+        once = self.f.oku("AGENTS.md")
+        self._kanonigi_yukselt()
+        r = self.f.calistir("plan")
+        self.assertEqual(r.returncode, 0, self.cikti(r))       # plan salt-okur, onaysız çalışır
+        r_u = self.f.calistir("uygula", "--otomatik")
+        r_k = self.f.calistir("kapanis")
+        self.assertNotIn(self.YENI_ID, self.f.oku("AGENTS.md"), "bayat onayla damga YAZILDI")
+        self.assertEqual(self.f.oku("AGENTS.md"), once)
+        self.assertEqual(r_u.returncode, 2, self.cikti(r_u))
+        self.assertEqual(r_k.returncode, 2, self.cikti(r_k))
+        self.assertIn("kanoniği değişti", self.cikti(r_k))
+
+    def test_6b_KONTROL_kanonik_degismeden_onay_GECERLI_kalir(self):
+        self.f.ilerlet()
+        self.assertEqual(self.planla().returncode, 0)
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+
+    def test_6c_eski_bicim_onay_alansiz_GECERSIZ(self):
+        """Fail-closed: `damga_hedefi` alanı olmayan onay.json geriye uyumluluk için geçerli SAYILMAZ."""
+        self.f.ilerlet()
+        self.assertEqual(self.planla().returncode, 0)
+        yol = self.f.durum_dizini() / "onay.json"
+        kayit = json.loads(yol.read_text(encoding="utf-8"))
+        kayit.pop("damga_hedefi")
+        yol.write_text(json.dumps(kayit), encoding="utf-8")
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+
+    def test_7_ikinci_kapanis_GEREKLI_satirini_KORUR(self):
+        """LOW: tam akış → plan(1, plan.json bayat kalır) → kapanış tekrar. Manifest hâlâ onaysız ⇒
+        GEREKLİ bölümü ikinci raporda da durmalı (kapanış idempotent)."""
+        self._kanonigi_yukselt()
+        self.assertEqual(self.planla().returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.assertEqual(self.f.calistir("kapanis").returncode, 0)
+        self.assertEqual(self.f.calistir("plan").returncode, 1)
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("Kullanıcının kendi terminalinde — GEREKLİ", rapor)
+        self.assertIn("AGENTS.md kesin yasak damgası yenilendi", rapor)
+
+
 if __name__ == "__main__":
     unittest.main()

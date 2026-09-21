@@ -6,7 +6,7 @@
 
 Pattern (atomic, fail-explicit):
   1. Guardrails (Z/Y prefix, transport, TR text, labels)
-  2. Pre-check via adt_get → fail if already exists (caller must decide: keep/recreate)
+  2. Pre-check via adt_get, THREE-VALUED → exists: already_exists · unmeasured: exists_unmeasured (no POST)
   3. SAPClient.create_<x>() — shell + source set (no activation)
   4. SAPClient.activate_object()
   5. SAPClient.get_object_metadata() — verify
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
 from typing import Any
 
 from sapadt._app import log, profil_tool
@@ -93,28 +94,73 @@ def _capture():
         yield buf
 
 
-def _exists(client, name: str, object_type: str) -> bool:
-    """Return True if object already exists (even inactive). Çağıranlar: `adt_domain_create`, `adt_dtel_create`.
+def _ddic_varligi(name: str, object_type: str) -> tuple:
+    """Domain / DTEL ön kontrolü — ÜÇ DEĞERLİ: (True|False|None, sonda). Çağıranlar: `adt_domain_create`, `adt_dtel_create`.
 
-    ⚠ FAIL-OPEN (2026-08-01 bug-avı, "doğrulama koşamadı = doğrulandı"): `get_object_metadata` her istisnayı
-    yutup None döndürdüğü için buradaki `md is not None` hata durumunda da "yok" der.
-    ⛔ DÜZELTME (2026-09-21): eski not "yanlış 'yok' yıkıcı değil, SAP var olan objeyi reddeder" diyordu — kodla
-    ÇELİŞİYOR: kütüphanenin `create_domain` / `create_dataelement`'i POST 405 AlreadyExists'i `success:True`
-    döndürür (yazma yok ama araç ardından MEVCUT objeyi aktive edip `ok:true` "yaratıldı" der). Yapı yolu
-    (`create_structure`) aynı durumda üzerine PUT ediyordu → `adt_struct_create` artık bu fonksiyonu KULLANMAZ
-    (üç değerli `_yapi_varligi`). Domain/DTEL için üç değerliye geçiş ayrı açık kalem (sözleşme değişikliği).
+    ⛔ Z51 ⓐ (v0.5.1): eski `_exists` `get_object_metadata`'nın yuttuğu HER hatayı "yok" sayıyordu (fail-open) ve
+    kütüphanenin `create_domain` / `create_dataelement`'i POST 405 AlreadyExists'i `success:True` döndürüyordu ⇒ ön
+    kontrol yanlışlıkla "yok" derse araç VAR OLAN objeyi aktive edip `ok:true` "yaratıldı" diyebiliyordu. Artık yapı
+    yoluyla aynı desen: `atom._varlik_olcumu` = `adt_get` (DDIC XML ucu; 404 → yok, 5xx/403/ağ → ÖLÇÜLEMEDİ) ·
+    `None` = "yok" DEĞİL ⇒ çağıran yaratma DENEMEZ; kütüphane AlreadyExists'te `SAPObjectExistsError` atar.
     """
+    from sapadt.tools.atom import _varlik_olcumu
+    var, sonda, _p = _varlik_olcumu(name, object_type)
+    return var, sonda
+
+
+def _paket_bos_mu(package) -> bool:
+    """Z50 ⓕ: boş ya da yalnız boşluk paket → True (yaratma araçları ağa gitmeden `validation_error` döner).
+
+    Kütüphane `_validate_package_name` yalnız boş dizgiyi reddediyordu; `"   "` geçip kabuk POST'una kadar gidiyordu,
+    tablo tipi yolu ise kütüphane doğrulamasından HİÇ geçmiyordu (ölçüldü 2026-09-21, sahte istemci)."""
+    return not (isinstance(package, str) and package.strip())
+
+
+def _paket_reddi(name, obj_type) -> dict:
+    return {"ok": False, "error": "validation_error", "name": name, "type": obj_type,
+            "message": "package boş ya da yalnız boşluk — hedef paket zorunlu (paket yaratılmaz). SAP'ye gidilmedi."}
+
+
+# Z52: kütüphanenin `_retry_request`'i 5xx / zaman aşımı / bağlantı hatasında aynı POST'u SESSİZCE yeniden dener.
+# İki iz, AYNI kümeye hizalı (bug gate v0.5.1: bağlantı hatası kolu eskiden kaçıyordu, log "ÖNCEKİ DENEME" derken kod düz
+# `already_exists` diyordu):
+#  ① BİRİNCİL — kütüphanenin kendi hükmü: `_zaten_var_hatasi` eki `ONCEKI_DENEME_IZI` ile başlar ve YALNIZ
+#    `_son_yeniden_denemeler` doluysa konur (sarmalayıcı istisnayı yutar, `[ERROR] <mesaj>` basar → log'da görünür).
+#  ② YEDEK — `[RETRY]` satırı, kütüphanenin kaydettiği ÜÇ sebeple sınırlı (CSRF hariç: istek işlenmedi).
+_RETRY_IZI = re.compile(r"\[RETRY\][^\n]*(?:Server error 5\d\d|Timeout|Connection error)", re.IGNORECASE)
+
+
+def _yeniden_deneme_izi(log_text: str) -> bool:
+    metin = log_text or ""
     try:
-        with _capture():
-            md = client.get_object_metadata(name, object_type=object_type)
-        return md is not None
-    except Exception as e:
-        from sap_adt_lib import SAPObjectNotFoundError  # type: ignore
-        if isinstance(e, SAPObjectNotFoundError):
-            return False
-        # On other errors, assume not-known and let create handle.
-        log.warning("exists-check failed for %s/%s: %s", object_type, name, e)
-        return False
+        from sap_adt_lib import ONCEKI_DENEME_IZI  # type: ignore
+    except Exception:  # noqa: BLE001 — kütüphane içe alınamazsa yalnız yedek iz
+        ONCEKI_DENEME_IZI = None
+    # Düzeltme turu gate LOW-1: iz TÜM log'da değil, yalnız kütüphanenin AlreadyExists satırının EKİ olarak aranır —
+    # sarmalayıcı `Description: …` satırını da log'a basar, açıklamada aynı sözcükler geçebilir (yanlış pozitif).
+    if ONCEKI_DENEME_IZI and re.search(r"already exists \(SAP \d+ AlreadyExists\)[^\n]* — "
+                                       + re.escape(ONCEKI_DENEME_IZI) + r" \(", metin):
+        return True
+    return bool(_RETRY_IZI.search(metin))
+
+
+def _zaten_var_yaniti(tur: str, name: str, obj_type: str, log_text: str, **ek) -> dict:
+    """POST AlreadyExists ile reddedildi (ön kontrol "yok" demişti) → yazma/aktivasyon YOK. İki ayrı kod:
+
+    · `already_exists_after_retry` — aynı çağrıda önce 5xx/zaman aşımı/bağlantı hatası + yeniden deneme oldu: ilk POST'u SAP işlemiş ve
+      kabuğu BU çağrı yaratmış olabilir (Z52; başkasının objesi olduğu KANITLANMADI).
+    · `already_exists` — yeniden deneme izi yok: yarış ya da ön kontrolün görmediği uç.
+    """
+    if _yeniden_deneme_izi(log_text):
+        return {"ok": False, "error": "already_exists_after_retry", "existing_kind": None, "own_shell_possible": True,
+                "name": name, "type": obj_type, **ek,
+                "message": (f"İlk yaratma isteği sunucu hatası / zaman aşımı / bağlantı hatası aldı, kütüphane yeniden denedi ve SAP 'zaten var' "
+                            f"(AlreadyExists) dedi — {tur} {name} büyük olasılıkla ÖNCEKİ DENEMENİN yarattığı kabuk "
+                            "(başkasının objesi olduğu kanıtlanmadı). Kaynak YAZILMADI, aktivasyon yapılmadı. "
+                            f"adt_get ile bak: inaktif/boş kabuksa kullanıcı onayıyla silip yeniden yarat. ⛔ Kör tekrar yapma.")}
+    return {"ok": False, "error": "already_exists", "existing_kind": None, "name": name, "type": obj_type, **ek,
+            "message": (f"SAP yaratma isteğini 'zaten var' (AlreadyExists) diye reddetti — {name} mevcut; "
+                        f"kaynak YAZILMADI, aktivasyon yapılmadı. ⛔ Tekrar deneme; adt_get ile incele.")}
 
 
 def _yapi_varligi(name: str) -> tuple:
@@ -387,8 +433,10 @@ def adt_domain_create(
     except Exception as exc:  # noqa: BLE001 — bağlantı kurulamadıysa da pre_flight/reviewer izi yanıtta kalsın
         return {**_err_from_exc(exc), "name": name, "type": obj_type, "reviewer": warn["reviewer"], "steps": steps}
 
-    # 1. Pre-check
-    if _exists(client, name, obj_type):
+    # 1. Pre-check — üç değerli (Z51 ⓐ): var → already_exists · ölçülemedi → exists_unmeasured (POST YOK) · yok → yarat.
+    var, sonda = _ddic_varligi(name, obj_type)
+    steps["pre_check"] = sonda
+    if var is True:
         return {
             "ok": False,
             "error": "already_exists",
@@ -398,7 +446,11 @@ def adt_domain_create(
             "reviewer": warn["reviewer"],
             "steps": steps,
         }
-    steps["pre_check"] = "not_exists"
+    if var is None:
+        return {"ok": False, "error": "exists_unmeasured", "name": name, "type": obj_type,
+                "reviewer": warn["reviewer"], "steps": steps,
+                "message": (f"Domain varlığı ÖLÇÜLEMEDİ ({sonda}) — bu 'yok' DEĞİL; yaratma denenmedi (fail-closed: var "
+                            "olan bir domain'i 'yaratıldı' diye aktive etme riski). Bağlantıyı kontrol edip tekrar dene.")}
 
     # 2. Create (shell + source)
     try:
@@ -420,8 +472,14 @@ def adt_domain_create(
         return {"ok": False, "name": name, "type": obj_type, "steps": steps, "reviewer": warn["reviewer"]}
 
     if not created:
+        from sapadt.tools.atom import _create_hata_sinifi
+        kod, _aciklama = _create_hata_sinifi(steps["create"]["log"])
+        if kod == "already_exists":
+            # Kütüphane AlreadyExists'te artık `success:True` DÖNMEZ (SAPObjectExistsError) → aktivasyon YOK.
+            return _zaten_var_yaniti("Domain", name, obj_type, steps["create"]["log"], steps=steps,
+                                     reviewer=warn["reviewer"])
         return {"ok": False, "name": name, "type": obj_type, "steps": steps, "reviewer": warn["reviewer"],
-                "message": "create_domain returned False — see steps.create.log"}
+                "error": kod, "message": "create_domain returned False — see steps.create.log"}
 
     # 3+4. Activate + verify
     tail = _activate_and_verify(client, name, obj_type)
@@ -505,15 +563,22 @@ def adt_dtel_create(
     client = _get_client()
     steps: dict[str, Any] = {}
 
-    if _exists(client, name, obj_type):
+    # Üç değerli ön kontrol (Z51 ⓐ) — domain ile aynı.
+    var, sonda = _ddic_varligi(name, obj_type)
+    steps["pre_check"] = sonda
+    if var is True:
         return {
             "ok": False,
             "error": "already_exists",
             "message": f"Data element {name} zaten mevcut.",
             "name": name,
             "type": obj_type,
+            "steps": steps,
         }
-    steps["pre_check"] = "not_exists"
+    if var is None:
+        return {"ok": False, "error": "exists_unmeasured", "name": name, "type": obj_type, "steps": steps,
+                "message": (f"Data element varlığı ÖLÇÜLEMEDİ ({sonda}) — bu 'yok' DEĞİL; yaratma denenmedi "
+                            "(fail-closed). Bağlantıyı kontrol edip tekrar dene.")}
 
     try:
         with _capture() as buf:
@@ -534,7 +599,11 @@ def adt_dtel_create(
         return {"ok": False, "name": name, "type": obj_type, "steps": steps}
 
     if not created:
-        return {"ok": False, "name": name, "type": obj_type, "steps": steps,
+        from sapadt.tools.atom import _create_hata_sinifi
+        kod, _aciklama = _create_hata_sinifi(steps["create"]["log"])
+        if kod == "already_exists":
+            return _zaten_var_yaniti("Data element", name, obj_type, steps["create"]["log"], steps=steps)
+        return {"ok": False, "name": name, "type": obj_type, "steps": steps, "error": kod,
                 "message": "create_dataelement returned False"}
 
     tail = _activate_and_verify(client, name, obj_type)
@@ -609,6 +678,8 @@ def adt_struct_create(
         require_tr_text(description, what="structure description")
     except GuardrailViolation as gv:
         return gv.as_dict()
+    if _paket_bos_mu(package):
+        return _paket_reddi(name, obj_type)
     if not fields or not isinstance(fields, list):
         return {"ok": False, "error": "validation_error",
                 "message": "fields boş olamaz — en az 1 field gerekli"}
@@ -698,12 +769,10 @@ def adt_struct_create(
         from sapadt.tools.atom import _create_hata_sinifi
         kod, _aciklama = _create_hata_sinifi(steps["create"]["log"])
         if kod == "already_exists":
-            # Ön kontrol "yok" dedi ama SAP POST'u "zaten var" diye reddetti (yarış ya da görünmeyen uç).
-            # `create_structure` bu durumda artık PUT ETMEZ (SAPObjectExistsError) → yazma / aktivasyon YOK.
-            return {"ok": False, "error": "already_exists", "existing_kind": None, "name": name, "type": obj_type,
-                    "steps": steps, "reviewer": warn["reviewer"],
-                    "message": (f"SAP yaratma isteğini 'zaten var' (AlreadyExists) diye reddetti — {name} mevcut; "
-                                "kaynak YAZILMADI, aktivasyon yapılmadı. ⛔ Tekrar deneme; adt_get(structure) ile incele.")}
+            # Ön kontrol "yok" dedi ama SAP POST'u "zaten var" diye reddetti (yarış, görünmeyen uç ya da Z52: aynı
+            # çağrıdaki 5xx sonrası yeniden deneme). `create_structure` bu durumda PUT ETMEZ (SAPObjectExistsError).
+            return _zaten_var_yaniti("Yapı", name, obj_type, steps["create"]["log"], steps=steps,
+                                     reviewer=warn["reviewer"])
         return {"ok": False, "name": name, "type": obj_type, "steps": steps, "reviewer": warn["reviewer"],
                 "error": kod, "message": "create_structure returned False — steps.create.log'a bak."}
 

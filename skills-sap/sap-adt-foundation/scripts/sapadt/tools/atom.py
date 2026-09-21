@@ -560,6 +560,31 @@ _DDL_KARDES_SEG = {
     "ddic/structures": ("ddic/tables", "table"),
 }
 
+_DDL_TANIM = re.compile(r"^\s*define\s+(table|structure)\b", re.IGNORECASE | re.MULTILINE)
+
+
+# Bug gate LOW (v0.5.1): tür aranmadan önce DDL yorumları atılır. Tek geçişli alternasyon: tırnaklı dizgi (olduğu gibi
+# kalır — `'etiket /* x'` yorum başlatmaz) · `/* … */` blok yorum · `//` satır yorumu. Ölçülen kusur:
+# `/*\ndefine structure old\n*/\ndefine table` → 'structure' dönüyordu.
+# Düzeltme turu gate LOW-2: kapanmamış `/*` metin sonuna kadar yorum sayılır (`\Z`) — aksi hâlde her `/*` konumu metnin
+# sonuna kadar taranıp geri çekiliyordu: 10.000 kapanmamış `/*` (30 KB) ≈ 1,4 sn, 100 KB ≈ 43 sn (ölçüldü).
+_DDL_YORUM_YA_DA_DIZGI = re.compile(r"'[^'\n]*'|/\*.*?(?:\*/|\Z)|//[^\n]*", re.S)
+
+
+def _ddl_yorumsuz(kaynak: str) -> str:
+    return _DDL_YORUM_YA_DA_DIZGI.sub(lambda m: m.group(0) if m.group(0).startswith("'") else " ", kaynak)
+
+
+def _ddl_kaynak_turu(kaynak) -> Optional[str]:
+    """DDIC DDL kaynağının türü: ilk `define table|structure` satırı → 'table' | 'structure'; bulunamazsa None.
+
+    Satır başı zorunlu (`^\\s*define`) ⇒ `// define …` yorum satırı ve `@EndUserText.label : 'define …'` ek açıklaması
+    eşleşmez. Z53: türü uç değil KAYNAK söyler (structures ucu tablo için de 200 döner — canlı bulgu, v0.5.1 Z53)."""
+    if not isinstance(kaynak, str):
+        return None
+    m = _DDL_TANIM.search(_ddl_yorumsuz(kaynak))
+    return m.group(1).lower() if m else None
+
 
 # "BULUNAMADI != YOK" (ölçüldü 2026-07-31, dört ayrı vaka aynı gün).
 # adt_get, ulaşılamayan SAP'te de `ok:true, exists:false` döndürüyordu; obje CANLIDA
@@ -852,6 +877,25 @@ def _adt_get_oku(name: str, object_type: str = "class", include_source: bool = T
                 ),
             }
         r = _read_source_object(name, seg, object_type)
+        # ⛔ Z53 (canlı bulgu, v0.5.1): SAP `/ddic/structures/<TABLO>/source/main` isteğine şeffaf tablo için de 200 +
+        # `define table …` döndürür ⇒ 404'e dayanan kardeş-uç yolu hiç koşmaz, tablo "structure" diye raporlanıyordu.
+        # Tür, dönen kaynağın İLK tanım anahtar kelimesinden okunur (`define table` / `define structure`); uçla
+        # çelişirse `resolved_type` + tip düzeltmesi uyarısı eklenir. Kaynak boş/tanımsızsa tür iddiası yapılmaz.
+        if r.get("ok") is True and r.get("exists") is True and seg in _DDL_KARDES_SEG:
+            gercek_tur = _ddl_kaynak_turu(r.get("source"))
+            beklenen_tur = _DDL_KARDES_SEG[_DDL_KARDES_SEG[seg][0]][1]   # seg'in kendi türü
+            if gercek_tur is not None and gercek_tur != beklenen_tur:
+                r["requested_endpoint"] = seg
+                r["resolved_endpoint"] = seg
+                r["canonical_endpoint"] = _DDL_KARDES_SEG[seg][0]
+                r["resolved_type"] = gercek_tur
+                r["type_probe"] = "source_keyword"
+                r["warning"] = (
+                    "TIP DUZELTMESI: '%s' ucu 200 dondu ama kaynak 'define %s' ile tanimli — obje bir %s. "
+                    "Sonraki cagrilarda object_type='%s' kullan."
+                    % (seg, gercek_tur, "TABLO" if gercek_tur == "table" else "YAPI", gercek_tur)
+                )
+            return r
         # Kardes-uc fallback: tablo ucunda 404 -> YAPI ucunu da dene (ve tersi).
         # Bkz. `_DDL_KARDES_SEG` notu (kayit #8, 2026-08-18 ZDEMO0_S_SCREEN_* vakasi).
         if r.get("ok") is True and r.get("exists") is False and seg in _DDL_KARDES_SEG:
@@ -1541,12 +1585,21 @@ def _push_bdef_kaynak(client, name: str, source: str, transport: str) -> dict:
         sonuc["source_uploaded"] = True
     finally:
         if handle:
+            # Z50 ⓔ (v0.5.1): yanıt KODU da okunur (eskiden yalnız istisna uyarı üretiyordu; 403/500 sessizdi).
+            # Sözleşme `create_table_with_ddl` ile aynı: unlock_ok True = 200/204 · False = başka kod / istisna.
             try:
-                adt._request_with_csrf_retry("post", adt.url + obj,
-                                             headers={"X-sap-adt-sessiontype": "stateful"},
-                                             params={"_action": "UNLOCK", "lockHandle": handle})
-            except Exception:  # noqa: BLE001 — kilit bırakma hatası yazma sonucunu değiştirmez
-                sonuc["unlock_warning"] = "UNLOCK başarısız — bayat kilit kalmış olabilir (kullanıcı SM12)."
+                ur = adt._request_with_csrf_retry("post", adt.url + obj,
+                                                  headers={"X-sap-adt-sessiontype": "stateful"},
+                                                  params={"_action": "UNLOCK", "lockHandle": handle})
+                u_kod = getattr(ur, "status_code", None)
+                sonuc["unlock_ok"] = u_kod in (200, 204)
+                if not sonuc["unlock_ok"]:
+                    sonuc["unlock_warning"] = ("UNLOCK HTTP %s — kilit açılmamış olabilir (bayat kilit; kullanıcı "
+                                               "SM12'de bakar; AI kilit SİLMEZ)." % u_kod)
+            except Exception as u_exc:  # noqa: BLE001 — kilit bırakma hatası yazma sonucunu değiştirmez
+                sonuc["unlock_ok"] = False
+                sonuc["unlock_warning"] = ("UNLOCK başarısız (%s) — bayat kilit kalmış olabilir (kullanıcı SM12)."
+                                           % type(u_exc).__name__)
     try:
         with _capture_stdout():
             rb = adt.session.get(adt.url + obj + "/source/main", headers={"Accept": "text/plain"},
@@ -1587,7 +1640,16 @@ def _push_fm_kaynak(client, name: str, fm_grubu: str, source: str, transport: st
         out = adt.set_function_module_source(name, fm_grubu, source, transport=transport, activate=False)
     except SAPADTError as exc:   # HTTP reddi (LOCK/PUT ya da yabancı transport) → yükleme YOK
         sonuc.update(error=str(exc)[:800], error_type=type(exc).__name__)
+        if getattr(exc, "unlock_ok", None) is not None:   # Z50 ⓓ: kilit alındıysa UNLOCK sonucu görünür
+            sonuc["unlock_ok"] = exc.unlock_ok
+        if getattr(exc, "unlock_warning", None):
+            sonuc["unlock_warning"] = exc.unlock_warning
         return sonuc
+    if isinstance(out, dict):
+        if out.get("unlock_ok") is not None:
+            sonuc["unlock_ok"] = out["unlock_ok"]
+        if out.get("unlock_warning"):
+            sonuc["unlock_warning"] = out["unlock_warning"]
     if not (isinstance(out, dict) and out.get("success")):
         sonuc["error"] = "set_function_module_source başarı bildirmedi"
         return sonuc

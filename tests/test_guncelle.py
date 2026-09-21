@@ -2754,3 +2754,106 @@ class ZamanAsimiTest(unittest.TestCase):
             guncelle.OLCUM_ZAMAN_ASIMI, 2411,
             "OLCUM_ZAMAN_ASIMI gözlenen en uzun kök takımı koşumunu (2411 sn) kapsamıyor — "
             "ölçüm yapısal olarak imkânsız hâle gelir (2026-09-20 vakası)")
+
+
+class Z54ModulKomutuOlculurTest(GuncelleTemel):
+    """⛔ Z54 (2026-09-22, canlı `butunluk.json`): `python -m unittest discover -s X` biçimli ölçüm
+    komutları HİÇ koşmuyordu. Üç çağrı yeri `parcalar[1]`i betik yolu sayıp `<kök>/-m` var mı diye
+    bakıyordu ⇒ "ÖLÇÜLEMEDİ — -m yok". Canlıda `sap-code-review takımı` adımı böyle düştü;
+    harita.json'da aynı biçimde 5 sınıf / 6 test komutu var (skill-test ×2, validator-zincir-map,
+    validator-runner, validator, validator-diger-skill).
+
+    Çağrı yerleri ayrı ayrı ölçülür: `olc` (test_2) · `butunluk` (test_3). `ozel-adim` bu biçimi
+    YAPISAL olarak göremez (`_PY_KOMUT` yalnız `python <yol>.py` çıkarır + allowlist yalnız
+    `scripts/install.py`) ⇒ orada kırmızı-önce test kurulamaz; test_4 davranışın DEĞİŞMEDİĞİNİ ölçer.
+    KAPSAM — bakılmayan: gerçek sap-code-review takımının içeriği (fixture'da tek sahte test koşar).
+    """
+
+    MTEST = "import unittest\n\nclass T(unittest.TestCase):\n    def test_ok(self):\n        pass\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.senaryolari_uygula()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        for s in ("scripts",):
+            p = str(AXET_HOME / s)
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        import guncelle  # noqa: PLC0415
+        self.g = guncelle
+
+    def test_1_betik_yolu_birim(self):
+        by = self.g._betik_yolu
+        self.assertEqual(by(["py", "-m", "unittest", "discover", "-s", "a/b", "-t", "a/b"]), "a/b")
+        self.assertIsNone(by(["py", "-m", "unittest"]), "-s yoksa ön denetim yok (rc hükmeder)")
+        self.assertIsNone(by(["py", "-m", "unittest", "discover", "-s"]))
+        self.assertIsNone(by(["py", "-m", "pytest", "-s", "tests"]),
+                          "`-s` yalnız `unittest discover`da dizindir (pytest'te çıktı yakalama bayrağı)")
+        self.assertEqual(by(["py", "scripts/doctor.py", "--x"]), "scripts/doctor.py")
+        self.assertIsNone(by(["py"]))
+
+    def _harita(self, komut: str, validator_ailesi: bool = False) -> str:
+        harita = json.loads(HARITA.read_text(encoding="utf-8"))
+        hedef = self.g.sinif_bul("core/00-temel.md", harita)
+        self.assertIsNotNone(hedef, "fixture geçersiz: core/00-temel.md sınıfsız")
+        for s in harita["siniflar"]:
+            if s.get("test"):
+                s["test"] = [{"komut": komut, "cwd": ".", "on_kosul": None}]
+        if validator_ailesi:
+            hedef["ust_sinif"] = "validator-ailesi"
+        yol = self.tmp / "harita-z54.json"
+        yol.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
+        return str(yol)
+
+    def test_2_olc_modul_komutunu_KOSAR(self):
+        self.f.yerel_degistir("tests/mtest/test_m.py", self.MTEST)
+        komut = "python -m unittest discover -s tests/mtest -t tests/mtest"
+        r = self.f.calistir("--harita", self._harita(komut), "olc", "--asama", "once")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        kayit = [t for t in veri["testler"] if t["kimlik"] == f".::{komut}"]
+        self.assertEqual(len(kayit), 1, veri["testler"])
+        self.assertEqual(kayit[0]["cikis"], 0, kayit[0])
+        self.assertNotIn("-m yok", json.dumps(veri, ensure_ascii=False))
+
+    def test_2b_KONTROL_olc_s_dizini_yoksa_OLCULEMEDI(self):
+        """Ön denetim KÖRLEŞMEDİ: `-s` dizini gerçekten yoksa yine ÖLÇÜLEMEDİ."""
+        komut = "python -m unittest discover -s tests/yok -t tests/yok"
+        r = self.f.calistir("--harita", self._harita(komut), "olc", "--asama", "once")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        self.assertTrue(all(t["cikis"] is None for t in veri["testler"]))
+        self.assertIn("tests/yok yok", json.dumps(veri, ensure_ascii=False))
+
+    def test_3_butunluk_sap_code_review_adimi_KOSAR(self):
+        self.f.yerel_degistir("skills-sap/sap-code-review/tests/test_m.py", self.MTEST)
+        h = self._harita("python tests/run_tests.py", validator_ailesi=True)
+        r = self.f.calistir("--harita", h, "butunluk")
+        b = json.loads((self.f.durum_dizini() / "butunluk.json").read_text(encoding="utf-8"))
+        adim = [a for a in b["adimlar"] if a["ad"] == "sap-code-review takımı"]
+        self.assertEqual(len(adim), 1, b["adimlar"])
+        self.assertEqual(adim[0]["cikis"], 0, adim[0])
+        self.assertIn("Ran 1 test", adim[0]["cikti"])
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+
+    def test_3b_KONTROL_butunluk_takim_dizini_yoksa_OLCULEMEDI(self):
+        h = self._harita("python tests/run_tests.py", validator_ailesi=True)
+        self.f.calistir("--harita", h, "butunluk")
+        b = json.loads((self.f.durum_dizini() / "butunluk.json").read_text(encoding="utf-8"))
+        adim = [a for a in b["adimlar"] if a["ad"] == "sap-code-review takımı"][0]
+        self.assertIsNone(adim["cikis"])
+        self.assertIn("skills-sap/sap-code-review/tests yok", adim["not"])
+
+    def test_4_ozel_adim_betik_komutu_davranisi_DEGISMEDI(self):
+        """`ozel-adim` `-m` biçimini hiç görmez (yapısal); betik yolu denetimi eskisi gibi."""
+        self.assertIsNone(self.g._PY_KOMUT.search("python -m unittest discover -s x"))
+        harita = json.loads(HARITA.read_text(encoding="utf-8"))
+        for s in harita["siniflar"]:
+            if s["sinif"] == "config-izin-kok":
+                s["ozel_adim"] = "python scripts/install.py --dry-run"
+        yol = self.tmp / "harita-ozel-z54.json"
+        yol.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
+        (self.f.tuketici / "scripts" / "install.py").unlink()
+        r = self.f.calistir("--harita", str(yol), "ozel-adim", "config-izin-kok")
+        self.assertIn("betik yok", self.cikti(r))

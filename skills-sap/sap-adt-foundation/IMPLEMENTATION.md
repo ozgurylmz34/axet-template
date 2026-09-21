@@ -982,7 +982,7 @@ Kapsam: yalnız `populate.py`, iki test dosyası, `foundation-ops.md` §9, bu b�
 |---|---|---|
 | DUR · `sonuc_bilinmiyor` | `unexpected` (`sap_adt_cli.calistir` istisna; `atom._err_from_exc` SAPADTError dışı) · `connection_failed` (`SAPConnectionError`: zaman aşımı/bağlantı) · `unreachable` (`adt_activate`) · `sap_error` + `[502]`/`[503]`/`[504]` · `push_failed` + `error_type` SAP ağacı dışı ya da `SAPConnectionError` · aynı kodlar `steps.*` içinde · `step_exception` (çağrı hattının kendisi) · `delete_verified=None` · başarısız DELETE + sonda ölçülemedi | kalanlar `islenmedi`, çıkış 1 `run_stopped`, satır mesajı "sonuç BİLİNMİYOR, SAP'de durumu kontrol et" |
 | DUR · `hesap_kilidi_riski` | `auth_failed` · `error_type` `SAPAuthenticationError` · `sap_error` + `[401]` | aynı; mesaj "kimlik reddedildi, koşum durduruldu, hesap kilidi riskine karşı kalan satırlar denenmedi" |
-| SATIR HATASI · koşum sürer | kapı kodları · `guardrail_violation` · `reviewer_blocker` · `preflight_blocker` · `msgclass_overwrite_not_allowed` · `pull_*` · `source_changed_since_pull` · `std_dml_scan_unavailable` · `unsupported_type` · `invalid_argument(s)` · `not_found` · `already_exists` · `locked` · `lock_conflict`/`lock_failed` · `validation_error` · `sap_error` diğer/durumsuz (403, 500 dahil) · `create_failed` · `description_too_long` · `activation_not_executed` · `activation_failed` (+ İNAKTİF notu) · `push_failed` (SAP ağacı istisnası) · `readback_failed` (yeni mesaj) · `readback_mismatch` · `master_language_unresolved` · `msgclass_live_incomplete` · `pull_live_read_failed` · `tool_failed` | çıkış 1 `partial_failure` (değişmedi) |
+| SATIR HATASI · koşum sürer | kapı kodları · `guardrail_violation` · `reviewer_blocker` · `preflight_blocker` · `msgclass_overwrite_not_allowed` · `pull_*` · `source_changed_since_pull` · `std_dml_scan_unavailable` · `unsupported_type` · `invalid_argument(s)` · `not_found` · `already_exists` · `already_exists_after_retry` (v0.5.1) · `exists_unmeasured` · `locked` · `lock_conflict`/`lock_failed` · `validation_error` · `sap_error` diğer/durumsuz (403, 500 dahil) · `create_failed` · `description_too_long` · `activation_not_executed` · `activation_failed` (+ İNAKTİF notu) · `push_failed` (SAP ağacı istisnası) · `readback_failed` (yeni mesaj) · `readback_mismatch` · `master_language_unresolved` · `msgclass_live_incomplete` · `pull_live_read_failed` · `tool_failed` | çıkış 1 `partial_failure` (değişmedi) |
 Gri alan varsayılanları (lider onaylı): `readback_failed` bilinen red (mesaj "PUT kabul edildi, geri okuma doğrulanamadı; SAP'de kontrol et") ·
 `adt_delete` yolu değişmedi (sonda) · `_get_client` istisnası → DUR (`unexpected`) · `push_object` yerel `ValueError`/`FileNotFoundError` `error_type` → DUR.
 Durma çıktısı: `result.stop = {name,row,step,tool,code,class}` + `error.message`/`stopped` = "satır N · adım/araç · kod=… · gerekçe=…: …".
@@ -1340,3 +1340,59 @@ tablo PUT'a If-Match → T1 · varsayılan kabuk tespiti → T2 · `=?` kontrol�
 ccdef/ccmac çıkarıldı → B2 + B2b.
 
 **DOĞRULANMADI:** üç aracın canlı yazma yolu · `ccdef`/`ccmac` PUT · tablo tipi düzeltme PUT'u · `keyComponents` POST biçimi · transportsuz tablo kilidi.
+
+## 22. v0.5.1 DDIC sağlamlaştırma — varlık üç değerli, `AlreadyExists` başarı değil, belirsiz sonuç açık (Z50-Z53)
+
+### 22.1 Yeni / değişen hata kodları (Z51 ⓒ)
+| Kod | Araç | Anlam | Çıkış |
+|---|---|---|---|
+| `exists_unmeasured` | `adt_domain_create`, `adt_dtel_create` (yeni; struct/table/ttyp'de zaten vardı) | varlık ön kontrolü ölçülemedi (404 dışı hata/istisna) — POST atılmadı | 1 |
+| `already_exists` | domain · dtel · struct | ön kontrol "var" dedi ya da POST 400/405 `AlreadyExists` döndü — kaynak yazılmadı, aktivasyon yok | 1 |
+| `already_exists_after_retry` | domain · dtel · struct | POST 5xx/zaman aşımı/bağlantı hatası → kütüphanenin sessiz yeniden denemesi → `AlreadyExists`; `own_shell_possible:true` (kabuğu büyük olasılıkla önceki deneme yarattı — kanıtlanmadı) → `adt_get` ile bak | 1 |
+| `validation_error` (paket) | struct · table · ttyp | boş ya da yalnız boşluk `package` araç kapısında reddedilir, ağ çağrısı sıfır | 1 |
+| `outcome_uncertain` alanı | table (`partial_shell`) · ttyp (onarım) · textpool (`lock_failed`/`put_failed`) | istek gönderildi, HTTP yanıtı yerine ağ istisnası geldi → yazıldığı / kilit durumu BELİRSİZ | 1 |
+| `unlock_ok` / `unlock_warning` | `adt_push_source` `func` ve `bdef` | UNLOCK 200/204 değil ya da istisna → uyarı (SM12; AI kilit silmez) | `ok`'u bozmaz |
+CLI eşlemesi (`sap_adt_cli._sonuc_hatasi`): yeni kodlar `GATE_RESULT_ERRORS`/`USAGE_RESULT_ERRORS`'ta yok → çıkış 1, `already_exists` ile aynı.
+`populate`: bilinmeyen kod satır hatasıdır (koşum sürer) — §19 sınıflandırma tablosuna eklendi.
+
+### 22.2 Kütüphane: `AlreadyExists` artık başarı değil (kardeş taraması)
+`sap_adt_lib.py`'de 400/405 + `AlreadyExists` gövdesine bakan dallar (ortak yardımcılar `_zaten_var_mi`, `_zaten_var_hatasi`, `_yeniden_denendi_mi`):
+| Metot | Önce | Şimdi | Çağıran (aXet) |
+|---|---|---|---|
+| `create_dataelement` | `True` (başarı) → composite aktive ediyordu | `SAPObjectExistsError` | `adt_dtel_create` |
+| `create_domain` | `True` → aktivasyon | `SAPObjectExistsError` | `adt_domain_create` |
+| `create_structure` | 2026-09-21'de düzeltilmişti (`SAPObjectExistsError`) | aynı + yeniden deneme eki | `adt_struct_create` |
+| `create_cds_view` | başarı sözlüğü | `SAPObjectExistsError` | yok (lib dışı çağıran bulunmadı) |
+| `create_function_group` | başarı | `SAPObjectExistsError` | yok |
+| `create_function_module` | başarı | `SAPObjectExistsError` | yok |
+| `create_behavior_definition` (Z51 ⓑ) | `not in [200,201]` kontrolünden önce ayrım yoktu | `SAPObjectExistsError` (201 kontrolünden ÖNCE) | yok |
+`_retry_request` her istekte `_son_yeniden_denemeler`'i sıfırlar; CSRF dışı yeniden deneme sebeplerini (5xx/zaman aşımı/bağlantı
+hatası — `_should_retry` + iki istisna dalının kaydettiği küme) ekler ⇒ istisna `after_retry` taşır ve mesaj eki `ONCEKI_DENEME_IZI`
+("ÖNCEKİ DENEME …", sebeplerle) ile başlar. Composite (`_yeniden_deneme_izi`) sap_client sarmalayıcıları istisnayı yutup yalnız
+`[ERROR] <mesaj>` bastığı için kararı log'dan okur: ① BİRİNCİL kütüphane hükmü (`ONCEKI_DENEME_IZI` — kayıt listesinden türetilir)
+② YEDEK `[RETRY] … Server error 5xx|Timeout|Connection error` satırı (aynı üç sebep; CSRF hariç — istek işlenmedi).
+**Bug gate düzeltmesi (v0.5.1):** ilk sürüm yalnız `[RETRY] … 5xx|Timeout` regex'ine bakıyordu → bağlantı kopması sonrası
+yeniden deneme 405 alınca log "ÖNCEKİ DENEME" derken kod düz `already_exists` dönüyordu (çelişki). Neden kayıt listesine doğrudan
+(`client.adt_client._son_yeniden_denemeler`) bakılmadı: sarmalayıcı istisnayı yuttuktan sonra listenin son POST'a ait olduğu
+yalnız "arada başka istek yok" varsayımıyla doğru olur; hüküm istisna ANINDA mesaja gömüldüğü için bu varsayım gerekmez.
+Testler: D9 (domain, bağlantı → retry → 405 · kontrol: retry'sız, yalnız CSRF) · S9b (yapı, bağlantı kolu) · S9c (iki iz ayrı
+ayrı + kütüphane eki yalnız liste doluyken).
+**ÖLÇÜLMEDİ:** var olan objenin başkasına ait inaktif sürümünün eski yolda aktive edilip edilmediği (canlı yok) — kanıtlanan yalnız çevrimdışı:
+eski kodda POST 405 → `ok:true` + aktivasyon çağrısı 1 (test D7 eski koda karşı).
+
+### 22.3 Diğer düzeltmeler
+- **Z53:** `atom._adt_get_oku` DDL tip düzeltmesi (`_ddl_kaynak_turu`, ilk `define table|structure`); `adt_struct_create` ön kontrolü bunu kullanır.
+  Bug gate düzeltmesi (v0.5.1): arama öncesi `/* … */` blok ve `//` satır yorumları atılır, tırnaklı dizgi korunur (`_ddl_yorumsuz`;
+  ölçülen kusur `/*\ndefine structure old\n*/\ndefine table` → structure). Test S6c. `--` yorum biçimi ele alınmadı (DDL'de
+  geçerliliği bu turda doğrulanmadı).
+  Sahte istemci S6 canlı davranışa çekildi (yapı ucu da 200 + `define table`) — eski kodda `existing_kind: structure` ile FAIL.
+- **Z50 ⓒ:** `create_table_with_ddl` gönderilen son isteği (`lock`/`put`) izler, genel istisnaya `outcome_uncertain` koyar.
+- **Z50 ⓓ/ⓔ:** FM UNLOCK `except: pass` kaldırıldı; BDEF UNLOCK durum kodu okunur — `unlock_ok`/`unlock_warning` deseni (tablo aracındaki gibi).
+- **Z50 ⓐ / ⓑ-ttyp:** `main`'de zaten kapalıydı (ttyp onarım `t2` doğrulaması Y17; katalog hata listesi) — yalnız mutasyonla kalibre edildi.
+
+### 22.4 Testler
+`tests/test_ddic_textpool.py` S6 (yeniden yazıldı) · S6b · S9 (gerçek `_retry_request`) · S10 (6 metot × 405/400/201) · S11 (paket 3 araç × 2) ·
+S12 (FM unlock 4 durum) · S13 (BDEF unlock) · S14 (belirsiz mesajlar + HTTP-ret kontrol grupları) · `tests/test_msgclass_domain.py` D6-D8.
+`tests/test_populate_hat.py` U2 / L4: sahte istemcilere `get_ddic_object` (404) eklendi — ön kontrol artık `adt_get` üzerinden ölçtüğü için bu
+yöntemi taşımayan sahte `exists_unmeasured` üretip yaratma yoluna hiç girmiyordu (testlerin amacı değişmedi).
+Canlı SAP'de ölçülmedi.

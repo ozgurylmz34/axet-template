@@ -316,7 +316,7 @@ class DdicTextpool(unittest.TestCase):
                     return Yanit(x, "hata")
                 return Yanit(200, x, {"ETag": etag} if etag else {})
             if c["method"] == "PUT":
-                return Yanit(put_kod, "")
+                return put_kod if isinstance(put_kod, Exception) else Yanit(put_kod, "")
             return Yanit(500, "beklenmedik")
 
         def sql(q):
@@ -547,12 +547,13 @@ class DdicTextpool(unittest.TestCase):
         ok1 = (r.get("ok") is True and r.get("name") == "ZAXET_T_DEN" and len(kabuk) == 1
                and 'adtcore:name="ZAXET_T_DEN"' in kabuk[0]["data"])
         adt2, _ = self.kur(self._tablo_yon())
-        r2 = self.ddic.adt_table_create("ZAXET_T_DEN", "Deneme tablosu", ALANLAR, "", TR)
+        # Z50 ⓕ'den beri boş paket araç kapısında reddedilir (S11); kütüphane doğrulama aşaması > 30 karakterle ölçülür.
+        r2 = self.ddic.adt_table_create("ZAXET_T_DEN", "Deneme tablosu", ALANLAR, "Z" * 31, TR)
         msg = r2.get("message") or ""
         ok2 = (r2.get("ok") is False and r2.get("error") == "validation_error"
                and r2["steps"].get("create", {}).get("stage") == "validate" and adt2.cagri == []
                and "reddedildi" not in msg and "gidilmedi" in msg)
-        self.kaydet("T10 tablo: küçük harfli ad normalize → OK · boş paket → validation_error (POST 0, doğru mesaj)",
+        self.kaydet("T10 tablo: küçük harfli ad normalize → OK · paket > 30 → validation_error (POST 0, doğru mesaj)",
                     "ok · validation_error", f"ok={r.get('ok')} err={r.get('error')} · {r2.get('error')} "
                     f"stage={r2['steps'].get('create', {}).get('stage')} msg={msg[:60]} "
                     f"çağrı={len(adt2.cagri)}", ok1 and ok2)
@@ -698,7 +699,8 @@ class DdicTextpool(unittest.TestCase):
             from sap_adt_lib import SAPADTClient  # type: ignore
             from sap_client import SAPClient  # type: ignore
             k = SAPADTClient
-            for m in ("create_structure", "_validate_structure_fields", "_validate_transport"):
+            for m in ("create_structure", "_validate_structure_fields", "_validate_transport", "_zaten_var_mi",
+                      "_zaten_var_hatasi", "_yeniden_denendi_mi"):
                 setattr(adt, m, getattr(k, m).__get__(adt))
             adt._retry_request = lambda fn, *_a, **_k: fn()
             ist.create_structure = lambda *a, **kw: SAPClient.create_structure(ist, *a, **kw)
@@ -779,18 +781,50 @@ class DdicTextpool(unittest.TestCase):
                     f"ok={r.get('ok')} err={r.get('error')} post={len(post)} put={len(put)} kilit={len(kilit)} "
                     f"akt={len(akt)}", ok)
 
+    TABLO_DDL = ("@EndUserText.label : 'Deneme tablosu'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\n"
+                 "define table zaxet_s_den {\n  key mandt : mandt not null;\n}\n")
+
     def test_S6_yapi_ayni_adli_seffaf_tablo_var(self):
+        """Z53 (canlı bulgu, v0.5.1): SAP `/ddic/structures/<TABLO>/source/main` isteğine şeffaf tablo için de
+        200 + `define table …` döndürür (structures ucu 404 VERMEZ). Eski sahte structures=404 / tables=200 modelliyordu
+        ⇒ kardeş-uç yolundan geçip `existing_kind: table` diyordu; canlıda araç `structure` dedi. Sahte artık canlıyı taklit
+        eder: yapı ucu 200 + `define table`, tablo ucu 200 + aynı kaynak."""
         def ek(c):
-            if c["method"] == "GET" and c["path"] == self.TABLO_SRC:
-                return Yanit(200, "define table zaxet_s_den {\n  key mandt : mandt not null;\n}\n")
+            if c["method"] == "GET" and c["path"] in (self.YAPI_SRC, self.TABLO_SRC):
+                return Yanit(200, self.TABLO_DDL)
             return None
         adt, r = self._yapi(yon_ek=ek)
         iz = self._yazma_izi(adt)
         ok = (r.get("ok") is False and r.get("error") == "already_exists" and iz == []
-              and r.get("existing_kind") == "table")
-        self.kaydet("S6 yapı (c): aynı adlı ŞEFFAF TABLO var (/ddic/tables 200) → already_exists(table), yazma YOK",
-                    "already_exists · table · yazma 0",
+              and r.get("existing_kind") == "table" and "TABLO" in str(r.get("message")))
+        self.kaydet("S6 yapı (c): aynı adlı ŞEFFAF TABLO var (structures ucu 200 + define table) → already_exists(table), "
+                    "yazma YOK", "already_exists · table · yazma 0",
                     f"ok={r.get('ok')} err={r.get('error')} kind={r.get('existing_kind')} iz={iz}", ok)
+
+    def test_S6b_adt_get_tur_kaynak_anahtar_kelimesinden(self):
+        """Z53: `adt_get(<tablo>, structure)` 200 + `define table` → `resolved_type: table` + uyarı. Kontrol grubu:
+        `adt_get(<yapı>, structure)` 200 + `define structure` → resolved_type YOK (tür düzeltmesi yok); ters yön
+        `adt_get(<yapı>, tabl)` tablo ucu 404 → kardeş yapı ucu → `resolved_type: structure` (canlıda doğru olan yol)."""
+        def kur(yapi_govde, tablo_kod, tablo_govde=""):
+            def yon(c):
+                if c["method"] == "GET" and c["path"] == self.YAPI_SRC:
+                    return Yanit(200, yapi_govde)
+                if c["method"] == "GET" and c["path"] == self.TABLO_SRC:
+                    return Yanit(tablo_kod, tablo_govde)
+                return Yanit(404, "")
+            self.kur(yon)
+        kur(self.TABLO_DDL, 200, self.TABLO_DDL)
+        r1 = self.atom._adt_get_oku("ZAXET_S_DEN", "structure", False)
+        kur(self.YAPI_DDL, 404)
+        r2 = self.atom._adt_get_oku("ZAXET_S_DEN", "structure", False)
+        r3 = self.atom._adt_get_oku("ZAXET_S_DEN", "tabl", False)
+        ok = (r1.get("exists") is True and r1.get("resolved_type") == "table" and "define table" in str(r1.get("warning"))
+              and r2.get("exists") is True and "resolved_type" not in r2 and "warning" not in r2
+              and r3.get("exists") is True and r3.get("resolved_type") == "structure")
+        self.kaydet("S6b adt_get: tablo structures ucunda → resolved_type table (anahtar kelime) · yapı düzeltmesiz · ters yön "
+                    "structure", "table · yok · structure",
+                    f"r1={r1.get('resolved_type')} r2={r2.get('resolved_type')} w2={'warning' in r2} "
+                    f"r3={r3.get('resolved_type')}", ok)
 
     def test_S7_yapi_kardes_tablo_ucu_olculemedi(self):
         def ek(c):
@@ -832,6 +866,359 @@ class DdicTextpool(unittest.TestCase):
               and sonuc[2][1] is None and "put" in sonuc[2][2])
         self.kaydet("S8 lib create_structure: POST 405/400 AlreadyExists → SAPObjectExistsError, kilit/PUT YOK (201'de PUT)",
                     "Exists ×2 · iz [] · 201 PUT", str(sonuc), ok)
+
+    def _gercek_retry(self, adt):
+        """Kütüphanenin GERÇEK `_retry_request` + `_should_retry`'ı (bekleme 0) sahte ADT'ye bağla."""
+        import sap_adt_lib  # type: ignore
+        k = sap_adt_lib.SAPADTClient
+        adt.max_retries, adt.retry_delay = 3, 0.0
+        adt.retry_on_timeout = adt.retry_on_csrf_fail = adt.retry_on_5xx = True
+        adt.retry_on_lock_conflict = False
+        adt._should_retry = k._should_retry.__get__(adt)
+        adt._retry_request = k._retry_request.__get__(adt)
+
+    def test_S9_yapi_5xx_retry_sonrasi_zaten_var_ayri_kod(self):
+        """Z52 (bug gate L1): ilk POST 500 (SAP kabuğu yaratmış olabilir) → kütüphane yeniden dener → 405 AlreadyExists.
+        Beklenen: `already_exists_after_retry` (aracın KENDİ önceki denemesi olabilir), yazma/aktivasyon YOK.
+        Kontrol grubu: retry'sız 405 → düz `already_exists` (S5 ile aynı)."""
+        import sap_adt_lib  # type: ignore
+        sira = {"n": 0}
+
+        def ek(c):
+            if c["method"] == "POST" and c["path"] == "/sap/bc/adt/ddic/structures":
+                sira["n"] += 1
+                if sira["n"] == 1:
+                    return Yanit(500, "Internal Server Error")
+                return Yanit(405, "<exc:exception><type id=\"ExceptionResourceAlreadyExists\"/>"
+                                  "<localizedMessage>AlreadyExists</localizedMessage></exc:exception>")
+            return None
+        # `_yapi(gercek_lib=True)` `_retry_request`'i düz fn() yapar → gerçek retry (bekleme 0) create_structure
+        # çağrısının içinde bağlanır.
+        from sap_client import SAPClient  # type: ignore
+        eski_cs = SAPClient.create_structure
+
+        def cs(ist, *a, **kw):
+            self._gercek_retry(ist.adt_client)
+            return eski_cs(ist, *a, **kw)
+        SAPClient.create_structure = cs
+        self.addCleanup(setattr, SAPClient, "create_structure", eski_cs)
+        adt, r = self._yapi(yon_ek=ek, gercek_lib=True)
+        post = [c for c in adt.cagri if c["method"] == "POST" and c["path"] == "/sap/bc/adt/ddic/structures"]
+        yazma = [c for c in adt.cagri if c["method"] == "PUT" or c["path"] in ("lock_object",)
+                 or c["path"].startswith("activate")]
+        msg = str(r.get("message"))
+        ok = (r.get("ok") is False and r.get("error") == "already_exists_after_retry" and len(post) == 2
+              and yazma == [] and "adt_get" in msg and "önceki" in msg.lower())
+        self.kaydet("S9 yapı: POST 500 → retry → 405 AlreadyExists → already_exists_after_retry, yazma YOK",
+                    "already_exists_after_retry · POST 2 · yazma 0",
+                    f"ok={r.get('ok')} err={r.get('error')} post={len(post)} yazma={len(yazma)} msg={msg[:80]}", ok)
+
+    def test_S9b_yapi_baglanti_hatasi_retry_sonrasi_zaten_var(self):
+        """Bug gate MEDIUM (v0.5.1): ilk POST gitti ama yanıt yerine bağlantı koptu (ConnectionError) → kütüphane yeniden
+        dener → 405 AlreadyExists → `already_exists_after_retry` + `own_shell_possible`, yazma YOK (S9'un bağlantı kolu)."""
+        import requests  # type: ignore
+        sira = {"n": 0}
+
+        def ek(c):
+            if c["method"] == "POST" and c["path"] == "/sap/bc/adt/ddic/structures":
+                sira["n"] += 1
+                if sira["n"] == 1:
+                    raise requests.exceptions.ConnectionError("RemoteDisconnected: bağlantı koptu")
+                return Yanit(405, "<exc:exception><type id=\"ExceptionResourceAlreadyExists\"/>"
+                                  "<localizedMessage>AlreadyExists</localizedMessage></exc:exception>")
+            return None
+        from sap_client import SAPClient  # type: ignore
+        eski_cs = SAPClient.create_structure
+
+        def cs(ist, *a, **kw):
+            self._gercek_retry(ist.adt_client)
+            return eski_cs(ist, *a, **kw)
+        SAPClient.create_structure = cs
+        self.addCleanup(setattr, SAPClient, "create_structure", eski_cs)
+        adt, r = self._yapi(yon_ek=ek, gercek_lib=True)
+        yazma = [c for c in adt.cagri if c["method"] == "PUT" or c["path"] in ("lock_object",)
+                 or c["path"].startswith("activate")]
+        ok = (r.get("ok") is False and r.get("error") == "already_exists_after_retry"
+              and r.get("own_shell_possible") is True and sira["n"] == 2 and yazma == [])
+        self.kaydet("S9b yapı: POST bağlantı hatası → retry → 405 → already_exists_after_retry, yazma YOK",
+                    "already_exists_after_retry · POST 2 · yazma 0",
+                    f"ok={r.get('ok')} err={r.get('error')} own={r.get('own_shell_possible')} post={sira['n']} "
+                    f"yazma={len(yazma)}", ok)
+
+    def test_S9c_yeniden_deneme_izi_iki_kaynak_ayri_ayri(self):
+        """Bug gate MEDIUM (v0.5.1): `already_exists_after_retry` kararının iki izi AYRI AYRI ölçülür (uçtan uca testte
+        biri öbürünü örter): ① kütüphane hükmü (`ONCEKI_DENEME_IZI`, `[RETRY]` satırı yok) ② `[RETRY] … Connection error`
+        satırı (kütüphane eki yok). Kontrol: yalnız CSRF yeniden denemesi · iz yok → düz `already_exists`. Kütüphane eki
+        yalnız `_son_yeniden_denemeler` doluysa konur ve sebebi taşır."""
+        import sap_adt_lib  # type: ignore
+        from types import SimpleNamespace
+        from sapadt.tools import composite
+        IZ = sap_adt_lib.ONCEKI_DENEME_IZI
+        loglar = {
+            "lib_hukmu": "[ERROR] [405] Domain ZAXET_D_X already exists (SAP 405 AlreadyExists) — üzerine YAZILMADI "
+                         "(kilit/PUT/aktivasyon yok) — %s (…: Connection error (attempt 1)) kabuğu yaratmış olabilir" % IZ,
+            "retry_baglanti": "  [RETRY] Create domain - Connection error (attempt 1), retrying in 0.0s...\n[ERROR] [405] x",
+            "retry_5xx": "  [RETRY] Create domain - Server error 503 (attempt 1), retrying in 0.0s...\n[ERROR] [405] x",
+            "retry_timeout": "  [RETRY] Create domain - Timeout (attempt 1), retrying in 0.0s...\n[ERROR] [405] x",
+            "yalniz_csrf": "  [RETRY] Create domain - CSRF token expired (attempt 1), retrying in 0.0s...\n[ERROR] [405] x",
+            "iz_yok": "[ERROR] [405] Domain ZAXET_D_X already exists (SAP 405 AlreadyExists)",
+            # gate LOW-1 (düzeltme turu): sarmalayıcı açıklamayı da log'a basar — izi TÜM log'da aramak yanlış pozitif
+            "aciklama_ici": "  Description: %s TARİHİ\n[ERROR] [405] Domain ZAXET_D_X already exists (SAP 405 "
+                            "AlreadyExists) — üzerine YAZILMADI (kilit/PUT/aktivasyon yok)" % IZ,
+        }
+        sonuc = {k: composite._zaten_var_yaniti("Domain", "ZAXET_D_X", "doma", v)["error"] for k, v in loglar.items()}
+        c = SimpleNamespace(_son_yeniden_denemeler=["Connection error (attempt 1)"])
+        yanit = SimpleNamespace(status_code=405, text="AlreadyExists")
+        dolu = str(sap_adt_lib.SAPADTClient._zaten_var_hatasi(c, "Domain", "ZAXET_D_X", yanit, "/e", yeniden_deneme=True))
+        bos = str(sap_adt_lib.SAPADTClient._zaten_var_hatasi(SimpleNamespace(_son_yeniden_denemeler=[]), "Domain",
+                                                              "ZAXET_D_X", yanit, "/e", yeniden_deneme=False))
+        beklenen = {"lib_hukmu": "already_exists_after_retry", "retry_baglanti": "already_exists_after_retry",
+                    "retry_5xx": "already_exists_after_retry", "retry_timeout": "already_exists_after_retry",
+                    "yalniz_csrf": "already_exists", "iz_yok": "already_exists", "aciklama_ici": "already_exists"}
+        ok = (sonuc == beklenen and IZ in dolu and "Connection error (attempt 1)" in dolu and IZ not in bos)
+        self.kaydet("S9c after_retry izi: kütüphane hükmü / [RETRY] bağlantı-5xx-timeout ayrı ayrı · CSRF / iz yok → düz",
+                    str(beklenen) + " · lib eki sebepli", f"{sonuc} · dolu_ek={IZ in dolu} bos_ek={IZ in bos}", ok)
+
+    def test_S6c_ddl_turu_yorumlar_atlanir(self):
+        """Bug gate LOW (v0.5.1): `define table|structure` aranmadan önce `/* … */` blokları ve `//` satır yorumları atılır;
+        tırnak içindeki `/*` / `//` yorum sayılmaz. Kontrol grubu: annotation'lı yapı · büyük harf `DEFINE TABLE` · yorumsuz."""
+        f = self.atom._ddl_kaynak_turu
+        vakalar = {
+            "blok_yorum": ("/*\ndefine structure old\n*/\ndefine table zaxet_t {\n  key mandt : mandt not null;\n}", "table"),
+            "blok_yorum_ters": ("/* define table eski\n   devam */\ndefine structure zaxet_s {\n  f : char10;\n}", "structure"),
+            "satir_yorum": ("// define structure eski\ndefine table zaxet_t {\n}", "table"),
+            "satir_ici_blok": ("/* define table */ define structure zaxet_s {\n}", "structure"),
+            "tirnak_ici": ("@EndUserText.label : 'etiket /* yorum değil'\ndefine table zaxet_t {\n}", "table"),
+            "tirnak_ici_kapanan": ("@EndUserText.label : 'etiket /* yorum değil'\ndefine table zaxet_t {\n"
+                                   "  f : char10; /* son */\n}", "table"),
+            "tirnak_ici_2": ("@EndUserText.label : 'http://ornek'\ndefine structure zaxet_s {\n}", "structure"),
+            "annotation": ("@EndUserText.label : 'Yapı'\n@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE\n"
+                           "define structure zaxet_s {\n  f : char10;\n}", "structure"),
+            "buyuk_harf": ("DEFINE TABLE ZAXET_T {\n}", "table"),
+            "tanim_yok": ("/* define table */\n// define structure\n", None),
+        }
+        sonuc = {k: f(v[0]) for k, v in vakalar.items()}
+        beklenen = {k: v[1] for k, v in vakalar.items()}
+        # gate LOW-2 (düzeltme turu): çok sayıda KAPANMAMIŞ `/*` ikinci dereceden süre alıyordu (30 KB ≈ 1,4 sn,
+        # 100 KB ≈ 43 sn ölçüldü). Kapanmamış blok metin sonuna kadar yorum sayılır → doğrusal.
+        import time
+        t0 = time.perf_counter()
+        kapanmamis = f("/* " * 10000 + "\ndefine table zaxet_t {\n}")
+        sure = time.perf_counter() - t0
+        sonuc["kapanmamis_cok"] = (kapanmamis, sure < 0.3)
+        beklenen["kapanmamis_cok"] = (None, True)
+        self.kaydet("S6c DDL türü: yorumlar atlanır, tırnak içi korunur, annotation / büyük harf doğru",
+                    str(beklenen), str(sonuc), sonuc == beklenen)
+
+    @staticmethod
+    def _lib_istemci(post_yanitlari, put_kod=200, iz=None):
+        """`object.__new__(SAPADTClient)`: POST'lar sırayla `post_yanitlari`'ndan döner, kilit/PUT/aktivasyon `iz`'e düşer."""
+        import sap_adt_lib  # type: ignore
+        from types import SimpleNamespace
+        iz = [] if iz is None else iz
+        c = object.__new__(sap_adt_lib.SAPADTClient)
+        c.url, c.language, c.csrf_token, c.timeout_default, c.debug_enabled = "http://127.0.0.1:9", "TR", "t", 1, False
+        c.client = "100"
+        c._get_headers = lambda *_a, **_k: {}
+        c._retry_request = lambda fn, *_a, **_k: fn()
+        c.lock_object = lambda *_a, **_k: iz.append("lock") or "kilit"
+        c.unlock_object = lambda *_a, **_k: iz.append("unlock")
+        c.activate_object = lambda *_a, **_k: iz.append("activate") or {"success": True}
+        c._get_domain_typeinfo = lambda *_a, **_k: ("CHAR", "000010", "000000")
+        c.user = "AXETTEST"
+        sira = list(post_yanitlari)
+
+        def post(*_a, **_k):
+            kod, govde = sira.pop(0) if len(sira) > 1 else sira[0]
+            return SimpleNamespace(status_code=kod, headers={}, text=govde)
+        c._request_with_csrf_retry = lambda m, *_a, **_k: (
+            post() if m == "post" else iz.append("put") or SimpleNamespace(status_code=put_kod, text=""))
+        c.session = SimpleNamespace(
+            post=post, put=lambda *_a, **_k: iz.append("put") or SimpleNamespace(status_code=put_kod, text=""),
+            headers={})
+        return c, iz
+
+    def test_S10_lib_ayni_sinif_zaten_var_basari_sayilmaz(self):
+        """Z51 ⓐ/ⓑ + kardeş taraması: domain / DTEL / BDEF / CDS / FUGR / FM POST'u 405|400 AlreadyExists → SAPObjectExistsError,
+        kilit/PUT/aktivasyon YOK. Kontrol grubu: 201 → başarı (BDEF'te kaynak verildiyse PUT var)."""
+        import sap_adt_lib  # type: ignore
+        var = "<exc:exception><localizedMessage>ExceptionResourceAlreadyExists AlreadyExists</localizedMessage>"
+        cagrilar = {
+            "domain": lambda c: c.create_domain("ZAXET_D_X", "CHAR", 10, "Deneme", "ZAXET_PKG", transport=TR),
+            "dtel": lambda c: c.create_dataelement("ZAXET_E_X", "CHAR10", "Deneme", "ZAXET_PKG", short_label="a",
+                                                   medium_label="b", long_label="c", heading_label="d", transport=TR),
+            "bdef": lambda c: c.create_behavior_definition("ZAXET_I_X", "ZAXET_I_X", "Managed", "ZAXET_PKG", "Deneme",
+                                                           TR, source="managed;", activate=True),
+            "cds": lambda c: c.create_cds_view("ZAXET_I_X", "define view entity ZAXET_I_X as select from t000 "
+                                               "{ key mandt }", "Deneme", "ZAXET_PKG", transport=TR),
+            "fugr": lambda c: c.create_function_group("ZAXET_FG", "Deneme", "ZAXET_PKG", transport=TR),
+            "fm": lambda c: c.create_function_module("Z_AXET_FM", "ZAXET_FG", "Deneme", transport=TR),
+        }
+        sonuc = {}
+        for ad, f in cagrilar.items():
+            satir = []
+            for kod in (405, 400, 201):
+                c, iz = self._lib_istemci([(kod, var if kod != 201 else "")])
+                try:
+                    r = f(c)
+                    hata = None
+                except Exception as exc:  # noqa: BLE001
+                    r, hata = None, exc
+                satir.append((kod, type(hata).__name__ if hata else ("ok" if (r or {}).get("success") else r), iz))
+            sonuc[ad] = satir
+        kotu = []
+        for ad, satir in sonuc.items():
+            for kod, h, iz in satir:
+                if kod in (405, 400) and not (h == "SAPObjectExistsError" and iz == []):
+                    kotu.append((ad, kod, h, iz))
+                if kod == 201 and h != "ok":
+                    kotu.append((ad, kod, h, iz))
+        bdef_201_iz = sonuc["bdef"][2][2]
+        ok = not kotu and "put" in bdef_201_iz and sap_adt_lib.SAPObjectExistsError
+        self.kaydet("S10 lib: domain/DTEL/BDEF/CDS/FUGR/FM AlreadyExists → SAPObjectExistsError, yazma YOK (201 kontrol)",
+                    "kötü 0 · bdef 201 PUT", f"kötü={kotu} bdef201={bdef_201_iz}", bool(ok))
+
+    def test_S11_paket_bos_ya_da_bosluk_ag_oncesi_red(self):
+        """Z50 ⓕ: `package` boş / yalnız boşluk → yaratma araçları (ttyp/table/struct) AĞA GİTMEDEN `validation_error`."""
+        from sapadt.tools import composite
+        eski = composite.run_reviewer_struct
+        composite.run_reviewer_struct = lambda *a, **k: _pass()
+        self.addCleanup(setattr, composite, "run_reviewer_struct", eski)
+        adt, _ = self.kur(lambda c: AssertionError("ağ"))
+        self.ddic._varlik = lambda n, t: (_ for _ in ()).throw(AssertionError("sonda"))
+        sonuc = []
+        for paket in ("", "   "):
+            for ad, f in (("ttyp", lambda p: self.ddic.adt_ttyp_create("ZAXET_TT_DEN", "Deneme", p, TR,
+                                                                         row_type="ZAXET_S_SATIR")),
+                          ("table", lambda p: self.ddic.adt_table_create("ZAXET_T_DEN", "Deneme", ALANLAR, p, TR)),
+                          ("struct", lambda p: composite.adt_struct_create("ZAXET_S_DEN", self.YAPI_ALANLARI, "Deneme",
+                                                                           p, TR))):
+                try:
+                    r = f(paket)
+                except AssertionError as exc:
+                    r = {"error": f"ağa gitti: {exc}"}
+                sonuc.append((ad, repr(paket), r.get("error")))
+        ok = all(e == "validation_error" for *_x, e in sonuc) and adt.cagri == []
+        self.kaydet("S11 paket boş/boşluk → validation_error ×6 (ttyp/table/struct), ağ 0", "validation_error ×6 · çağrı 0",
+                    f"{sonuc} çağrı={len(adt.cagri)}", ok)
+
+    def test_S12_fm_unlock_sonucu_gorunur(self):
+        """Z50 ⓓ: `set_function_module_source` UNLOCK yanıtı 200/204 değil ya da istisna → `unlock_ok:false` +
+        `unlock_warning` (yazma sonucu korunur); PUT reddinde de istisna `unlock_ok` taşır. Kontrol: UNLOCK 200 → True."""
+        import sap_adt_lib  # type: ignore
+        from types import SimpleNamespace
+        kilit = SimpleNamespace(status_code=200, text="<DATA><LOCK_HANDLE>H1</LOCK_HANDLE><CORRNR></CORRNR></DATA>")
+
+        def kos(unlock, put_kod=200):
+            c = object.__new__(sap_adt_lib.SAPADTClient)
+            c.url, c.csrf_token, c.timeout_default, c.timeout_short = "http://127.0.0.1:9", "t", 1, 1
+            c.fetch_csrf_token = lambda force_refresh=False: None
+
+            def post(url, params=None, **_k):
+                if (params or {}).get("_action") == "LOCK":
+                    return kilit
+                if isinstance(unlock, Exception):
+                    raise unlock
+                return SimpleNamespace(status_code=unlock, text="kilit gövdesi")
+            c.session = SimpleNamespace(headers={}, post=post,
+                                        put=lambda *_a, **_k: SimpleNamespace(status_code=put_kod, text=""))
+            try:
+                return c.set_function_module_source("Z_AXET_FM", "ZAXET_FG", "FUNCTION z_axet_fm.\nENDFUNCTION.",
+                                                    transport=TR), None
+            except Exception as exc:  # noqa: BLE001
+                return None, exc
+        r200, _ = kos(200)
+        r403, _ = kos(403)
+        rexc, _ = kos(ConnectionError("koptu"))
+        _r, hata = kos(403, put_kod=500)
+        ok = (r200.get("unlock_ok") is True and not r200.get("unlock_warning")
+              and r403.get("success") is True and r403.get("unlock_ok") is False and "SM12" in str(r403.get("unlock_warning"))
+              and rexc.get("unlock_ok") is False and bool(rexc.get("unlock_warning"))
+              and hata is not None and getattr(hata, "unlock_ok", None) is False)
+        self.kaydet("S12 FM UNLOCK: 200 → ok · 403/istisna → unlock_ok:false + uyarı · PUT reddinde istisna unlock_ok taşır",
+                    "True · False+uyarı ×2 · exc False",
+                    f"{r200.get('unlock_ok')} · {r403.get('unlock_ok')} {str(r403.get('unlock_warning'))[:30]} · "
+                    f"{rexc.get('unlock_ok')} · {getattr(hata, 'unlock_ok', 'yok')}", ok)
+
+    def test_S13_bdef_push_unlock_yanit_kodu(self):
+        """Z50 ⓔ: `_push_bdef_kaynak` UNLOCK yanıtı 200/204 değil → `unlock_ok:false` + `unlock_warning`. Kontrol: 200 → uyarı yok."""
+        def kos(unlock_kod):
+            def yon(c):
+                pr = c["params"]
+                if pr.get("_action") == "LOCK":
+                    return Yanit(200, "<DATA><LOCK_HANDLE>HB1</LOCK_HANDLE></DATA>")
+                if pr.get("_action") == "UNLOCK":
+                    return Yanit(unlock_kod, "")
+                if c["method"] == "PUT":
+                    return Yanit(200, "")
+                if c["method"] == "GET":
+                    return Yanit(200, "managed;")
+                return Yanit(500, "beklenmedik")
+            adt, ist = self.kur(yon)
+            return self.atom._push_bdef_kaynak(ist, "ZAXET_I_X", "managed;", TR)
+        r200, r403 = kos(200), kos(403)
+        ok = (r200.get("unlock_ok") is True and "unlock_warning" not in r200
+              and r403.get("success") is True and r403.get("unlock_ok") is False and bool(r403.get("unlock_warning")))
+        self.kaydet("S13 BDEF push UNLOCK 403 → unlock_ok:false + uyarı (200'de yok)", "True · False+uyarı",
+                    f"{r200.get('unlock_ok')} {r200.get('unlock_warning')} · {r403.get('unlock_ok')} "
+                    f"{str(r403.get('unlock_warning'))[:30]}", ok)
+
+    def test_S14_ag_istisnasi_belirsiz_mesaj(self):
+        """Z50 ⓒ: istek GÖNDERİLDİKTEN sonra ağ istisnası → "yazıldığı / kilit durumu BELİRSİZ" (HTTP reddinden ayrı).
+        tablo LOCK/PUT · textpool LOCK/PUT · ttyp onarım PUT. Kontrol grubu: HTTP reddi (403/400) ve CSRF istisnası (istek
+        gitmeden, T11) belirsiz DEĞİL."""
+        sonuc = {}
+        # tablo: LOCK ağ istisnası / PUT ağ istisnası / PUT 400 (kontrol)
+        for ad, kilit, put in (("t_lock", ConnectionError("koptu"), None), ("t_put", None, ConnectionError("koptu")),
+                               ("t_put400", None, 400)):
+            yon0 = self._tablo_yon(put_kod=put if isinstance(put, int) else 200)
+
+            def yon(c, _y=yon0, _k=kilit, _p=put):
+                if _k is not None and c["method"] == "POST" and c["params"].get("_action") == "LOCK":
+                    return _k
+                if isinstance(_p, Exception) and c["method"] == "PUT":
+                    return _p
+                return _y(c)
+            self.kur(yon)
+            r = self.ddic.adt_table_create("ZAXET_T_DEN", "Deneme tablosu", ALANLAR, "ZAXET_PKG", TR)
+            sonuc[ad] = (r.get("error"), r.get("outcome_uncertain"), "BELİRSİZ" in str(r.get("message")))
+        # textpool: kilit ağ istisnası / kilit HTTP reddi (kontrol) / PUT ağ istisnası
+        import sap_adt_lib  # type: ignore
+        for ad, kilit_hata in (("p_lock", ConnectionError("koptu")),
+                               ("p_lock403", sap_adt_lib.SAPLockError("kilitli", status_code=403))):
+            adt, _ = self.kur(lambda c: Yanit(200, "", {"ETag": "e"}))
+
+            def lk(*_a, _h=kilit_hata, **_k):
+                raise _h
+            adt.lock_object = lk
+            r = self.tp.adt_textpool_write("ZAXET_P_DEN", TR, symbols=self.SEM)
+            sonuc[ad] = (r.get("error"), r.get("outcome_uncertain"), "BELİRSİZ" in str(r.get("message")))
+        eski_kur = self.kur
+
+        def kur_put(yon, sql=None):
+            def yon2(c):
+                if c["method"] == "PUT":
+                    return ConnectionError("koptu")
+                return yon(c)
+            return eski_kur(yon2, sql)
+        self.kur = kur_put
+        try:
+            _a, r = self._tp(symbols=self.SEM)
+        finally:
+            self.kur = eski_kur
+        sonuc["p_put"] = (r.get("error"), r.get("outcome_uncertain"), "BELİRSİZ" in str(r.get("message")))
+        # ttyp onarım PUT ağ istisnası
+        bos_x, bos_s = self._ttyp_xml(type_name=""), self._dd40l(rowtype="", rowkind="", datatype="")
+        _a, r = self._ttyp([bos_x], [bos_s], put_kod=ConnectionError("koptu"))
+        sonuc["y_put"] = (r.get("error"), r["steps"].get("repair", {}).get("outcome_uncertain"),
+                          "BELİRSİZ" in str(r.get("message")))
+        beklenen = {"t_lock": ("partial_shell", "lock", True), "t_put": ("partial_shell", "put", True),
+                    "t_put400": ("partial_shell", None, False), "p_lock": ("lock_failed", "lock", True),
+                    "p_lock403": ("lock_failed", None, False), "p_put": ("put_failed", "put", True),
+                    "y_put": ("row_type_empty_repair_failed", True, True)}
+        ok = sonuc == beklenen
+        self.kaydet("S14 ağ istisnası (istek gitti) → BELİRSİZ + outcome_uncertain; HTTP reddi belirsiz DEĞİL",
+                    str(beklenen)[:150], str(sonuc), ok)
 
     # Canlı (r2_21_ttyp2 / r2_23_ttyp4): ilkel satırda POST tanımı düşürdü; SAP varsayılanı CHAR·000001 kaldı →
     # `durum:"uyumsuz"` → onarım hiç denenmedi. Readback istenenden FARKLIYSA da bir kez If-Match PUT denenmeli.

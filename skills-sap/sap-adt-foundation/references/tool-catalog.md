@@ -50,6 +50,11 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 - **Argümanlar:** `name` (zorunlu) · `object_type="class"` · `include_source=true`.
 - **Dönüş:** `{ok, name, type, exists, source?, metadata?, client_log}`; yoksa `{ok:true, exists:false}`.
 - **Uyarılar:** tablo/yapı için kardeş uç denenir (`sibling_probe`: `checked_found` / `checked_absent` / `unavailable:<sebep>`) ·
+  **tip kaynaktan belirlenir (v0.5.1, Z53):** canlı SAP `/ddic/structures/<tablo>` ucundan da 200 + `define table …` döner (ve tersi
+  olabilir) → uç 200 verse bile kaynağın ilk `define table|structure` anahtar sözcüğü istenen tiple uyuşmuyorsa yanıt `resolved_type`
+  (gerçek tip) · `requested_endpoint` · `resolved_endpoint` · `canonical_endpoint` · `type_probe:"source_keyword"` · `warning:"TIP DUZELTMESI …"`
+  taşır; pull kaydı kardeş-uç çözümündeki gibi iki tiple yazılır. `/* … */` ve `//` yorumları aranmadan önce atılır
+  (yorumdaki eski `define structure` türü yanıltmaz; tırnak içi korunur). Anahtar sözcük bulunamazsa düzeltme yapılmaz (eski davranış) ·
   yaratma/silme kararında DDIC varlığını tek başına buna dayandırma, `adt_search_objects` ile çapraz kontrol ·
   `func` grubu arama indeksinden çözer (yeni FM henüz indekste değilse `exists:false` dönebilir — DOĞRULANMADI) ·
   ağ hatasında `exists:false` yerine `ok:false` (`unreachable`/`belirsiz`) · MSAG → `adt_msgclass_read`'e delege ·
@@ -284,9 +289,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   **pull-before-edit:** önce `adt_get` şart — kayıt yok `pull_before_edit_missing` (2) · çekildikten sonra SAP'de değişmiş `source_changed_since_pull` (2) ·
   canlı okuma başarısız `pull_live_read_failed` (1) · durum dosyası bozuk `pull_state_unreadable` (2); başarılı push kaydı günceller (`pull_state: guncellendi`).
 - **Tipe özel yazma (2026-09-13; çevrimdışı test edildi, canlı DOĞRULANMADI):**
-  - `bdef`: LOCK → PUT (If-Match YOK) → UNLOCK → readback; **aktive ETMEZ** (`activated:false` + `activation_note`) → `adt_activate(<kök ddls>, also=[bdef, behavior class])`. Transport zorunlu. Yasak B taraması uygulanmaz (ABAP değil). Reviewer `rap_bdef_creation`.
+  - `bdef`: LOCK → PUT (If-Match YOK) → UNLOCK → readback (v0.5.1: UNLOCK yanıtı 200/204 değilse ya da istisnaysa `unlock_ok:false` + `unlock_warning` — SM12, AI kilit silmez; önceden durum kodu okunmuyordu); **aktive ETMEZ** (`activated:false` + `activation_note`) → `adt_activate(<kök ddls>, also=[bdef, behavior class])`. Transport zorunlu. Yasak B taraması uygulanmaz (ABAP değil). Reviewer `rap_bdef_creation`.
   - `ccimp` / `ccau`: `name` = **ana sınıf** (`{"name":"ZBP_X","object_type":"ccimp",…}`); include yoksa önce iskelet (POST) sonra PUT; bayt readback; ana sınıf aktive edilir — RAP behavior pool'da BDEF inaktifse aktivasyon düşer (`push_failed` + `activation_note`) → `also` ile birlikte aktive et. Transport zorunlu. Yasak B taranır. Reviewer `class_push`. `ccdef` / `ccmac` (2026-09-21, Z41): aynı yol (`push_class_include` → `definitions` / `macros` segmenti); segment adları GET ile ölçüldü; **yazma yolu canlı ÖLÇÜLDÜ (2026-09-21, DEV)**: PUT `/includes/definitions` ve `/includes/macros` → sınıf aktivasyonu → aktif readback eşit (kontrol grubu aynı turda ccimp) → yanıtta `write_path_measured:true` (dördünde de); bayt readback her yazımda koşar.
-  - `func`: fonksiyon grubu canlı okumadan çözülür (`function_group` yanıtta) ve **Z/Y olmalı** (değilse `ADR_0005_A`, yazma yok); sıkı kilit PUT + ayrı aktivasyon; aktivasyon düşerse `push_failed` + `activation_errors` (kaynak yüklendi, kayıt güncellendi). İmza satır-içi ABAP (`*"` blok 400 verir, K-15). Yasak B taranır. Reviewer yok (SKIP görünür).
+  - `func`: fonksiyon grubu canlı okumadan çözülür (`function_group` yanıtta) ve **Z/Y olmalı** (değilse `ADR_0005_A`, yazma yok); sıkı kilit PUT + ayrı aktivasyon (v0.5.1: UNLOCK sonucu yanıtta — `unlock_ok` + gerekirse `unlock_warning`; PUT hatasında da istisnaya taşınır; önceden UNLOCK hatası `except: pass` ile yutuluyordu); aktivasyon düşerse `push_failed` + `activation_errors` (kaynak yüklendi, kayıt güncellendi). İmza satır-içi ABAP (`*"` blok 400 verir, K-15). Yasak B taranır. Reviewer yok (SKIP görünür).
   - `ddls`: kaynak `define [root] view entity` / `as projection on` içeriyorsa reviewer `rap_cds_creation` (RAP read-only consumption BLOCKER + reuse WARNING dahil), yoksa `cds_update`.
   - `prog` / `program` / `include` (2026-09-14): reviewer `program_push` — abaplint, released_objects, decimal_write_to (üçü WARNING). abaplint
     include'u ve `PROGRAM` satırlı modül havuzunu ölçemez → SKIP = WARNING + ÖLÇÜLEMEDİ; engellemez. Önceden reviewer yoktu (SKIP).
@@ -340,6 +345,15 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Reviewer:** `artifact_path` (domain CSV `name,datatype,length,decimals,description,fixed_values` ya da domain XML) verilirse `domain_creation_csv`
   zinciri (BLOCKER → `reviewer_blocker`; desteklenmeyen uzantı ölçülemez → BLOCKER). Verilmezse `reviewer.verdict:"SKIP"` +
   `skip_reason:"no_artifact_path_provided"` yanıtta ve `gate.review`'da görünür — "reviewer PASS" değildir; argüman kuralları yine `pre_flight`'ta koşar.
+- **Varlık ön kontrolü + üzerine yazma kapısı (v0.5.1, Z51 ⓐ / Z52):** ön kontrol ÜÇ DEĞERLİDİR (`adt_get(doma)` ile): var → `already_exists` ·
+  ölçülemedi (5xx/403/istisna/ağ — 404 dışı her şey) → `exists_unmeasured`, **POST atılmaz** · 404 → yaratılır; `steps.pre_check` =
+  `checked_found` | `checked_absent` | `unavailable:<sebep>`. Ön kontrol "yok" deyip SAP POST'u 400/405 `AlreadyExists` ile reddederse
+  kütüphane artık başarı DÖNMEZ (`SAPObjectExistsError`) → `already_exists`, **aktivasyon yapılmaz**. POST'tan önce 5xx/zaman aşımı/bağlantı hatası yüzünden
+  sessiz yeniden deneme olduysa (kütüphanenin `ÖNCEKİ DENEME` eki; yedek: `[RETRY]` 5xx/zaman aşımı/bağlantı hatası satırı) → `already_exists_after_retry` + `own_shell_possible:true`: obje büyük olasılıkla önceki
+  denemenin yarattığı kabuktur (başkasının olduğu kanıtlanmadı) → `adt_get` ile bak, kör tekrar yok. Önceden: ön kontrol hata/None'da "yok"
+  diyordu ve POST 405 başarı sayılıp aktivasyon çağrılıyordu (aynı adlı ikinci çağrı var olan objeyi "yaratıldı" diye raporlayabiliyordu).
+  **Kodlar:** `preflight_blocker` · `reviewer_blocker` · `already_exists` · `already_exists_after_retry` · `exists_unmeasured` · yaratma
+  reddinde `_create_hata_sinifi` kodu (ör. `create_failed`) · aktivasyon/doğrulama düşerse ayrı kod YOK: `ok:false` + `steps.activate` / `steps.verify`.
 
 ### `adt_dtel_create`
 - **Amaç:** data element yarat + aktive et + doğrula.
@@ -348,7 +362,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Uyarılar:** DTEL adı kullanıcı onaylıdır (standarda uygun öneri + canlı kontrol + açık onay — `%sap-dev` §6); metinler spesifikasyondan (tahmin yasak) ·
   ağdan önce tier, Z/Y, transport, açıklama dolu, 4 etiket dolu ve **etiket uzunlukları ≤ 10/20/40/55** (kısa/orta/uzun/başlık; kenar boşluğu
   kırpılıp karakter sayılır) denetlenir → aşım `ADR_0005_D` (çıkış 2, mesaj `short=11>10` biçiminde). Sınırlar DTEL CSV validator'ıyla aynı
-  tablodan (2026-09-13; önceden artefaktsız çağrıda uzunluk denetlenmiyordu) · kullanılan domain'in varlığı ağdan önce **denetlenmez** (açık kalem).
+  tablodan (2026-09-13; önceden artefaktsız çağrıda uzunluk denetlenmiyordu) · kullanılan domain'in varlığı ağdan önce **denetlenmez** (açık kalem) ·
+  **varlık/üzerine yazma (v0.5.1):** `adt_domain_create` ile aynı üç değerli ön kontrol (`adt_get(dtel)`) ve aynı kodlar — `already_exists` ·
+  `exists_unmeasured` (POST yok) · `already_exists_after_retry` (5xx/zaman aşımı/bağlantı hatası yeniden denemesinden sonra `AlreadyExists`) — aktivasyon hiçbirinde yapılmaz.
 
 ### `adt_struct_create`
 - **Amaç:** DDIC yapı yarat + aktive et + doğrula.
@@ -383,7 +399,12 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   400/405 `AlreadyExists` ile reddederse kütüphane artık kaynağı PUT ETMEZ (`SAPObjectExistsError`) → `already_exists`, kilit/PUT/aktivasyon yok.
   Önceden: ön kontrol hata/None'da "yok" diyordu ve POST 405'ten sonra LOCK → PUT → aktivasyon yapılıyordu ⇒ mevcut yapı yeni alanlarla ezilebiliyordu
   (15f9716'dan beri tüm sürümlerde). `steps.pre_check` = `checked_found` | `checked_absent` | `unavailable:<sebep>`.
-  **Hatalar (başarısız yanıtta `error`, 2026-09-21):** `validation_error` · `reviewer_blocker` · `already_exists` · `exists_unmeasured` · `description_too_long` · `create_failed` · `activation_failed` ·
+  **Tablo/yapı ayrımı (v0.5.1, Z53, canlı bulgu):** canlı SAP var olan bir TABLOYU `/ddic/structures/` ucundan da 200 + `define table …` ile
+  döndürür → önceden `existing_kind: structure` deniyordu. Artık tür kaynağın ilk `define table|structure` anahtar sözcüğünden belirlenir
+  (`existing_kind: table`, mesaj "TABLO"). **Yeniden deneme sonrası çakışma (v0.5.1, Z52):** POST 5xx/zaman aşımı/bağlantı hatası → kütüphanenin sessiz
+  yeniden denemesi → 400/405 `AlreadyExists` ise `already_exists_after_retry` + `own_shell_possible:true` (kabuğu büyük olasılıkla önceki deneme
+  yarattı; `adt_get(structure)` ile bak). **Paket (v0.5.1, Z50 ⓕ):** boş ya da yalnız boşluk `package` → `validation_error`, SAP'ye gidilmez.
+  **Hatalar (başarısız yanıtta `error`, 2026-09-21):** `validation_error` · `reviewer_blocker` · `already_exists` · `already_exists_after_retry` · `exists_unmeasured` · `description_too_long` · `create_failed` · `activation_failed` ·
   `verify_failed` (metadata okunamadı ya da sürüm `active` değil) · `content_verify_failed` (yer tutucu kabuk / alan yok / kaynak okunamadı) ·
   `post_check_blocker`. Obje hiçbir durumda silinmez.
   **Satır sonu yasağı (2026-09-15):** `description` ile her alanın `description`/`name`/`type` değeri tek satır olmalı — CR, LF, U+2028, U+2029 ya da U+0085 varsa ağa ve reviewer'a gitmeden `validation_error` (mesaj yeri ve karakter kodunu söyler, ör. `fields[0].description … U+000A`); aynı kural render'da `ValueError` → gate'te `reviewer_blocker` (`ddl_render_hatasi`).
@@ -422,7 +443,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   varlık sondası (ölçülemezse `exists_unmeasured`, yaratma yok; tablo ucu 404 verip kardeş `/ddic/structures/` ucu ölçülemezse de `exists_unmeasured` — aynı adlı yapı orada olabilir, `pre_check: unavailable:sibling_…`) → kabuk POST (**DDL'siz**) → aynı stateful oturumda LOCK → PUT `source/main` (**If-Match yok**; corrNr = kilit yanıtındaki CORRNR) → UNLOCK (finally) →
   aktivasyon + `version=active` → aktif DDL readback (alan/anahtar dizisi).
 - **Dönüş:** `{ok, name, type:'table', ddl, fields_count, reviewer, steps:{pre_flight, reviewer, pre_check, create, activate, verify, readback}, unlock_warning?}` — `steps.create.unlock_ok:false` (UNLOCK yanıtı 200/204 değil) → `unlock_warning`; `ok`'u bozmaz, kullanıcıya ilet (SM12; AI kilit silmez).
-- **Hatalar:** `preflight_blocker` · `reviewer_blocker` · `already_exists` · `exists_unmeasured` · `validation_error` (ad/paket kütüphane doğrulaması; SAP'ye gidilmedi) · `create_failed` · **`partial_shell`** (kabuk VAR, DDL yazılamadı — kilit/PUT reddi, kilit öncesi CSRF/ağ istisnası ya da yabancı transport; silinmez, kullanıcı karar verir) ·
+- **Hatalar:** `preflight_blocker` · `reviewer_blocker` · `already_exists` · `exists_unmeasured` · `validation_error` (ad/paket kütüphane doğrulaması; boş ya da yalnız boşluk `package` v0.5.1'den beri araç kapısında — SAP'ye gidilmedi) · `create_failed` · **`partial_shell`** (kabuk VAR, DDL yazılamadı — kilit/PUT reddi, kilit öncesi CSRF/ağ istisnası ya da yabancı transport; silinmez, kullanıcı karar verir; **v0.5.1:** LOCK ya da PUT isteği gönderildikten sonra HTTP yanıtı yerine ağ istisnası geldiyse `outcome_uncertain: "lock"|"put"` + mesaj "kilidin alınıp alınmadığı / DDL'in yazılıp yazılmadığı BELİRSİZ" — `put` → `adt_get(tabl)` ile bak, `lock` → SM12) ·
   `activation_failed` · `verify_failed` (aktive oldu ama metadata `active` doğrulanamadı) · `readback_mismatch` (`default_shell_client_field` = varsayılan `client : abap.clnt` kabuğu duruyor, DDL sessizce kaybolmuş).
 - **Kapsam:** mevcut tabloyu DEĞİŞTİRMEZ. Canlı 2026-09-21 (DEV): yaratma `ok:true` — aktif, aktif DDL readback 3/3 alan. Ölçülmeyen dallar
   (`partial_shell`, yabancı transport, `exists_unmeasured`, UNLOCK hatası) yalnız çevrimdışı sahte istemci testleriyle gösterildi. `adt_push_source(tabl)` ile DDL yazma kaynak çekirdekte "invalid lock handle" verdi — bu araç kilidi kendi içinde tutar.
@@ -436,8 +457,8 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Akış:** ön kontrol → varlık sondası → POST `/ddic/tabletypes` (`application/vnd.sap.adt.tabletype.v1+xml`, corrNr sorgu parametresi) → aktivasyon → readback: ADT XML (`rowType/typeName`|`dataType`, erişim, anahtar) + DD40L (ROWTYPE/DATATYPE, ACCESSMODE, KEYDEF, KEYKIND) →
   **iki kanal da boş YA DA tanım istenenden farklı** → aynı XML (istenen tam tanım) ile If-Match PUT → yeniden aktivasyon → yeniden iki kanal (tek sefer; `steps.repair.trigger` = `bos`|`uyumsuz`);
   onarım sonrası nihai `ok` ikinci aktivasyonun doğrulamasından gelir (`steps.verify_2`). Reviewer zinciri yok (`reviewer.verdict:"SKIP"`); doğrulama canlı readback'tir.
-- **Hatalar:** `preflight_blocker` · `already_exists` · `exists_unmeasured` · `create_uncertain` (POST istisna verdi — `exists_after` sondasına bak, kör tekrar yok) · `create_failed` · `activation_failed` ·
-  `row_type_empty_repair_failed` (boş satır için düzeltme PUT'u düştü ya da ETag yok) · `readback_mismatch_repair_failed` (farklı tanım için düzeltme PUT'u düştü ya da ETag yok) · `activation_failed_after_repair` ·
+- **Hatalar:** `preflight_blocker` · `validation_error` (v0.5.1: boş ya da yalnız boşluk `package`; SAP'ye gidilmedi) · `already_exists` · `exists_unmeasured` · `create_uncertain` (POST istisna verdi — `exists_after` sondasına bak, kör tekrar yok) · `create_failed` · `activation_failed` ·
+  `row_type_empty_repair_failed` (boş satır için düzeltme PUT'u düştü ya da ETag yok) · `readback_mismatch_repair_failed` (farklı tanım için düzeltme PUT'u düştü ya da ETag yok) — ikisinde de v0.5.1: PUT'a HTTP yanıtı yerine ağ istisnası geldiyse `steps.repair.outcome_uncertain:true` + mesaj "yazıldığı BELİRSİZ … `adt_get(ttyp)` ile bak" · `activation_failed_after_repair` ·
   **`row_type_empty_after_repair`** (FAIL — asla OK) · `readback_channels_disagree` (biri dolu biri boş) · `readback_unmeasured` (DD40L/XML okunamadı; ölçülemedi ≠ doğru) ·
   `readback_mismatch` (erişim/anahtar/satır tipi/ilkel uzunluk-ondalık farklı — onarım denendiyse mesaj bunu söyler) · `verify_failed` (readback doğru ama metadata `active` doğrulanamadı).
 - **Kapsam (canlı 2026-09-21, DEV):** yapı satırlı üç kombinasyon (standart · sıralı + anahtar bileşenli + tekil) canlıda `ok:true` — üçünde de POST satır tanımını
@@ -457,6 +478,8 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   (program aktivasyonu gerçek hata verdiyse ölçülemeyen sonda başarı sayılmaz → `activation_unverified`).
   `written` yalnız PUT'u başarılı alt kaynakları listeler (yazılmadıysa `[]`).
 - **Hatalar:** `preflight_blocker` · `not_found` · `read_failed` · `would_remove_entries` · `lock_failed` (gerçek tutamaç yoksa yazmaz) · `put_failed` · `readback_mismatch` ·
+  (v0.5.1: LOCK ya da PUT isteğine HTTP yanıtı yerine ağ istisnası geldiyse `lock_failed`/`put_failed` + `outcome_uncertain: "lock"|"put"`,
+  `steps.put[<alt>] = {ok:null, outcome_uncertain:true}` ve mesaj "kilit durumu / yazıldığı BELİRSİZ" — HTTP ret kodlu yanıtlar eskisi gibi) ·
   `activation_incomplete` (metinler aktif ama PX sonrası worklist program/metin havuzunu hâlâ inaktif gösteriyor) ·
   `activation_unverified` (program aktivasyonu gerçek hata verdi — `activate_prog.outcome:"failed"` — ve PX sonrası worklist sondası ölçülemedi;
   metinler aktif görünse de `ok:false`, mesaj program hatasını taşır) · `unlock_warning`.

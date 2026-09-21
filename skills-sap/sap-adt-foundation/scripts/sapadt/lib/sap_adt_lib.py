@@ -90,6 +90,11 @@ class SAPObjectNotFoundError(SAPADTError):
     pass
 
 
+# Z52 (v0.5.1): `_zaten_var_hatasi` bu işaretle başlayan eki YALNIZ `_son_yeniden_denemeler` doluysa (5xx / zaman aşımı /
+# bağlantı hatası yeniden denemesi) koyar; araç katmanı `already_exists_after_retry` kararını buradan okur.
+ONCEKI_DENEME_IZI = "ÖNCEKİ DENEME"
+
+
 class SAPObjectExistsError(SAPADTError):
     """Object already exists"""
     pass
@@ -1656,6 +1661,10 @@ class SAPADTClient:
     
 
         last_error = None
+        # Z52 (v0.5.1): bu çağrıdaki 5xx / zaman aşımı / bağlantı hatası yeniden denemeleri — yaratma POST'unda ilk
+        # istek SAP'de işlenmiş olabilir; ardından gelen AlreadyExists aracın KENDİ kabuğu olabilir (`_zaten_var_hatasi`).
+        # CSRF yeniden denemesi kaydedilmez: SAP isteği token yüzünden reddetti, işlemedi.
+        self._son_yeniden_denemeler = []
 
         for attempt in range(self.max_retries):
             try:
@@ -1665,6 +1674,8 @@ class SAPADTClient:
                 should_retry, reason = self._should_retry(response, attempt, operation)
 
                 if should_retry:
+                    if 'CSRF' not in (reason or ''):
+                        self._son_yeniden_denemeler.append(reason)
                     # Calculate exponential backoff delay
                     delay = self.retry_delay * (2 ** attempt)
                     print(f"  [RETRY] {operation} - {reason}, retrying in {delay}s...")
@@ -1685,6 +1696,7 @@ class SAPADTClient:
             except requests.exceptions.Timeout as e:
                 last_error = e
                 if attempt < self.max_retries - 1 and self.retry_on_timeout:
+                    self._son_yeniden_denemeler.append(f"Timeout (attempt {attempt + 1})")
                     delay = self.retry_delay * (2 ** attempt)
                     print(f"  [RETRY] {operation} - Timeout (attempt {attempt + 1}), retrying in {delay}s...")
                     time.sleep(delay)
@@ -1698,6 +1710,7 @@ class SAPADTClient:
             except requests.exceptions.ConnectionError as e:
                 last_error = e
                 if attempt < self.max_retries - 1 and self.retry_on_timeout:
+                    self._son_yeniden_denemeler.append(f"Connection error (attempt {attempt + 1})")
                     delay = self.retry_delay * (2 ** attempt)
                     print(f"  [RETRY] {operation} - Connection error (attempt {attempt + 1}), retrying in {delay}s...")
                     time.sleep(delay)
@@ -5278,6 +5291,35 @@ class SAPADTClient:
             raise DomainTipBilgisiOlculemedi(domain_name, f"length/decimals sayı değil ({exc})",
                                              endpoint=uc) from exc
 
+    def _zaten_var_mi(self, response):
+        """POST yanıtı AlreadyExists mi (405 ya da 400 + gövdede `AlreadyExists`; iki kod da canlıda görüldü)."""
+        return (getattr(response, 'status_code', None) in (400, 405)
+                and 'AlreadyExists' in (getattr(response, 'text', '') or ''))
+
+    def _zaten_var_hatasi(self, tur, name, response, endpoint, yeniden_deneme=False):
+        """⛔ Z51 (v0.5.1) — AlreadyExists BAŞARI DEĞİLDİR: eskiden domain/DTEL/CDS/FUGR/FM `success:True` döndürüyordu,
+        BDEF mevcut objeye LOCK+PUT+aktivasyon yapıyordu (yapı yolu 2026-09-21'de düzeltilmişti). Çağıran yazmaz,
+        aktive etmez; mevcut objeyi değiştirmek bilinçli ayrı yoldur (adt_push_source). `yeniden_deneme=True`
+        (Z52): aynı çağrıda önce 5xx/zaman aşımı/bağlantı hatası yeniden denemesi oldu — obje büyük olasılıkla ilk
+        denemenin kabuğu. Ek `ONCEKI_DENEME_IZI` ile başlar: araç katmanı (sarmalayıcı istisnayı yutup yalnız metni
+        basar) sınıflamayı bu kütüphane hükmünden okur (`composite._yeniden_deneme_izi`)."""
+        sebepler = ", ".join(str(x) for x in (getattr(self, '_son_yeniden_denemeler', None) or []))
+        ek = (f" — {ONCEKI_DENEME_IZI} (5xx/zaman aşımı/bağlantı hatası sonrası yeniden deneme"
+              f"{': ' + sebepler if sebepler else ''}) kabuğu yaratmış olabilir; adt_get ile bak"
+              if yeniden_deneme else "")
+        hata = SAPObjectExistsError(
+            f"{tur} {name} already exists (SAP {response.status_code} AlreadyExists) — üzerine YAZILMADI "
+            f"(kilit/PUT/aktivasyon yok){ek}",
+            status_code=response.status_code,
+            response_text=(response.text or '')[:500],
+            endpoint=endpoint
+        )
+        hata.after_retry = bool(yeniden_deneme)
+        return hata
+
+    def _yeniden_denendi_mi(self):
+        return bool(getattr(self, '_son_yeniden_denemeler', None))
+
     def create_dataelement(self, name, domain_name, description, package_name,
                           short_label=None, medium_label=None, long_label=None,
                           heading_label=None, transport=None):
@@ -5387,13 +5429,9 @@ class SAPADTClient:
                 'object_url': object_url,
                 'message': f'Data element {name} created successfully'
             }
-        if response.status_code == 405 and 'AlreadyExists' in response.text:
-            object_url = f'/sap/bc/adt/ddic/dataelements/{name.lower()}'
-            return {
-                'success': True,
-                'object_url': object_url,
-                'message': f'Data element {name} already exists'
-            }
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('Data element', name, response, '/sap/bc/adt/ddic/dataelements',
+                                         self._yeniden_denendi_mi())
         raise SAPADTError(
             f"Failed to create data element {name}",
             status_code=response.status_code,
@@ -5651,13 +5689,9 @@ class SAPADTClient:
                 'object_url': object_url,
                 'message': f'Domain {name} created successfully'
             }
-        if response.status_code == 405 and 'AlreadyExists' in response.text:
-            object_url = f'/sap/bc/adt/ddic/domains/{name.lower()}'
-            return {
-                'success': True,
-                'object_url': object_url,
-                'message': f'Domain {name} already exists'
-            }
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('Domain', name, response, '/sap/bc/adt/ddic/domains',
+                                         self._yeniden_denendi_mi())
         else:
             raise SAPADTError(
                 f"Failed to create domain {name}",
@@ -5803,18 +5837,13 @@ class SAPADTClient:
         object_url = f'/sap/bc/adt/ddic/structures/{name.lower()}'
         if response.status_code in [200, 201]:
             object_url = response.headers.get('Location', object_url)
-        elif response.status_code in (400, 405) and 'AlreadyExists' in (response.text or ''):
+        elif self._zaten_var_mi(response):
             # ⛔ ÜZERİNE YAZMA YOK (2026-09-21, bug gate): eskiden `pass` → LOCK → PUT ile MEVCUT yapının kaynağı
             # yeni alanlarla EZİLİYORDU (çağıran aracın ön kontrolü yanlış "yok" derse — bkz. `adt_struct_create`).
             # Tek çağıran `SAPClient.create_structure` → `adt_struct_create`; "idempotent yeniden yaz"a dayanan
             # başka çağıran YOK (grep 2026-09-21). Mevcut yapıyı değiştirmek bilinçli ayrı yoldur (adt_push_source).
-            raise SAPObjectExistsError(
-                f"Structure {name} already exists (SAP {response.status_code} AlreadyExists) — "
-                f"üzerine YAZILMADI (kilit/PUT yok)",
-                status_code=response.status_code,
-                response_text=(response.text or '')[:500],
-                endpoint='/sap/bc/adt/ddic/structures'
-            )
+            raise self._zaten_var_hatasi('Structure', name, response, '/sap/bc/adt/ddic/structures',
+                                         self._yeniden_denendi_mi())
         else:
             raise SAPADTError(
                 f"Failed to create structure {name}",
@@ -6145,6 +6174,7 @@ define table {name.lower()} {{
         handle = None
         csrf = None
         asama = 'lock'
+        gonderilen = None   # Z50 ⓒ: yanıtı beklenen istek (LOCK/PUT) — ağ istisnasında sonuç BELİRSİZ
         try:
             self.session.headers['X-sap-adt-sessiontype'] = 'stateful'
             self.fetch_csrf_token(force_refresh=True)
@@ -6152,10 +6182,12 @@ define table {name.lower()} {{
             kilit_param = {'_action': 'LOCK', 'accessMode': 'MODIFY'}
             if transport:
                 kilit_param['corrNr'] = transport
+            gonderilen = 'lock'
             lock = self.session.post(tam, params=kilit_param, timeout=self.timeout_default,
                                      headers={'X-CSRF-Token': csrf, 'X-sap-adt-sessiontype': 'stateful',
                                               'Accept': 'application/*,application/vnd.sap.as+xml;'
                                                         'dataname=com.sap.adt.lock.result'})
+            gonderilen = None
             m = re.search(r'<LOCK_HANDLE[^>]*>([^<]+)</LOCK_HANDLE>', lock.text or '')
             if lock.status_code != 200 or not m:
                 hata = SAPADTError(f"Table LOCK failed for {name} (kabuk SAP'de VAR, DDL yazılmadı)",
@@ -6186,10 +6218,12 @@ define table {name.lower()} {{
             if etkin:
                 put_param['corrNr'] = etkin
             asama = 'put'
+            gonderilen = 'put'
             put = self.session.put(f"{tam}/source/main", params=put_param, timeout=self.timeout_default,
                                    headers={'X-CSRF-Token': csrf, 'Content-Type': 'text/plain; charset=utf-8',
                                             'Accept': '*/*'},
                                    data=ddl_source.encode('utf-8'))
+            gonderilen = None
             sonuc['put_status'] = put.status_code
             if put.status_code not in (200, 201, 204):
                 hata = SAPADTError(f"Table DDL PUT failed for {name} (kabuk SAP'de VAR, DDL yazılmadı)",
@@ -6204,6 +6238,11 @@ define table {name.lower()} {{
                     exc.stage = asama
                 except Exception:
                     pass
+            try:
+                # İstek gönderildi, yanıt yerine istisna geldi → SAP işledi mi BİLİNMİYOR ('lock' | 'put' | None).
+                exc.outcome_uncertain = gonderilen
+            except Exception:
+                pass
             try:
                 exc.partial = sonuc   # finally aynı sözlüğe unlock_ok/uyarı yazar (referans paylaşılır)
             except Exception:
@@ -6443,13 +6482,9 @@ define table {name.lower()} {{
                 'object_url': object_url,
                 'message': f'CDS view {name} created successfully'
             }
-        if response.status_code == 405 and 'AlreadyExists' in response.text:
-            object_url = f'/sap/bc/adt/ddic/ddl/sources/{name.lower()}'
-            return {
-                'success': True,
-                'object_url': object_url,
-                'message': f'CDS view {name} already exists'
-            }
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('CDS view', name, response, '/sap/bc/adt/ddic/ddl/sources',
+                                         self._yeniden_denendi_mi())
         else:
             raise SAPADTError(
                 f"Failed to create CDS view {name}",
@@ -6673,13 +6708,8 @@ constants:
                 'object_url': object_url,
                 'message': f'Function group {name} created successfully'
             }
-        if response.status_code == 405 and 'AlreadyExists' in response.text:
-            object_url = f'/sap/bc/adt/functions/groups/{name.lower()}'
-            return {
-                'success': True,
-                'object_url': object_url,
-                'message': f'Function group {name} already exists'
-            }
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('Function group', name, response, '/sap/bc/adt/functions/groups')
         raise SAPADTError(
             f"Failed to create function group {name}",
             status_code=response.status_code,
@@ -6757,17 +6787,10 @@ constants:
                            f'inline signature via set_function_module_source, then activate)'
             }
         # Already-exists is reported as 405 (AlreadyExists) on some releases and as
-        # 400 ExceptionResourceAlreadyExists on this system — treat both as idempotent.
-        already = (
-            (response.status_code == 405 and 'AlreadyExists' in response.text) or
-            (response.status_code == 400 and 'AlreadyExists' in response.text)
-        )
-        if already:
-            return {
-                'success': True,
-                'object_url': object_url,
-                'message': f'Function module {name} already exists'
-            }
+        # 400 ExceptionResourceAlreadyExists on this system. ⛔ Z51 (v0.5.1): artık idempotent başarı DEĞİL.
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('Function module', name, response,
+                                         f'/sap/bc/adt/functions/groups/{function_group.lower()}/fmodules')
         raise SAPADTError(
             f"Failed to create function module {name}",
             status_code=response.status_code,
@@ -6819,6 +6842,10 @@ constants:
         csrf = self.csrf_token
 
         lock_handle = None
+        # Z50 ⓓ (v0.5.1): UNLOCK sonucu görünür (eskiden `except: pass`, yanıt kodu da okunmuyordu). Sözleşme
+        # `create_table_with_ddl` ile aynı: None = kilit alınmadı · True = 200/204 · False = başka kod / istisna.
+        kilit_sonucu = {'unlock_ok': None, 'unlock_warning': None}
+        aktif_hata = None
         try:
             lock = self.session.post(
                 base,
@@ -6901,13 +6928,31 @@ constants:
                                   status_code=put.status_code,
                                   response_text=put.text[:500],
                                   endpoint=fm_url + '/source/main')
+        except Exception as exc:
+            aktif_hata = exc   # finally UNLOCK sonucunu istisnaya da yazar (PUT/kilit reddinde görünür kalsın)
+            raise
         finally:
             if lock_handle:
                 try:
-                    self.session.post(base, params={'_action': 'UNLOCK',
-                                                    'lockHandle': lock_handle},
-                                      headers={'X-CSRF-Token': csrf},
-                                      timeout=self.timeout_short)
+                    u = self.session.post(base, params={'_action': 'UNLOCK',
+                                                        'lockHandle': lock_handle},
+                                          headers={'X-CSRF-Token': csrf},
+                                          timeout=self.timeout_short)
+                    u_kod = getattr(u, 'status_code', None)
+                    kilit_sonucu['unlock_ok'] = u_kod in (200, 204)
+                    if not kilit_sonucu['unlock_ok']:
+                        kilit_sonucu['unlock_warning'] = (
+                            f"FM UNLOCK HTTP {u_kod} — kilit açılmamış olabilir (bayat kilit; kullanıcı SM12'de "
+                            f"bakar; AI kilit SİLMEZ). Gövde: {(getattr(u, 'text', '') or '')[:200]}")
+                except Exception as u_exc:
+                    kilit_sonucu['unlock_ok'] = False
+                    kilit_sonucu['unlock_warning'] = (
+                        f"FM UNLOCK başarısız ({type(u_exc).__name__}) — bayat kilit kalmış olabilir "
+                        "(kullanıcı SM12'de bakar; AI kilit SİLMEZ).")
+            if aktif_hata is not None:
+                try:
+                    aktif_hata.unlock_ok = kilit_sonucu['unlock_ok']
+                    aktif_hata.unlock_warning = kilit_sonucu['unlock_warning']
                 except Exception:
                     pass
             # Restore prior session type.
@@ -6917,7 +6962,10 @@ constants:
                 self.session.headers['X-sap-adt-sessiontype'] = prev_sessiontype
 
         out = {'success': True, 'object_url': fm_url,
-               'message': f'Function module {name} source pushed'}
+               'message': f'Function module {name} source pushed',
+               'unlock_ok': kilit_sonucu['unlock_ok']}
+        if kilit_sonucu['unlock_warning']:
+            out['unlock_warning'] = kilit_sonucu['unlock_warning']
 
         # Activate via activate_object() — its CSRF-retry handles the fresh-token
         # requirement (the in-session token 403s on the activation endpoint).
@@ -7488,9 +7536,11 @@ constants:
             params=params,
         )
 
-        # 'AlreadyExists' (400) → mevcut shell'i kullan, source'u güncelle
-        already = response.status_code == 400 and 'AlreadyExists' in response.text
-        if response.status_code not in [200, 201] and not already:
+        # ⛔ Z51 ⓑ (v0.5.1): eskiden 'AlreadyExists' (400) → "mevcut shell'i kullan" → LOCK+PUT+aktivasyon ile VAR OLAN
+        # BDEF'in kaynağı ezilebiliyordu (aXet'te çağıran yok — gizli risk). Artık yapıyla aynı: SAPObjectExistsError.
+        if self._zaten_var_mi(response):
+            raise self._zaten_var_hatasi('Behavior definition', name, response, bdef_base)
+        if response.status_code not in [200, 201]:
             raise SAPADTError(
                 f"Failed to create behavior definition",
                 status_code=response.status_code,

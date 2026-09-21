@@ -14,6 +14,12 @@ Plandaki dosya `core/sap/00-sap.md`. Bu sınıf `kritik_yol`'dur: asgari güvenc
 3. Kullanıcıya söyle: **SAP projelerinde `%guncelle-proje` çalıştırılmalı** — proje `AGENTS.md`
    damgaları ancak o zaman yenilenir. Bu bir MANUEL özel adımdır: `guncelle.py ozel-adim <sinif>`
    koşacak komut bulamaz, `MANUEL ADIM (...)` satırını basar; o satırı kullanıcıya AYNEN aktar.
+   Proje şablon dosyaları hiç değişmemiş olsa da (yalnız bu kanonik ilerlediyse) `%guncelle-proje`
+   planı `DAMGA` kalemini gösterir. Onaydan sonra `kapanis` damgayı yeniden basar ve tam
+   `behavior_manifest.py generate --project-dir …` komutunu verir; kullanıcı bu komutu KENDİ
+   terminalinde koşar. ⚠ v0.5.0'da bu yol yoktu (Z55): şablon güncel olunca plan "işlem
+   gerektiren dosya yok" deyip çıkıyor, damga ESKİ kalıyordu. v0.5.1'e güncelledikten sonra
+   `%guncelle-proje` tekrar koşulur.
 4. Ölçüm komutları: `python tests/run_tests.py -k sap_stamp` ve `python scripts/doctor.py`.
 
 ## DUR
