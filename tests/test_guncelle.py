@@ -2379,6 +2379,90 @@ class CiTabaniTest(GuncelleTemel):
                          "yerel değişiklik varsa birleşmiş ağaç hiç test edilmemiştir ⇒ ÖLÇ")
 
 
+class CiSonrasiTest(GuncelleTemel):
+    """Z26 — `sonra` turu da CI ile ikame edilir: yargı vakası yok + CI yeşil + DİSK AĞACI =
+    yayın ağacı (2026-09-21). Kullanıcı hedefi: yerel değişikliği olmayan güncelleme dakikalar sürsün.
+
+    ⛔ Şart 2 plan beyanı DEĞİL, disk ölçümüdür: kontrol grupları diske tek dosya ekleyerek /
+    uygulamayı atlayarak "plan temiz ama ağaç farklı" vakasını kurar ⇒ ölçüm beklenir.
+
+    KAPSAM — bakılmayan: gerçek CI kaydının doğruluğu (güven sınırı) · satır sonu farkı
+    (⚠ `git add` normalize eder ⇒ CRLF/LF farkı GÖRÜNMEZ, "aynı" sayılır — ölçüldü, bug gate
+    2026-09-21; davranışı değiştiren bir satır sonu vakası bilinmiyor) · gitignore'lu dosyalar
+    (karşılaştırma dışı) · yerel ortam sapması (bütünlük turunun işi).
+    """
+
+    ETIKET = CiTabaniTest.ETIKET
+    YESIL_TAKIMLAR = CiTabaniTest.YESIL_TAKIMLAR
+    _yesil = CiTabaniTest._yesil
+
+    def _ci_yayinla(self, kayit) -> None:
+        """Ortak fixture'ın kasıtlı 'beyansız dosya' vakasını kaldırıp yayınlar: o dosya hiçbir
+        kaleme bağlı olmadığı için tüketiciye UYGULANMAZ ⇒ ağaç yayından farklı kalır ve ölçüme
+        düşülür (doğru davranış, ölçüldü). Burada ölçülen değişken o değil."""
+        (self.f.public / "docs" / "beyansiz.md").unlink()
+        CiTabaniTest._ci_yayinla(self, kayit)
+
+    def _akis(self, uygula: bool = True, bozucu=None) -> tuple[subprocess.CompletedProcess, dict]:
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        if uygula:
+            r = self.f.calistir("uygula", "--otomatik")
+            self.assertEqual(r.returncode, 0, self.cikti(r))
+        if bozucu:
+            bozucu()
+        r = self.f.calistir("olc", "--asama", "sonra")
+        veri = json.loads((self.f.durum_dizini() / "olcum-sonra.json").read_text(encoding="utf-8"))
+        return r, veri
+
+    def test_1_yesil_ci_yargi_yok_agac_ayni_IKAME_EDILIR(self):
+        self._ci_yayinla(self._yesil())
+        r, veri = self._akis()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(veri.get("kaynak"), "ci", self.cikti(r))
+        self.assertEqual(veri.get("testler"), [], "ikamede hiçbir test KOŞMAMALI")
+        self.assertIn("İKAME", self.cikti(r))
+        self.assertIn("KAPSAM", self.cikti(r))
+
+    def test_6_RAPOR_ikameyi_KALICI_olarak_soyler(self):
+        """Kapanış raporu 'Yeni kırmızı: yok' ile yetinmemeli; yerelde test KOŞULMADIĞINI yazmalı."""
+        self._ci_yayinla(self._yesil())
+        self._akis()
+        self.f.calistir("kapanis")
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("sonra-ölçüm: yerelde test KOŞULMADI", rapor)
+        self.assertIn("once-ölçüm: yerelde test KOŞULMADI", rapor)
+
+    def test_2_KONTROL_ci_durumu_YOKKEN_olcer(self):
+        r, veri = self._akis()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("kaynak", veri)
+        self.assertTrue(any(t["cikis"] is not None for t in veri["testler"]), veri["testler"])
+
+    def test_3_KONTROL_diske_fazla_dosya_girdiyse_olcer(self):
+        self._ci_yayinla(self._yesil())
+        r, veri = self._akis(bozucu=lambda: (self.f.tuketici / "fazla.md").write_text(
+            "yerel\n", encoding="utf-8"))
+        self.assertNotIn("kaynak", veri, "disk ağacı yayından farklıysa ikame OLMAMALI")
+        self.assertIn("FARKLI", self.cikti(r))
+
+    def test_4_KONTROL_uygulama_yapilmadiysa_olcer(self):
+        self._ci_yayinla(self._yesil())
+        _r, veri = self._akis(uygula=False)
+        self.assertNotIn("kaynak", veri, "ağaç hâlâ eski sürümdeyken ikame OLMAMALI")
+
+    def test_5_KONTROL_yargi_vakasi_varsa_olcer(self):
+        self._ci_yayinla(self._yesil())
+        self.senaryolari_uygula()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        self.f.calistir("olc", "--asama", "once")
+        self.f.calistir("olc", "--asama", "sonra")
+        veri = json.loads((self.f.durum_dizini() / "olcum-sonra.json").read_text(encoding="utf-8"))
+        self.assertNotIn("kaynak", veri)
+
+
 class CiTabaniKirmiziTest(unittest.TestCase):
     """Z16 — CI tabanıyla `yeni_kirmizilar` SESSİZ SAHTE-YEŞİL vermemeli.
 

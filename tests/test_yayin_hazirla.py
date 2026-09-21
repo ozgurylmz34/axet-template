@@ -202,6 +202,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipUnless(BETIK.is_file(), "maintenance/yayin_hazirla.py yok (public sürümde maintenance/ dışlanır)")
 class CiDurumUretTest(unittest.TestCase):
     """Z16 — yayına taşınan CI hükmü (`guncelle/ci-durum.json`) FAIL-SAFE üretilmeli.
 
@@ -215,7 +216,8 @@ class CiDurumUretTest(unittest.TestCase):
 
     ETIKET = "v9.9.9"
     YESIL = ("Testler (kok · Python 3.12)\tsuccess\n"
-             "Testler (foundation · Python 3.12)\tsuccess\n")
+             "Testler (foundation · Python 3.12)\tsuccess\n"
+             "Testler (kok-public · Python 3.12)\tsuccess\n")
 
     def modul(self):
         spec = importlib.util.spec_from_file_location("yayin_hazirla_ci", BETIK)
@@ -234,7 +236,7 @@ class CiDurumUretTest(unittest.TestCase):
         m = self.modul()
         y = self._uret(m, self.YESIL)
         self.assertTrue(y["hepsi_yesil"], y)
-        self.assertEqual(len(y["takimlar"]), 2)
+        self.assertEqual(len(y["takimlar"]), 3)
         self.assertNotIn("not", y)
 
     def test_2_KONTROL_tek_takim_kirmiziysa_FALSE_ve_ADINI_soyler(self):
@@ -275,6 +277,44 @@ class CiDurumUretTest(unittest.TestCase):
             y = m.ci_durum_uret("deadbee", self.ETIKET, None, True)[self.ETIKET]
         self.assertFalse(y["hepsi_yesil"])
         self.assertIn("ci-durum-yok", y["not"])
+
+    def test_9_isler_HIC_BASLAMADIYSA_kirmizi_takim_DEMEZ(self):
+        """Z23 — kota/ödeme duvarında işler saniyeler içinde `failure` döner, hiç adım koşmaz.
+
+        Bunu "yeşil olmayan takım" diye yazmak yanlış teşhistir: kod kırılmadı, ölçülmedi.
+        """
+        m = self.modul()
+        y = self._uret(m, "Testler (kok · Python 3.12)\tfailure\t3\n"
+                          "Testler (foundation · Python 3.12)\tfailure\t2\n"
+                          "Testler (kok-public · Python 3.12)\tfailure\t2\n")
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("BASLAMADI", y["not"])
+        self.assertNotIn("yesil olmayan", y["not"])
+
+    def test_10_KONTROL_uzun_suren_failure_GERCEK_kirmizidir(self):
+        m = self.modul()
+        y = self._uret(m, "Testler (kok · Python 3.12)\tfailure\t640\n"
+                          "Testler (foundation · Python 3.12)\tsuccess\t400\n"
+                          "Testler (kok-public · Python 3.12)\tsuccess\t600\n")
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("yesil olmayan", y["not"])
+        self.assertIn("Testler (kok · Python 3.12)", y["not"])
+
+    def test_11_KONTROL_sure_alani_yesil_hukmu_BOZMAZ(self):
+        m = self.modul()
+        y = self._uret(m, "Testler (kok · Python 3.12)\tsuccess\t600\n"
+                          "Testler (foundation · Python 3.12)\tsuccess\t400\n"
+                          "Testler (kok-public · Python 3.12)\tsuccess\t600\n")
+        self.assertTrue(y["hepsi_yesil"], y)
+        self.assertEqual({t["sonuc"] for t in y["takimlar"]}, {"success"})
+
+    def test_12_KONTROL_public_duzen_kolu_EKSIKSE_FALSE(self):
+        """Z27 — tüketici testleri public ağaçta koşar; o kol yoksa CI hükmü eksiktir."""
+        m = self.modul()
+        y = self._uret(m, "Testler (kok · Python 3.12)\tsuccess\n"
+                          "Testler (foundation · Python 3.12)\tsuccess\n")
+        self.assertFalse(y["hepsi_yesil"])
+        self.assertIn("kok-public", y["not"])
 
     def test_8_uretilen_dosyalar_ci_durumu_KAPSAR(self):
         """Kapsam muafiyeti tek kaynaktan gelmeli; unutulursa kalem-diff FAIL verirdi."""

@@ -176,6 +176,8 @@
       "risk": "dusuk",
       "ozel_adim": null,
       "kritik_yol": false,
+      "beklenen_bos": true,
+      "beklenen_bos_neden": "Kullanıcı (public) klonunda maintenance/ dışlanır ⇒ bu sınıf orada tanım gereği BOŞ; bakımcı deposunda dolu. Muafiyetsiz hâli public ağaçta 'ölü kural' FAIL veriyordu (ölçüldü 2026-09-21, Z27).",
       "not": "Tüketiciye gitmediği için %guncelle kapsamı dışıdır; TASARIM §3 özet tablosunda satırı yok (üst sınıfı bu yüzden s3_cekirdek=false)."
     },
     {

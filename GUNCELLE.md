@@ -36,6 +36,7 @@ izlenmez.
 | 8 | Yargı vakaları | her dosya için `guncelle.py kart <KOD>` → **kartın adımlarını uygula** (hangi komutun koşacağını KART söyler) → `guncelle.py isaretle <yol> --karar …` | her biri 0 | kartın DUR koşulu |
 | 9 | Özel adımlar | `guncelle.py ozel-adim <ad>` | 0 | kart talimatı (ör. `install.py --dry-run` hata → `geri-al`) |
 | 10 | Sonra-ölçüm | `guncelle.py olc --asama sonra` | 0 | 2 → DUR |
+| 10b | *(10'un İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi (sonra):** 6b'nin şartları sağlanıyorsa **ve** disk ağacı yayın etiketinin ağacıyla **aynıysa** (plan beyanı değil, diskten ölçülür; karşılaştırma DIŞI: yayın meta dosyaları · gitignore'lu dosyalar · satır sonu farkı) adım 10 **test koşmaz** ve `[İKAME] sonra-ölçüm KOŞULMADI` + `KAPSAM` satırlarını basar. **AYNEN aktar.** Ağaç farklıysa `[ÖLÇ] … FARKLI (N yol: …)` basar ve normal ölçer. Yerel ortamın asgari kontrolü adım 12'de yine koşar. İkame RAPOR.md'ye de yazılır ("yerelde test KOŞULMADI"). | 0 | — |
 | 11 | Kritik yol karşılaştırması | `kritik_yol` sınıfı V4 dosyaları: aynı örnekle önce/sonra hüküm | fark açıklanmış | açıklanamayan fark → DUR |
 | 12 | Bütünlük turu | `guncelle.py butunluk` | 0 | 1 → adım 13 |
 | 13 | Düzeltme döngüsü | FAIL'i düzelt → ilgili dosyayı yeniden `isaretle` → `butunluk` | en fazla **2 tur** | 2. turda da FAIL → DUR, üç seçenek sun |

@@ -53,7 +53,12 @@ jobs:
         # started because recent account payments have failed or your spending limit needs
         # to be increased"). Tani is loglarinda DEGIL, annotation'dadir; `gh run rerun`
         # cozmez. Matris bu yuzden daraltildi (asagi).
-        takim: [kok, foundation]
+        # kok-public (2026-09-21, Z27): kok takimi PUBLIC DUZENINDE — yayin_hazirla'nin
+        # DISLANANLAR'i (maintenance/, _lab/ ...) silinmis agacta. NEDEN: tuketici testleri
+        # public agacta kosar, CI ise dev agacini olcuyordu; olculdu: gercek public v0.4.0'da
+        # 2 test sinifi 9 failure + 8 error veriyordu, CI yesildi. ci-durum `hepsi_yesil` bu
+        # kola da baglidir (CI_ASGARI_TAKIMLAR). Paralel kostugu icin bekleme suresi uzamaz.
+        takim: [kok, foundation, kok-public]
         # TARIHCE — cift surum kolu NEDEN vardi: "su surumden itibaren destekleniyor"
         # iddiasi VARSAYILMASIN, OLCULSUN diye. Ise de yaradi (asagidaki 3.9/3.10 vakalari).
         # BUGUN TEK KOL: gerekce kota, kapsamin gereksizligi DEGIL.
@@ -102,6 +107,11 @@ jobs:
         # 3.14'e ozgu bir kirilma CI'da degil, kullanicinin makinesinde ortaya cikar.
         # Ucuz telafi (bugun YAPILMADI, acik kalem): 3.14 kolunu yalniz main push'unda ya da
         # haftalik schedule'da kosturmak — PR maliyeti dusmeye devam eder, iddia olculmus kalir.
+        # ⛔ 3.14 KOLU GERI GELMEDI (2026-09-21, kullanici karari, Z19) — depo public oldugu
+        # icin kota gerekcesi kalkti, ama yeni gerekce KULLANICI HIZI: 3.14 kolu kirilirsa
+        # ci-durum `hepsi_yesil` diyemez ve o yayinda HERKES yavas tam olcume duser.
+        # Hedef (Z25): CI surumu = kullanici surumu — tek sabit surum, kurucu/guncelleme
+        # kullaniciyi o surume ceker, ikinci kol anlamsizlasir.
         python: ['3.12']
     env:
       PYTHONUTF8: '1'
@@ -157,8 +167,20 @@ jobs:
       # Asagidaki uc adim `takim` matris boyutuna gore ayrisir. sap-code-review yalnizca
       # 3 sn surdugu icin kok koluna binmistir — kendi kolunu acmak on kosul maliyetini
       # (13 sn) kazancindan buyuk yapardi.
+      # PUBLIC DUZEN — dislanacak yollar yayin_hazirla.DISLANANLAR'dan OKUNUR (sabit yazilmaz,
+      # bayatlamasin). Silme COMMIT'lenir: test_kur fixture'i bu depoyu HEAD'den klonluyor.
+      # `python -B`: import __pycache__ birakip maintenance/ klasorunu diriltmesin.
+      - name: Public duzen - dislananlari sil
+        if: matrix.takim == 'kok-public'
+        run: |
+          $d = python -B -c "import sys; sys.path.insert(0, 'maintenance'); import yayin_hazirla as y; print(' '.join(y.DISLANANLAR))"
+          Write-Host "dislanan: $d"
+          git rm -r -q --ignore-unmatch $d.Split(' ')
+          git -c user.name=ci -c user.email=ci@example.invalid commit -q -m public-duzen
+          if (Test-Path maintenance) { throw "maintenance/ hala var - public duzen kurulamadi" }
+
       - name: Kok takim
-        if: matrix.takim == 'kok'
+        if: matrix.takim == 'kok' || matrix.takim == 'kok-public'
         run: python tests/run_tests.py
 
       - name: sap-code-review takimi

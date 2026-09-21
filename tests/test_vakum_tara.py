@@ -35,6 +35,7 @@ from _helpers import AXET_HOME, GeciciTest
 BETIK = AXET_HOME / "maintenance" / "vakum_tara.py"
 
 
+@unittest.skipUnless(BETIK.is_file(), "maintenance/vakum_tara.py yok (public sürümde maintenance/ dışlanır)")
 class VakumTaraKalibrasyon(GeciciTest):
     """Her test kendi sahte kökünü kurar: <tmp>/tests/test_ornek.py"""
 

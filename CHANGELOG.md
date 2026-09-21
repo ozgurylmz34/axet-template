@@ -6,6 +6,29 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.4.1 — 2026-09-21
+
+### ★ 0.4.1-01 · Yerel değişikliği olmayan güncellemede test turu koşmaz — güncelleme dakikalar sürer (yetenek)
+
+- **neden:** Güncelleme sonrası ölçüm (`olc --asama sonra`) yerel değişiklik yokken de bütün testleri kullanıcının makinesinde yeniden koşuyordu (~25-30 dk). Oysa o ağaç, CI'nin temiz ortamda ölçtüğü yayın ağacının aynısıdır ⇒ yeni bilgi üretmiyordu. Artık iki şart birlikte sağlanırsa tur CI hükmüyle ikame edilir: (1) önce-ölçüm ikamesinin şartları (yargı vakası yok + yayının CI kaydı yeşil) (2) disk ağacı yayın etiketinin ağacıyla birebir aynı — plan beyanına güvenilmez, geçici bir index ile diskten ölçülür. Biri tutmazsa normal ölçülür ve hangi yolların farklı olduğu basılır. Yerel ortamın asgari kontrolü (install --dry-run · doctor · hızlı takımlar) bütünlük turunda yine koşar. İkame edilen tur RAPOR.md'de de açıkça yazılır: "yerelde test KOŞULMADI — CI hükmüyle ikame".
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`, `GUNCELLE.md`
+- **test:** `python tests/run_tests.py -k CiSonrasiTest`
+- **gerektirir:** —
+
+### ★ 0.4.1-02 · Güncelleme testleri public ağaçta da yeşil + CI kaydı kota duvarında doğru teşhis (düzeltme)
+
+- **neden:** İki test sınıfı (`test_vakum_tara`, `CiDurumUretTest`) yalnız bakımcı deposunda bulunan `maintenance/` klasörüne bağlıydı ve atlama koruması yoktu: kullanıcı klonunda 9 failure + 8 error veriyordu (gerçek v0.4.0 ağacında ölçüldü). Güncelleme bunları 'yeni kırmızı' sayıp güncellemeyi KAPANMADI ile bitirirdi. Artık o ağaçta atlanırlar. CI'ye kullanıcının ağacını (public düzen) test eden bir iş eklendi ve yayının CI hükmü o işe de bağlandı. Ayrıca CI işleri hiç başlamadığında (kota/ödeme duvarı) yayın kaydı 'kırmızı takım' değil 'CI işleri BAŞLAMADI — kod hakkında hüküm YOK' der. Aynı kökten: güncelleme haritasındaki bakımcı sınıfı kullanıcı klonunda 'ölü kural' sayılıp 2 testi (ve paralel koşucu testini) kırıyordu; artık 'beklenen boş' olarak gerekçesiyle işaretli.
+- **dosyalar:** `.github/workflows/testler.yml`, `tests/test_yayin_hazirla.py`, `tests/test_vakum_tara.py`, `guncelle/harita.json`
+- **test:** `python tests/run_tests.py -k CiDurumUret`, `python tests/run_tests.py -k VakumTara`, `python tests/run_tests.py -k test_guncelle_harita`
+- **gerektirir:** —
+
+### 0.4.1-03 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.4.0 — 2026-09-20
 
 ### ★ 0.4.0-01 · Ölçüm zaman aşımı artık ÇÖKME değil hüküm — 35 dakikalık ölçüm çöpe gitmiyor (düzeltme)
