@@ -92,7 +92,8 @@ class FeatureControlTest(unittest.TestCase):
         for parca in ("features : instance", "get_instance_features", "FOR INSTANCE FEATURES", "%update", "%delete",
                       "%action-", "%field-", "%assoc-", "fc-o-disabled", "fc-f-read_only",
                       "get_instance_authorizations", "auth-unauthorized", "sap:updatable-path", "IN LOCAL MODE",
-                      "ÖLÇÜLMEDİ"):
+                      # v0.5.2: EML kolu canlı ölçüldü (§7a); ölçülmeyen kolların sınırı hâlâ yazılı olmalı
+                      "ÖLÇÜLDÜ", "## 7a.", "ölçülmedi", "**Kanıtlamadığı:**"):
             with self.subTest(parca=parca):
                 self.assertIn(parca, metin)
 

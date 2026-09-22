@@ -95,8 +95,8 @@ cli adt_get '{"name":"ZCL_DEMO_CLASS","object_type":"class","include_source":fal
 - **Tipe özel kabuklar (2026-09-13, çevrimdışı test edildi, canlı DOĞRULANMADI):** `adt_post_shell` artık `ddls`, `srvd`, `bdef`, `fugr`,
   `func` (`extra.function_group`), `msag` (yalnız kabuk), `enqu` (`extra.primary_table`+`lock_fields`), `ttyp` (`extra.row_type`) kabuğu açar;
   tablo + reçete kaynakları: `tool-catalog.md` → `adt_post_shell`. Başarıdan sonra da varlık sondası koşar: 2xx ama obje yok →
-  `create_not_persisted` (MSAG'de DEV olmayan paketle ölçülmüş sahte-200 sınıfı). `ddlx`/`dcl`/`srvb` → `unsupported_type` (kabuğu kullanıcı
-  ADT/Eclipse'te açar). Açıklama boşsa `ADR_0005_D`.
+  `create_not_persisted` (MSAG'de DEV olmayan paketle ölçülmüş sahte-200 sınıfı). `ddlx`/`dcls` kabuğu v0.5.2'den beri var (canlı ölçüldü
+  2026-09-22); `srvb` → `unsupported_type` (kabuğu kullanıcı ADT/Eclipse'te açar). Açıklama boşsa `ADR_0005_D`.
 - **Mesaj sınıfına mesaj yazma (2026-09-13, çevrimdışı test edildi, canlı DOĞRULANMADI):** `adt_msgclass_read` (canlı liste + pull kaydı) →
   nihai listeyi kullanıcıya göster → `adt_msgclass_write`. SAP PUT'u tüm listeyi değiştirir; araç canlı listeyi okuyup **birleştirir** (verilmeyen
   mesajlar korunur), mevcut mesajı değiştirmek `allow_overwrite=true`, silmek `delete_numbers` ister; yazma sonrası canlı liste beklenenle kıyaslanır.

@@ -103,7 +103,7 @@ def _type_key(t: str) -> str:
 _SOURCE_BASED_TYPES = {
     "ddls", "cds", "cdsview", "ddl", "bdef", "behaviordefinition",
     "srvd", "servicedefinition", "class", "clas", "program", "prog",
-    "interface", "intf", "dcl", "accesscontrol", "ddlx", "metadataextension",
+    "interface", "intf", "dcl", "dcls", "accesscontrol", "ddlx", "metadataextension",
 }
 
 
@@ -1202,6 +1202,11 @@ _KABUK_SONRAKI_ADIM = {
     "bdef": ("Kabuk boş. BDEF adı kök entity adıyla AYNI olmalı (SAP zorunlu; araç doğrulayamaz). Sıradaki: "
              "adt_get(bdef) → adt_push_source(bdef) (aktive ETMEZ) → adt_activate(<kök ddls>, "
              "also=[bdef, behavior class])."),
+    "ddlx": ("Kabuk boş. Hedef CDS `@Metadata.allowExtensions: true` taşımalı. Sıradaki: adt_get(ddlx) → "
+             "adt_push_source(ddlx) → adt_activate(ddlx)."),
+    "dcls": ("Kabuk boş. Sıradaki: adt_get(dcls) → adt_push_source(dcls) (`define role <ad> { grant select on "
+             "<cds> where … }`) → adt_activate(dcls). Rolün veriyi gerçekten süzdüğünü tüketici tarafında ayrıca "
+             "test et (aktivasyon süzmeyi kanıtlamaz)."),
     "fugr": "Grup inaktif yaratılır. Sıradaki: adt_activate(fugr) → adt_post_shell(func, extra.function_group).",
     "func": ("FM kabuğu. İmza + gövde TEK kaynakta, satır-içi ABAP (`*\"` yorum bloğu DEĞİL): adt_get(func) → "
              "adt_push_source(func). RFC-enable SE37'de tek-tık (ADT create attribute'u değil). Yeni FM arama "
@@ -1270,6 +1275,10 @@ def _kabuk_sondasi(tip: str, name: str, ek: dict | None) -> dict:
             p = _adt_get_oku(name, tip, tip == "ttyp")
         elif tip == "bdef":
             p = _read_source_object(name, "bo/behaviordefinitions", "bdef")
+        elif tip == "ddlx":
+            p = _read_source_object(name, "ddic/ddlx/sources", "ddlx")
+        elif tip == "dcls":
+            p = _read_source_object(name, "acm/dcl/sources", "dcls")
         elif tip == "msag":
             p = _msgclass_oku(name)   # iç sonda: pull kaydı yazmaz
         elif tip in ("func", "enqu"):
@@ -1405,8 +1414,8 @@ def adt_post_shell(
     Args:
         object_type: Genel yol (`SAPClient.create_object`): 'class', 'interface', 'program', 'include'.
             Tipe özel reçeteler (`tools/shells.py`): 'ddls' (boş CDS kabuğu — kaynak ayrı push),
-            'srvd', 'bdef' (ad = kök entity adı), 'fugr', 'func', 'msag' (yalnız kabuk; mesaj
-            yazma desteklenmez), 'enqu' (ad E+Z/Y), 'ttyp'. 'ddlx'/'dcl'/'srvb'/'doma'/'dtel'/
+            'srvd', 'bdef' (ad = kök entity adı), 'ddlx', 'dcls' (v0.5.2), 'fugr', 'func', 'msag'
+            (yalnız kabuk; mesaj yazma desteklenmez), 'enqu' (ad E+Z/Y), 'ttyp'. 'srvb'/'doma'/'dtel'/
             'structure'/'tabl' → `unsupported_type` (gerekçe mesajda). Paket → ADR_0005_C.
         name: Customer-namespace name (Z*/Y*; lock object E+Z/Y).
         package: Target SAP package (mevcut; paket yaratılmaz).
@@ -2046,6 +2055,9 @@ def adt_delete(
     except GuardrailViolation as gv:
         return gv.as_dict()
 
+    if (object_type or "").lower().strip() in _BDEF_TIPLERI:
+        return _bdef_sil(name, transport)
+
     client = _get_client()
     try:
         with _capture_stdout() as out:
@@ -2086,6 +2098,53 @@ def adt_delete(
         return _err_from_exc(exc)
 
 
+def _bdef_sil(name: str, transport: str | None) -> dict:
+    """BDEF silme (v0.5.2, Z35 canlı bulgusu 2026-09-22).
+
+    Genel yol (`SAPClient.delete_object` → `get_object_url`) BDEF'i tip tablosunda bulamaz
+    ("Unsupported object type: bdef") → kök DDLS silinse de BDEF artık kalıyordu. Aynı kütüphane
+    adımları (kilit → DELETE → finally kilit aç) doğrudan BDEF ucuna uygulanır; canlıda ölçüldü
+    (DEV, $TMP: silme başarılı, TADIR satırı düştü). Yokluk readback'i BDEF kaynak ucundan (404 = kanıt).
+    """
+    from urllib.parse import quote
+    client = _get_client()
+    adt = getattr(client, "adt_client", None) or client
+    url = "/sap/bc/adt/bo/behaviordefinitions/" + quote(name.lower(), safe="")
+    kilit = None
+    try:
+        with _capture_stdout() as out:
+            try:
+                kilit = adt.lock_object(url, transport=transport)
+                if kilit == "NO_LOCK_SUPPORT":
+                    kilit = None
+                adt.delete_object(url, kilit or "NO_LOCK_SUPPORT", transport=transport)
+            finally:
+                if kilit:
+                    try:
+                        adt.unlock_object(url, kilit)
+                    except Exception as uexc:  # noqa: BLE001 — silinen objenin kilidi açılamayabilir
+                        print(f"     [WARNING] Unlock failed: {uexc}")
+    except Exception as exc:
+        return _err_from_exc(exc)
+    resp = {"ok": True, "name": name, "type": "bdef", "deleted": True,
+            "client_log": out.getvalue().strip()}
+    geri = _read_source_object(name, "bo/behaviordefinitions", "bdef")
+    # `_read_source_object`: var → {ok:True, exists:True} · kanıtlı yok → {ok:True, exists:False} (404 imzası).
+    if geri.get("ok") is True and geri.get("exists") is False:
+        resp["delete_verified"] = True
+    elif geri.get("ok") is True:
+        resp.update(ok=False, deleted=False, delete_verified=False,
+                    delete_reason="Silme sonrası BDEF HÂLÂ mevcut (readback) — silme oturmadı. "
+                                  "Lock/transport/bağımlılık kontrol et, tekrar dene.")
+    else:
+        resp["delete_verified"] = None
+        resp["delete_reason"] = ("Silme sonrası BDEF readback KOŞAMADI "
+                                 f"({geri.get('error') or 'bilinmiyor'}) — 'silindi' kanıtı DEĞİLDİR; elle teyit et.")
+    for _k in [k for k in _LAST_PUSHED if k[0] == name.upper()]:
+        _LAST_PUSHED.pop(_k, None)
+    return resp
+
+
 # Aktivasyon obje URI segmentleri (tip → ADT path; /source/main YOK). Çoklu-obje atomik
 # aktivasyon (interface DDLS + BDEF + class aynı /activation POST'ta — ADIM-1 tipi RAP
 # zincirleri) + activate_object'in bilmediği tipler (bdef/srvd) için.
@@ -2094,7 +2153,7 @@ _ACTIVATION_URI_SEG = {
     "bdef": "bo/behaviordefinitions", "behaviordefinition": "bo/behaviordefinitions",
     "class": "oo/classes", "clas": "oo/classes",
     "srvd": "ddic/srvd/sources", "servicedefinition": "ddic/srvd/sources",
-    "dcl": "acm/dcl/sources", "accesscontrol": "acm/dcl/sources",
+    "dcl": "acm/dcl/sources", "dcls": "acm/dcl/sources", "accesscontrol": "acm/dcl/sources",
     "ddlx": "ddic/ddlx/sources", "metadataextension": "ddic/ddlx/sources",
     "domain": "ddic/domains", "doma": "ddic/domains",
     "dataelement": "ddic/dataelements", "dtel": "ddic/dataelements",

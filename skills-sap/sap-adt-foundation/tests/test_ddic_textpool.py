@@ -975,9 +975,15 @@ class DdicTextpool(unittest.TestCase):
         beklenen = {"lib_hukmu": "already_exists_after_retry", "retry_baglanti": "already_exists_after_retry",
                     "retry_5xx": "already_exists_after_retry", "retry_timeout": "already_exists_after_retry",
                     "yalniz_csrf": "already_exists", "iz_yok": "already_exists", "aciklama_ici": "already_exists"}
-        ok = (sonuc == beklenen and IZ in dolu and "Connection error (attempt 1)" in dolu and IZ not in bos)
+        # v0.5.2 (v0.5.1 gate LOW): kütüphanenin GERÇEK mesajı composite regex'inden geçer — ek biçimi değişirse
+        # yedek `[RETRY]` izi birincil izi örttüğü için uçtan uca testler yeşil kalırdı; bağ burada doğrudan sınanır.
+        gercek_dolu = composite._yeniden_deneme_izi("[ERROR] " + dolu)
+        gercek_bos = composite._yeniden_deneme_izi("[ERROR] " + bos)
+        ok = (sonuc == beklenen and IZ in dolu and "Connection error (attempt 1)" in dolu and IZ not in bos
+              and gercek_dolu is True and gercek_bos is False)
         self.kaydet("S9c after_retry izi: kütüphane hükmü / [RETRY] bağlantı-5xx-timeout ayrı ayrı · CSRF / iz yok → düz",
-                    str(beklenen) + " · lib eki sebepli", f"{sonuc} · dolu_ek={IZ in dolu} bos_ek={IZ in bos}", ok)
+                    str(beklenen) + " · lib eki sebepli · gerçek mesaj regex'ten True/False",
+                    f"{sonuc} · dolu_ek={IZ in dolu} bos_ek={IZ in bos} · regex={gercek_dolu}/{gercek_bos}", ok)
 
     def test_S6c_ddl_turu_yorumlar_atlanir(self):
         """Bug gate LOW (v0.5.1): `define table|structure` aranmadan önce `/* … */` blokları ve `//` satır yorumları atılır;
@@ -1078,6 +1084,26 @@ class DdicTextpool(unittest.TestCase):
         self.kaydet("S10 lib: domain/DTEL/BDEF/CDS/FUGR/FM AlreadyExists → SAPObjectExistsError, yazma YOK (201 kontrol)",
                     "kötü 0 · bdef 201 PUT", f"kötü={kotu} bdef201={bdef_201_iz}", bool(ok))
 
+    def test_S10b_lib_type_group_zaten_var_basari_sayilmaz(self):
+        """v0.5.2 (v0.5.1 kardeş taramasında raporlanıp bırakılan): `create_type_group` 403 + 'already exists' → erken
+        `success:True` dönüyordu (sap_client "created successfully" basıyordu). Artık 403-imzası ve 405|400 AlreadyExists
+        → SAPObjectExistsError, PUT YOK. Kontrol grubu: 201 → başarı + kaynak PUT'u."""
+        var = "<exc:exception><localizedMessage>ExceptionResourceAlreadyExists AlreadyExists</localizedMessage>"
+        satir = []
+        for kod, govde in ((403, "Type group ZAXET_TG already exists"), (405, var), (400, var), (201, "")):
+            c, iz = self._lib_istemci([(kod, govde)])
+            c.fetch_csrf_token = lambda *_a, **_k: None
+            try:
+                r = c.create_type_group("ZAXET_TG", "TYPES t TYPE c LENGTH 1.", "Deneme", "ZAXET_PKG", transport=TR)
+                h = "ok" if (r or {}).get("success") else r
+            except Exception as exc:  # noqa: BLE001
+                h = type(exc).__name__
+            satir.append((kod, h, list(iz)))
+        ok = (all(h == "SAPObjectExistsError" and iz == [] for kod, h, iz in satir if kod != 201)
+              and satir[-1][1] == "ok" and "put" in satir[-1][2])
+        self.kaydet("S10b lib type group: 403/405/400 zaten var → SAPObjectExistsError, PUT yok (201 kontrol)",
+                    "istisna ×3 · 201 ok+put", str(satir), ok)
+
     def test_S11_paket_bos_ya_da_bosluk_ag_oncesi_red(self):
         """Z50 ⓕ: `package` boş / yalnız boşluk → yaratma araçları (ttyp/table/struct) AĞA GİTMEDEN `validation_error`."""
         from sapadt.tools import composite
@@ -1092,14 +1118,18 @@ class DdicTextpool(unittest.TestCase):
                                                                          row_type="ZAXET_S_SATIR")),
                           ("table", lambda p: self.ddic.adt_table_create("ZAXET_T_DEN", "Deneme", ALANLAR, p, TR)),
                           ("struct", lambda p: composite.adt_struct_create("ZAXET_S_DEN", self.YAPI_ALANLARI, "Deneme",
-                                                                           p, TR))):
+                                                                           p, TR)),
+                          # v0.5.2: domain/DTEL de aynı kapıdan (önceden yalnız lib "" reddediyordu, "   " POST'a gidiyordu)
+                          ("doma", lambda p: composite.adt_domain_create("ZAXET_D_DEN", "CHAR", 10, "Deneme", p, TR)),
+                          ("dtel", lambda p: composite.adt_dtel_create("ZAXET_E_DEN", "CHAR10", "Deneme", p, TR,
+                                                                       "Kısa", "Orta etiket", "Uzun etiket", "Başlık"))):
                 try:
                     r = f(paket)
                 except AssertionError as exc:
                     r = {"error": f"ağa gitti: {exc}"}
                 sonuc.append((ad, repr(paket), r.get("error")))
         ok = all(e == "validation_error" for *_x, e in sonuc) and adt.cagri == []
-        self.kaydet("S11 paket boş/boşluk → validation_error ×6 (ttyp/table/struct), ağ 0", "validation_error ×6 · çağrı 0",
+        self.kaydet("S11 paket boş/boşluk → validation_error ×10 (ttyp/table/struct/doma/dtel), ağ 0", "validation_error ×10 · çağrı 0",
                     f"{sonuc} çağrı={len(adt.cagri)}", ok)
 
     def test_S12_fm_unlock_sonucu_gorunur(self):

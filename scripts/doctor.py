@@ -1147,13 +1147,13 @@ def check_stamp(agents_metni: str, sap_proje: bool) -> None:
         add("PASS" if sap_proje else "INFO", "kesin yasak damgası güncel (AGENTS.md)"
             + ("" if sap_proje else " — SAP projesi değil (sap-project.json yok) ama damga var"))
     elif st == "farkli":
-        add("FAIL", f"kesin yasak damgası kanonik metinden FARKLI — {ayrinti} → new_project.py --sap ile yeniden damgala")
+        add("FAIL", f"kesin yasak damgası kanonik metinden FARKLI — {ayrinti} → aXet'te %guncelle-proje ile yenile (ya da new_project.py <proje> --sap), sonra behavior_manifest.py generate")
     elif st == "bozuk":
         add("FAIL", f"kesin yasak damgası BOZUK — {ayrinti} → AGENTS.md'de tek BASLA/BITIR bloğu bırak, sonra new_project.py --sap")
     elif st == "kanonik_yok":
         add("FAIL", f"kesin yasak damgası denetlenemedi — kanonik metin okunamadı: {ayrinti}")
     else:
-        add("FAIL", "SAP projesi ama AGENTS.md'de kesin yasak damgası YOK → new_project.py --sap")
+        add("FAIL", "SAP projesi ama AGENTS.md'de kesin yasak damgası YOK → aXet'te %guncelle-proje ile bas (ya da new_project.py <proje> --sap), sonra behavior_manifest.py generate")
 
 
 def check_precommit(cwd: Path) -> None:

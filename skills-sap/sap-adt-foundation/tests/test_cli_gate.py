@@ -436,8 +436,8 @@ class Kapi(unittest.TestCase):
                              "source": "FUNCTION zaxet_fm_x.\nENDFUNCTION.\n"}), *S1],
                  project=proje(sap_project={"sap_profile": "s4_public", "master_language": "TR"}),
                  rc=2, code="type_not_available_for_profile")
-        self.kos("10m post_shell ddlx → desteklenmiyor (kullanım)", ["adt_post_shell", "--args-json",
-                 json.dumps({**fonk, "object_type": "ddlx", "name": "ZAXET_E_X"}), *S1], project=p, rc=3,
+        self.kos("10m post_shell srvb → desteklenmiyor (kullanım)", ["adt_post_shell", "--args-json",
+                 json.dumps({**fonk, "object_type": "srvb", "name": "ZAXET_UI_X_O2"}), *S1], project=p, rc=3,
                  code="unsupported_type")
         self.kos("10n post_shell ddls + extra → kullanım", ["adt_post_shell", "--args-json",
                  json.dumps({**fonk, "object_type": "ddls", "name": "ZAXET_I_X", "extra": {"row_type": "X"}}), *S1],

@@ -6605,13 +6605,11 @@ constants:
         )
 
         if response.status_code not in [200, 201]:
-            if response.status_code == 403 and 'already exists' in response.text.lower():
-                object_url = f'/sap/bc/adt/ddic/typegroups/{name.lower()}'
-                return {
-                    'success': True,
-                    'object_url': object_url,
-                    'message': f'Type group {name} already exists'
-                }
+            # v0.5.2: AlreadyExists BAŞARI DEĞİLDİR (Z51 kardeşi) — eskiden 403 + 'already exists' erken success:True
+            # dönüyordu. 403 imzası canlıda ölçülmedi (kütüphanedeki eski dal); 405|400 diğer tiplerle aynı.
+            if self._zaten_var_mi(response) or (
+                    response.status_code == 403 and 'already exists' in (response.text or '').lower()):
+                raise self._zaten_var_hatasi('Type group', name, response, '/sap/bc/adt/ddic/typegroups')
             raise SAPADTError(
                 f"Failed to create type group {name}",
                 status_code=response.status_code,
@@ -7363,9 +7361,11 @@ constants:
                       adtcore:name="{package_name.upper()}"/>
 </ddlx:ddlxSource>'''
 
+        # v0.5.2 (Z42, canlı 2026-09-22): koleksiyon ADT discovery'de yalnız `ddic.ddlx.v1+xml` kabul eder;
+        # eski `ddlxSource+xml` → 415 Unsupported Media Type (DENENEN-BAŞARISIZ).
         headers = self._get_headers(
-            'application/vnd.sap.adt.ddlxSource+xml',
-            'application/vnd.sap.adt.ddlxSource+xml'
+            'application/vnd.sap.adt.ddic.ddlx.v1+xml',
+            'application/vnd.sap.adt.ddic.ddlx.v1+xml'
         )
 
         params = {}
@@ -7390,11 +7390,12 @@ constants:
         object_url = f'/sap/bc/adt/ddic/ddlx/sources/{name.lower()}'
 
         # Upload the source (pass transport so SAP registers write under correct CTS entry)
+        # v0.5.2: yükleme hatası artık YUTULMAZ — kabuk yaratıldı ama kaynak yazılmadıysa başarı DEĞİLDİR.
         try:
             self.set_object_source(f"{object_url}/source/main", source, lock_handle=None, transport=transport)
         except Exception as e:
-            if self.debug_enabled:
-                self._debug(f"[DEBUG] DDLX source upload note: {e}")
+            return {'success': False, 'shell_created': True, 'object_url': object_url,
+                    'message': f'Metadata extension {name} kabuğu yaratıldı ama kaynak YAZILAMADI: {e}'}
 
         return {
             'success': True,
@@ -7461,11 +7462,12 @@ constants:
         object_url = f'/sap/bc/adt/acm/dcl/sources/{name.lower()}'
 
         # Upload the source (pass transport so SAP registers write under correct CTS entry)
+        # v0.5.2: yükleme hatası artık YUTULMAZ (DDLX ile aynı).
         try:
             self.set_object_source(f"{object_url}/source/main", source, lock_handle=None, transport=transport)
         except Exception as e:
-            if self.debug_enabled:
-                self._debug(f"[DEBUG] DCL source upload note: {e}")
+            return {'success': False, 'shell_created': True, 'object_url': object_url,
+                    'message': f'Access control {name} kabuğu yaratıldı ama kaynak YAZILAMADI: {e}'}
 
         return {
             'success': True,

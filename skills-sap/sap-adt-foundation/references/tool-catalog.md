@@ -248,7 +248,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Amaç:** boş Z obje kabuğu (inaktif, kaynaksız).
 - **Argümanlar:** `object_type` · `name` (Z/Y; lock object E+Z/Y) · `package` (mevcut) · `transport` · `description` (`master_language`'de, **boş olamaz** → `ADR_0005_D`) ·
   `extra` (yalnız aşağıdaki tiplerde; başka tipte ya da tanınmayan alanla → `invalid_argument`, çıkış 3).
-- **Desteklenen tipler (çevrimdışı sahte istemciyle test edildi; canlı DOĞRULANMADI):**
+- **Desteklenen tipler (çevrimdışı sahte istemciyle test edildi; canlı ÖLÇÜLEN 2026-09-22, DEV `$TMP`: `class`, `ddls`, `bdef` (Z35 RAP ölçümü), `ddlx`, `dcls` (Z42) — kabuk → push → aktivasyon → silme; diğer tipler canlı DOĞRULANMADI):**
 
   | Tip | Yol | `extra` | Sonraki adım |
   |---|---|---|---|
@@ -259,10 +259,12 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   | `fugr` | fonksiyon grubu | — | `adt_activate(fugr)` |
   | `func` | FM kabuğu (grup içinde) | `{"function_group":"<Z/Y FUGR>"}` zorunlu | `adt_get(func)` → `adt_push_source(func)`; RFC-enable SE37'de |
   | `msag` | mesaj sınıfı kabuğu (stateless POST) | — | `adt_msgclass_read` → `adt_msgclass_write` |
+  | `ddlx` (`metadataextension`) | metadata extension; **canlı ölçüldü 2026-09-22** (DEV, `$TMP`) — Content-Type `application/vnd.sap.adt.ddic.ddlx.v1+xml` (ADT discovery; eski `ddlxSource+xml` → 415) | — | `adt_get(ddlx)` → `adt_push_source(ddlx)` → `adt_activate(ddlx)`; hedef CDS `@Metadata.allowExtensions: true` |
+  | `dcls` (`dcl`, `accesscontrol`) | erişim kontrolü (rol); **canlı ölçüldü 2026-09-22** — `application/vnd.sap.adt.dclSource+xml` | — | `adt_get(dcls)` → `adt_push_source(dcls)` → `adt_activate(dcls)`; süzmenin kendisini tüketicide ayrıca test et |
   | `enqu` | kilit objesi | `{"primary_table", "lock_fields":["MANDT",…], "lock_mode":"E|S|X", "allow_rfc":false}` | `adt_activate(object_type="enqu")` |
   | `ttyp` | tablo tipi | `{"row_type":"<yapı/DTEL>"}` | `adt_activate(ttyp)` → `DD40L.ROWTYPE` dolu mu (`adt_sql_query`) |
 
-  **Desteklenmez (`unsupported_type`, çıkış 3, gerekçe mesajda):** `ddlx`, `dcl` (canlı reçete yok) · `srvb` (REST'te bloke) ·
+  **Desteklenmez (`unsupported_type`, çıkış 3, gerekçe mesajda):** `srvb` (REST'te bloke) ·
   `doma`/`dtel`/`structure` (composite araçlar) · `tabl` · paket (`ADR_0005_C`, çıkış 2).
 - **Dönüş:** `{ok, name, type, object_url?, http_status?, exists_after?, exists_probe?, master_language?, next_step?, recipe?}`;
   hata: `{ok:false, error, message, exists_after, exists_probe}`. Tipe özel yollarda başarıdan sonra da **varlık sondası** koşar:
@@ -316,6 +318,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Dönüş:** `{ok, name, type, deleted}`.
 - **Uyarılar:** where-used araç tarafından yapılmaz → önce `adt_where_used` (+ `CROSS`) · geri alınamaz → açık onay ·
   `func` için çalışmaz ("lock not supported") · silme sonrası `adt_get` ile yokluğu doğrula.
+  **`bdef` (v0.5.2, Z35 canlı bulgusu):** genel tip tablosu BDEF'i tanımadığı için eskiden `Unsupported object type: bdef` dönüyordu (kök DDLS silinse de BDEF kalıyordu); artık kilit → DELETE → kilit aç BDEF ucuna uygulanır, yokluk BDEF kaynak ucundan (404) doğrulanır (`delete_verified`). Canlı ölçüldü 2026-09-22 (DEV, `$TMP`): `ddlx`/`dcls`/`ddls` ile birlikte dört silmenin dördü `delete_verified: true`, TADIR 5 → 0.
 
 ### `adt_publish_service`
 - **Amaç:** OData V2 service binding'i (SRVB) yeniden yayınlayıp `$metadata`'yı tazelemek.
@@ -537,7 +540,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 ## Olmayan araçlar (bilinçli)
 Transport yaratma/release, paket yaratma, enqueue kilidi silme **araç listesinde yoktur** (Yasak C). Standart obje yaratma/değiştirme/silme
 guard'la reddedilir (Yasak A). Standart tabloya veri yazan araç yoktur (Yasak B).
-Ayrıca (2026-09-13): mesaj sınıfı **uzun metni** (`documented`) yazma yok · DDLX/DCL kabuğu yok (canlı reçete yok) · SRVB yaratma yok (REST'te bloke) ·
+Ayrıca (2026-09-13): mesaj sınıfı **uzun metni** (`documented`) yazma yok · ~~DDLX/DCL kabuğu yok~~ (v0.5.2: var, canlı ölçüldü) · SRVB yaratma yok (REST'te bloke) ·
 tablo tipi satır tipi düzeltme (PUT) yok · FM RFC-enable yok (SE37) · program/SRVB/DTEL açıklaması değiştirme yok (`adt_set_description` bu tipleri
 kanıtla reddeder) · kaynak-sapma (source drift) aracı yok (pull-before-edit kaydı + `adt_get` yeterli sayıldı). Mesaj yazma artık `adt_msgclass_write`'tadır; kaynak reçetenin enqueue kilidi
 silen "güvenlik ağı" adımı bilinçli olarak alınmadı (Yasak C).

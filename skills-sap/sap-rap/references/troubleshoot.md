@@ -85,7 +85,7 @@
 
 | Belirti | Anlamı | Yapılacak |
 |---|---|---|
-| `adt_post_shell` `srvb`/`dcl`/`ddlx` → `unsupported_type` (çıkış 3) | Bu tiplerde kabuk yolu yok (`tool-catalog.md`) | Retry yok; kullanıcı kabuğu ADT'de açar (SKILL.md §4) |
+| `adt_post_shell` `srvb` → `unsupported_type` (çıkış 3) | Bu tipte kabuk yolu yok (REST'te bloke; `tool-catalog.md`). `ddlx`/`dcls` v0.5.2'den beri var | Retry yok; kullanıcı SRVB'yi ADT'de açar (SKILL.md §4) |
 | `adt_post_shell` `ddls`/`srvd`/`bdef` → `ok:false` | Yaratma düştü ya da ölçülemedi (`create_not_persisted` = 2xx ama obje yok) | Retry etmeden `exists_after`'a bak (`true`: tekrar yaratma) |
 | `adt_post_shell` class/interface/program/include'a `extra` → `invalid_argument` | `extra` yalnız `func`/`enqu`/`ttyp`'te geçerli | `extra`'yı kaldır |
 | `adt_push_source bdef` → `activated:false` | Beklenen: `bdef` push'u aktive etmez | `adt_activate` kök `ddls` + `also` [`bdef`, behavior sınıfı] |

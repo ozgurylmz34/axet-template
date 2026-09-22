@@ -467,7 +467,7 @@ def komut_onay(b: Baglam, args) -> int:
                                "hedef_commit": b.yeni_commit, "damga_hedefi": damga_hedefi(p),
                                "zaman": _simdi()})
     print(f"ONAY: {p.ad} ({p.kok}) → şablon {b.yeni_commit[:10]}. "
-          f"Bu onay YALNIZ bu projeyi ve bu şablon sürümünü kapsar.")
+          f"Bu onay YALNIZ bu projeyi, bu şablon sürümünü ve bugünkü kesin yasak kanoniğini kapsar.")
     return 0
 
 
@@ -484,9 +484,17 @@ def onay_dogrula(b: Baglam) -> None:
         raise Dur(f"onay {str(kayit.get('hedef_commit'))[:10]} şablon sürümü için verilmişti; "
                   f"klondaki şablon {b.yeni_commit[:10]} oldu. Yeniden planla ve yeniden onayla.")
     # Fail-closed: alanı olmayan (eski biçim) onay da geçersizdir — geriye uyumluluk için geçerli SAYILMAZ.
-    if kayit.get("damga_hedefi") != damga_hedefi(p):
-        raise Dur("onay verildiğinden beri kesin yasak kanoniği değişti (ya da onay damga hedefini "
-                  "taşımayan eski biçimde). Yeni damga kalemi onaysız yazılmaz: yeniden planla ve "
+    eski_hedef, simdiki = kayit.get("damga_hedefi"), damga_hedefi(p)
+    if eski_hedef != simdiki:
+        # v0.5.2 (gate LOW-3): sebep ayrı söylenir — davranış aynı (fail-closed), yalnız gerekçe doğru olur
+        if eski_hedef is None:
+            neden = "onay, damga hedefini taşımayan eski biçimde (v0.5.1 öncesi)"
+        elif "damgasiz" in (eski_hedef, simdiki):
+            neden = ("onay verildiğinden beri projenin damga durumu değişti (SAP projesine dönüştü ya da "
+                     "damga kaldırıldı)")
+        else:
+            neden = "onay verildiğinden beri kesin yasak kanoniği değişti"
+        raise Dur(f"{neden}. Yeni damga kalemi onaysız yazılmaz: yeniden planla ve "
                   f"yeniden onayla (`onay --kabul \"{p.ad}\"`).")
 
 
@@ -887,14 +895,16 @@ def komut_kapanis(b: Baglam, args) -> int:
                and durum["dosyalar"].get(d["yol"], {}).get("karar") != "yerel"]
     # Karar planın damga kalemine de dayanır (yalnız bu koşumdaki yazıma değil): ikinci `kapanis`ta
     # yazım olmaz ama manifest hâlâ onaylanmamıştır ⇒ GEREKLİ kaybolmamalı (bug gate LOW, idempotent).
-    damga_kalemi = damga_yenilendi or bool(plan.get("damga"))
+    # v0.5.2 (gate LOW-2): damga bu kapanışta DUR aldıysa (yazım yok) "yenilendi" denmez.
+    damga_kalemi = damga_yenilendi or (bool(plan.get("damga")) and damga_satiri.startswith("damga: guncel"))
     sebepler = (["AGENTS.md kesin yasak damgası yenilendi"] if damga_kalemi else []) + (
         [f"{len(yazilan)} şablon dosyası yazıldı"] if yazilan else [])
     if sebepler:
         rapor += ["", "## Kullanıcının kendi terminalinde — GEREKLİ",
                   f"Davranış yüzeyi DEĞİŞTİ ({'; '.join(sebepler)}). `doctor` bunu onaysız "
                   "değişiklik olarak gösterecek. Onayı YALNIZ sen verirsin (aXet oturumu "
-                  "`generate` koşmaz):", manifest_komutu]
+                  "`generate` koşmaz; bu değişiklikten sonra zaten onayladıysan tekrar gerekmez):",
+                  manifest_komutu]
     else:
         rapor += ["", "## Kullanıcının kendi terminalinde",
                   f"Davranış yüzeyi değiştiyse: {manifest_komutu}"]
@@ -982,8 +992,15 @@ def komut_onkontrol(b: Baglam, args) -> int:
                      "onayıyla atılır; push asla.")
 
     onay = g._oku(onay_yolu(p), None)
-    bilgi.append("proje onayı: " + ("var" if onay and onay.get("proje") == p.kok.as_posix()
-                                    else "YOK — her proje ayrı onaylanır (Q1)"))
+    if onay and onay.get("proje") == p.kok.as_posix():
+        # v0.5.2: "var" yalnız proje yoluna bakıyordu; bayat onay da "var" görünüyordu
+        try:
+            onay_dogrula(b)
+            bilgi.append("proje onayı: var (geçerli)")
+        except Dur as e:
+            bilgi.append(f"proje onayı: var ama GEÇERSİZ — {e}")
+    else:
+        bilgi.append("proje onayı: YOK — her proje ayrı onaylanır (Q1)")
     for s in bilgi:
         print("  " + s)
     for s in sorunlar:

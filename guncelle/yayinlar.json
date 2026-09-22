@@ -973,6 +973,133 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.2",
+   "tarih": "2026-09-22",
+   "kalemler": [
+    {
+     "id": "0.5.2-01",
+     "baslik": "`doctor` eski ya da eksik SAP damgasında artık `%guncelle-proje`yi öneriyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "v0.5.1'den beri SAP damgasını `%guncelle-proje` yeniliyor, ama `doctor` FAIL satırı hâlâ yalnız `new_project.py --sap` diyordu. Damga kanonikten farklıysa ya da hiç yoksa satır artık aXet'te `%guncelle-proje`yi (elle yol olarak `new_project.py <proje> --sap`'yi) ve ardından `behavior_manifest.py generate` komutunu gösterir. Denetimin kendisi değişmedi.",
+     "dosyalar": [
+      "scripts/doctor.py",
+      "tests/test_doctor.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k doctor"
+     ]
+    },
+    {
+     "id": "0.5.2-02",
+     "baslik": "Domain/DTEL boşluklu paket adını reddediyor; type group \"zaten var\" artık başarı sayılmıyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`adt_domain_create` ve `adt_dtel_create` yalnız tamamen boş paketi reddediyordu; yalnız boşluktan oluşan paket adı kütüphaneye kadar gidiyordu. Artık yapı/tablo/tablo tipiyle aynı kapıdan geçer ve SAP'ye istek gitmeden durur. Ayrıca kütüphanedeki `create_type_group`, v0.5.1'de domain/DTEL için kapatılan kusurun kardeşini taşıyordu: \"already exists\" yanıtını başarı olarak dönüyordu. Artık diğer tiplerle aynı \"zaten var\" hatasını verir.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.2-03",
+     "baslik": "`%guncelle-proje` onay ve damga mesajları doğru gerekçeyi söylüyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "v0.5.1 damga düzeltmesinin küçük pürüzleri: ⓐ bayat onay reddedildiğinde sebep her zaman \"kanonik değişti\" deniyordu; artık eski biçim onay, projenin damga durumunun değişmesi ve kanonik değişimi ayrı söylenir (davranış aynı: onaysız yazılmaz) ⓑ ön kontrolde \"proje onayı: var\" satırı bayat onayı da \"var\" gösteriyordu; artık onay doğrulanır ve \"var (geçerli)\" ya da \"var ama GEÇERSİZ — <sebep>\" yazılır ⓒ damga yazılamadığında kapanış \"damga yenilendi\" demez ⓓ manifest komutu notu, zaten onaylandıysa tekrar gerekmediğini söyler.",
+     "dosyalar": [
+      "scripts/guncelle_proje.py",
+      "tests/test_guncelle_proje.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle_proje"
+     ]
+    },
+    {
+     "id": "0.5.2-04",
+     "baslik": "Yeni: metadata extension (DDLX) ve access control (DCL) kabuğu; `adt_delete` BDEF siliyor",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "`adt_post_shell` artık `ddlx` ve `dcls` kabuğu yaratır (canlı ölçüldü: S/4HANA private DEV, `$TMP`, yarat → oku → yükle → aktive et → sil uçtan uca). Kütüphanedeki DDLX yaratma eski media tipi yüzünden canlıda 415 alıyordu; ADT discovery'deki tip kullanılıyor ve kaynak yükleme hatası artık yutulmuyor. `adt_delete` BDEF'i tanımıyordu (\"Unsupported object type: bdef\"); artık kilit → sil → kilit bırak + silindi doğrulaması yapar. Tüm yazmalar yine tek yazma kapısından geçer. `dcls`, `dcl` ve `accesscontrol` adları aktivasyonda da eşdeğerdir.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/shells.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "skills-sap/sap-adt-foundation/tests/test_new_write_tools.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/description.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/_reviewer.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.2-05",
+     "baslik": "RAP feature control: EML tüketici davranışı canlı ölçüldü; araç kataloğu ve skill metinleri güncellendi",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "`sap-rap` feature-control rehberinin §7a bölümü canlı ölçümü kaydediyor: devre dışı UPDATE/DELETE, dış EML tüketicisinde hata fırlatmadan `failed`'a düşer (`%fail-cause` = DISABLED); tüketici `failed`'ı okumak zorundadır. Ölçülmeyenler (OData durum kodu, `IN LOCAL MODE`, alan düzeyi) açıkça yazılı. Yol üstündeki iki tuzak da eklendi: etag'siz managed BDEF'te reviewer BLOCKER'ı ve CCIMP'nin BDEF'ten önce aktive edilememesi. Araç kataloğu, foundation-ops, service-publish ve troubleshoot yeni DDLX/DCL kabuğunu ve BDEF silmeyi anlatıyor.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-rap/SKILL.md",
+      "skills-sap/sap-rap/references/feature-control.md",
+      "skills-sap/sap-rap/references/service-publish.md",
+      "skills-sap/sap-rap/references/troubleshoot.md",
+      "tests/test_sap_skill_bilgi.py"
+     ],
+     "gerektirir": [
+      "0.5.2-04"
+     ],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py",
+      "python tests/run_tests.py -k sap_skill_bilgi"
+     ]
+    },
+    {
+     "id": "0.5.2-07",
+     "baslik": "Test takımı biraz hızlandı (proje kalıbı bir kez üretiliyor)",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Testler her seferinde `git init` + `new_project.py` ile sıfırdan proje üretiyordu. Artık kalıp test süreci başına bir kez üretilip kopyalanıyor (üretilen proje yalnız ada bağlı olduğu ölçüldü). Test anlamı değişmedi; ölçülen kazanç sınırlı (örnek 3 modülde ≈%12). `%guncelle` ölçüm adımı bu testleri koşarken biraz daha kısa sürer.",
+     "dosyalar": [
+      "tests/_helpers.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k new_project"
+     ]
+    },
+    {
+     "id": "0.5.2-06",
+     "baslik": "Yayın kataloğu ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    }
+   ]
   }
  ]
 }

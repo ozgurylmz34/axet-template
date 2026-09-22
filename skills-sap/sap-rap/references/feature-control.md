@@ -1,7 +1,8 @@
 # Feature control — duruma bağlı düzenlenebilirlik (dynamic instance feature control) ve yetkiden ayrımı
 
-> **Durum:** sözdizimi SAP'nin resmi kaynaklarından alındı (aşağıda "Kaynaklar"); bu ortamda canlı **ÖLÇÜLMEDİ**.
-> İlk gerçek kullanımda §7'deki canlı testi koş ve sonucu `%remember` ile kaydet (bakımcı listesinde Z35 canlı adımı).
+> **Durum:** sözdizimi SAP'nin resmi kaynaklarından alındı (aşağıda "Kaynaklar"). **EML tüketici kolu canlı ÖLÇÜLDÜ
+> (2026-09-22, S/4HANA private DEV, `$TMP`) — sonuç ve sınırı §7a.** OData/UI kolu, `IN LOCAL MODE` istisnası, alan düzeyi
+> ve başlık→kalem etkisi ölçülmedi: ilk gerçek kullanımda §7'nin kalan adımlarını koş ve `%remember` ile kaydet.
 > Eş anlamlılar (arama için): feature control · instance feature control · dinamik özellik kontrolü · salt okunur ·
 > read-only · düzenlenemez · onaylanınca değiştirilemez · buton pasif · `features : instance` · `get_instance_features`.
 
@@ -129,7 +130,8 @@ ENDCLASS.
 - Durum değerleri (`'A'`, `'D'` …) koda gömülmez: domain sabit değerleri ya da sınıf sabitleri — ekip standardı.
 - Okuma **`IN LOCAL MODE`** ile yapılır. Aynı ek, handler'daki `READ`/`MODIFY ENTITIES` için feature control, yetki ve
   precheck'i **bastırır** (abap-cheat-sheets EML): kendi aksiyonun (`approveOrder`) durumu güncellerken `update` kapalı olsa da
-  `MODIFY ENTITIES … IN LOCAL MODE` çalışır. Bu yüzden feature control dış tüketiciyi durdurur, kendi iç mantığını değil.
+  `MODIFY ENTITIES … IN LOCAL MODE` çalışır (kaynak iddiası; bu ortamda **ölçülmedi** — §7a). Dış tüketicinin durduğu
+  ölçüldü (§7a); kendi iç mantığının durmadığı ise ölçülmedi.
 - Handler'da `COMMIT`/`MESSAGE` yasakları aynen geçerlidir (`behavior-impl.md` §10).
 
 ## 4. Yetki (authorization) — KİM sorusu, ayrı mekanizma
@@ -174,6 +176,31 @@ METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
   UI tarafı: `%sap-ui5-fiori`.
 - Backend reddi tüketiciye `failed` + (varsa) `reported` mesajı olarak döner; OData'da dönen HTTP durum kodu ve metni
   **DOĞRULANMADI** → §7'de ölç, UI hata gösterimini ona göre yaz.
+
+## 7a. Ölçüm sonucu — EML tüketici kolu (2026-09-22)
+
+**Düzenek:** Z tablo (anahtar + `DURUM` + `ACIKLAMA` + `LAST_CHANGED timestampl`) → kök view entity → managed BDEF
+(`lock master`, `etag master LastChanged`, `update ( features : instance ); delete ( features : instance );`) → behavior pool
+CCIMP'te §3'teki `get_instance_features` (`Durum = 'A'` → `%update`/`%delete` = `fc-o-disabled`, değilse `fc-o-enabled`)
+→ `IF_OO_ADT_CLASSRUN` sınıfında **`IN LOCAL MODE` OLMADAN** `MODIFY ENTITIES` (dış tüketici). Kayıtlar: `A1` (Durum `A`,
+kapalı) ve `N1` (Durum `N`, açık — **kontrol grubu**); her deneme `ROLLBACK ENTITIES` ile kapatıldı.
+
+| Deneme | Sonuç (ölçülen) |
+|---|---|
+| `UPDATE` A1 + N1 aynı çağrıda | `failed-<entity>` **1 satır: A1**; `%fail-cause` string şablonunda `DISABLED` yazdı. N1 `failed`'da yok |
+| `DELETE` A1 + N1 aynı çağrıda | `failed` **1 satır: A1**, `%fail-cause` → `DISABLED`. N1 `failed`'da yok |
+| Kontrol: `UPDATE` yalnız N1 + `COMMIT ENTITIES` | `failed` 0 · commit `failed` 0 · tabloda yeni değer kalıcı; A1 değişmedi |
+
+**Kanıtladığı:** §2 BDEF sözdizimi + §3 handler imzası bu sürümde derlenir ve aktive olur; devre dışı operasyonu dış EML
+tüketicisi çalıştırınca operasyon **hata vermeden** `failed`'a düşer (istisna yok) — bu yüzden tüketici `failed`'ı okumak
+**zorundadır**. **Kanıtlamadığı:** OData'daki HTTP durum kodu/metni (§6), `$metadata` özellik adları, `IN LOCAL MODE`'un kapalı
+operasyonu geçtiği iddiası (§3; sınıf içinden ölçülemez, kendi aksiyonun gerekir), alan düzeyi `%field-*`, `GET PERMISSIONS`.
+
+**Yol üstündeki iki tuzak (ölçüldü):**
+- Etag'siz managed BDEF'i aXet reviewer'ı yazmadan önce **BLOCKER** ile durdurur (`check_rap_managed_etag`) → tabloya zaman
+  damgası alanı + CDS'te `@Semantics.systemDateTime.lastChangedAt: true` + BDEF'te `etag master <Alan>` gerekti.
+- CCIMP, BDEF aktif değilken push edilince sınıf aktivasyonu `"<alias>" is not a subentity of the root entity` ile düşer
+  (kaynak yüklenmiştir) → kök `ddls` + `also` [`bdef`, behavior sınıfı] tek aktivasyonda geçti.
 
 ## 7. Canlı doğrulama (ilk kullanımda zorunlu — SAP yazması kullanıcı onayıyla)
 

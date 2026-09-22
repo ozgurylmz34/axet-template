@@ -235,6 +235,24 @@ class YeniYazmaYollari(unittest.TestCase):
                     ['<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"', 'adtcore:type="BDEF/BDO"'],
                     probe=lambda c: Yanit(200, ""))
 
+    def test_A3b_ddlx(self):
+        """v0.5.2 Z42: Content-Type ADT discovery'nin kabul ettiği `ddic.ddlx.v1+xml` (eski `ddlxSource+xml` canlıda 415)."""
+        r, _, _ = self._kabuk("ddlx", "ZAXET_E_X", "/sap/bc/adt/ddic/ddlx/sources",
+                              "application/vnd.sap.adt.ddic.ddlx.v1+xml", "application/vnd.sap.adt.ddic.ddlx.v1+xml",
+                              ['<ddlx:ddlxSource xmlns:ddlx="http://www.sap.com/adt/ddic/ddlxsources"',
+                               'adtcore:name="ZAXET_E_X"', 'adtcore:masterLanguage="TR"'],
+                              icermez=("ddlxSource+xml",), probe=lambda c: Yanit(200, ""))
+        self.assertIn("adt_push_source(ddlx)", r.get("next_step", ""))
+
+    def test_A3c_dcls(self):
+        for tip in ("dcls", "dcl", "accesscontrol"):
+            with self.subTest(tip):
+                self._kabuk(tip, "ZAXET_A_X", "/sap/bc/adt/acm/dcl/sources",
+                            "application/vnd.sap.adt.dclSource+xml", "application/vnd.sap.adt.dclSource+xml",
+                            ['<acm:dclSource xmlns:acm="http://www.sap.com/adt/acm/dclsources"',
+                             'adtcore:name="ZAXET_A_X"', 'adtcore:masterLanguage="TR"'],
+                            probe=lambda c: Yanit(200, ""))
+
     def test_A4_fugr(self):
         self._kabuk("fugr", "ZAXET_FG", "/sap/bc/adt/functions/groups",
                     "application/vnd.sap.adt.functions.groups.v2+xml", "application/vnd.sap.adt.functions.groups.v2+xml",
@@ -303,8 +321,6 @@ class YeniYazmaYollari(unittest.TestCase):
         adt, _ = self.kur(patla)
         a = self.atom
         vakalar = [
-            ("ddlx desteklenmiyor", a.adt_post_shell("ddlx", "ZAXET_E_X", "$TMP", TR, "d"), "unsupported_type"),
-            ("dcl desteklenmiyor", a.adt_post_shell("dcl", "ZAXET_A_X", "$TMP", TR, "d"), "unsupported_type"),
             ("srvb desteklenmiyor", a.adt_post_shell("srvb", "ZAXET_UI_X_O2", "$TMP", TR, "d"), "unsupported_type"),
             ("doma → composite", a.adt_post_shell("doma", "ZAXET_D", "$TMP", TR, "d"), "unsupported_type"),
             ("paket → Yasak C", a.adt_post_shell("devc", "ZAXET_PKG2", "$TMP", TR, "d"), "ADR_0005_C"),
@@ -729,6 +745,97 @@ class YeniYazmaYollari(unittest.TestCase):
                     kontrol == "conn_env_mismatch")
         self.kaydet("E3b temizlik sonrası aynı çağrı", "ADR_0005_A · ADT_* kalmadı", (sonra, kalan),
                     sonra == "ADR_0005_A" and kalan == [])
+
+    # ── F. BDEF silme (v0.5.2, Z35 canlı bulgusu: genel tip tablosu BDEF'i tanımıyordu) ─────────────
+    def _bdef_sil(self, sonra_get: int, sil_hata: Exception | None = None):
+        uc = "/sap/bc/adt/bo/behaviordefinitions/zaxet_i_x"
+
+        def yon(c):
+            if c["method"] == "GET" and c["path"] == uc + "/source/main":
+                return Yanit(sonra_get, "managed;" if sonra_get == 200 else "")
+            return Yanit(404, "")
+        adt, ist = self.kur(yon)
+        adt.lock_object = lambda url, transport=None: (adt.cagri.append(
+            {"method": "LIB", "path": "lock", "params": {"url": url, "tr": transport}, "data": None,
+             "headers": {}}) or "KILIT1")
+
+        def sil(url, kilit, transport=None):
+            adt.cagri.append({"method": "LIB", "path": "delete", "params": {"url": url, "kilit": kilit,
+                                                                            "tr": transport}, "data": None, "headers": {}})
+            if sil_hata:
+                raise sil_hata
+            return {"success": True}
+        adt.delete_object = sil
+        adt.unlock_object = lambda url, kilit: adt.cagri.append(
+            {"method": "LIB", "path": "unlock", "params": {"url": url, "kilit": kilit}, "data": None, "headers": {}})
+        r = self.atom.adt_delete("ZAXET_I_X", "bdef", TR)
+        lib = [(c["path"], c["params"].get("url")) for c in adt.cagri if c["method"] == "LIB"]
+        return r, lib, uc
+
+    def test_F1_bdef_sil_kilit_delete_unlock_readback(self):
+        r, lib, uc = self._bdef_sil(404)
+        ok = (r.get("ok") is True and r.get("deleted") is True and r.get("delete_verified") is True
+              and lib == [("lock", uc), ("delete", uc), ("unlock", uc)])
+        self.kaydet("F1 bdef sil: kilit→DELETE→unlock (BDEF ucu) + 404 readback → doğrulandı",
+                    "ok · verified · lock/delete/unlock", f"ok={r.get('ok')} err={r.get('error')} "
+                    f"v={r.get('delete_verified')} {lib}", ok)
+
+    def test_F2_bdef_sil_hala_var_ve_hata_kolu(self):
+        r, _, _ = self._bdef_sil(200)
+        self.kaydet("F2a bdef sil: readback 200 (hâlâ var) → ok:false · verified:false", "False · False",
+                    (r.get("ok"), r.get("delete_verified")), r.get("ok") is False and r.get("delete_verified") is False)
+        r2, lib2, uc = self._bdef_sil(404, sil_hata=RuntimeError("423 kilitli"))
+        self.kaydet("F2b bdef sil: DELETE hatası → ok:false + kilit yine açılır", "ok False · unlock var",
+                    f"ok={r2.get('ok')} {lib2}", r2.get("ok") is False and ("unlock", uc) in lib2)
+
+    def test_F4_dcls_aktivasyon_ve_kaynak_tipi_esanlamlisi(self):
+        """v0.5.2 gate LOW: `dcls` (shells'in kanonik adı) aktivasyon/okuma tablolarında da tanınır."""
+        durum = {t: (t in self.atom._SOURCE_BASED_TYPES, self.atom._activation_uri("ZAXET_A_X", t))
+                 for t in ("dcls", "dcl", "accesscontrol")}
+        ok = all(k and u == "/sap/bc/adt/acm/dcl/sources/zaxet_a_x" for k, u in durum.values())
+        self.kaydet("F4 dcls/dcl/accesscontrol → kaynak tipi + /acm/dcl/sources aktivasyon URI'si",
+                    "üçü de True + aynı URI", durum, ok)
+
+    def test_F5_standart_bdef_silme_dal_oncesi_reddedilir(self):
+        """v0.5.2 gate LOW: standart adlı BDEF silme, BDEF dalına (kilit/DELETE) ULAŞMADAN reddedilir."""
+        adt, _ = self.kur(lambda c: Yanit(404, ""))
+        adt.lock_object = lambda *a, **kw: adt.cagri.append({"method": "LIB", "path": "lock"}) or "K"
+        adt.delete_object = lambda *a, **kw: adt.cagri.append({"method": "LIB", "path": "delete"})
+        r = self.atom.adt_delete("I_PRODUCTTP", "bdef", TR)
+        lib = [c for c in adt.cagri if c.get("method") == "LIB"]
+        self.kaydet("F5 standart BDEF (I_PRODUCTTP) silme → ok:false, kilit/DELETE çağrısı yok",
+                    "ok False · LIB 0", f"ok={r.get('ok')} err={r.get('error')} lib={lib}",
+                    r.get("ok") is False and not lib)
+
+    def test_F3_lib_ddlx_dcl_media_tipi_ve_yukleme_hatasi(self):
+        """v0.5.2 Z42: kütüphane DDLX'i discovery'nin kabul ettiği tiple POST eder; kaynak yükleme hatası YUTULMAZ.
+        Kontrol grubu: yükleme başarılıysa success:True."""
+        import sap_adt_lib  # type: ignore
+        k = sap_adt_lib.SAPADTClient
+
+        def sahte(yukleme_hatasi):
+            adt = SahteADT(lambda c: Yanit(201, ""))
+            adt._validate_object_name = adt._validate_package_name = adt._validate_transport = \
+                lambda *a, **kw: None
+            adt.timeout_default, adt.debug_enabled = 30, False
+
+            def yukle(*a, **kw):
+                if yukleme_hatasi:
+                    raise RuntimeError("423 kilitli")
+            adt.set_object_source = yukle
+            return adt
+        sonuc = {}
+        for ad, fn in (("ddlx", k.create_metadata_extension), ("dcl", k.create_access_control)):
+            a1 = sahte(True)
+            hata = fn(a1, "ZAXET_E_X", "src", "d", "$TMP", TR)
+            a2 = sahte(False)
+            iyi = fn(a2, "ZAXET_E_X", "src", "d", "$TMP", TR)
+            sonuc[ad] = (hata.get("success"), hata.get("shell_created"), iyi.get("success"),
+                         a1.cagri[0]["headers"].get("Content-Type"))
+        ok = (sonuc["ddlx"] == (False, True, True, "application/vnd.sap.adt.ddic.ddlx.v1+xml")
+              and sonuc["dcl"] == (False, True, True, "application/vnd.sap.adt.dclSource+xml"))
+        self.kaydet("F3 lib DDLX/DCL: doğru Content-Type · yükleme hatası success:false · kontrol success:true",
+                    "ddlx.v1 / dclSource · False/True/True", sonuc, ok)
 
 
 if __name__ == "__main__":

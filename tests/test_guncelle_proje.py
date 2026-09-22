@@ -1292,6 +1292,56 @@ class Z55EskiDamgaGuncelSablonTest(ProjeTemel):
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn("Kullanıcının kendi terminalinde — GEREKLİ", rapor)
         self.assertIn("AGENTS.md kesin yasak damgası yenilendi", rapor)
+        # v0.5.2 (gate LOW-1): plan.json bayat kalabildiği için metin manifest zaten onaylanmışsa da doğru olmalı
+        self.assertIn("zaten onayladıysan", rapor)
+
+    # --- v0.5.2: v0.5.1 düzeltme turu gate'inin LOW notları -------------------------------------
+    def test_8_onkontrol_bayat_onayi_GECERSIZ_gosterir(self):
+        """`onkontrol` "proje onayı: var" satırını yalnız proje yoluna bakarak basıyordu; bayat onay da
+        "var" görünüyordu (asıl engel onay_dogrula'da). Kontrol grubu: geçerli onay → "var (geçerli)"."""
+        self.assertEqual(self.planla().returncode, 1)
+        r = self.f.calistir("onkontrol")
+        self.assertIn("proje onayı: var (geçerli)", self.cikti(r))
+        self._kanonigi_yukselt()
+        r = self.f.calistir("onkontrol")
+        self.assertIn("proje onayı: var ama GEÇERSİZ", self.cikti(r))
+        self.assertIn("kanoniği değişti", self.cikti(r))
+
+    def test_9_DUR_gerekcesi_eski_bicim_ve_damga_durumu_ayrilir(self):
+        """Gate LOW-3: onayı düşüren sebep her zaman "kanonik değişti" değildir."""
+        self.f.ilerlet()
+        self.assertEqual(self.planla().returncode, 0)
+        yol = self.f.durum_dizini() / "onay.json"
+        kayit = json.loads(yol.read_text(encoding="utf-8"))
+        eski = dict(kayit)
+        kayit.pop("damga_hedefi")
+        yol.write_text(json.dumps(kayit), encoding="utf-8")
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertIn("eski biçimde", self.cikti(r))
+        self.assertNotIn("kanoniği değişti", self.cikti(r))
+        eski["damga_hedefi"] = "damgasiz"          # onay damgasız dönemde verilmiş, proje artık damgalı
+        yol.write_text(json.dumps(eski), encoding="utf-8")
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("damga durumu değişti", self.cikti(r))
+
+    def test_10_onay_mesaji_kanonigi_de_anar(self):
+        r = self.f.onayla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("kesin yasak kanoniğini", self.cikti(r))
+
+    def test_11_damga_yazilamadiysa_rapor_YENILENDI_demez(self):
+        """Gate LOW-2: plan damga kalemi taşıyor ama kapanıştan önce damga bozuldu → yazım yok; rapor
+        "damgası yenilendi" DEMEMELİ (KAPANMADI + eksik zaten söylenir)."""
+        self._kanonigi_yukselt()
+        self.assertEqual(self.planla().returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        m = self.f.oku("AGENTS.md")
+        self.f.yerel_degistir("AGENTS.md", m + "\n" + m)
+        self.f.calistir("kapanis")
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("damga: DUR", rapor)
+        self.assertNotIn("damgası yenilendi", rapor)
 
 
 if __name__ == "__main__":

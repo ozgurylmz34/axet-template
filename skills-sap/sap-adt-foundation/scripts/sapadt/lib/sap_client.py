@@ -3540,6 +3540,7 @@ constants:
             if result and result.get('success'):
                 print(f"[OK] Metadata extension {name} created")
                 return True
+            print(f"[ERROR] {(result or {}).get('message', 'metadata extension yaratılamadı')}")
             return False
         except Exception as e:
             print(f"[ERROR] {str(e)}")
@@ -3580,6 +3581,7 @@ constants:
             if result and result.get('success'):
                 print(f"[OK] Access control {name} created")
                 return True
+            print(f"[ERROR] {(result or {}).get('message', 'access control yaratılamadı')}")
             return False
         except Exception as e:
             print(f"[ERROR] {str(e)}")

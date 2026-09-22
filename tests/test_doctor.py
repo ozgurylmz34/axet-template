@@ -234,6 +234,19 @@ class DoctorTest(GeciciTest):
         self.var(r, "FAIL", "elle değiştirilmiş")
         self.var(r, "FAIL", "davranış yüzeyinde ONAYSIZ değişiklik")
 
+    def test_damga_farkli_ve_yok_guncelle_proje_onerir(self):
+        # v0.5.2: v0.5.1'den beri %guncelle-proje eski/eksik damgayı yeniler (Z55) — doctor önce onu önermeli
+        d = self.sap_proje()
+        f = d / "AGENTS.md"
+        f.write_text(f.read_text(encoding="utf-8").replace("istisna yok", "istisna var", 1), encoding="utf-8")
+        self.var(self.doctor(d), "FAIL", "%guncelle-proje")
+        metin = f.read_text(encoding="utf-8")
+        i, j = metin.index(sap_stamp.BASLA), metin.index(sap_stamp.BITIR) + len(sap_stamp.BITIR)
+        f.write_text(metin[:i] + metin[j:], encoding="utf-8")
+        r = self.doctor(d)
+        self.var(r, "FAIL", "damgası YOK")
+        self.var(r, "FAIL", "%guncelle-proje")
+
     def test_damga_ikinci_kopya(self):
         d = self.sap_proje()
         f = d / "AGENTS.md"

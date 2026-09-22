@@ -411,6 +411,8 @@ def adt_domain_create(
         require_tr_text(description, what="domain description")
     except GuardrailViolation as gv:
         return gv.as_dict()
+    if _paket_bos_mu(package):  # v0.5.2: yapı/tablo/ttyp ile aynı kapı (lib yalnız "" reddediyordu)
+        return _paket_reddi(name, obj_type)
 
     steps: dict[str, Any] = {}
     # Argüman ön kontrolü — artefakt BEKLEMEZ, ağdan ÖNCE (aXet 2026-09-13).
@@ -555,6 +557,8 @@ def adt_dtel_create(
         require_label_lengths(labels)
     except GuardrailViolation as gv:
         return gv.as_dict()
+    if _paket_bos_mu(package):  # v0.5.2: yapı/tablo/ttyp ile aynı kapı (lib yalnız "" reddediyordu)
+        return _paket_reddi(name, obj_type)
 
     blocker, warn = _maybe_reviewer("adt_dtel_create", name, obj_type, artifact_path)
     if blocker:

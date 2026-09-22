@@ -35,14 +35,12 @@ TIP_ESANLAM = {
     "msag": "msag", "messageclass": "msag",
     "enqu": "enqu", "lock": "enqu", "lockobject": "enqu", "lockobjects": "enqu",
     "ttyp": "ttyp", "tabletype": "ttyp",
+    # v0.5.2 (Z42): canlı ölçülen reçeteler (2026-09-22, DEV, $TMP) — aşağıda `istek`.
+    "ddlx": "ddlx", "metadataextension": "ddlx", "mde": "ddlx",
+    "dcls": "dcls", "dcl": "dcls", "accesscontrol": "dcls",
 }
 
 DESTEKLENMEYEN = {
-    "ddlx": "DDLX (metadata extension) kabuğu için kaynakta CANLI çalışmış reçete yok (yalnız "
-            "kütüphane kodu var, kaynağı kilitsiz ve hatasını yutan bir set_object_source ile yazıyor). "
-            "Kabuğu kullanıcı ADT/Eclipse'te açar; sonra adt_get → adt_push_source.",
-    "dcl": "DCL (access control) kabuğu için kaynakta CANLI çalışmış reçete yok (yalnız kütüphane "
-           "kodu). Kabuğu kullanıcı ADT/Eclipse'te açar; sonra adt_get → adt_push_source.",
     "srvb": "SRVB (service binding) yaratma kaynakta REST'te BLOKE ölçüldü (POST → 400 Session "
             "Timed Out). Kullanıcı ADT/Eclipse'te yaratır; yayın için adt_publish_service.",
     "domain": "Domain için adt_domain_create composite aracını kullan.",
@@ -53,8 +51,6 @@ DESTEKLENMEYEN = {
              "onay alınır — sap-cds-ddic references/tables-structures.md §3.",
 }
 _DESTEKSIZ_ESANLAM = {
-    "ddlx": "ddlx", "metadataextension": "ddlx", "mde": "ddlx",
-    "dcl": "dcl", "dcls": "dcl", "accesscontrol": "dcl",
     "srvb": "srvb", "servicebinding": "srvb",
     "doma": "domain", "domain": "domain",
     "dtel": "dataelement", "dataelement": "dataelement",
@@ -73,7 +69,7 @@ class KabukHatasi(ValueError):
 
 
 def kabuk_tipi(object_type) -> str:
-    """`GENEL` | yeni tip anahtarı (`ddls`, `srvd`, `bdef`, `fugr`, `func`, `msag`, `enqu`, `ttyp`).
+    """`GENEL` | yeni tip anahtarı (`ddls`, `srvd`, `bdef`, `ddlx`, `dcls`, `fugr`, `func`, `msag`, `enqu`, `ttyp`).
     Desteklenmeyen tip → KabukHatasi(unsupported_type)."""
     t = str(object_type or "").strip().lower()
     if t in _GENEL_TIPLER:
@@ -217,6 +213,36 @@ def istek(tip: str, name: str, package: str, description: str, master_language: 
                            f"/sap/bc/adt/bo/behaviordefinitions/{ad_url}",
                            "kaynak çekirdek scripts/create_rap_service.py:372-406 ('blues' reçetesi) · "
                            "playbook/adt-rap.md:90-97,190-197")
+    if tip == "ddlx":
+        # Uç + Content-Type ADT discovery'den (2026-09-22): koleksiyon yalnız `…ddic.ddlx.v1+xml` kabul eder;
+        # kütüphanenin eski `…ddlxSource+xml` tipi canlıda 415 Unsupported Media Type verdi (DENENEN-BAŞARISIZ).
+        govde = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                 '<ddlx:ddlxSource xmlns:ddlx="http://www.sap.com/adt/ddic/ddlxsources"\n'
+                 '                 xmlns:adtcore="http://www.sap.com/adt/core"\n'
+                 f'                 adtcore:name="{_att(ad)}"\n'
+                 f'                 adtcore:description="{d}"\n'
+                 f'                 adtcore:masterLanguage="{ml}">\n'
+                 + _paket_ref_tam(package) + '</ddlx:ddlxSource>')
+        return KabukIstegi(tip, "/sap/bc/adt/ddic/ddlx/sources",
+                           "application/vnd.sap.adt.ddic.ddlx.v1+xml",
+                           "application/vnd.sap.adt.ddic.ddlx.v1+xml", govde,
+                           f"/sap/bc/adt/ddic/ddlx/sources/{ad_url}",
+                           "aXet canlı ölçüm 2026-09-22 (DEV, $TMP): POST 201 → kaynak PUT → aktivasyon → silme; "
+                           "Content-Type ADT discovery (/sap/bc/adt/discovery) koleksiyon accept listesinden")
+    if tip == "dcls":
+        govde = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                 '<acm:dclSource xmlns:acm="http://www.sap.com/adt/acm/dclsources"\n'
+                 '               xmlns:adtcore="http://www.sap.com/adt/core"\n'
+                 f'               adtcore:name="{_att(ad)}"\n'
+                 f'               adtcore:description="{d}"\n'
+                 f'               adtcore:masterLanguage="{ml}">\n'
+                 + _paket_ref_tam(package) + '</acm:dclSource>')
+        return KabukIstegi(tip, "/sap/bc/adt/acm/dcl/sources",
+                           "application/vnd.sap.adt.dclSource+xml",
+                           "application/vnd.sap.adt.dclSource+xml", govde,
+                           f"/sap/bc/adt/acm/dcl/sources/{ad_url}",
+                           "aXet canlı ölçüm 2026-09-22 (DEV, $TMP): POST 201 → kaynak PUT → aktivasyon → silme; "
+                           "Content-Type ADT discovery koleksiyon accept listesiyle aynı")
     if tip == "fugr":
         govde = ('<?xml version="1.0" encoding="UTF-8"?>\n'
                  '<group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups"\n'

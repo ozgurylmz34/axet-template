@@ -89,10 +89,11 @@ okumasıdır. Bir yazma çağrısı `unsupported_type` dönerse **tekrar deneme,
 | `adt_get`: `srvb` | yok |
 | `adt_post_shell`: `class`, `interface`, `prog`, `include` | var (`extra` verme: `invalid_argument`) |
 | Yeni kabuk: `ddls` (abstract entity dahil; yalnız metadata kabuğu), `srvd`, `bdef` (**ad = kök entity adı**) | var → `adt_get` → `adt_push_source` → `adt_activate` → readback. `ok:false` → retry etmeden `exists_after` |
-| Yeni kabuk: `srvb`, `dcl`, `ddlx` | yok (`unsupported_type`; SRVB REST'te bloke, DCL/DDLX için canlı reçete yok). Kullanıcı Eclipse ADT'de açar (oturum dili = `master_language`) → `adt_get` ile doğrula |
+| Yeni kabuk: `ddlx`, `dcls` (v0.5.2) | var — canlı ölçüldü 2026-09-22 (kabuk → `adt_get` → `adt_push_source` → `adt_activate` → `adt_delete`). DDLX hedef CDS'te `@Metadata.allowExtensions: true` ister; DCL'nin süzdüğünü tüketicide ayrıca test et |
+| Yeni kabuk: `srvb` | yok (`unsupported_type`; SRVB REST'te bloke). Kullanıcı Eclipse ADT'de açar (oturum dili = `master_language`) → `adt_get` ile doğrula |
 | `adt_push_source`: `ddls`, `srvd`, `class` (mevcut objeye) | var |
 | `adt_push_source`: `bdef` | var — LOCK → PUT → UNLOCK → readback, **aktive etmez** (`activated:false`) → `adt_activate` kök `ddls` + `also` [`bdef`, behavior sınıfı]; transport zorunlu |
-| `adt_push_source`: `ccimp` / `ccau` | var — `name` = ana sınıf, önce aynı tiple `adt_get`; ana sınıfı aktive eder, BDEF inaktifse düşer (`push_failed` + `activation_note`; kaynak yüklenmiştir) → `also` ile birlikte aktive et; transport zorunlu. `ccdef`/`ccmac` → `unsupported_type` |
+| `adt_push_source`: `ccimp` / `ccau` | var — `name` = ana sınıf, önce aynı tiple `adt_get`; ana sınıfı aktive eder, BDEF inaktifse düşer (`push_failed` + `activation_note`; kaynak yüklenmiştir) → `also` ile birlikte aktive et; transport zorunlu. `ccdef`/`ccmac` de aynı yoldan (yazma yolu canlı ölçüldü 2026-09-21 — `tool-catalog.md`) |
 | `adt_activate` (`also` dahil): `ddls`, `bdef`, `class`, `srvd`, `srvb`, `dcl`, `ddlx` | var |
 | SRVB | yalnız `adt_activate srvb` ve `adt_publish_service` (OData V2) var; SRVB yaratma, okuma ve V4 publish yok |
 | `$metadata` okuma · OData uçtan uca POST testi | yok → kullanıcı (tarayıcı / Gateway istemcisi) |

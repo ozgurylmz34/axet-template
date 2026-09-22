@@ -86,9 +86,9 @@ Tuzaklar:
 - Kur alanında `EXCRT` dönüşüm çıkışı (kursk/kurrf tipi) → publish **ERROR** `Do not use conversion exit EXCRT for property …`.
   Çözüm: sarmalayıcıda `cast( <alan> as abap.dec(9,5) )` ("CAST DEC to identical type" uyarısı gelse de çıkış düşer).
 - `@EndUserText.label` ≤ 40 karakter.
-- DCL kabuğu: aXet CLI'de yok — `adt_post_shell dcl` → `unsupported_type` (canlı reçete yok; `%sap-adt-foundation` → `tool-catalog.md`).
-  Kullanıcı Eclipse ADT'de açar. Kaynakta eski DCL yaratma aracı kaynak yüklemesindeki hatayı yutuyordu → kabuktan sonra kaynağı
-  ayrıca yaz ve aktif kaynağı oku.
+- DCL kabuğu (v0.5.2): `adt_post_shell dcls` → `adt_get(dcls)` → `adt_push_source(dcls)` → `adt_activate(dcls)` (canlı ölçüldü
+  2026-09-22; `%sap-adt-foundation` → `tool-catalog.md`). Push readback yapar; aktivasyon rolün veriyi süzdüğünü kanıtlamaz →
+  tüketici okumasını ayrıca test et.
 - Read-only projection'da "Transactional Provider Contract expected" uyarısı; `as projection on` yerine `as select from` (§4).
 
 ## 8. Profil notu

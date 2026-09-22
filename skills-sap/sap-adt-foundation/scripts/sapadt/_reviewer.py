@@ -222,7 +222,7 @@ OBJECT_TYPE_TO_TASK = {
     "table": "table_update", "structure": "table_update",
     "interface": "interface_push", "intf": "interface_push",   # K1 (2026-09-14)
     "program": "program_push",                                 # `prog` ile aynı (K1)
-    "dcl": None, "accesscontrol": None,       # ACM zinciri yok
+    "dcl": None, "dcls": None, "accesscontrol": None,       # ACM zinciri yok
     "ddlx": None, "metadataextension": None,  # MDE zinciri yok
     "domain": None, "dataelement": None,      # doma/dtel eşanlamlıları
     "include": "program_push", "prog/i": "program_push",       # klasik include (K1; abaplint ÖLÇÜLEMEDİ=W)

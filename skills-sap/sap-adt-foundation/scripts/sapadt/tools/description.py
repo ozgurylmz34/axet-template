@@ -57,7 +57,7 @@ _ANA_URI = {
     "srvd": ("ddic/srvd/sources", "srvd"), "servicedefinition": ("ddic/srvd/sources", "srvd"),
     "ddls": ("ddic/ddl/sources", "ddls"), "cds": ("ddic/ddl/sources", "ddls"),
     "ddlx": ("ddic/ddlx/sources", "ddlx"), "metadataextension": ("ddic/ddlx/sources", "ddlx"),
-    "dcl": ("acm/dcl/sources", "dcl"), "accesscontrol": ("acm/dcl/sources", "dcl"),
+    "dcl": ("acm/dcl/sources", "dcl"), "dcls": ("acm/dcl/sources", "dcl"), "accesscontrol": ("acm/dcl/sources", "dcl"),
 }
 _REDDEDILEN = {
     "srvb": "SRVB açıklaması REST'te değiştirilemez (LOCK 200 → PUT 423, kaynak playbook adt-rap). Kullanıcı ADT/Eclipse'te değiştirir.",

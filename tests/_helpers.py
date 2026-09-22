@@ -3,6 +3,7 @@
 template klonunun dosyalarına yazılmaz."""
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
@@ -27,6 +28,34 @@ def _sil(yol: Path) -> None:
         shutil.rmtree(yol, onexc=duzelt)
     else:
         shutil.rmtree(yol, onerror=duzelt)
+
+
+# Z8 (2026-09-22): `proje()` her testte `git init` + `new_project.py` alt süreçlerini koşuyordu (ölçüldü: test
+# başına ≈1,6 sn). Üretilen proje yalnız ADA bağlı: iki farklı mutlak yolda üretilen ağaçlar yalnız
+# `.axet-code/sablon-surumu.json` `zaman` alanında ayrışıyor, XDG'ye yazılmıyor. Kalıp işlem başına bir kez
+# üretilir, testler `copytree` ile kopyalar. Anahtar (ad, sap, git_init) — üreticiyi etkileyen tüm girdiler.
+# KAPSAM: `new_project.py`'nin kendisini değiştiren (monkeypatch/ortam) bir test kalıbı ÖLÇMEZ; böyle testler
+# `new_project.py`'yi doğrudan `calistir` ile koşar (bugün hepsi öyle).
+_KALIP_KOK: Path | None = None
+_KALIPLAR: dict[tuple[str, bool, bool], Path] = {}
+
+
+def _proje_kalibi(test: "GeciciTest", ad: str, sap: bool, git_init: bool) -> Path:
+    global _KALIP_KOK
+    anahtar = (ad, sap, git_init)
+    if anahtar in _KALIPLAR:
+        return _KALIPLAR[anahtar]
+    if _KALIP_KOK is None:
+        _KALIP_KOK = Path(tempfile.mkdtemp(prefix="axet-kalip-")).resolve()
+        atexit.register(_sil, _KALIP_KOK)
+    d = _KALIP_KOK / str(len(_KALIPLAR)) / ad
+    d.mkdir(parents=True)
+    if git_init:
+        test.git(d, "init", "-q", "-b", "main")
+    r = test.calistir("new_project.py", str(d), *(["--sap"] if sap else []))
+    test.assertEqual(r.returncode, 0, test.cikti(r))
+    _KALIPLAR[anahtar] = d
+    return d
 
 
 class GeciciTest(unittest.TestCase):
@@ -74,11 +103,7 @@ class GeciciTest(unittest.TestCase):
     # --- kurulum ---------------------------------------------------------------------------------------------
     def proje(self, ad: str = "proje", sap: bool = False, git_init: bool = True) -> Path:
         d = self.tmp / ad
-        d.mkdir()
-        if git_init:
-            self.git(d, "init", "-q", "-b", "main")
-        r = self.calistir("new_project.py", str(d), *(["--sap"] if sap else []))
-        self.assertEqual(r.returncode, 0, self.cikti(r))
+        shutil.copytree(_proje_kalibi(self, ad, sap, git_init), d)
         if sap:
             f = d / "sap-project.json"
             veri = json.loads(f.read_text(encoding="utf-8"))
