@@ -42,6 +42,7 @@ izlenmez.
 | 13 | Düzeltme döngüsü | FAIL'i düzelt → ilgili dosyayı yeniden `isaretle` → `butunluk` | en fazla **2 tur** | 2. turda da FAIL → DUR, üç seçenek sun |
 | 14 | Kapanış | `guncelle.py kapanis` — hükmü verir, `RAPOR.md`'yi üretir ve **kalem commit'ini** atar | 0 | 1 → raporu göster, seçenek sun |
 | 15 | Son | `RAPOR.md`'yi AYNEN göster; kapat-aç gerekip gerekmediğini `plan.json`'daki `yeniden_baslat` alanı söyler (`null` = gerekmez · `yeni-oturum` = kapat-aç · `install-sonra-yeni-oturum` = önce `install.py`, sonra kapat-aç) | — | — |
+| 16 | Tarayıcı hazırlığı *(otomatik, soru SORMA)* | `python "<klon>/scripts/tarayici_hazirla.py"` — kurulu Chrome/Edge + merkezi `playwright-cli` + `~/.playwright/cli.config.json` + duman testi; idempotent. Betik klonda yoksa (kalem alınmadı) koşma, "tarayıcı hazırlığı: betik yok" de | ilk satır `TARAYICI: HAZIR …` · çıkış daima 0 | `ATLANDI`/`EKSİK` güncellemeyi BOZMAZ: güncelleme yine "tamamlandı"; ilk satırı AYNEN aktar (neyin eksik kaldığını o söyler), yeniden deneme, başka komut önerme. Betik sınırlı sürede döner; çıktıda `TARAYICI:` satırı yoksa bu adım başarısız sayılır ama güncelleme yine devam eder/tamamlanır |
 
 **2. turda hâlâ FAIL varsa** üç seçeneği sun ve kullanıcı seçsin:
 (a) hepsini geri al — `guncelle.py geri-al --hepsi` (**önerilen**) ·

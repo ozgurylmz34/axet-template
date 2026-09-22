@@ -55,7 +55,7 @@ tarayıcısıyla karışabilir. Oturum bitince `close`; asılı kalanlar için `
 | `Error: Access to "file:" protocol is blocked` | varsayılan yapılandırma `file:`'ı kapatır | sayfayı yerel HTTP'den aç (`127.0.0.1`); yapılandırmada `file:` erişimini açma |
 | `Unknown option: --o` | `screenshot`'ın `-o` seçeneği yok | `--filename <f>` |
 | `click e3` "bulunamadı" ya da yanlış öğeye tıklar | ref'ler snapshot'a bağlıdır; aynı düğme bir koşuda `e3`, `open` + `goto` yapılan başka koşuda `f1e3` geldi (ölçüldü; eski ref'e tıklamanın sonucu ayrıca ölçülmedi) | her gezinmeden sonra yeni `snapshot`, ref'i oradan al |
-| Tarayıcı verilmeden `open` → aracı kullanan model kendi kararıyla `install-browser chromium`/`firefox` koştu, yaklaşık 1 GB indirdi | tarayıcı yapılandırılmamıştı | `kd_ortam.py config` + her `open`'da `--browser chrome`; `tuzaklar.md` T1 |
+| Tarayıcı verilmeden `open` → aracı kullanan model kendi kararıyla `install-browser chromium`/`firefox` koştu, yaklaşık 1 GB indirdi | tarayıcı yapılandırılmamıştı | global config (`tarayici_hazirla.py` otomatik yazar; proje istisnası `kd_ortam.py config`) + her `open`'da `--browser chrome`; `tuzaklar.md` T1 |
 | `http://localhost:<port>` beklenmeyen sayfa / 404 döner | `localhost` IPv6 `::1`'e çözüldü; aynı portta tüm arabirimlere bağlı başka bir süreç yanıt verdi (ölçüldü) | adresi `127.0.0.1:<port>` yaz; `netstat -ano` ile portun sahibini gör |
 | Çalışma klasöründe `.playwright-cli/` klasörü (snapshot ve konsol günlükleri) | araç ara çıktıları cwd'ye yazar | keşfi repo dışı ya da gitignore'lu bir klasörden koş |
 | Her çağrıda ağ trafiği (npm registry) | `@playwright/cli` sürüm denetimi yapar (indirme değil) | `NO_UPDATE_NOTIFIER=1` ile kapanır (ARAÇ şeridi ölçümü; bu dosyanın yazarı ayrıca ölçmedi) |

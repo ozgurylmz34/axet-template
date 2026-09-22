@@ -120,16 +120,30 @@ görüldü (modelin beyanına dayanılmadı). Yeni sürümde yeniden ölçülmed
 CDP `attach`/`goto`/`detach` · UI5 `sap.m.Button` için hem `click` hem `firePress()`.
 
 **Adımlar**
-1. **Kurulum (bir kez, proje içinde, kullanıcıya söyleyerek; global değil):** npm workspace kökünde (`ui/`)
-   `npm install --save-dev @playwright/cli@0.1.21`. Tarayıcı **indirilmez**: `install-browser` aXet'in izin kuralıyla
-   reddedildi (ölçüldü) ve gerekmez; kurulu Chrome/Edge kullanılır. `npx playwright-cli install` da gerekmez
-   (bir denemede `ffmpeg` indirdi).
-2. **Config (ZORUNLU):** çalışma klasöründe `.playwright/cli.config.json`:
+1. **Kurulum OTOMATİK — kullanıcı ve ajan komut çalıştırmaz (v0.5.4):** `install.py` (kurulum) ve `%guncelle`'nin son
+   adımı `scripts/tarayici_hazirla.py`'yi koşar. O betik: kurulu Chrome'u (yoksa Edge'i) bulur · template klonunda
+   **merkezi** `<AXET_HOME>/.araclar/playwright-cli` dizinine `@playwright/cli@0.1.21` kurar (proje başına kurulum YOK;
+   dizin gitignore'lu) · **global** `~/.playwright/cli.config.json`'u yazar · duman testi yapar. İlk satırı
+   `TARAYICI: HAZIR|ATLANDI|EKSİK — …`. Durumu `doctor.py`'nin `tarayıcı testi:` satırı da gösterir. HAZIR değilse
+   betiği kullanıcıya **sormadan bir kez** koşmak serbesttir (idempotent: hazır ortamda hiçbir şeyi değiştirmez); yine
+   HAZIR değilse satırı AYNEN kullanıcıya aktar. Tarayıcı **indirilmez**: `install-browser` aXet'in izin kuralıyla
+   reddedildi (ölçüldü) ve gerekmez; `npx playwright-cli install` da gerekmez (bir denemede `ffmpeg` indirdi).
+2. **Config — global dosya, proje dosyası GEREKMEZ:** betiğin yazdığı `~/.playwright/cli.config.json`:
    ```json
    {"browser":{"browserName":"chromium","launchOptions":{"channel":"chrome","args":["--no-sandbox"]}}}
    ```
-   Edge için `"channel":"msedge"`. `%sap-ui5-user-guide`'daki `kd_ortam.py config --proje <dizin> --no-sandbox`
-   aynı dosyayı yazar. **Neden:** aXet bash'inde config'siz `open` → `Error: Session closed` ya da
+   (Chrome yoksa `"channel":"msedge"`). playwright-cli bu dosyayı her çalışma klasöründe okur (kaynak: playwright-core
+   `resolveCLIConfigForCLI` → `PWTEST_CLI_GLOBAL_CONFIG ?? os.homedir()` + `.playwright/cli.config.json`).
+   **Ölçüldü (2026-09-22, aXet.code 1.3.0, Z60):** proje klasöründe `.playwright/` YOKKEN aXet bash'inde merkezi
+   kurulumla `open` → `snapshot` → `close` rc 0, tarayıcı süreç komut satırında `--no-sandbox` VAR; global dosya yokken
+   aynı `open` → `Error: Target crashed` (kontrol grubu). Kullanıcının kendi global dosyası farklıysa betik onu
+   **EZMEZ** (yalnız kanal uygun ve `--no-sandbox` eksikse onu ekler).
+   **Proje-düzeyi istisna:** bir uygulamaya özel ayar gerekiyorsa `%sap-ui5-user-guide`'daki
+   `kd_ortam.py config --proje <dizin> [--kanal msedge] --no-sandbox` o klasöre `.playwright/cli.config.json` yazar.
+   Proje dosyası global dosyanın ÜSTÜNE birleşir ve `launchOptions` sığ birleştiği için (kaynak: `mergeConfig`) proje
+   dosyasına yazılan bir `args` global `--no-sandbox`'ı **ezer** — proje dosyasında `args` varsa `--no-sandbox` orada da
+   olmalı (bu birleşim aXet'te ÖLÇÜLMEDİ, kaynaktan).
+   **Neden `--no-sandbox`:** aXet bash'inde config'siz `open` → `Error: Session closed` ya da
    `Error: Target crashed`. `--browser chrome` / `--browser msedge` tek başına düzeltmedi. Aynı komut normal kabukta
    açılıyor. `--no-sandbox` içeren config ile Chrome'da ve Edge'de açıldı. playwright-cli Windows'ta her kanalda
    sandbox'ı açık başlatır (kaynak: playwright-core `validateBrowserConfig` Windows'ta koşulsuz `chromiumSandbox = true`;
@@ -145,8 +159,10 @@ CDP `attach`/`goto`/`detach` · UI5 `sap.m.Button` için hem `click` hem `firePr
 4. **Tarayıcı akışı** (her satır ayrı `bash` çağrısı olabilir; aynı `axet-code run` içinde oturum yaşar):
    ```bash
    export NO_UPDATE_NOTIFIER=1
-   PW="npx playwright-cli -s=ui"          # -s=<ad> her komutta; başka oturumla karışmasın
-   $PW open --config=.playwright/cli.config.json http://127.0.0.1:<port>/index.html
+   PW='node "<AXET_HOME>/.araclar/playwright-cli/node_modules/@playwright/cli/playwright-cli.js" -s=ui'
+   #   <AXET_HOME> = template klonu, `C:/…` biçiminde (tam yolu doctor.py / tarayici_hazirla.py basar).
+   #   `/c/…` biçimi aXet bash'inde node'a `C:\c\…` olarak gitti → MODULE_NOT_FOUND (ölçüldü). -s=<ad> her komutta.
+   $PW open http://127.0.0.1:<port>/index.html
    $PW snapshot                            # rol + ad + ref (e1, e2 …). UI5 async: kontrol yoksa bir kez daha snapshot
    $PW find "Kaydet"                       # uzun ağaçta ref bulmak için
    $PW click e3                            # ref ile. `click -e=e3` YANLIŞ → "Unknown option: --e" (ölçüldü)
@@ -156,7 +172,8 @@ CDP `attach`/`goto`/`detach` · UI5 `sap.m.Button` için hem `click` hem `firePr
    $PW screenshot --filename=ekran.png     # sonra aXet `view ekran.png`
    $PW close
    ```
-   `open` için `--config` açıkça verilir (ölçülen biçim bu; `--help` varsayılan yolun da bu dosya olduğunu yazar).
+   `--config` verilmez: global dosya okunur (ölçüldü, Z60). Proje-düzeyi dosya varsa (istisna, adım 2) o da otomatik
+   okunur (`--help`: varsayılan yol `.playwright/cli.config.json`).
    Sonunda sunucuyu `job_kill <shell_id>` ile kapat (ölçülen çıktı: `Background shell <id> terminated successfully`).
 5. **UI5 tıklaması:** `sap.m.Button`'da `click` press'i tetikledi, `eval` ile `firePress()` da tetikledi (ölçüldü).
    Diğer kontroller (ikon butonu, `sap.ui.table` satırı, SmartField, F4) **ÖLÇÜLMEDİ** → `click` sonuç vermezse §4.2'deki

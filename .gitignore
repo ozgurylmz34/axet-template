@@ -8,6 +8,9 @@
 /.axet-guncelleme/
 # Deneme alanı
 /_lab/
+# Merkezi araç kurulumu (scripts/tarayici_hazirla.py: @playwright/cli + node_modules) — repoya girmez. Betik dizine
+# ayrıca `*` içeren kendi .gitignore'unu koyar: bu satır eski bir klonda yoksa da git durumu temiz kalır.
+/.araclar/
 # Şirket içi ham dokümanlar (gerçek sistem/kişi bilgisi içerebilir) — repoya girmez
 /temp_docs/
 # Kurulum paketinden gelen eski binary ve ikon

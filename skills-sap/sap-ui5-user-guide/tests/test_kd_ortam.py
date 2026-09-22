@@ -50,7 +50,8 @@ def chromesuz_env(kok):
 
 def temiz_env(kok):
     """Global config ve kanal-ezen ortam değişkenleri testi etkilemesin."""
-    env = {"PWTEST_CLI_GLOBAL_CONFIG": os.path.join(kok, "ev-yok")}
+    env = {"PWTEST_CLI_GLOBAL_CONFIG": os.path.join(kok, "ev-yok"),
+           kd_ortam.MERKEZI_ORTAM: os.path.join(kok, "merkez-yok")}  # makinedeki merkezi kurulum sonucu etkilemesin
     for k in kd_ortam.EZEN_ORTAM:
         env[k] = ""
     return env
@@ -97,11 +98,12 @@ class KdOrtamCheckTest(unittest.TestCase):
         self.assertEqual(once, sonra, "check dizine bir şey yazdı/kurdu")
         self.assertIn("KURULUM KOMUTLARI", r.stdout)
         self.assertIn("--save-dev @sap-ux/ui5-middleware-fe-mockserver", r.stdout)
-        self.assertIn("--save-dev @playwright/cli@0.1.21", r.stdout)
+        self.assertIn("tarayici_hazirla.py", r.stdout)  # proje başına npm kurulumu ÖNERİLMEZ (v0.5.4, merkezi)
+        self.assertNotIn("--save-dev @playwright/cli", r.stdout)
         self.assertIn("scripts.start-mock", r.stdout)
         self.assertRegex(r.stdout, r"EKSİK\s+mockserver devDependency")
         self.assertRegex(r.stdout, r"EKSİK\s+start-mock script'i")
-        self.assertRegex(r.stdout, r"EKSİK\s+playwright-cli \(yerel\)")
+        self.assertRegex(r.stdout, r"EKSİK\s+playwright-cli\s+YOK")
 
     @unittest.skipUnless(WIN, "Chrome yol simülasyonu Windows arama sırasına göre")
     def test_check_chrome_yok_eksik_ve_indirme_onermez(self):
@@ -217,6 +219,73 @@ class KdOrtamCheckTest(unittest.TestCase):
         self.assertEqual(rc, 0, out + err)
         self.assertIn("--no-sandbox", veri["browser"]["launchOptions"]["args"])
 
+    # Sınıf kuralı (v0.5.4 Z59): check'in bastığı HER önerilen config komutu, koşulunca rc 0 vermeli ve dosyayı
+    # komutun istediği hâle getirmeli. Durum → beklenen öneri sayısı (kanal satırı + sandbox satırı).
+    DURUM_MATRISI = (
+        ("config yok", None, 2),
+        ("chrome", HEDEF, 1),
+        ("chrome+no-sandbox", kd_ortam.hedef_config(no_sandbox=True), 0),
+        ("msedge", kd_ortam.hedef_config("msedge"), 1),
+        ("msedge+no-sandbox", kd_ortam.hedef_config("msedge", True), 0),
+        ("firefox", {"browser": {"browserName": "firefox"}}, 2),
+        ("executablePath", {"browser": {"launchOptions": {"channel": "chrome", "executablePath": "C:/x/chrome.exe"}}}, 2),
+        ("args metin (chrome)", {"browser": {"launchOptions": {"channel": "chrome", "args": "--foo"}}}, 1),
+        ("args metin (msedge)", {"browser": {"launchOptions": {"channel": "msedge", "args": "--foo"}}}, 1),
+        ("JSON []", [], 2),
+        ("bozuk JSON", b"{bozuk", 2),
+        ("UTF-16", '{"browser": {}}'.encode("utf-16"), 2),
+    )
+
+    @staticmethod
+    def _durum_kur(app, icerik):
+        yol = os.path.join(app, ".playwright", "cli.config.json")
+        if icerik is None:
+            return yol
+        if isinstance(icerik, bytes):
+            os.makedirs(os.path.dirname(yol), exist_ok=True)
+            with open(yol, "wb") as fh:
+                fh.write(icerik)
+        else:
+            yaz_json(yol, icerik)
+        return yol
+
+    def test_check_onerilen_her_config_komutu_calisir_durum_matrisi(self):
+        import shlex
+        for ad, icerik, beklenen_sayi in self.DURUM_MATRISI:
+            with self.subTest(durum=ad), gecici_dizin() as t:
+                app = tam_uygulama(os.path.join(t, "app"))
+                self._durum_kur(app, icerik)
+                _, out, err = call_main(lambda a: kd_ortam.cmd_check(app, temiz_env(t)), [])
+                self.assertNotIn("Traceback", err)
+                satirlar = [s for s in out.splitlines() if re.search(r"cli.config.json (kanalı|sandbox)", s)]
+                self.assertEqual(2, len(satirlar), out)
+                oneriler = [m for s in satirlar for m in re.findall(r"`python kd_ortam.py (config [^`]*)`", s)]
+                self.assertEqual(beklenen_sayi, len(oneriler), " | ".join(satirlar))
+                # `[--kanal msedge]` isteğe bağlıdır: iki biçim de çalışmalı.
+                komutlar = []
+                for o in oneriler:
+                    if "[--kanal msedge]" in o:
+                        komutlar += [o.replace("[--kanal msedge]", ""), o.replace("[--kanal msedge]", "--kanal msedge")]
+                    else:
+                        komutlar.append(o)
+                for komut in komutlar:
+                    with gecici_dizin() as t2:
+                        app2 = tam_uygulama(os.path.join(t2, "app"))
+                        self._durum_kur(app2, icerik)
+                        argv = [a if a != "<dizin>" else app2 for a in shlex.split(komut)]
+                        rc, cout, cerr = call_main(kd_ortam.main, argv)
+                        kanal = argv[argv.index("--kanal") + 1] if "--kanal" in argv else kd_ortam.KANAL
+                        durum = kd_ortam.config_durumu(app2, kanal, "--no-sandbox" in argv)[0]
+                    self.assertEqual(0, rc, "%s | %s → %s%s" % (ad, komut, cout, cerr))
+                    self.assertEqual("uygun", durum, "%s | %s" % (ad, komut))
+                    if "--zorla" in argv:  # --zorla yalnız gerektiğinde önerilir: onsuz aynı komut ezmeyi reddetmeli
+                        with gecici_dizin() as t3:
+                            app3 = tam_uygulama(os.path.join(t3, "app"))
+                            self._durum_kur(app3, icerik)
+                            argv3 = [a if a != "<dizin>" else app3 for a in shlex.split(komut) if a != "--zorla"]
+                            rc3, _, _ = call_main(kd_ortam.main, argv3)
+                        self.assertEqual(2, rc3, "%s | gereksiz --zorla: %s" % (ad, komut))
+
     def test_config_zorla_utf8_olmayan_dosyada_bayt_yedek(self):
         with gecici_dizin() as t:
             app = tam_uygulama(os.path.join(t, "app"))
@@ -273,6 +342,60 @@ class KdOrtamCheckTest(unittest.TestCase):
             r = run_py("kd_ortam.py", "check", "--proje", app, env=env)
         self.assertIn("global config browser anahtarı taşıyor", r.stdout)
         self.assertIn("PLAYWRIGHT_MCP_BROWSER ortam değişkeni tanımlı", r.stdout)
+
+
+class KdOrtamMerkeziTest(unittest.TestCase):
+    """v0.5.4 (Z60): merkezi kurulum (<klon>/.araclar/playwright-cli) + global ~/.playwright config."""
+
+    def _merkez(self, t):
+        m = os.path.join(t, "merkez")
+        yaz_json(os.path.join(m, "node_modules", "@playwright", "cli", "package.json"), {"version": "0.1.21"})
+        yaz_json(os.path.join(m, "node_modules", "playwright-core", "package.json"), {"version": "1.64.0"})
+        return m
+
+    def test_merkezi_kurulum_projede_yokken_bulunur(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            os.makedirs(app)
+            m = self._merkez(t)
+            env = dict(temiz_env(t), **{kd_ortam.MERKEZI_ORTAM: m})
+            dizin, surum = kd_ortam.playwright_cli_yolu(app, env)
+            core = kd_ortam.playwright_core_yolu(app, env)
+        self.assertEqual("0.1.21", surum)
+        self.assertTrue(dizin.startswith(m), dizin)
+        self.assertEqual(os.path.join(m, "node_modules", "playwright-core"), core)
+
+    def test_proje_kurulumu_merkeziden_once_gelir(self):
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            env = dict(temiz_env(t), **{kd_ortam.MERKEZI_ORTAM: self._merkez(t)})
+            dizin, _ = kd_ortam.playwright_cli_yolu(app, env)
+        self.assertTrue(dizin.startswith(app), dizin)
+
+    def test_global_uygunsa_sandbox_satiri_globali_soyler_uyari_yok(self):
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            ev = os.path.join(t, "ev")
+            yaz_json(os.path.join(ev, ".playwright", "cli.config.json"), kd_ortam.hedef_config("chrome", True))
+            env = dict(temiz_env(t), PWTEST_CLI_GLOBAL_CONFIG=ev)
+            r = run_py("kd_ortam.py", "check", "--proje", app, env=env)
+        self.assertRegex(r.stdout, r"BİLGİ\s+cli.config.json sandbox\s+config YOK → global dosya geçerli: VAR")
+        self.assertIn("global ~/.playwright/cli.config.json VAR (kanal chrome", r.stdout)
+        self.assertNotIn("global config browser anahtarı taşıyor", r.stdout)
+
+    def test_global_ev_ve_sandbox_ekle_paylasilan(self):
+        """tarayici_hazirla.py bu iki fonksiyonu kullanır: global yol playwright-core'un kuralıyla aynı olmalı."""
+        with gecici_dizin() as t:
+            self.assertEqual(t, kd_ortam.global_ev({"PWTEST_CLI_GLOBAL_CONFIG": t}))
+            yol = os.path.join(t, ".playwright", "cli.config.json")
+            yaz_json(yol, {"browser": {"launchOptions": {"channel": "msedge", "args": ["--x"]}}, "diger": 1})
+            durum, _, ham = kd_ortam.config_durumu(t, "msedge", True)
+            self.assertEqual("eksik-sandbox", durum)
+            kd_ortam.sandbox_ekle(yol, ham)
+            with open(yol, encoding="utf-8") as fh:
+                veri = json.load(fh)
+        self.assertEqual(["--x", "--no-sandbox"], veri["browser"]["launchOptions"]["args"])
+        self.assertEqual(1, veri["diger"])
 
 
 class KdOrtamConfigTest(unittest.TestCase):
@@ -398,6 +521,88 @@ class KdOrtamConfigTest(unittest.TestCase):
                 self.assertEqual("{bozuk", fh.read())
         self.assertEqual(2, rc)
         self.assertIn("JSON değil", err)
+
+    def _hata_satiri_ve_dosya_korunur(self, rc, err, yol, eski):
+        with open(yol, "rb") as fh:
+            self.assertEqual(eski, fh.read(), "asıl dosya değişti")
+        self.assertEqual(2, rc, err)
+        self.assertNotIn("Traceback", err)
+        self.assertTrue(err.startswith("HATA:"), err)
+        self.assertIn("dokunulmadı", err)
+
+    def test_config_zorla_yedek_alinamazsa_hata_satiri(self):
+        # v0.5.4 Z59: yedek alınamazsa traceback + rc 1 değil, HATA satırı + rc 2; asıl dosya korunur.
+        for ad in ("bak dizin", "bak hard link"):
+            with self.subTest(durum=ad), gecici_dizin() as t:
+                app = os.path.join(t, "app")
+                yol = self._cfg(app)
+                yaz_json(yol, {"browser": {"browserName": "firefox"}})
+                with open(yol, "rb") as fh:
+                    eski = fh.read()
+                if ad == "bak dizin":
+                    os.makedirs(yol + ".bak")
+                else:
+                    os.link(yol, yol + ".bak")
+                rc, _, err = call_main(kd_ortam.main, ["config", "--proje", app, "--zorla"])
+                self._hata_satiri_ve_dosya_korunur(rc, err, yol, eski)
+                self.assertIn("yedek", err)
+
+    def test_config_asil_dosya_yazilamazsa_hata_satiri(self):
+        import stat
+        for ad, veri, argv in (("zorla", {"browser": {"browserName": "firefox"}}, ["--zorla"]),
+                               ("eksik-sandbox", HEDEF, ["--no-sandbox"])):
+            with self.subTest(durum=ad), gecici_dizin() as t:
+                app = os.path.join(t, "app")
+                yol = self._cfg(app)
+                yaz_json(yol, veri)
+                with open(yol, "rb") as fh:
+                    eski = fh.read()
+                os.chmod(yol, stat.S_IREAD)
+                try:
+                    if os.access(yol, os.W_OK):
+                        self.skipTest("salt-okunur dosya bu ortamda yazılabilir (ör. root)")
+                    rc, _, err = call_main(kd_ortam.main, ["config", "--proje", app] + argv)
+                finally:
+                    os.chmod(yol, stat.S_IREAD | stat.S_IWRITE)
+                self._hata_satiri_ve_dosya_korunur(rc, err, yol, eski)
+
+    def test_config_yazim_yarida_kalirsa_asil_dosya_korunur(self):
+        # v0.5.4 bug gate madde 3: eksik-sandbox yolu (tarayici_hazirla'da GLOBAL dosya) yedeksiz yazıyordu; açıldıktan
+        # sonraki bir hata (disk dolu, fsync, rename) dosyayı yarım bırakıyordu. Artık geçici dosya + os.replace:
+        # yazım/commit adımı düşerse asıl dosya bayt bayt aynı kalır ve geçici dosya artık bırakmaz.
+        for adim in ("fsync", "replace"):
+            with self.subTest(adim=adim), gecici_dizin() as t:
+                app = os.path.join(t, "app")
+                yol = self._cfg(app)
+                yaz_json(yol, HEDEF)
+                with open(yol, "rb") as fh:
+                    eski = fh.read()
+                with mock.patch.object(kd_ortam.os, adim, side_effect=OSError("disk dolu (sahte)")):
+                    rc, _, err = call_main(kd_ortam.main, ["config", "--proje", app, "--no-sandbox"])
+                self._hata_satiri_ve_dosya_korunur(rc, err, yol, eski)
+                self.assertIn("disk dolu", err)
+                self.assertEqual(["cli.config.json"], os.listdir(os.path.dirname(yol)), "geçici dosya kaldı")
+
+    def test_yaz_basarida_none_ve_icerik_tam(self):
+        with gecici_dizin() as t:
+            yol = os.path.join(t, "a", "cli.config.json")
+            self.assertIsNone(kd_ortam._yaz(yol, {"x": "ğ"}))
+            with open(yol, encoding="utf-8") as fh:
+                self.assertEqual({"x": "ğ"}, json.load(fh))
+            self.assertIsNone(kd_ortam._yaz(yol, {"x": 2}))  # mevcut dosyanın üstüne (os.replace)
+            with open(yol, "rb") as fh:
+                self.assertEqual(b'{\n  "x": 2\n}\n', fh.read())  # LF, BOM yok
+            self.assertEqual(["cli.config.json"], os.listdir(os.path.dirname(yol)))
+
+    def test_config_hedef_yol_dizinse_hata_satiri(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            os.makedirs(self._cfg(app))
+            rc, _, err = call_main(kd_ortam.main, ["config", "--proje", app])
+            self.assertTrue(os.path.isdir(self._cfg(app)))
+        self.assertEqual(2, rc, err)
+        self.assertNotIn("Traceback", err)
+        self.assertTrue(err.startswith("HATA:"), err)
 
     def test_config_dizin_yok(self):
         with gecici_dizin() as t:

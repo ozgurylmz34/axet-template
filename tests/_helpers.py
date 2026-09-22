@@ -76,6 +76,9 @@ class GeciciTest(unittest.TestCase):
             "GIT_CONFIG_GLOBAL": str(bos_gitconfig), "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@example.invalid",
             "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@example.invalid",
+            # install.py (ve kur.cmd → install.py) tarayici_hazirla.py'yi çağırır: testte gerçek npm kurulumu ve
+            # GERÇEK ~/.playwright yazımı olmasın (HOME/USERPROFILE burada değiştirilmiyor).
+            "AXET_TARAYICI_HAZIRLA": "0",
         })
 
     def tearDown(self) -> None:

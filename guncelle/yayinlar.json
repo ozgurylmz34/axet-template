@@ -1177,6 +1177,78 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.4",
+   "tarih": "2026-09-22",
+   "kalemler": [
+    {
+     "id": "0.5.4-01",
+     "baslik": "`%guncelle`: atlanan önkoşul uyarısı artık yalnız gerçekten ertelenmiş ya da `--kabul` ile açık bırakılmış kalemde çıkıyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`uygulanan.json`'da `atlandi` mühürlü kalem hem ertelenmiş hem yapılacak işi olmayan kalemi kapsıyordu; `sec` bu yüzden önceki turda iş olmadığı için atlanmış kaleme bağlı her kalemde de uyarıyordu. Kapanış artık mühre neden yazıyor: `ertelendi` · `kabul` · `is-yok`. `is-yok` kalem sessizce karşılanmış sayılır; diğerlerinde uyarı nedeni söyler. Nedeni olmayan eski kayıtta uyarı sürer ve ayırt edilemediğini açıkça yazar.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k guncelle",
+      "python tests/run_tests.py -k yayin"
+     ]
+    },
+    {
+     "id": "0.5.4-02",
+     "baslik": "UI5 tarayıcı testi kendiliğinden hazır: kurulum, `%guncelle` ve doctor tarayıcı aracını ve ayarını kullanıcı komutu olmadan kuruyor",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "v0.5.3 reçetesi proje başına `npm install` ve `kd_ortam config` istiyordu; kullanıcı bunu yapmadıkça tarayıcı testi fiilen kapalıydı. `scripts/tarayici_hazirla.py` artık kurulu Chrome/Edge'i bulur (tarayıcı indirmez), sabit sürüm `@playwright/cli`'yi aXet klonunda `.araclar/` altına bir kez kurar, kullanıcı klasörüne `~/.playwright/cli.config.json` yazar (kullanıcının farklı dosyasını ezmez) ve bir deneme sayfası açıp kapatarak doğrular. `install.py` ve `%guncelle` bu adımı sormadan koşar; ağ ya da npm hatası kurulumu/güncellemeyi durdurmaz, `TARAYICI:` satırı eksiği söyler ve sonraki koşum yeniden dener. doctor durumu bilgi satırı olarak gösterir. aXet içinde ölçüldü: merkezi kurulum başka proje klasöründen tam Windows yoluyla çalışıyor, global ayar dosyası okunuyor (dosya yokken tarayıcı çöküyor). `kd_ortam.py check`'in her önerisi koşulunca çalışır (bozuk/UTF-16 dosyada `--zorla` önerir, `launchOptions.args` liste değilse `--zorla` ekler); yedek ya da yazma hatası traceback yerine `HATA:` satırı ve rc 2 verir.",
+     "dosyalar": [
+      ".gitignore",
+      "GUNCELLE.md",
+      "README.md",
+      "guncelle/harita.json",
+      "scripts/doctor.py",
+      "scripts/install.py",
+      "scripts/tarayici_hazirla.py",
+      "skills-sap/sap-ui5-fiori/references/runtime-verification.md",
+      "skills-sap/sap-ui5-user-guide/SKILL.md",
+      "skills-sap/sap-ui5-user-guide/references/akis.md",
+      "skills-sap/sap-ui5-user-guide/references/kesif-playwright-cli.md",
+      "skills-sap/sap-ui5-user-guide/references/tuzaklar.md",
+      "skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py",
+      "skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py",
+      "skills/guncelle/SKILL.md",
+      "tests/_helpers.py",
+      "tests/test_tarayici_hazirla.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k tarayici",
+      "python tests/run_tests.py -k install",
+      "python tests/run_tests.py -k doctor",
+      "python skills-sap/sap-ui5-user-guide/tests/run_tests.py",
+      "python skills-sap/sap-ui5-fiori/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.4-03",
+     "baslik": "Yayın kataloğu ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    }
+   ]
   }
  ]
 }

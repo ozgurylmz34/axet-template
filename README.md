@@ -29,7 +29,8 @@ bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 |---|---|
 | `python-docx`, `python-pptx`, `openpyxl` (`pip install --user …`) | `%office-docs`, `%office-slides`, `%office-excel` |
 | `markdown`, `Pillow` + Edge/Chrome (PDF baskısı) | `%sap-fs-ts-docs` (PDF, ekran görüntüsü) |
-| Chrome + `@playwright/cli` ve `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde; tarayıcı indirilmez) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
+| Chrome ya da Edge + `@playwright/cli` — **kendiliğinden kurulur**: kurulum aracı ve `%guncelle`, Node.js varsa `@playwright/cli`'yi klonun `.araclar/` klasörüne kurar ve `~/.playwright/cli.config.json`'u yazar (`scripts/tarayici_hazirla.py`; tarayıcı indirilmez, ayrı komut gerekmez) | aXet içinde tarayıcı testi (`%sap-ui5-fiori`), `%sap-ui5-user-guide` |
+| `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
 | Node.js + `playwright-core` (proje içinde), `@abaplint/cli` (npx önbelleği) | `%sap-ui5-fiori` ui-smoke, `%sap-code-review` abaplint |
 
 İlk kez kuruyorsan adım adım rehber: [`docs/onboarding.md`](docs/onboarding.md) (kurulumdan sonra aXet içinde `%onboard`).

@@ -1177,6 +1177,22 @@ def check_precommit(cwd: Path) -> None:
             add("PASS", "pre-commit kablolu (core.hooksPath=.githooks)")
 
 
+def check_tarayici(env: dict | None = None) -> None:
+    """Tarayıcı testinin hazır olup olmadığı — BİLGİ satırı, FAIL/WARN değil (Z60). SALT-OKUNUR: kurmaz, yazmaz,
+    duman testi koşmaz (onu tarayici_hazirla.py yapar)."""
+    try:
+        import tarayici_hazirla as th
+        hazir, metin = th.durum_oku(inst.AXET_HOME, env)
+    except Exception as exc:  # noqa: BLE001 — teşhis
+        add("INFO", f"tarayıcı testi: ÖLÇÜLEMEDİ ({type(exc).__name__}: {exc})")
+        return
+    if hazir:
+        add("INFO", f"tarayıcı testi: hazır (statik; duman testi koşulmadı) — {metin}")
+    else:
+        add("INFO", f"tarayıcı testi: eksik — {metin} → python scripts/tarayici_hazirla.py (install.py ve %guncelle "
+            "bunu kendisi koşar)")
+
+
 def check_live(sap: bool, cwd: Path) -> None:
     exe = shutil.which("axet-code")
     if not exe:
@@ -1243,6 +1259,7 @@ def main() -> int:
         check_baglam_boyutu(cwd)
         for name, info, ok in inst.check_env():
             add("PASS" if ok else "WARN", f"{name}: {info}")
+        check_tarayici()
         if args.live:
             check_live(sap, cwd)
 
@@ -1254,6 +1271,7 @@ def main() -> int:
         print("\nKAPSAM — bakılmayanlar: skill içeriklerinin doğruluğu · izin kurallarının fiilen blokladığı · "
               "denylist davranışı · model seçimi · pre-commit'in fiilen koştuğu (yalnız kablolaması) · "
               "davranış yüzeyi değişikliğinin içeriği (yalnız onaylı olup olmadığı) · "
+              "tarayıcı testinin fiilen açıldığı (yalnız kurulum/config durumu okunur; duman testi tarayici_hazirla.py'de) · "
               "AGENTS.md SAP satırında yalnız anahtar taşıyan `- SAP` satırlarının profil/master_language'i (FAIL) ile "
               "yazılmışsa sürüm/cleancore_policy'si (WARN; ilk yazan satırdan) karşılaştırılır — anahtar biçimi (`:`/`=`) "
               "ya da geçerli değer taşımayan `- SAP…` maddeleri (serbest metin) atlanır; aktif paket, transport ve `- SAP` ile başlamayan satırlardaki SAP ifadeleri bakılmaz · "

@@ -20,8 +20,8 @@ description: >
 > (akış büyük ölçüde aynı olabilir ama ölçülmedi) ve klasik GUI programı (`%sap-fs-ts-docs` + `%sap-classic-abap`).
 > Kesin yasaklar (A/B/C/D) SAP çekirdeğinde yüklüdür; bu akışta SAP'ye hiçbir şey yazılmaz.
 
-> **Özü (kırpılırsa bu kalsın):** ① ÖNCE `kd_ortam.py check` + `config` — tarayıcı **Chrome**'a sabit, tarayıcı
-> **indirme yok** ② veri YALNIZ kurgusal mock ③ sayfa `file:` değil yerel **HTTP**'den, arayüz `?sap-ui-language=tr`
+> **Özü (kırpılırsa bu kalsın):** ① ÖNCE `kd_ortam.py check` — playwright-cli ve tarayıcı ayarı template kurulumunda
+> OTOMATİK hazırlanır (`<TEMPLATE>/scripts/tarayici_hazirla.py`), tarayıcı **indirme yok** ② veri YALNIZ kurgusal mock ③ sayfa `file:` değil yerel **HTTP**'den, arayüz `?sap-ui-language=tr`
 > ④ çekim senaryosu `ekranlar.json` dosyasındadır (git'e girer), elle tıklama dizisi değildir ⑤ **her kareye `view`
 > ile bak** — "çekim OK" görüntünün doğru olduğunu söylemez ⑥ KD yazımı ve HTML/PDF üretimi `%sap-fs-ts-docs`
 > boru hattıyla yapılır, yeniden yazılmaz ⑦ bitti demeden sayılarla doğrula + taze bağlamda bağımsız oku.
@@ -41,9 +41,11 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
 `ui5-mock.yaml`; npm bağımlılıkları workspace kökü `<paket>/ui/`'dadır).
 
 1. **Ön kontrol.** `python $S/kd_ortam.py check --proje $APP` → eksik varsa yazdığı kurulum komutunu kullanıcıya göster,
-   **onay almadan kurma** (çıkış 2 = eksik var). Sonra `python $S/kd_ortam.py config --proje $APP` → Playwright CLI
-   yapılandırması Chrome kanalına sabitlenir (aXet.code'da `--no-sandbox` ekle: onsuz `open` düştü, `tuzaklar.md`
-   T23). ⛔ `install-browser` / `playwright install` **çalıştırılmaz** (yaklaşık
+   **onay almadan kurma** (çıkış 2 = eksik var). playwright-cli **merkezi** kurulumdur (`<TEMPLATE>/.araclar/playwright-cli`)
+   ve tarayıcı ayarı **global** `~/.playwright/cli.config.json`'dadır (Chrome/Edge kanalı + aXet için `--no-sandbox`);
+   ikisini `install.py` ve `%guncelle` kendisi hazırlar — proje başına kurulum ya da `config` adımı YOK. `check`
+   ikisinin durumunu yazar. `python $S/kd_ortam.py config --proje $APP [--kanal msedge] --no-sandbox` yalnız
+   proje-düzeyi istisna içindir (`tuzaklar.md` T23). ⛔ `install-browser` / `playwright install` **çalıştırılmaz** (yaklaşık
    1 GB indirir; ölçüldü). Tarayıcı açılmıyorsa DUR ve kullanıcıya sor.
 2. **Mock ortamı.** Uygulamanın `ui5-mock.yaml`'ı **doğru servise** bakıyor mu (manifest `dataSources` ↔ `urlPath`),
    `metadata.xml` güncel mi → `python $S/mock_veri.py --metadata <metadata.xml> --cikti <mockdata klasörü>` ile
@@ -96,8 +98,8 @@ Her script başta **KAPSAM** satırı basar (neye bakıp neye bakmadığı); "0 
   içinde tutarlı olur (toplam = kalemlerin toplamı, anahtarlar tekil, ilişkili kayıtlar eşleşir).
 - ⛔ **Tarayıcı indirme yok:** `install-browser`, `playwright install`, `npx playwright install` çalıştırılmaz; sistem
   Chrome'u kullanılır. Chrome açılmıyorsa başka tarayıcı indirerek "çözme"; DUR, kullanıcıya sor.
-- Global kurulum yok (`npm -g`, PATH değişikliği). Eksik araç `kd_ortam.py check`'in yazdığı proje-içi komutla ve
-  kullanıcı onayıyla kurulur.
+- Global kurulum yok (`npm -g`, PATH değişikliği). playwright-cli template klonundaki merkezi dizindedir
+  (`tarayici_hazirla.py` kurar); diğer eksik araçlar `kd_ortam.py check`'in yazdığı komutla ve kullanıcı onayıyla kurulur.
 - Sayfa `file:` ile açılmaz (bloklu); yerel HTTP sunucusundan açılır. Adres `127.0.0.1:<port>` biçiminde verilir,
   arayüz dili `?sap-ui-language=tr`.
 - ⛔ **Her yerel sunucu 127.0.0.1'e bağlanır** (`python -m http.server <port> --bind 127.0.0.1`; `ui5 serve`'e

@@ -348,7 +348,8 @@
         "scripts/sap_stamp.py",
         "scripts/behavior_manifest.py",
         "scripts/project_precommit.py",
-        "scripts/merge_pr.py"
+        "scripts/merge_pr.py",
+        "scripts/tarayici_hazirla.py"
       ],
       "yukleme": "kullanıcı/bakımcı terminalden çalıştırır; aXet bağlamına yüklenmez",
       "etkin": "aninda",
@@ -358,7 +359,8 @@
         "tests/test_sap_stamp.py",
         "tests/test_behavior_manifest.py",
         "tests/test_precommit.py",
-        "tests/test_merge_pr.py"
+        "tests/test_merge_pr.py",
+        "tests/test_tarayici_hazirla.py"
       ],
       "test": [{"komut": "python tests/run_tests.py", "cwd": ".", "on_kosul": "repo dışı izole TMP önerilir (repo içi TMP'de 28 yanlış FAIL ölçüldü — RAPOR §4)"}],
       "risk": "yuksek",

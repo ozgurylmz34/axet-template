@@ -6,6 +6,9 @@ Yazdığı şeyler (yalnız bunlar; kullanıcının diğer ayarları korunur):
   options.skills_paths   -> skills (+ skills-sap  --sap ile)
   permissions.rules      -> config/permissions.json içeriği (yalnız `bash`; merkezi klonun `edit` yazma koruması
                             2026-09-18'de KALDIRILDI — gerekçe `load_rules` üstündeki not)
+Sonra (kur/güncelle kipinde; --dry-run ve --uninstall'da DEĞİL) `scripts/tarayici_hazirla.py`'yi ayrı süreçte
+çağırır: klonda `.araclar/playwright-cli` + `~/.playwright/cli.config.json` (v0.5.4, Z60). Sonucu ne olursa olsun
+install.py'nin çıkış kodunu DEĞİŞTİRMEZ; `AXET_TARAYICI_HAZIRLA=0` ile kapatılır.
 
 Kullanım:
   python scripts/install.py              kur / güncelle (SAP durumu korunur; ilk kurulumda kapalı)
@@ -41,6 +44,7 @@ SAP_CORE_DIR = AXET_HOME / "core" / "sap"
 SKILLS_DIR = AXET_HOME / "skills"
 SAP_SKILLS_DIR = AXET_HOME / "skills-sap"
 PERMISSIONS_FILE = AXET_HOME / "config" / "permissions.json"
+TARAYICI_BETIK = AXET_HOME / "scripts" / "tarayici_hazirla.py"
 # SAP'ye yazma için makine düzeyi izin; sap_adt_cli.py yazma kapısının ilk koşulu. Gitignore'lu.
 SAP_WRITE_FLAG = AXET_HOME / "config" / "sap-write.local"
 # Önceki sürümlerde config/permissions.json ile yayımlanıp artık dosyada olmayan kurallar: alan → desen → o zaman
@@ -232,6 +236,20 @@ def check_env() -> list[tuple[str, str, bool]]:
     return results
 
 
+def tarayici_adimi() -> None:
+    """Tarayıcı testini hazırlar (kullanıcı ayrı komut çalıştırmaz — Z60). Ayrı süreçte koşar: çökmesi, zaman aşımı
+    ya da ATLANDI/EKSİK sonucu kurulumu DURDURMAZ ve çıkış kodunu değiştirmez; durumu betiğin ilk satırı söyler."""
+    print("\nTarayıcı hazırlığı:")
+    if not TARAYICI_BETIK.exists():
+        print(f"TARAYICI: ATLANDI — {TARAYICI_BETIK} yok")
+        return
+    sys.stdout.flush()
+    try:
+        subprocess.run([sys.executable, str(TARAYICI_BETIK)], stdin=subprocess.DEVNULL, timeout=900, check=False)
+    except Exception as exc:  # noqa: BLE001 — kurulumu durdurma
+        print(f"TARAYICI: EKSİK — betik çalıştırılamadı ({exc})")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="aXet.code template kurulumu")
     sap_group = ap.add_mutually_exclusive_group()
@@ -316,6 +334,8 @@ def main() -> int:
             print(f"\nSAP'ye yazma izni KAPATILDI ({SAP_WRITE_FLAG} silindi).")
     if new_text == original:
         print("\nDeğişiklik yok; config zaten güncel.")
+        if not args.uninstall:
+            tarayici_adimi()
         return 0
 
     cfg_file.parent.mkdir(parents=True, exist_ok=True)
@@ -330,6 +350,7 @@ def main() -> int:
         return 1
     print(f"Yazıldı ve geri okunarak doğrulandı: {cfg_file}")
     if not args.uninstall:
+        tarayici_adimi()
         print("\nSonraki adım: YENİ bir aXet oturumu aç. İlk yanıtın ilk satırında "
               "'AXET-CORE-…' görünmeli.\nDoğrulama: python scripts/doctor.py  (model çağrılı test: --live)")
     return 0

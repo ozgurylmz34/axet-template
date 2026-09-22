@@ -3,7 +3,8 @@
 > Kısaltmalar: `S=<TEMPLATE>/skills-sap/sap-ui5-user-guide/scripts` · `D=<TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts` ·
 > `APP=<paket>/ui/<app>` (freestyle V2 uygulaması; içinde `package.json`, `webapp/`, `ui5-mock.yaml`) ·
 > `UI=<paket>/ui` (npm workspace kökü; `node_modules` burada — `%sap-ui5-fiori` → `references/app-skeleton.md` §2) ·
-> `PW=` yerel playwright-cli (yolu `kd_ortam.py check` yazar; workspace'te çoğunlukla `$UI/node_modules/.bin/playwright-cli`).
+> `PW=` playwright-cli: merkezi kurulum `node "<TEMPLATE>/.araclar/playwright-cli/node_modules/@playwright/cli/playwright-cli.js"`
+> (`C:/…` biçiminde; yolu `kd_ortam.py check` yazar; projede yerel kurulum varsa o önce gelir).
 > Hedef uygulama `%sap-ui5-fiori` ile kurulmuş freestyle SAPUI5 + OData V2 uygulamasıdır; Fiori elements kapsam dışıdır.
 > Her adımın **çıkış ölçütü** tutmadan sonrakine geçilmez. Takılınca önce `tuzaklar.md`.
 
@@ -11,7 +12,7 @@
 | Ürün | Yer | Git'e girer mi |
 |---|---|---|
 | Mock verisi | `mockdataPath` klasörü (iskelette `webapp/localService/mainService/data/`) | evet (kurgusal veri) |
-| Playwright CLI yapılandırması | `$APP/.playwright/cli.config.json` (`kd_ortam.py config` yazar) | ekip kararı; kişisel yol içermez |
+| Playwright CLI yapılandırması | global `~/.playwright/cli.config.json` (`tarayici_hazirla.py` yazar); istisna: `$APP/.playwright/cli.config.json` (`kd_ortam.py config` yazar) | global: hayır (kullanıcı klasörü) · proje dosyası: ekip kararı; kişisel yol içermez |
 | Keşif snapshot'ları | geçici klasör (ör. `$APP/.kd-kesif/`, repo dışı ya da gitignore'lu) | hayır |
 | Çekim senaryosu | `$APP/docs/ekranlar.json` | **evet** |
 | Ham ekran görüntüleri | `ekranlar.json` → `out_dir` (ör. `docs/screenshots-ham/`) | hayır (kırpılmış kopya girer) |
@@ -24,18 +25,22 @@ Dosya adı kuralı `%sap-fs-ts-docs` → `references/traceability.md` §1'dedir.
 ## 1. Ön kontrol
 ```
 python $S/kd_ortam.py check --proje $APP
-python $S/kd_ortam.py config --proje $APP
 ```
 - `check` bağımlılık tablosu basar: node · Chrome · yerel playwright-cli · playwright-core yolu · Python `markdown` ·
   uygulamada `@sap-ux/ui5-middleware-fe-mockserver` geliştirme bağımlılığı + `start-mock` script'i.
   **Çıkış 0** = tam · **çıkış 2** = eksik var, eksik satırda kurulum komutu yazılıdır. Komutu kullanıcıya göster,
   onay gelirse proje klasöründe koş, sonra `check`'i tekrarla. Script kendisi hiçbir şey kurmaz.
-- `config` `$APP/.playwright/cli.config.json`'u Chrome kanalına sabit yazar; tekrar koşmak zararsızdır. Farklı
-  içerikli bir kullanıcı dosyası varsa `--zorla` olmadan ezmez — farkı kullanıcıya göster.
-- **aXet.code'da:** `config --proje $APP --no-sandbox` (Edge için `--kanal msedge --no-sandbox`). Bu argüman olmadan
-  aXet bash'inde `open` düştü, onunla açıldı (ölçüldü; sebep DOĞRULANMADI) → `tuzaklar.md` T23. Dosya zaten Chrome'a
-  sabitse yalnız argüman eklenir, diğer anahtarlara dokunulmaz.
-- **Çıkış ölçütü:** `check` çıkış 0 · `config` dosyası yerinde · KAPSAM satırı okundu (neye bakmadığını söyler).
+- playwright-cli **merkezi** kurulumdur (`<TEMPLATE>/.araclar/playwright-cli`) ve tarayıcı ayarı **global**
+  `~/.playwright/cli.config.json`'dadır (kanal chrome/msedge + `--no-sandbox`). İkisini `install.py` ve `%guncelle`
+  `<TEMPLATE>/scripts/tarayici_hazirla.py` ile kendisi hazırlar; proje başına kurulum ve `config` adımı YOKTUR. `check` iki
+  `BİLGİ` satırında global dosyanın durumunu yazar. Eksikse önce `python <TEMPLATE>/scripts/tarayici_hazirla.py`
+  (idempotent, çıkış daima 0; ilk satırı durumu söyler).
+- **Proje-düzeyi istisna:** `python $S/kd_ortam.py config --proje $APP [--kanal msedge] --no-sandbox` →
+  `$APP/.playwright/cli.config.json` (global dosyanın ÜSTÜNE birleşir; orada `args` yazılıysa global `--no-sandbox`'ı
+  ezer, bu yüzden `--no-sandbox` o dosyada da olmalı → `tuzaklar.md` T23). Farklı içerikli bir kullanıcı dosyası
+  varsa `--zorla` olmadan ezmez — farkı kullanıcıya göster.
+- **Çıkış ölçütü:** `check` çıkış 0 · global dosya VAR (ya da proje dosyası yerinde) · KAPSAM satırı okundu (neye
+  bakmadığını söyler).
 - ⛔ Bu adımda ya da sonrakilerde `install-browser` / `playwright install` yok (`tuzaklar.md` T1).
 
 ## 2. Mock ortamı
@@ -124,8 +129,8 @@ Biçim `capture_kd_screens.js` yapılandırmasıdır (alan listesi `%sap-fs-ts-d
 node $D/capture_kd_screens.js $APP/docs/ekranlar.json --dry-run
 node $D/capture_kd_screens.js $APP/docs/ekranlar.json
 ```
-- `playwright-core` bulunamazsa `PLAYWRIGHT_CORE_PATH=$UI/node_modules/playwright-core` ile göster
-  (yerel `@playwright/cli` kurulumu `playwright-core`'u da getirir; yolu `kd_ortam.py check` yazar).
+- `playwright-core` bulunamazsa `PLAYWRIGHT_CORE_PATH=<yol>` ile göster: merkezi kurulumda
+  `<TEMPLATE>/.araclar/playwright-cli/node_modules/playwright-core` (yolu `kd_ortam.py check` yazar).
 - Mock veri değiştiyse önce mock'u yeniden başlat (veri açılışta okunur).
 - **Çıkış ölçütü:** son satır `ÖZET: M OK, 0 FAIL`, çıkış 0, `out_dir`'de M adet PNG.
 
