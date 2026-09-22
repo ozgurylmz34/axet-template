@@ -6,6 +6,36 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.3 — 2026-09-22
+
+### 0.5.3-01 · `%guncelle`: önceki yayında uygulanmış kaleme bağlı yeni kalem artık seçilebiliyor (düzeltme)
+
+- **neden:** `sec`, `gerektirir` bağını yalnız o turun seçim kümesinde arıyordu. Önceki turda uygulanmış ya da yayını zaten içerilmiş bir kalem plana hiç girmediği için "seçili değil" sayılıyor ve seçim DUR ediyordu (v0.5.2 yayın provasında ölçüldü: 0.5.2-01 → 0.5.1-01). Plan artık karşılanmış kalemleri `karsilanan` alanında taşıyor ve `sec` bağı orada da arıyor. Alan yoksa (eski motorla üretilmiş plan) yine DUR eder ve `plan`ın yeniden koşulmasını söyler. Önceki turda `atlandi` olarak mühürlenmiş (ertelenmiş ya da yapılacak işi olmayan) önkoşul da karşılanmış sayılır, yani seçim kilitlenmez; ama `sec` her böyle bağ için bir `UYARI:` satırı basar, çünkü önkoşulun dosyaları diskte olmayabilir.
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`, `tests/test_yayin_surumleri.py`
+- **test:** `python tests/run_tests.py -k guncelle`, `python tests/run_tests.py -k yayin`
+- **gerektirir:** —
+
+### 0.5.3-02 · UI5: aXet içinde tarayıcı testi reçetesi; smoke testi ve KD ortamı kurulu Chrome/Edge'i kullanabiliyor (yetenek)
+
+- **neden:** aXet içinde `@playwright/cli` ile yerel uygulamayı açıp tıklamak, konsol/ağ hatalarını okumak ve ekran görüntüsünü modele göstermek canlı ölçüldü (kurulu Chrome ve Edge ile, tarayıcı indirmeden). Ölçülmüş adımlar `sap-ui5-fiori` runtime-verification §4.6'da. aXet'te config'siz `open` açılmıyordu; `--no-sandbox` içeren config ile açıldığı ölçüldü. `run_ui_smoke.py` `--channel chrome|msedge` ve `--dry-run` aldı; `kd_ortam.py config` `--kanal` ve `--no-sandbox` aldı. Bu iki betiğin aXet'in içinde koşması henüz ölçülmedi — metinlerde öyle yazılı. `kd_ortam.py check` Edge'e sabit dosyayı geçerli sayar, sandbox satırını dosyadan okur ve önerdiği komut dosyanın kanalını korur; UTF-8 olmayan config artık çökme yerine "okunamadı" verir.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-ui5-fiori/references/runtime-verification.md`, `skills-sap/sap-ui5-fiori/scripts/ui-smoke/playwright.config.ts`, `skills-sap/sap-ui5-fiori/scripts/ui-smoke/run_ui_smoke.py`, `skills-sap/sap-ui5-fiori/tests/test_ui_smoke.py`, `skills-sap/sap-ui5-user-guide/SKILL.md`, `skills-sap/sap-ui5-user-guide/references/akis.md`, `skills-sap/sap-ui5-user-guide/references/tuzaklar.md`, `skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`, `python skills-sap/sap-ui5-user-guide/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.3-03 · Obje silme başarısız olunca kilidin bırakıldığı testle kilitlendi (düzeltme)
+
+- **neden:** v0.5.2 hata denetiminin açık kalemi "silme başarısızsa kilit bırakılmıyor" diyordu. Kod incelendi: kilit zaten bırakılıyor, kusur yok. Bu davranışın ileride bozulmaması için regresyon testi eklendi (silme hatasında sonuç `False`, çağrı sırası kilit → sil → kilit bırak). Davranış değişmedi.
+- **dosyalar:** `skills-sap/sap-adt-foundation/tests/test_lib_regressions.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.3-04 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.5.2 — 2026-09-22
 
 ### 0.5.2-01 · `doctor` eski ya da eksik SAP damgasında artık `%guncelle-proje`yi öneriyor (düzeltme)

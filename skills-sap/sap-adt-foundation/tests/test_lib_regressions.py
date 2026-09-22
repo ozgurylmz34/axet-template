@@ -177,5 +177,37 @@ class LibRegresyon(unittest.TestCase):
                     all(durum.values()))
 
 
+    # ── v0.5.3: silme başarısızsa kilit bırakılır — mevcut `finally` davranışının regresyon kilidi
+    # (v0.5.2 gate'i bunu 'finally yok' diye yanlış raporladı; kod okununca finally bulundu) ──
+    @staticmethod
+    def _sil_istemcisi(sil_hata):
+        from sap_client import SAPClient  # type: ignore
+        c = SAPClient.__new__(SAPClient)
+        c.debug_enabled = False
+        cagri = []
+
+        class _Adt:
+            def lock_object(self, url, transport=None):
+                cagri.append(("lock", url))
+                return "KILIT-1"
+
+            def delete_object(self, url, kilit, transport=None):
+                cagri.append(("delete", url, kilit))
+                if sil_hata:
+                    raise RuntimeError("423 kilitli / silinemedi")
+
+            def unlock_object(self, url, kilit):
+                cagri.append(("unlock", url, kilit))
+        c.adt_client = _Adt()
+        return c, cagri
+
+    def test_sil_01_delete_hatasinda_kilit_birakilir(self):
+        c, cagri = self._sil_istemcisi(sil_hata=True)
+        r = c.delete_object("ZCA000_X", "class", transport="DEVK900001", confirm=False)
+        adimlar = [a[0] for a in cagri]
+        self.kaydet("SİL-1 DELETE hatası → False + kilit aynı handle ile bırakılır", "False · lock/delete/unlock",
+                    (r, cagri), r is False and adimlar == ["lock", "delete", "unlock"] and cagri[-1][2] == "KILIT-1")
+
+
 if __name__ == "__main__":
     unittest.main()

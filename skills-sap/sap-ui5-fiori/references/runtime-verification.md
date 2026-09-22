@@ -53,12 +53,23 @@ python $S/deploy_ui.py prepare <app> --no-build               # deploy öncesi y
 Tekrarlanabilir, başsız, commit'lenebilir smoke seti (config + genel spec + koşucu).
 ```bash
 # Ön koşul (bir kez, proje kararıyla; global kurulum değil):
-#   cd <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui-smoke && npm install && npx playwright install chromium
+#   cd <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui-smoke && npm install
+#   + ya `--channel chrome|msedge` (kurulu tarayıcı, indirme yok) ya da `npx playwright install chromium`
 # Uygulama lokal çalışıyor olmalı (deploy-and-local-run.md §1); kimlik geliştiricinin kabuğunda:
 #   FIORI_TOOLS_USER / FIORI_TOOLS_PASSWORD
-python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui-smoke/run_ui_smoke.py --port <port> [--spec ui.smoke.spec.ts] [--no-auth]
+python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui-smoke/run_ui_smoke.py --port <port> [--spec ui.smoke.spec.ts] [--no-auth] [--channel chrome|msedge] [--dry-run]
 ```
 - Koşucu Playwright'ı **kurmaz**; yoksa kurulum komutunu yazıp çıkış 2.
+- `--channel chrome|msedge`: indirilmiş Chromium yerine kurulu Chrome/Edge. aXet.code'da tarayıcı indirmesi izin kuralıyla
+  yasak olduğu için orada bu biçim kullanılır. Ölçüm (2026-09-22, normal kabuk = Claude Code Git Bash, aXet DIŞINDA,
+  `@playwright/test` 1.63.0, indirilmiş Chromium YOK, yerel HTTP'de UI5 sayfası): `--channel chrome` ve
+  `--channel msedge` çıkış 0; kanalsız kontrol çıkış 1 `Executable doesn't exist`. Bu koşucunun **aXet bash'inde**
+  koştuğu **ÖLÇÜLMEDİ**.
+- `--no-sandbox` seçeneği bilinçli olarak YOK: Playwright test runner `chromiumSandbox: true` verilmedikçe Chromium'a
+  `--no-sandbox`'ı kendisi ekler (playwright-core kaynağı; `DEBUG=pw:browser` başlatma satırında görüldü — normal
+  kabukta, chrome ve msedge). §4.6'daki
+  playwright-cli çökmesi bu farktan doğuyor olabilir — DOĞRULANMADI.
+- `--dry-run`: ön koşullara bakmadan komutu ve tarayıcı ayarını basar (çıkış 0); hiçbir şey koşmaz.
 - **Hesap kilidi önlemi:** testten önce **tek** kimlik denemesi (`/sap/opu/odata/sap/`); 401 → çıkış 3, **tekrar denemez**
   (tekrarlı başarısız logon kullanıcıyı kilitler). `retries: 0`.
 - Fiori dev proxy'si basic auth'u SAP'ye iletir → `httpCredentials` ile gerçek veri akışı test edilir (kaynakta ölçüldü).
@@ -98,6 +109,90 @@ sonrası 0). Gerçek OData ile son smoke yine kimlikli ortamda.
 - Geri alınamaz işlem (silme) guard'ı canlıda var ve güncel olduğu kanıtlanmadan denenmez (`delete-flow-ui.md` §5).
 - Her denemenin öncesi ve sonrası veri okunarak (OData GET / tablo okuma) "değişmedi" iddiası ölçülür.
 
+### 4.6 aXet.code içinde tarayıcıyı sürmek (playwright-cli)
+aXet'in yerleşik tarayıcı aracı yok; `bash` + `@playwright/cli` ile etkileşimli olarak açılır, tıklanır, konsol/ağ okunur,
+ekran görüntüsü `view` ile modele gösterilir. **Ölçüm:** 2026-09-22, aXet.code 1.3.0 (Windows), `@playwright/cli`
+0.1.21, kurulu Chrome ve Edge. Kanıt yöntemi: tıklama anında üretilen rastgele işaret, **sunucu erişim logunda**
+görüldü (modelin beyanına dayanılmadı). Yeni sürümde yeniden ölçülmeden güvenilmez.
+
+**Neler ölçüldü (aXet içinde çalıştı):** arka planda yerel HTTP sunucusu + `job_kill` ile kapatma · `open` (config ile) ·
+`snapshot` · `find` · ref ile `click` · `console` · `requests` · `eval` · `close` · `view` ile PNG okuma ·
+CDP `attach`/`goto`/`detach` · UI5 `sap.m.Button` için hem `click` hem `firePress()`.
+
+**Adımlar**
+1. **Kurulum (bir kez, proje içinde, kullanıcıya söyleyerek; global değil):** npm workspace kökünde (`ui/`)
+   `npm install --save-dev @playwright/cli@0.1.21`. Tarayıcı **indirilmez**: `install-browser` aXet'in izin kuralıyla
+   reddedildi (ölçüldü) ve gerekmez; kurulu Chrome/Edge kullanılır. `npx playwright-cli install` da gerekmez
+   (bir denemede `ffmpeg` indirdi).
+2. **Config (ZORUNLU):** çalışma klasöründe `.playwright/cli.config.json`:
+   ```json
+   {"browser":{"browserName":"chromium","launchOptions":{"channel":"chrome","args":["--no-sandbox"]}}}
+   ```
+   Edge için `"channel":"msedge"`. `%sap-ui5-user-guide`'daki `kd_ortam.py config --proje <dizin> --no-sandbox`
+   aynı dosyayı yazar. **Neden:** aXet bash'inde config'siz `open` → `Error: Session closed` ya da
+   `Error: Target crashed`. `--browser chrome` / `--browser msedge` tek başına düzeltmedi. Aynı komut normal kabukta
+   açılıyor. `--no-sandbox` içeren config ile Chrome'da ve Edge'de açıldı. playwright-cli Windows'ta her kanalda
+   sandbox'ı açık başlatır (kaynak: playwright-core `validateBrowserConfig` Windows'ta koşulsuz `chromiumSandbox = true`;
+   kanala bağlı ifade yalnız Linux dalında). Süreç komut satırında `--no-sandbox` yok — normal kabukta (aXet DIŞINDA)
+   ölçüldü. `open --browser chrome|msedge` config'teki `args`'ı korur (normal kabukta ölçüldü). aXet bash'i kısıtlı bir Windows job içinde koşuyor; çökmenin sebebinin bu olduğu **DOĞRULANMADI**
+   (`--no-sandbox` ile düzelmesiyle yalnız tutarlı). `--no-sandbox` süreç izolasyonunu kapatır: **yalnız yerel/güvenilir
+   sayfa**.
+3. **Sunucuyu başlat:** aXet `bash` aracını **arka plan** özelliğiyle çağır (`run_in_background: true`; `&` kullanma).
+   Araç bir `shell_id` döner; durum/log `job_output`. Adresi `127.0.0.1:<port>` yaz (`localhost` IPv6'ya çözülüp başka
+   sürece gidebilir). Ölçülen sunucu `python -m http.server <port> --bind 127.0.0.1 --directory <klasör>` (OpenUI5
+   CDN'li sayfa). `npm start` / `fiori run` / `ui5 serve` ile gerçek uygulamanın aXet'te arka planda açılması
+   **ÖLÇÜLMEDİ** (komutlar: `deploy-and-local-run.md` §1).
+4. **Tarayıcı akışı** (her satır ayrı `bash` çağrısı olabilir; aynı `axet-code run` içinde oturum yaşar):
+   ```bash
+   export NO_UPDATE_NOTIFIER=1
+   PW="npx playwright-cli -s=ui"          # -s=<ad> her komutta; başka oturumla karışmasın
+   $PW open --config=.playwright/cli.config.json http://127.0.0.1:<port>/index.html
+   $PW snapshot                            # rol + ad + ref (e1, e2 …). UI5 async: kontrol yoksa bir kez daha snapshot
+   $PW find "Kaydet"                       # uzun ağaçta ref bulmak için
+   $PW click e3                            # ref ile. `click -e=e3` YANLIŞ → "Unknown option: --e" (ölçüldü)
+   $PW console error                       # konsol; argümansız `console` ölçüldü, seviye argümanı --help'ten
+   $PW requests                            # ağ istekleri; başarısızlar durum koduyla ([404] vb.)
+   $PW eval "() => { sap.ui.getCore().byId('<id>').firePress(); return 'ok'; }"   # UI5 API (ölçüldü)
+   $PW screenshot --filename=ekran.png     # sonra aXet `view ekran.png`
+   $PW close
+   ```
+   `open` için `--config` açıkça verilir (ölçülen biçim bu; `--help` varsayılan yolun da bu dosya olduğunu yazar).
+   Sonunda sunucuyu `job_kill <shell_id>` ile kapat (ölçülen çıktı: `Background shell <id> terminated successfully`).
+5. **UI5 tıklaması:** `sap.m.Button`'da `click` press'i tetikledi, `eval` ile `firePress()` da tetikledi (ölçüldü).
+   Diğer kontroller (ikon butonu, `sap.ui.table` satırı, SmartField, F4) **ÖLÇÜLMEDİ** → `click` sonuç vermezse §4.2'deki
+   `firePress()` / controller çağrısı yedeği kullanılır; durum §4.3 gibi modelden sayıyla okunur.
+6. **Görsel kontrol:** `view` bir PNG'yi modele görüntü olarak verir (ölçüldü: tek görüntü, büyük puntolu bir sayı
+   doğru okundu). Küçük yazı ya da yoğun UI ekranının okunma kalitesi **ÖLÇÜLMEDİ**. aXet içinde `screenshot` komutunun
+   kendisi **ÖLÇÜLMEDİ** (ölçülen PNG normal kabukta playwright-cli ile alınmıştı; komut normal kabukta ölçülüdür,
+   `%sap-ui5-user-guide` → `kesif-playwright-cli.md`).
+
+**CDP yolu (kullanıcının açık/oturum açılmış tarayıcısı)** — Chrome aXet'in **dışında**, ayrı bir geçici profille başlatılır
+(kullanıcının kendi profili kullanılmaz):
+```bash
+chrome.exe --headless=new --remote-debugging-port=9222 --user-data-dir=<geçici-profil>    # aXet dışında
+npx playwright-cli -s=c attach --cdp=http://127.0.0.1:9222
+npx playwright-cli -s=c goto <url>   # … snapshot / click / console / requests …
+npx playwright-cli -s=c detach       # Chrome'u kapatmaz
+```
+- `--headless=new` ile aXet içinden attach → goto → click → requests → detach çalıştı. Dışarıda başlatılan Chrome aXet'in
+  job'ında olmadığı için `--no-sandbox` gerekmedi.
+- Görünür (headed) pencere arkada/örtülü kalınca sayfa `document.visibilityState = "hidden"` oldu ve `click`
+  "visible, enabled and stable" beklerken zaman aşımına düştü — normal kabukta da aynı. Çare: `--headless=new`, pencereyi
+  öne almak ya da `eval` ile JS tıklaması.
+- aXet'in CDP Chrome'unu **kendisinin başlatması ÖLÇÜLMEDİ** (oturum sonunda süreçlerin öldürülmesi nedeniyle sorunlu
+  olması beklenir).
+
+**Sınırlar**
+- Tarayıcı oturumu `axet-code run` bitince ölür (ölçüldü: `list` → `(no browsers)`). Aynı `run` içinde ardışık `bash`
+  çağrıları arasında yaşar. Etkileşimli TUI oturumundaki ömrü **ÖLÇÜLMEDİ**.
+- `file:` URL'leri engelli (`Access to "file:" protocol is blocked`) → daima yerel HTTP sunucusu.
+- `.playwright-cli/` klasörüne snapshot ve konsol logları yazılır (sayfa metni içerir) → `.gitignore`'a ekle.
+- aXet bash'inde `netstat` engelli (`command is not allowed for security reasons`); port kontrolü için başka yol
+  (`curl` vb.) aXet'te **denenmedi**.
+- Model "tıkladım, çalıştı" diyebilir: kanıt sunucu logu, `requests` çıktısı, model verisi ya da `view` ile bakılan
+  görüntüdür.
+- `%sap-ui5-user-guide`'ın ekran çekim betiği ve bu dosyanın `ui-smoke` koşucusu aXet'te **ÖLÇÜLMEDİ**.
+
 ## 5. Zararsız konsol gürültüsü — kovalanmaz
 Build yapılmadan dev modda:
 - `Component-preload.js` 404
@@ -110,8 +205,9 @@ Yalnız gerçek `Error` / kırmızı stack incelenir. Smoke spec'indeki IGNORE l
 ---
 
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
-- Kaynakta "runtime gate aracı yalnız playwright-cli" kararı vardı; aXet'te bu CLI kurulu değil ve genel skill'i
-  alınmadı. Yerine Node Playwright tabanlı `scripts/ui-smoke/` (proje içi kurulum) + elle konsol kontrolü.
+- Kaynakta "runtime gate aracı yalnız playwright-cli" kararı vardı; aXet'te gate Node Playwright tabanlı
+  `scripts/ui-smoke/` (proje içi kurulum) + elle konsol kontrolüdür. playwright-cli etkileşimli hata ayıklama için
+  §4.6'daki ölçülmüş reçeteyle kullanılır (proje içi kurulum; genel skill'i alınmadı).
 - Kaynak koşucu kimliği proje bağlantı dosyasından okuyordu; aXet'te geliştiricinin ortam değişkeninden.
 - Kaynaktaki özel bir akış spec'i (müşteri sevkiyat ekranı) ve yardımcı self-test'i alınmadı.
 - Lider/alt ajan rol ayrımı (UI'ı kim sürer) aXet'te yok; kural "kanıtsız done kabul edilmez" olarak kaldı.

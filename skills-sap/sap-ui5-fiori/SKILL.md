@@ -108,6 +108,8 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 - **Yap:** `scripts/ui-smoke/run_ui_smoke.py --port <port>` (Playwright proje içi kuruluysa; kurulumu kullanıcı onaylar)
   ya da kullanıcıyla elle konsol + ana akış. Ölçüm model API'siyle ve sayıyla (`firePress`, `getModel().getData()`,
   `getSelectedIndices().length`); DOM satır sayısı ya da `click()` sonucu kanıt değil.
+- aXet içinde tarayıcıyı sürmek (playwright-cli, `--no-sandbox` config, arka plan sunucu, `view` ile ekran görüntüsü,
+  CDP): runtime-verification §4.6 — ölçülmüş reçete ve ölçülmeyenler orada. Smoke'ta `--channel chrome|msedge`.
 
 ## Referanslar, şablonlar ve script'ler
 | Dosya | İçerik |
@@ -117,7 +119,7 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 | `references/list-grid-alv.md` | grid kararı ve reddedilenler, grid beş parça, kişiselleştirme util sözleşmesi (kolonlar/varyant/Excel), grid seçimi ve dialog, SELECT-OPTIONS filtre ekranı + `_parseSearchTerm`, m.Table istisnası |
 | `references/delete-flow-ui.md` | seçim bayatlaması, pending guard = save payload'ı, sıralı `remove` + kapanış tuzağı, mesaj/i18n, minimum runtime testi |
 | `references/deploy-and-local-run.md` | lokal çalıştırma, popup iki tuzak (flex ↔ hesap kilidi), PID ile kapatma, `ui5-deploy.yaml`, `deploy_ui.py` akışı ve kullanıcı OK kapısı, env kimlik, elle komut, deploy hataları, statik varlık doğrulaması, önerilen izin kuralları |
-| `references/runtime-verification.md` | dört katman, statik kontroller ve KAPSAM okuma, done kriteri, Playwright smoke, `firePress`/model API ölçümü, backend'siz mekanizma teyidi, test verisi kuralı, zararsız konsol gürültüsü |
+| `references/runtime-verification.md` | dört katman, statik kontroller ve KAPSAM okuma, done kriteri, Playwright smoke, aXet içinde playwright-cli reçetesi (§4.6), `firePress`/model API ölçümü, backend'siz mekanizma teyidi, test verisi kuralı, zararsız konsol gürültüsü |
 | `references/fiori-elements-ux.md` | UI yaklaşımı kararı, zorunlu UX kuralları ve yapma listesi, on ilke, mesajlar, durum gösterimi, tema, erişilebilirlik, bilinen çelişkiler (`sap.f`, form yerleşimi, toast), Fiori Elements annotation'ları, tasarım kontrol listesi |
 | `references/checklists.md` | oluşturma 6 faz + FE inceleme listesi; her satırda otomatik karşılık (script ya da `yok`) |
 | `references/known-errors-ui5.md` | belirti → bölüm indeksi |

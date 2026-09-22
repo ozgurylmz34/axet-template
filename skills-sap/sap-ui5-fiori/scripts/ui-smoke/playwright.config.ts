@@ -12,6 +12,16 @@ const SAP_PASS = process.env.SAP_PASS || '';
 // portunda koşarsa yanlış blok üretir. Uygulamaya özel spec --spec ile AÇIKÇA seçilir.
 const DEFAULT_SPEC = 'ui.smoke.spec.ts';
 
+// Tarayıcı seçimi (run_ui_smoke.py --channel yazar; verilmezse eski davranış aynen kalır):
+//   SMOKE_BROWSER_CHANNEL = chrome | msedge → indirilmiş Chromium yerine KURULU Chrome/Edge (tarayıcı indirmesi gerekmez;
+//   aXet.code izin kuralları install-browser'ı yasaklar).
+// '--no-sandbox' için ayar YOK, çünkü gerekmiyor: playwright-core (1.63.0) `chromiumSandbox: true` verilmedikçe
+// Chromium'a '--no-sandbox'u KENDİSİ ekler (coreBundle.js; DEBUG=pw:browser başlatma satırında görüldü — normal
+// kabukta, aXet DIŞINDA, --channel chrome ve msedge ile; 2026-09-22).
+// aXet bash'indeki playwright-cli çökmesi (config'siz `open` → "Session closed") bu yüzden bu koşucuda beklenmez —
+// ama bu koşucunun aXet'te çalıştığı ÖLÇÜLMEDİ.
+const CHANNEL = process.env.SMOKE_BROWSER_CHANNEL || undefined;
+
 export default defineConfig({
   testDir: '.',
   testMatch: process.env.SMOKE_SPEC ? [process.env.SMOKE_SPEC] : [DEFAULT_SPEC],
@@ -21,6 +31,7 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     headless: true,
+    channel: CHANNEL,
     ignoreHTTPSErrors: true,
     httpCredentials: SAP_USER ? { username: SAP_USER, password: SAP_PASS } : undefined,
   },

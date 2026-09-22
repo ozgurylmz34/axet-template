@@ -6,6 +6,7 @@ Sahte uygulama dizinleri repo DIŞINDA geçici klasörde kurulur; tarayıcı aç
 import importlib.util
 import json
 import os
+import re
 import unittest
 from unittest import mock
 
@@ -149,11 +150,100 @@ class KdOrtamCheckTest(unittest.TestCase):
             r = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
             self.assertIn("127.0.0.1", r.stdout)
             self.assertIn("güvenlik duvarı", r.stdout)
-            self.assertRegex(r.stdout, r"BİLGİ\s+cli.config.json \(Chrome\)\s+YOK")
+            self.assertRegex(r.stdout, r"BİLGİ\s+cli.config.json kanalı\s+YOK")
             self.assertIn("varsayılanı zaten chromium + kanal chrome", r.stdout)
             call_main(kd_ortam.main, ["config", "--proje", app])
             r2 = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
-        self.assertRegex(r2.stdout, r"BİLGİ\s+cli.config.json \(Chrome\)\s+Chrome kanalına sabit")
+        self.assertRegex(r2.stdout, r"BİLGİ\s+cli.config.json kanalı\s+Chrome kanalına sabit")
+
+    def test_check_msedge_gecerli_secim_ve_sandbox_dosyadan(self):
+        # `config --kanal msedge [--no-sandbox]` ile yazılan dosya check'te "sabit DEĞİL" sayılmamalı; sandbox satırı
+        # sabit metin değil, dosyadaki launchOptions.args'ı yansıtmalı.
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            r0 = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+            call_main(kd_ortam.main, ["config", "--proje", app, "--kanal", "msedge"])
+            r1 = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+            call_main(kd_ortam.main, ["config", "--proje", app, "--kanal", "msedge", "--no-sandbox"])
+            r2 = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+            yaz_json(os.path.join(app, ".playwright", "cli.config.json"),
+                     {"browser": {"launchOptions": {"channel": "chrome", "executablePath": "C:/x/chrome.exe"}}})
+            r3 = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+        self.assertRegex(r0.stdout, r"BİLGİ\s+cli.config.json sandbox\s+config YOK → --no-sandbox yok — aXet")
+        self.assertRegex(r1.stdout, r"BİLGİ\s+cli.config.json kanalı\s+Edge kanalına sabit")
+        self.assertNotIn("sabit DEĞİL", r1.stdout)
+        self.assertRegex(r1.stdout, r"BİLGİ\s+cli.config.json sandbox\s+launchOptions.args'ta --no-sandbox YOK — aXet")
+        self.assertRegex(r2.stdout, r"BİLGİ\s+cli.config.json kanalı\s+Edge kanalına sabit")
+        self.assertRegex(r2.stdout, r"BİLGİ\s+cli.config.json sandbox\s+launchOptions.args'ta --no-sandbox VAR")
+        self.assertRegex(r3.stdout, r"BİLGİ\s+cli.config.json kanalı\s+Chrome'a da Edge'e de sabit DEĞİL")
+        self.assertIn("--zorla", r3.stdout)
+
+    def test_check_msedge_sandbox_onerisi_kanali_korur_ve_calisir(self):
+        # v0.5.3 bug gate: Edge'e sabit dosyada check'in önerdiği sandbox komutu `--kanal msedge` taşımalı; önerilen
+        # komut AYNEN koşulunca rc 0 olmalı ve dosyaya --no-sandbox eklenmeli (eskiden rc 2 'farklı içerikli').
+        import re
+        import shlex
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            call_main(kd_ortam.main, ["config", "--proje", app, "--kanal", "msedge"])
+            r = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+            m = re.search(r"cli.config.json sandbox.*?`python kd_ortam.py (config [^`]*)`", r.stdout)
+            self.assertIsNotNone(m, r.stdout)
+            self.assertIn("--kanal msedge", m.group(1))
+            argv = [a if a != "<dizin>" else app for a in shlex.split(m.group(1))]
+            rc, out, _ = call_main(kd_ortam.main, argv)
+            with open(os.path.join(app, ".playwright", "cli.config.json"), encoding="utf-8") as fh:
+                veri = json.load(fh)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("EKLENDİ", out)
+        self.assertEqual(veri["browser"]["launchOptions"]["channel"], "msedge")
+        self.assertIn("--no-sandbox", veri["browser"]["launchOptions"]["args"])
+
+    def test_check_farkli_dosyada_sandbox_onerisi_calisir(self):
+        # Sınıf taraması (v0.5.3 bug gate): check'in önerdiği sandbox komutu hiçbir kanala sabit olmayan dosyada da
+        # koşulunca uygulanmalı (eskiden `--zorla`sız → rc 2 'EZİLMEDİ').
+        import shlex
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            yol = os.path.join(app, ".playwright", "cli.config.json")
+            yaz_json(yol, {"browser": {"browserName": "firefox"}})
+            r = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+            m = re.search(r"cli.config.json sandbox.*?`python kd_ortam.py (config [^`]*)`", r.stdout)
+            self.assertIsNotNone(m, r.stdout)
+            argv = [a if a != "<dizin>" else app for a in shlex.split(m.group(1))]
+            rc, out, err = call_main(kd_ortam.main, argv)
+            with open(yol, encoding="utf-8") as fh:
+                veri = json.load(fh)
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("--no-sandbox", veri["browser"]["launchOptions"]["args"])
+
+    def test_config_zorla_utf8_olmayan_dosyada_bayt_yedek(self):
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            yol = os.path.join(app, ".playwright", "cli.config.json")
+            os.makedirs(os.path.dirname(yol), exist_ok=True)
+            eski = '{"browser": {}}'.encode("utf-16")
+            with open(yol, "wb") as fh:
+                fh.write(eski)
+            rc, out, err = call_main(kd_ortam.main, ["config", "--proje", app, "--zorla"])
+            with open(yol + ".bak", "rb") as fh:
+                yedek = fh.read()
+            with open(yol, encoding="utf-8") as fh:
+                veri = json.load(fh)
+        self.assertEqual(rc, 0, out + err)
+        self.assertEqual(yedek, eski)
+        self.assertEqual(veri["browser"]["launchOptions"]["channel"], "chrome")
+
+    def test_check_utf8_olmayan_config_cokmez(self):
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            yol = os.path.join(app, ".playwright", "cli.config.json")
+            os.makedirs(os.path.dirname(yol), exist_ok=True)
+            with open(yol, "wb") as fh:
+                fh.write(b"\xff\xfe{\x00}\x00")
+            r = run_py("kd_ortam.py", "check", "--proje", app, env=temiz_env(t))
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertRegex(r.stdout, r"cli.config.json kanalı\s+okunamadı")
 
     def test_check_start_mock_uzak_erisim_uyarisi(self):
         with gecici_dizin() as t:
@@ -248,6 +338,55 @@ class KdOrtamConfigTest(unittest.TestCase):
             self.assertFalse(kd_ortam._uygun_mu(veri), veri)
         self.assertTrue(kd_ortam._uygun_mu(HEDEF))
 
+    def test_config_kanal_ve_no_sandbox_yazar(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            os.makedirs(app)
+            rc, out, err = call_main(kd_ortam.main, ["config", "--proje", app, "--kanal", "msedge", "--no-sandbox"])
+            with open(self._cfg(app), encoding="utf-8") as fh:
+                veri = json.load(fh)
+            rc2, out2, _ = call_main(kd_ortam.main, ["config", "--proje", app, "--kanal", "msedge", "--no-sandbox"])
+        self.assertEqual(0, rc, out + err)
+        self.assertEqual({"browser": {"browserName": "chromium",
+                                      "launchOptions": {"channel": "msedge", "args": ["--no-sandbox"]}}}, veri)
+        self.assertIn("süreç izolasyonunu kapatır", out)
+        self.assertEqual(0, rc2)
+        self.assertIn("ZATEN UYGUN", out2)
+
+    def test_config_no_sandbox_uygun_dosyaya_eklenir_digerleri_korunur(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            kullanici = {"outputDir": "x", "browser": {"launchOptions": {"channel": "chrome", "args": ["--lang=tr"]}}}
+            yaz_json(self._cfg(app), kullanici)
+            rc, out, err = call_main(kd_ortam.main, ["config", "--proje", app, "--no-sandbox"])
+            with open(self._cfg(app), encoding="utf-8") as fh:
+                veri = json.load(fh)
+            self.assertFalse(os.path.exists(self._cfg(app) + ".bak"))
+        self.assertEqual(0, rc, out + err)
+        self.assertIn("EKLENDİ", out)
+        self.assertEqual({"outputDir": "x", "browser": {"launchOptions": {"channel": "chrome",
+                                                                          "args": ["--lang=tr", "--no-sandbox"]}}}, veri)
+
+    def test_config_no_sandbox_farkli_kanalda_ezmez(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            eski = {"browser": {"launchOptions": {"channel": "msedge"}}}
+            yaz_json(self._cfg(app), eski)
+            rc, _, err = call_main(kd_ortam.main, ["config", "--proje", app, "--no-sandbox"])
+            with open(self._cfg(app), encoding="utf-8") as fh:
+                self.assertEqual(eski, json.load(fh))
+        self.assertEqual(2, rc)
+        self.assertIn("EZİLMEDİ", err)
+
+    def test_config_varsayilan_no_sandbox_istemez(self):
+        # --no-sandbox'lı dosya varsayılan koşumda da uygun sayılır (argüman silinmez); argümansız dosya
+        # --no-sandbox istendiğinde uygun sayılmaz.
+        ns = kd_ortam.hedef_config(no_sandbox=True)
+        self.assertTrue(kd_ortam._uygun_mu(ns))
+        self.assertFalse(kd_ortam._uygun_mu(HEDEF, no_sandbox=True))
+        self.assertFalse(kd_ortam._uygun_mu(HEDEF, kanal="msedge"))
+        self.assertEqual(HEDEF, kd_ortam.HEDEF_CONFIG)
+
     def test_config_bozuk_json_ezilmez(self):
         with gecici_dizin() as t:
             app = os.path.join(t, "app")
@@ -281,6 +420,19 @@ class KdOrtamSemaKaynakTest(unittest.TestCase):
                         'resolve(".playwright", "cli.config.json")'):
             self.assertIn(anahtar, kaynak)
         self.assertIn('"win32": `\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe`', kaynak)
+        # --no-sandbox seçeneğinin gerekçesi: playwright-cli Windows'ta HER kanalda sandbox'ı AÇIK başlatır.
+        # validateBrowserConfig'te kanala bağlı ifade yalnız linux dalında; Windows (else) dalı koşulsuz `= true`.
+        # Önek eşleşmesiyle sahte geçmesin diye dal yapısı bütün olarak ve `true;` ile sınırlı aranır.
+        bas = kaynak.find("async function validateBrowserConfig(")
+        self.assertNotEqual(-1, bas, "validateBrowserConfig kaynakta yok")
+        govde = kaynak[bas:bas + 2000]
+        self.assertRegex(govde, re.compile(
+            r'if \(process\.platform === "linux"\) \{\s*'
+            r'const \{ channel \} = browser\.launchOptions;\s*'
+            r'browser\.launchOptions\.chromiumSandbox = channel !== void 0 && channel !== "chromium"[^;]*;\s*'
+            r'\} else \{\s*browser\.launchOptions\.chromiumSandbox = true;\s*\}'))
+        # Başlatıcı: chromiumSandbox true değilse --no-sandbox eklenir (test runner farkının kaynağı).
+        self.assertRegex(kaynak, r'if \(options\.chromiumSandbox !== true\)\s*chromeArguments\.push\("--no-sandbox"\);')
 
 
 if __name__ == "__main__":

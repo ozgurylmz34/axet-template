@@ -165,6 +165,24 @@ class SemaTest(YayinTemeli):
                        yayin("v0.2.0", kalem("0.2.0-01", gerektirir=["0.1.0-01"])))
         self.assertEqual(0, self.dogrula(self.depo(iyi))[0])
 
+    def test_capraz_yayin_gerektirir_WARNING_cikisi_etkilemez(self):
+        """Z57: önceki yayının kalemine bağ şemaca geçerli (rc 0) ama bakımcıya WARNING basılır."""
+        veri = yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
+                        yayin("v0.2.0", kalem("0.2.0-01", gerektirir=["0.1.0-01"])))
+        rc, c = self.dogrula(self.depo(veri))
+        self.assertEqual(rc, 0, c)
+        self.assertIn("SORUN: 0", c)
+        self.assertIn("WARNING çapraz-yayın `gerektirir`: 0.2.0-01 (v0.2.0) → 0.1.0-01 (v0.1.0)", c)
+        self.assertIn("UYARI: 1", c)
+
+    def test_KONTROL_ayni_yayin_ici_gerektirir_WARNING_basmaz(self):
+        veri = yayinlar(yayin("v0.1.0", kalem("0.1.0-01"),
+                              kalem("0.1.0-02", gerektirir=["0.1.0-01"])))
+        rc, c = self.dogrula(self.depo(veri))
+        self.assertEqual(rc, 0, c)
+        self.assertNotIn("WARNING çapraz-yayın", c)
+        self.assertNotIn("UYARI:", c)
+
     def test_yayin_sirasi_tersse_fail(self):
         """Motor SON girdiyi en yeni sayar (scripts/guncelle.py:376) — sıra sözleşmedir."""
         bozuk = yayinlar(yayin("v0.2.0", kalem("0.2.0-01")),

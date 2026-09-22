@@ -42,7 +42,8 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
 
 1. **Ön kontrol.** `python $S/kd_ortam.py check --proje $APP` → eksik varsa yazdığı kurulum komutunu kullanıcıya göster,
    **onay almadan kurma** (çıkış 2 = eksik var). Sonra `python $S/kd_ortam.py config --proje $APP` → Playwright CLI
-   yapılandırması Chrome kanalına sabitlenir. ⛔ `install-browser` / `playwright install` **çalıştırılmaz** (yaklaşık
+   yapılandırması Chrome kanalına sabitlenir (aXet.code'da `--no-sandbox` ekle: onsuz `open` düştü, `tuzaklar.md`
+   T23). ⛔ `install-browser` / `playwright install` **çalıştırılmaz** (yaklaşık
    1 GB indirir; ölçüldü). Tarayıcı açılmıyorsa DUR ve kullanıcıya sor.
 2. **Mock ortamı.** Uygulamanın `ui5-mock.yaml`'ı **doğru servise** bakıyor mu (manifest `dataSources` ↔ `urlPath`),
    `metadata.xml` güncel mi → `python $S/mock_veri.py --metadata <metadata.xml> --cikti <mockdata klasörü>` ile
@@ -79,7 +80,7 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
 | `references/mock-ortam.md` | adım 2 | freestyle V2 uygulamada mock sunucu, doğru servis, veri dosyaları, değer yardımı verisi |
 | `references/gorsel-kontrol.md` | adım 6 | kare kontrol listesi, bulgu → yapılacak iş |
 | `references/tuzaklar.md` | takılınca | belirti → sebep → çözüm (ölçülmüş) |
-| `scripts/kd_ortam.py` | adım 1 | `check` (bağımlılık tablosu, eksikte kurulum komutu, çıkış 2) · `config` (Chrome'a sabit yapılandırma) |
+| `scripts/kd_ortam.py` | adım 1 | `check` (bağımlılık tablosu, eksikte kurulum komutu, çıkış 2) · `config` (Chrome'a sabit yapılandırma; `--kanal msedge`, `--no-sandbox`) |
 | `scripts/mock_veri.py` | adım 2 | metadata'dan her EntitySet için kurgusal Türkçe `<EntitySet>.json` (tohumlu, var olanı ezmez) |
 | `%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` | adım 5, 8, 9 | `capture_kd_screens.js` yapılandırması, HTML/PDF kurma, doğrulama tablosu |
 | `%sap-fs-ts-docs` → `references/kd-authoring.md` · `templates/KD-template.md` | adım 7 | KD bölümleri, alt ekran kuralı, içindekiler kuralı |

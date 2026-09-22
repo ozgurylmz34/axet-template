@@ -565,6 +565,136 @@ class SecTest(GuncelleTemel):
         self.assertIn("3-01", s["kalemler"], "2-01 ile 3-01 aynı pakette (doctor.py)")
 
 
+class SecCaprazYayinGerektirirTest(GuncelleTemel):
+    """Z57 — `gerektirir` bağı ÖNCEKİ yayında zaten karşılanmış kaleme işaret ediyorsa `sec` DUR
+    ETMEMELİ.
+
+    Ölçülen kusur (v0.5.2 CI yayın provası): v0.5.1 tüketicisi v0.5.2'ye `sec --hepsi` →
+    `DUR: 0.5.2-01 kalemi 0.5.1-01 kalemini gerektiriyor ama 0.5.1-01 seçili değil`. 0.5.1-01
+    zaten uygulanmıştı; `komut_plan` uygulanmış (`uygulanan.json`) ve içerilmiş (etiket HEAD'in
+    atası) yayınların kalemlerini plana HİÇ almıyor, `komut_sec` ise bağı yalnız seçim kümesinde
+    arıyordu ⇒ karşılanmış bağ "seçili değil" sayılıyordu.
+
+    Kurgu: v3'ün 3-05 kalemi v2'nin 2-01 kalemini gerektirir (çapraz-yayın bağı).
+    KONTROL GRUBU: 2-01 hiç karşılanmamışken (ne uygulandı ne içerildi) ve seçilmemişken `sec`
+    YİNE DUR etmeli — düzeltme bağ kontrolünü gevşetip körleştirmemeli. Plan `karsilanan`
+    alanını taşımıyorsa (eski motorun planı) fail-closed: DUR.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        yayinlar = json.loads(json.dumps(YAYINLAR))
+        for kalem in yayinlar["yayinlar"][1]["kalemler"]:
+            if kalem["id"] == "3-05":
+                kalem["gerektirir"] = ["2-01"]
+        self.f._yaz(self.f.public, {"guncelle/yayinlar.json":
+                                    json.dumps(yayinlar, ensure_ascii=False, indent=1) + "\n"})
+        self.git(self.f.public, "add", "-A")
+        self.git(self.f.public, "commit", "-q", "-m", "3-05 -> 2-01 capraz bag")
+        self.git(self.f.tuketici, "fetch", "-q", "--tags", "origin")
+
+    def _uygulanmis_2_01(self) -> None:
+        """2-01 önceki güncelleme turunda (v2) uygulanmış: dosya v2 içeriğinde + mühür."""
+        self.f.yerel_degistir("scripts/doctor.py", V2_DEGISIM["scripts/doctor.py"])
+        d = self.f.durum_dizini()
+        d.mkdir(exist_ok=True)
+        (d / "uygulanan.json").write_text(json.dumps(
+            {"surum": 1, "dosyalar": {"scripts/doctor.py": "v2"},
+             "kalemler": {"2-01": {"etiket": "v2", "durum": "uygulandi",
+                                   "zaman": "2026-01-02T00:00:00"}}},
+            ensure_ascii=False), encoding="utf-8")
+
+    def _plan_kalem_idleri(self) -> set[str]:
+        return {k["id"] for k in self.f.plan()["kalemler"]}
+
+    def test_uygulanmis_onceki_kalem_bagi_karsilar(self):
+        self._uygulanmis_2_01()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertNotIn("2-01", self._plan_kalem_idleri(),
+                         "kurgu: uygulanmış kalem plana girmemeli (yoksa test kusuru kurmuyor)")
+        r = self.f.calistir("sec", "--hepsi")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        s = json.loads((self.f.durum_dizini() / "secim.json").read_text(encoding="utf-8"))
+        self.assertIn("3-05", s["kalemler"])
+        self.assertNotIn("2-01", s["kalemler"], "karşılanmış kalem yeniden SEÇİLMEZ")
+
+    def test_icerilmis_yayinin_kalemi_bagi_karsilar(self):
+        """Taze klon v2'de: v2 etiketi HEAD'in atası ⇒ v2'nin kalemleri plana hiç girmez."""
+        self.git(self.f.tuketici, "reset", "-q", "--hard", "v2")
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertNotIn("2-01", self._plan_kalem_idleri(),
+                         "kurgu: içerilmiş yayının kalemi plana girmemeli")
+        r = self.f.calistir("sec", "--hepsi")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+
+    def test_KONTROL_karsilanmamis_ve_secilmemis_bag_yine_DUR(self):
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertIn("2-01", self._plan_kalem_idleri(), "kurgu: 2-01 bekleyen kalem olmalı")
+        r = self.f.calistir("sec", "--kalem", "3-05")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("2-01", self.cikti(r))
+
+    def test_KONTROL_plan_karsilanan_tasimiyorsa_fail_closed_DUR(self):
+        """Eski motorun ürettiği plan (alan yok) ⇒ karşılanmışlık ÖLÇÜLEMEZ ⇒ DUR."""
+        self._uygulanmis_2_01()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        yol = self.f.durum_dizini() / "plan.json"
+        plan = self.f.plan()
+        plan.pop("karsilanan", None)
+        yol.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        r = self.f.calistir("sec", "--hepsi")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("2-01", self.cikti(r))
+
+    # --- Z57 devamı (bug gate MEDIUM): `atlandi` mühürlü önkoşul ------------------------------------
+    # `uygulanan.json`'da `durum: atlandi` = kalem seçildi ama HİÇBİR dosyası doğrulanmadı
+    # (`_kapanis_git`) — ya `isaretle --karar ertelendi` ile ertelendi ya da yapılacak iş yoktu.
+    # Kayıt bu ikisini AYIRMAZ ({etiket, durum, zaman}). Bağ karşılanmış sayılır (DUR etmek bağımlıyı
+    # kalıcı kilitlerdi: atlandi kalem bir daha plana girmez) ama SESSİZ geçmemeli: UYARI + rc 0.
+    def _atlandi_2_01(self) -> None:
+        """2-01 önceki turda seçildi ama dosyası uygulanmadı (ertelendi): disk ESKİ içerikte."""
+        d = self.f.durum_dizini()
+        d.mkdir(exist_ok=True)
+        (d / "uygulanan.json").write_text(json.dumps(
+            {"surum": 1, "dosyalar": {},
+             "kalemler": {"2-01": {"etiket": "v2", "durum": "atlandi",
+                                   "zaman": "2026-01-02T00:00:00"}}},
+            ensure_ascii=False), encoding="utf-8")
+
+    def test_atlandi_onkosul_secimi_bozmaz_ama_UYARI_basar(self):
+        self._atlandi_2_01()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertNotIn("2-01", self._plan_kalem_idleri(),
+                         "kurgu: mühürlü (atlandi) kalem plana girmemeli")
+        self.assertEqual(self.f.plan().get("karsilanan_atlandi"), ["2-01"])
+        r = self.f.calistir("sec", "--kalem", "3-05")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        uyari = [s for s in self.cikti(r).splitlines() if s.startswith("UYARI:")]
+        self.assertEqual(len(uyari), 1, self.cikti(r))
+        for parca in ("3-05", "2-01", "atlandi", "diskte"):
+            self.assertIn(parca, uyari[0])
+
+    def test_KONTROL_uygulanmis_onkosul_UYARI_basmaz(self):
+        self._uygulanmis_2_01()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        self.assertEqual(self.f.plan().get("karsilanan_atlandi"), [])
+        r = self.f.calistir("sec", "--kalem", "3-05")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("UYARI:", self.cikti(r))
+
+    def test_KONTROL_plan_karsilanan_atlandi_tasimiyorsa_bos_kabul(self):
+        """Alan yoksa (Z57 ilk sürümünün planı) boş küme: seçim bozulmaz, uyarı basılamaz."""
+        self._atlandi_2_01()
+        self.assertEqual(self.hazirla_ve_planla().returncode, 0)
+        yol = self.f.durum_dizini() / "plan.json"
+        plan = self.f.plan()
+        plan.pop("karsilanan_atlandi", None)
+        yol.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        r = self.f.calistir("sec", "--kalem", "3-05")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("UYARI:", self.cikti(r))
+
+
 # =====================================================================================================
 # 5. UYGULA (otomatik vakalar)
 # =====================================================================================================

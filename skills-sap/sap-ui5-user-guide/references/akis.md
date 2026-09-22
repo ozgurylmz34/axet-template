@@ -32,6 +32,9 @@ python $S/kd_ortam.py config --proje $APP
   onay gelirse proje klasöründe koş, sonra `check`'i tekrarla. Script kendisi hiçbir şey kurmaz.
 - `config` `$APP/.playwright/cli.config.json`'u Chrome kanalına sabit yazar; tekrar koşmak zararsızdır. Farklı
   içerikli bir kullanıcı dosyası varsa `--zorla` olmadan ezmez — farkı kullanıcıya göster.
+- **aXet.code'da:** `config --proje $APP --no-sandbox` (Edge için `--kanal msedge --no-sandbox`). Bu argüman olmadan
+  aXet bash'inde `open` düştü, onunla açıldı (ölçüldü; sebep DOĞRULANMADI) → `tuzaklar.md` T23. Dosya zaten Chrome'a
+  sabitse yalnız argüman eklenir, diğer anahtarlara dokunulmaz.
 - **Çıkış ölçütü:** `check` çıkış 0 · `config` dosyası yerinde · KAPSAM satırı okundu (neye bakmadığını söyler).
 - ⛔ Bu adımda ya da sonrakilerde `install-browser` / `playwright install` yok (`tuzaklar.md` T1).
 
