@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -433,12 +434,36 @@ def sandbox_metni(proje, kanal=None, zorla=False, env=None):
     return "%s — %s" % (durum, sandbox_notu(kanal, zorla))
 
 
+# Z64 L4 (v0.5.5): Windows'ta os.replace, hedefi FILE_SHARE_DELETE'siz açık tutan bir süreç varken PermissionError
+# verir (Python'un kendi open()'ı, çoğu editör, virüs tarayıcı/indeksleyici böyle açar; eski open(yol, "w") geçerdi).
+# Kısa tekrar denemeler geçici tutucuyu bekler; kalıcı tutucuda metin dönülür (yarım dosya riski yerine).
+YAZ_BEKLEMELERI = (0.1, 0.2)  # saniye; toplam 3 deneme
+# os.replace yeni dosyanın özniteliklerini taşır → hedefin Hidden/System/NotContentIndexed'i düşerdi (ölçüldü).
+_KORUNAN_OZNITELIK = 0x2 | 0x4 | 0x2000  # FILE_ATTRIBUTE_HIDDEN | SYSTEM | NOT_CONTENT_INDEXED
+
+
+def _win_oznitelik(yol, yeni=None):
+    """Yalnız Windows: yeni None → dosya öznitelikleri (okunamazsa None); değilse yazar (başarı bool). POSIX'te None."""
+    if os.name != "nt":
+        return None
+    import ctypes  # noqa: PLC0415 — yalnız Windows yolunda
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    if yeni is None:
+        k32.GetFileAttributesW.restype = ctypes.c_uint32
+        ozn = k32.GetFileAttributesW(str(yol))
+        return None if ozn == 0xFFFFFFFF else ozn
+    return bool(k32.SetFileAttributesW(str(yol), ctypes.c_uint32(yeni)))
+
+
 def _yaz(yol, veri=None):
     """Başarıda None; OSError'da kullanıcıya basılacak metin (v0.5.4 Z59: traceback yerine HATA satırı).
     ATOMİK (v0.5.4 bug gate madde 3): aynı dizinde geçici dosyaya yazılır, fsync, sonra os.replace. Hangi adımda
     düşerse düşsün asıl dosyaya dokunulmamıştır (yarım dosya kalmaz) ve geçici dosya silinir. Salt-okunur hedef
     önceden reddedilir: os.replace POSIX'te salt-okunur dosyanın üstüne de yazabilirdi (dizin izni yeter); eski
-    `open(yol, "w")` davranışı korunur. Hedef bir sembolik bağsa bağın işaret ettiği dosya değiştirilir, bağ kalır."""
+    `open(yol, "w")` davranışı korunur. Hedef bir sembolik bağsa bağın işaret ettiği dosya değiştirilir, bağ kalır.
+    Windows (Z64 L4): hedefi başka bir süreç silme-paylaşımsız açık tutuyorsa os.replace YAZ_BEKLEMELERI ile tekrar
+    denenir; tutucu bırakmazsa metin döner (eski open("w") bu durumda yazardı — atomiklik uğruna bilinçli fark).
+    Hedefin Hidden/System/NotContentIndexed öznitelikleri yeni dosyaya taşınır; ReadOnly hedef zaten reddedilir."""
     metin = json.dumps(HEDEF_CONFIG if veri is None else veri, indent=2, ensure_ascii=False) + "\n"
     hedef = os.path.realpath(yol)
     dizin = os.path.dirname(hedef)
@@ -456,11 +481,23 @@ def _yaz(yol, veri=None):
             os.fsync(fh.fileno())
         if os.path.exists(hedef):
             shutil.copymode(hedef, gecici)  # mkstemp 0600 açar; kullanıcının dosya izni korunur
+            eski_ozn = _win_oznitelik(hedef)
+            if eski_ozn and eski_ozn & _KORUNAN_OZNITELIK:
+                yeni_ozn = _win_oznitelik(gecici)
+                if yeni_ozn is not None:
+                    _win_oznitelik(gecici, yeni_ozn | (eski_ozn & _KORUNAN_OZNITELIK))
         else:
             um = os.umask(0)
             os.umask(um)
             os.chmod(gecici, 0o666 & ~um)
-        os.replace(gecici, hedef)
+        for bekle in YAZ_BEKLEMELERI + (None,):
+            try:
+                os.replace(gecici, hedef)
+                break
+            except PermissionError:
+                if bekle is None or os.name != "nt":
+                    raise
+                time.sleep(bekle)
         gecici = None
     except OSError as exc:
         return "%s yazılamadı (%s: %s); dosyaya dokunulmadı." % (yol, type(exc).__name__, exc)

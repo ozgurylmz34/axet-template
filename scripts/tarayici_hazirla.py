@@ -13,7 +13,8 @@ Kullanıcıya soru SORMAZ ve çağıranı ASLA durdurmaz: her durumda çıkış 
   TARAYICI: ATLANDI — …   ön koşul yok (kurulu Chrome/Edge yok · node/npm yok · paylaşılan modül yok · kapalı)
   TARAYICI: EKSİK — …     denendi ama bitmedi (npm install başarısız · duman testi düştü)
 Çıkış 2 yalnız kullanım hatasında. Sınırlı sürede döner: her alt süreç (npm install ≤ NPM_ZAMAN, duman testi adımı
-≤ DUMAN_ZAMAN) zaman aşımında SÜREÇ AĞACIYLA birlikte öldürülür (`sinirli_calistir`).
+≤ DUMAN_ZAMAN) zaman aşımında SÜREÇ AĞACIYLA birlikte öldürülür (`sinirli_calistir`); adımlar ayrıca TOPLAM_ZAMAN
+bütçesini paylaşır, en kötü toplam EN_KOTU_SURE < install.py TARAYICI_ZAMAN (Z64 L3; test sabitler).
 
 Yaptığı (yalnız bunlar; iki onaylı yazma yeri):
   1. Kurulu Chrome'u (yoksa Edge'i) bulur — tarayıcı İNDİRMEZ (npm'e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 verilir).
@@ -44,6 +45,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -56,6 +58,23 @@ CLI_JS_GORELI = Path("node_modules") / "@playwright" / "cli" / "playwright-cli.j
 KAPAT_ORTAM = "AXET_TARAYICI_HAZIRLA"  # "0" → hiçbir şey yapmadan ATLANDI (testler ve istemeyen kullanıcı için)
 NPM_ZAMAN = 600
 DUMAN_ZAMAN = 120
+# Z64 L3 (v0.5.5): patolojik yolda (her adım sınırına kadar sürer) toplam ≈920 sn ölçüldü (simüle en kötü ≈1038) >
+# install.py'nin 900 sn'si → install betiği öldürürdü ve `TARAYICI:` satırı hiç basılmazdı.
+# Adımlar ortak bir bütçeden süre alır; `close` bütçe bitse de KAPANIS_ASGARI kadar denenir (oturum kapansın).
+# En kötü toplam = bütçe + zaman aşımına düşen adımın ağaç öldürmesi + close (asgari + öldürme) + süreç açılışı.
+# install.py TARAYICI_ZAMAN bundan büyük olmalı (testle sabit).
+TASKKILL_ZAMAN = 30
+BEKLE_ZAMAN = 10
+OLDURME_PAYI = TASKKILL_ZAMAN + BEKLE_ZAMAN  # _agaci_oldur'un en kötü süresi
+TOPLAM_ZAMAN = 780
+KAPANIS_ASGARI = 15
+BASLANGIC_PAYI = 60  # python açılışı + modül yükleme (bütçe hazirla() başında başlar)
+EN_KOTU_SURE = TOPLAM_ZAMAN + 2 * OLDURME_PAYI + KAPANIS_ASGARI + BASLANGIC_PAYI
+# Z64 L1: çıktı/çalışma dizini önekleri — kopuk bir torun (playwright-cli oturum süreci) dosyayı tutarsa Windows'ta
+# silinemez ve kalır (ölçüldü). Sonraki koşumlar YALNIZ bu öneklerle başlayan ve BAYAT_YAS'tan eski DİZİNLERİ süpürür.
+CIKTI_ONEK = "axet-cikti-"
+DUMAN_ONEK = "axet-tarayici-"
+BAYAT_YAS = 24 * 3600
 UYUMSUZ_HAZIR = "HAZIR (aXet için global config uyumsuz)"
 
 KAPSAM = ("KAPSAM (SCOPE): tarayici_hazirla — bakılanlar: kurulu Chrome/Edge yürütülebilir dosyası (bilinen kurulum "
@@ -180,7 +199,7 @@ def _agaci_oldur(p: subprocess.Popen) -> None:
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], stdin=subprocess.DEVNULL,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=TASKKILL_ZAMAN, check=False)
         else:
             os.killpg(p.pid, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
@@ -190,9 +209,48 @@ def _agaci_oldur(p: subprocess.Popen) -> None:
     except OSError:
         pass
     try:
-        p.wait(timeout=10)
+        p.wait(timeout=BEKLE_ZAMAN)
     except subprocess.TimeoutExpired:
         pass
+
+
+def bayatlari_supur(dizin: str | None = None, simdi: float | None = None) -> list[str]:
+    """Önceki koşumlardan kalmış `axet-cikti-*` / `axet-tarayici-*` DİZİNLERİNİ siler (Z64 L1). Yalnız kendi
+    öneklerimiz, yalnız dizin (bağ/junction değil), yalnız BAYAT_YAS'tan eski (taze olan eşzamanlı bir koşumun
+    olabilir). Dönüş: hâlâ silinemeyenler (tutan süreç yaşıyor). Hata yutulur — temizlik akışı durdurmaz."""
+    dizin = dizin or tempfile.gettempdir()
+    simdi = time.time() if simdi is None else simdi
+    kalan: list[str] = []
+    try:
+        girdiler = list(os.scandir(dizin))
+    except OSError:
+        return kalan
+    for g in girdiler:
+        if not g.name.startswith((CIKTI_ONEK, DUMAN_ONEK)):
+            continue
+        try:
+            if (not g.is_dir(follow_symlinks=False) or getattr(g, "is_junction", lambda: False)()
+                    or simdi - g.stat(follow_symlinks=False).st_mtime < BAYAT_YAS):
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(g.path, ignore_errors=True)
+        if os.path.lexists(g.path):
+            kalan.append(g.path)
+    return kalan
+
+
+def _sure(adim: float, son: float | None, asgari: float = 0.0) -> float:
+    """Adımın zaman aşımı: kendi sınırı ile ortak bütçenin (son = time.monotonic() tabanlı bitiş) kalanının küçüğü.
+    asgari > 0 ise bütçe bitmiş olsa da o kadar verilir (close). Bütçe bitti ve asgari yoksa TimeoutExpired."""
+    if son is None:
+        return adim
+    kalan = son - time.monotonic()
+    if asgari:
+        return min(adim, max(asgari, kalan))
+    if kalan <= 0:
+        raise subprocess.TimeoutExpired("tarayici_hazirla (toplam bütçe)", 0)
+    return min(adim, kalan)
 
 
 def sinirli_calistir(komut: list, *, env: dict | None = None, cwd: str | None = None,
@@ -201,8 +259,10 @@ def sinirli_calistir(komut: list, *, env: dict | None = None, cwd: str | None = 
     ① zaman aşımında süreç AĞACI öldürülür (`_agaci_oldur`) ② çıktı boruya değil geçici DOSYAYA yazılır ve
     `wait(timeout)` beklenir: boruyu miras alan bir torun (npm'in node'u, playwright-cli'nin oturum süreci) yaşasa
     bile dönüş, borunun kapanmasına bağlı değildir. Zaman aşımında `subprocess.TimeoutExpired` fırlatır; çalıştırılamazsa
-    `OSError`. Metin UTF-8 (hatalı bayt → �)."""
-    dizin = tempfile.mkdtemp(prefix="axet-cikti-")
+    `OSError`. Metin UTF-8 (hatalı bayt → �). Kesinti (Ctrl+C = KeyboardInterrupt) da ağacı öldürür (Z64 L2: POSIX'te
+    çocuk kendi oturumunda olduğu için terminalin SIGINT'ini almaz, yetim kalırdı). Başta bayat kalıntılar süpürülür."""
+    bayatlari_supur()
+    dizin = tempfile.mkdtemp(prefix=CIKTI_ONEK)
     try:
         cikti_yol, hata_yol = os.path.join(dizin, "out"), os.path.join(dizin, "err")
         ek = {} if os.name == "nt" else {"start_new_session": True}
@@ -210,7 +270,7 @@ def sinirli_calistir(komut: list, *, env: dict | None = None, cwd: str | None = 
             p = subprocess.Popen(komut, stdin=subprocess.DEVNULL, stdout=fo, stderr=fe, env=env, cwd=cwd, **ek)
             try:
                 rc = p.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
+            except BaseException:  # TimeoutExpired, KeyboardInterrupt, SystemExit — hepsinde ağaç yetim kalmasın
                 _agaci_oldur(p)
                 raise
         with open(cikti_yol, "rb") as fo, open(hata_yol, "rb") as fe:
@@ -218,12 +278,18 @@ def sinirli_calistir(komut: list, *, env: dict | None = None, cwd: str | None = 
             err = fe.read().decode("utf-8", errors="replace")
         return subprocess.CompletedProcess(komut, rc, out, err)
     finally:
-        shutil.rmtree(dizin, ignore_errors=True)  # dosyayı hâlâ tutan bir torun varsa silinemez — kalıntı zararsız
+        shutil.rmtree(dizin, ignore_errors=True)  # tutan bir torun varsa silinemez → sonraki koşum süpürür (L1)
 
 
 # --------------------------------------------------------------------------- adımlar
 
-def npm_kur(kok: Path, npm: str, surum: str, env: dict, calistir=None) -> tuple[bool, str]:
+def _bitmedi(exc: subprocess.TimeoutExpired) -> str:
+    if not exc.timeout:
+        return "toplam süre bütçesi (%d sn) doldu" % TOPLAM_ZAMAN
+    return "%d sn'de bitmedi" % exc.timeout
+
+
+def npm_kur(kok: Path, npm: str, surum: str, env: dict, calistir=None, son: float | None = None) -> tuple[bool, str]:
     dizin = arac_dizini(kok)
     dizin.mkdir(parents=True, exist_ok=True)
     gi = dizin.parent / ".gitignore"
@@ -234,9 +300,9 @@ def npm_kur(kok: Path, npm: str, surum: str, env: dict, calistir=None) -> tuple[
              "@playwright/cli@%s" % surum]
     calistir = calistir or sinirli_calistir
     try:
-        r = calistir(komut, env=npm_env, timeout=NPM_ZAMAN)
-    except subprocess.TimeoutExpired:
-        return False, "npm install %d sn'de bitmedi (ağ/proxy?)" % NPM_ZAMAN
+        r = calistir(komut, env=npm_env, timeout=_sure(NPM_ZAMAN, son))
+    except subprocess.TimeoutExpired as exc:
+        return False, "npm install %s (ağ/proxy?)" % _bitmedi(exc)
     except OSError as exc:
         return False, "npm çalıştırılamadı: %s" % exc
     if r.returncode != 0:
@@ -272,16 +338,16 @@ def config_hazirla(kd, kanal: str, env=None) -> tuple[str, str]:
                                                                  yol))
 
 
-def duman_testi(kok: Path, node: str, env: dict, calistir=None) -> tuple[bool, str]:
+def duman_testi(kok: Path, node: str, env: dict, calistir=None, son: float | None = None) -> tuple[bool, str]:
     isaret = "AXET-HAZIRLIK-" + secrets.token_hex(4)
     oturum = "axet-hazirlik-%d" % os.getpid()
-    cwd = tempfile.mkdtemp(prefix="axet-tarayici-")
+    cwd = tempfile.mkdtemp(prefix=DUMAN_ONEK)
     duman_env = dict(env, NO_UPDATE_NOTIFIER="1")
     temel = [node, str(cli_js(kok)), "-s=" + oturum]
     calistir = calistir or sinirli_calistir
 
-    def kos(*args):
-        return calistir(temel + list(args), env=duman_env, cwd=cwd, timeout=DUMAN_ZAMAN)
+    def kos(*args, asgari=0.0):
+        return calistir(temel + list(args), env=duman_env, cwd=cwd, timeout=_sure(DUMAN_ZAMAN, son, asgari))
     try:
         try:
             r = kos("open", "data:text/html,<h1>%s</h1>" % isaret)
@@ -295,11 +361,11 @@ def duman_testi(kok: Path, node: str, env: dict, calistir=None) -> tuple[bool, s
             return True, "duman testi geçti (open → snapshot'ta işaret → close)"
         finally:
             try:
-                kos("close")
+                kos("close", asgari=KAPANIS_ASGARI)
             except Exception:  # noqa: BLE001 — kapanış hatası sonucu değiştirmez
                 pass
-    except subprocess.TimeoutExpired:
-        return False, "duman testi %d sn'de bitmedi" % DUMAN_ZAMAN
+    except subprocess.TimeoutExpired as exc:
+        return False, "duman testi %s" % _bitmedi(exc)
     except OSError as exc:
         return False, "duman testi çalıştırılamadı: %s" % exc
     finally:
@@ -316,6 +382,7 @@ def hazirla(kok: Path, env: dict | None = None, calistir=None, which=None) -> tu
     env = dict(os.environ) if env is None else env
     if env.get(KAPAT_ORTAM) == "0":
         return "ATLANDI", ["%s=0 (tarayıcı hazırlığı kapalı)" % KAPAT_ORTAM]
+    son = time.monotonic() + TOPLAM_ZAMAN  # ortak bütçe (Z64 L3)
     try:
         kd = kd_yukle(kok)
     except Exception as exc:  # noqa: BLE001 — teşhis
@@ -335,7 +402,7 @@ def hazirla(kok: Path, env: dict | None = None, calistir=None, which=None) -> tu
     if tam_kurulu(kok, surum):
         parca.append("playwright-cli %s zaten kurulu" % surum)
     else:
-        ok, metin = npm_kur(kok, npm, surum, env, calistir)
+        ok, metin = npm_kur(kok, npm, surum, env, calistir, son=son)
         parca.append(metin)
         if not ok:
             return "EKSİK", parca
@@ -344,7 +411,7 @@ def hazirla(kok: Path, env: dict | None = None, calistir=None, which=None) -> tu
     if etiket == "hata":  # --no-sandbox'sız aXet bash'inde `open` düşer (ölçüldü) → duman testi anlamsız
         return "EKSİK", parca
     parca += ["UYARI: " + u for u in kd.ortam_uyarilari(env)]
-    ok, metin = duman_testi(kok, node, env, calistir)
+    ok, metin = duman_testi(kok, node, env, calistir, son=son)
     parca.append(metin)
     if not ok:
         return "EKSİK", parca

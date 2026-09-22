@@ -594,6 +594,66 @@ class KdOrtamConfigTest(unittest.TestCase):
                 self.assertEqual(b'{\n  "x": 2\n}\n', fh.read())  # LF, BOM yok
             self.assertEqual(["cli.config.json"], os.listdir(os.path.dirname(yol)))
 
+    # --- Z64 L4: atomik os.replace'in Windows yan etkileri ------------------------------------------------------
+    @unittest.skipUnless(WIN, "FILE_SHARE_DELETE'siz tutamak ve Hidden özniteliği Windows'a özgü")
+    def test_yaz_hedef_kisa_sure_tutuluyorsa_tekrar_dener(self):
+        # Python open() Windows'ta FILE_SHARE_DELETE'siz açar: tutamak açıkken os.replace PermissionError verir (eski
+        # open(yol, "w") geçerdi). Tutamak kısa süre sonra bırakılıyorsa (virüs tarayıcı/indeksleyici) yazım tutmalı.
+        with gecici_dizin() as t:
+            yol = os.path.join(t, "cli.config.json")
+            yaz_json(yol, {"x": 1})
+            fh = open(yol, "rb")
+            beklemeler = []
+
+            def sahte_uyku(sn):
+                beklemeler.append(sn)
+                if not fh.closed:
+                    fh.close()  # ilk beklemede tutan taraf bırakır
+            try:
+                with mock.patch("time.sleep", sahte_uyku):
+                    sonuc = kd_ortam._yaz(yol, {"x": 2})
+            finally:
+                fh.close()
+            self.assertIsNone(sonuc, sonuc)
+            with open(yol, encoding="utf-8") as f:
+                self.assertEqual({"x": 2}, json.load(f))
+            self.assertEqual(1, len(beklemeler), beklemeler)
+            self.assertEqual(["cli.config.json"], os.listdir(t))
+
+    @unittest.skipUnless(WIN, "FILE_SHARE_DELETE'siz tutamak Windows'a özgü")
+    def test_yaz_hedef_hep_tutuluyorsa_sinirli_denemede_metin_doner(self):
+        with gecici_dizin() as t:
+            yol = os.path.join(t, "cli.config.json")
+            yaz_json(yol, {"x": 1})
+            with open(yol, "rb") as f:
+                eski = f.read()
+            beklemeler = []
+            with open(yol, "rb"), mock.patch("time.sleep", beklemeler.append):
+                sonuc = kd_ortam._yaz(yol, {"x": 2})
+            self.assertIsInstance(sonuc, str)
+            self.assertIn("yazılamadı", sonuc)
+            self.assertLessEqual(len(beklemeler), 3, beklemeler)
+            self.assertLessEqual(sum(beklemeler), 1.0, beklemeler)
+            with open(yol, "rb") as f:
+                self.assertEqual(eski, f.read())
+            self.assertEqual(["cli.config.json"], os.listdir(t), "geçici dosya kaldı")
+
+    @unittest.skipUnless(WIN, "Hidden/System öznitelikleri Windows'a özgü")
+    def test_yaz_gizli_ozniteligi_korur(self):
+        import ctypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetFileAttributesW.restype = ctypes.c_uint32
+        gizli = 0x2
+        with gecici_dizin() as t:
+            yol = os.path.join(t, "cli.config.json")
+            yaz_json(yol, {"x": 1})
+            self.assertTrue(k32.SetFileAttributesW(yol, gizli))
+            self.assertIsNone(kd_ortam._yaz(yol, {"x": 2}))
+            ozn = k32.GetFileAttributesW(yol)
+            with open(yol, encoding="utf-8") as f:
+                self.assertEqual({"x": 2}, json.load(f))
+            self.assertTrue(ozn & gizli, "Hidden özniteliği düştü (0x%x)" % ozn)
+
     def test_config_hedef_yol_dizinse_hata_satiri(self):
         with gecici_dizin() as t:
             app = os.path.join(t, "app")

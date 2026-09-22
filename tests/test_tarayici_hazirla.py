@@ -228,6 +228,9 @@ class TarayiciHazirlaTest(GeciciTest):
                 mock.patch.object(th.shutil, "which", return_value="C:/node/npm.cmd"), \
                 mock.patch.object(th, "sinirli_calistir", surec), \
                 mock.patch.dict(os.environ, self.env), redirect_stdout(out):
+            # Z64 L5: main() os.environ'u okur; koşan kabukta (ya da _helpers'ın alt süreç ortamında) kapatma
+            # anahtarı varsa test ATLANDI'ya düşüp yanlış FAIL veriyordu (ölçüldü). patch.dict çıkışta geri yükler.
+            os.environ.pop(th.KAPAT_ORTAM, None)
             rc = th.main(["--kok", str(self.kok)])
         self.assertEqual(0, rc)
         self.assertEqual(["npm", "open", "snapshot", "close"], surec.adlar())
@@ -367,6 +370,58 @@ class TarayiciHazirlaTest(GeciciTest):
         satirlar = out.getvalue().splitlines()
         self.assertEqual("TARAYICI: EKSİK — beklenmeyen hata: RuntimeError: patladı", satirlar[0])
         self.assertTrue(satirlar[-1].startswith("KAPSAM (SCOPE): tarayici_hazirla"))
+
+    @unittest.skipUnless(WIN, "Chrome yol simülasyonu Windows arama yerlerine göre")
+    def test_patolojik_yolda_toplam_sure_install_zaman_asiminin_altinda(self):
+        """Z64 L3: her adım kendi sınırına kadar sürerse (npm ~600, open ~120, snapshot ve close zaman aşımı +
+        ağaç öldürme) eski toplam ≈1038 sn > install.py'nin 900 sn'si → install betiği ÖLDÜRÜRDÜ ve `TARAYICI:`
+        satırı hiç basılmazdı. Saat simüle edilir (gerçek bekleme yok); alt süreç çağrılmaz."""
+        import install  # noqa: PLC0415
+        self.chrome_kur()
+        saat = [0.0]
+        oldurme = 40  # _agaci_oldur'un en kötü süresi: taskkill ≤30 + wait ≤10 (sabit testi th.OLDURME_PAYI ile eşler)
+        taban = SahteSurec(self.kok)
+        zamanlar = []
+
+        def calistir(komut, **kw):
+            zamanlar.append(kw["timeout"])
+            adim = "npm" if "install" in komut else komut[3]
+            if adim in ("npm", "open"):  # sınırının hemen altında biter
+                saat[0] += kw["timeout"] - 1
+                return taban(komut, **kw)
+            saat[0] += kw["timeout"] + oldurme  # zaman aşımı + ağaç öldürme
+            raise subprocess.TimeoutExpired(komut, kw["timeout"])
+
+        with mock.patch("time.monotonic", lambda: saat[0]):
+            durum, metin, _ = self.kos(calistir)
+        self.assertEqual("EKSİK", durum, metin)
+        self.assertIn("bitmedi", metin)
+        self.assertEqual(4, len(zamanlar), zamanlar)  # npm, open, snapshot, close — close yine denenir
+        # başlangıç payı (python açılışı, node --version ≤30 sn) dahil install.py'nin zaman aşımının altında kalmalı
+        self.assertLess(saat[0] + 60, install.TARAYICI_ZAMAN,
+                        "simüle toplam %.0f sn (+60 başlangıç) install.py zaman aşımını aşıyor" % saat[0])
+
+    def test_zaman_butcesi_sabitleri_tutarli(self):
+        """Z64 L3: install.py'nin zaman aşımı betiğin en kötü süresinden büyük kalmalı (biri değişirse test kırılır)."""
+        import install  # noqa: PLC0415
+        self.assertEqual(th.EN_KOTU_SURE, th.TOPLAM_ZAMAN + 2 * th.OLDURME_PAYI + th.KAPANIS_ASGARI
+                         + th.BASLANGIC_PAYI)
+        self.assertLess(th.EN_KOTU_SURE, install.TARAYICI_ZAMAN)
+        self.assertLessEqual(th.NPM_ZAMAN, th.TOPLAM_ZAMAN)
+        self.assertEqual(40, th.OLDURME_PAYI)  # simülasyondaki `oldurme` ile aynı
+        self.assertGreaterEqual(th.BASLANGIC_PAYI, 60)
+
+    def test_butce_bittiyse_adim_baslamaz_close_asgariyle_denenir(self):
+        with mock.patch("time.monotonic", lambda: 1000.0):
+            self.assertEqual(th.NPM_ZAMAN, th._sure(th.NPM_ZAMAN, None))
+            self.assertEqual(50.0, th._sure(th.DUMAN_ZAMAN, 1050.0))
+            with self.assertRaises(subprocess.TimeoutExpired) as bag:
+                th._sure(th.DUMAN_ZAMAN, 999.0)
+            self.assertIn("bütçesi", th._bitmedi(bag.exception))
+            self.assertEqual(th.KAPANIS_ASGARI, th._sure(th.DUMAN_ZAMAN, 999.0, th.KAPANIS_ASGARI))
+            ok, metin = th.npm_kur(self.kok, "npm", SURUM, {}, calistir=SahteSurec(self.kok), son=999.0)
+        self.assertFalse(ok)
+        self.assertIn("bütçesi", metin)
 
     def test_main_kullanim_hatasi_2(self):
         with redirect_stdout(io.StringIO()), mock.patch("sys.stderr", io.StringIO()):
@@ -518,6 +573,62 @@ class ZamanAsimiAgacTest(GeciciTest):
         self.assertEqual(3, r.returncode)
         self.assertIn("merhaba ğ", r.stdout)
         self.assertIn("hata", r.stderr)
+
+
+class SinirliCalistirTemizlikTest(GeciciTest):
+    """Z64 L1 (bayat geçici dizin süpürme) ve L2 (kesintide ağaç öldürme)."""
+
+    def _dizin(self, kok: Path, ad: str, yas_sn: float, dosya: bool = False) -> Path:
+        d = kok / ad
+        if dosya:
+            d.write_text("x", encoding="utf-8")
+        else:
+            d.mkdir()
+            (d / "out").write_text("x", encoding="utf-8")
+        t = time.time() - yas_sn
+        os.utime(d, (t, t))
+        return d
+
+    def test_sinirli_calistir_bayat_kendi_onekli_dizinleri_supurur(self):
+        # Ölçüldü (v0.5.4 mini gate): playwright-cli oturum daemon'u çıktı dosyasını tutarken rmtree sessizce
+        # başarısız olur ve %TEMP%\axet-cikti-* kalıcı kalırdı. Sonraki koşum YAŞLI ve KENDİ önekli olanları süpürür.
+        td = self.tmp / "tmpkok"
+        td.mkdir()
+        gun = 24 * 3600
+        eski_cikti = self._dizin(td, "axet-cikti-eski", 2 * gun)
+        eski_duman = self._dizin(td, "axet-tarayici-eski", 2 * gun)
+        taze = self._dizin(td, "axet-cikti-taze", 60)
+        yabanci = self._dizin(td, "baska-eski", 2 * gun)
+        onekli_dosya = self._dizin(td, "axet-cikti-dosya", 2 * gun, dosya=True)
+        with mock.patch.object(th.tempfile, "tempdir", str(td)):
+            r = th.sinirli_calistir([sys.executable, "-c", "print('ok')"], env=dict(self.env), timeout=60)
+        self.assertEqual(0, r.returncode)
+        self.assertFalse(eski_cikti.exists(), "bayat axet-cikti-* süpürülmedi")
+        self.assertFalse(eski_duman.exists(), "bayat axet-tarayici-* süpürülmedi")
+        self.assertTrue(taze.exists(), "taze (başka koşumun olabilir) dizin silindi")
+        self.assertTrue(yabanci.exists(), "yabancı önekli dizin silindi")
+        self.assertTrue(onekli_dosya.exists(), "önekli ama dizin olmayan girdi silindi")
+        self.assertEqual(sorted(p.name for p in (taze, yabanci, onekli_dosya)), sorted(os.listdir(td)))
+
+    def test_sinirli_calistir_kesintide_agaci_oldurur(self):
+        # Z64 L2: yalnız TimeoutExpired yakalanıyordu; Ctrl+C (KeyboardInterrupt) npm ağacını yetim bırakırdı
+        # (POSIX: start_new_session → çocuk terminalin SIGINT'ini almaz). Gerçek sinyal ÖLÇÜLMEDİ; sahte Popen.
+        class KesilenPopen:
+            pid = 424242
+
+            def __init__(self, *a, **k):
+                pass
+
+            def wait(self, timeout=None):
+                raise KeyboardInterrupt
+
+        with mock.patch.object(th.subprocess, "Popen", KesilenPopen), \
+                mock.patch.object(th, "_agaci_oldur") as oldur, \
+                mock.patch.object(th.tempfile, "tempdir", str(self.tmp)):
+            with self.assertRaises(KeyboardInterrupt):
+                th.sinirli_calistir(["yok"], timeout=60)
+        oldur.assert_called_once()
+        self.assertEqual([], [p for p in os.listdir(self.tmp) if p.startswith("axet-cikti-")])
 
 
 class GitTemizligiTest(GeciciTest):

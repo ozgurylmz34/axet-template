@@ -45,6 +45,7 @@ SKILLS_DIR = AXET_HOME / "skills"
 SAP_SKILLS_DIR = AXET_HOME / "skills-sap"
 PERMISSIONS_FILE = AXET_HOME / "config" / "permissions.json"
 TARAYICI_BETIK = AXET_HOME / "scripts" / "tarayici_hazirla.py"
+TARAYICI_ZAMAN = 1000  # > tarayici_hazirla.EN_KOTU_SURE olmalı (Z64 L3; tests/test_tarayici_hazirla.py sabitler)
 # SAP'ye yazma için makine düzeyi izin; sap_adt_cli.py yazma kapısının ilk koşulu. Gitignore'lu.
 SAP_WRITE_FLAG = AXET_HOME / "config" / "sap-write.local"
 # Önceki sürümlerde config/permissions.json ile yayımlanıp artık dosyada olmayan kurallar: alan → desen → o zaman
@@ -245,7 +246,8 @@ def tarayici_adimi() -> None:
         return
     sys.stdout.flush()
     try:
-        subprocess.run([sys.executable, str(TARAYICI_BETIK)], stdin=subprocess.DEVNULL, timeout=900, check=False)
+        subprocess.run([sys.executable, str(TARAYICI_BETIK)], stdin=subprocess.DEVNULL, timeout=TARAYICI_ZAMAN,
+                       check=False)
     except Exception as exc:  # noqa: BLE001 — kurulumu durdurma
         print(f"TARAYICI: EKSİK — betik çalıştırılamadı ({exc})")
 

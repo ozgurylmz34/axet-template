@@ -788,12 +788,21 @@ def komut_plan(b: Baglam, args) -> int:
     # dosyası doğrulanmayan kalemi böyle mühürler. DUR etmek bağımlıyı KALICI kilitlerdi (atlandi
     # kalem bir daha plana girmez) ⇒ seçim bozulmaz. Z58 (v0.5.4): mühür `neden` taşır
     # (`_atlandi_nedeni`: ertelendi | kabul | is-yok). `is-yok` = yapılacak iş yoktu ⇒ sessizce
-    # karşılanmış. Diğer HER durum — `ertelendi`, `kabul`, tanınmayan değer ya da alan YOK (Z58
-    # öncesi kayıt: ertelendi mi iş-yok mu ayırt edilemez) — fail-closed `karsilanan_atlandi`'ya da
-    # yazılır; `komut_sec` o yolla karşılanan her bağ için nedeni söyleyen UYARI basar.
+    # karşılanmış. `kabul`, tanınmayan değer ya da alan YOK (Z58 öncesi kayıt: ertelendi mi iş-yok
+    # mu ayırt edilemez) — fail-closed `karsilanan_atlandi`'ya da yazılır; `komut_sec` o yolla
+    # karşılanan her bağ için nedeni söyleyen UYARI basar. `ertelendi` artık buraya girmez (Z62).
+    # Z62 (v0.5.5, kullanıcı kararı): `neden: ertelendi` mühürlü kalem KARŞILANMIŞ SAYILMAZ — plana
+    # normal kalem olarak YENİDEN girer (`yeniden_onerilen`). Kullanıcı "sonra bakarım" demişti;
+    # eskiden mühür onu kalıcı olarak plandan düşürüyordu. İstisna: kalemin beyan ettiği yolların
+    # HİÇBİRİ bu turda EYLEM gerektirmiyorsa (işlemsiz vaka) önerilecek iş yoktur ⇒ `is-yok` gibi
+    # sessizce karşılanır (aşağıda, kalemler kurulmadan önce). Dosyaları sonraki bir kaleme
+    # DEVREDİLMİŞ kalem bu istisnaya GİRMEZ (v0.5.5 entegrasyonu, v0.5.4 `_atlandi_nedeni` ilkesi):
+    # plana dosyasız kalem olarak girer, karar kapanışa kalır.
+    # `kabul` KAPALI kalır; `is-yok` ve neden YOK (eski kayıt) önerilmez — gerekçe TASARIM §6.
     karsilanan: set[str] = set()
     karsilanan_atlandi: set[str] = set()
     atlandi_nedenleri: dict[str, str | None] = {}
+    yeniden_onerilen: set[str] = set()
     for yayin in b.yayinlar.get("yayinlar", []):
         etiket = yayin["etiket"]
         durum_y = yayin_durumu(lambda *a: k.git(*a).returncode, etiket)
@@ -808,8 +817,11 @@ def komut_plan(b: Baglam, args) -> int:
         bekleyen_yayinlar.append(etiket)
         for kalem in yayin.get("kalemler", []):
             kid = kalem["id"]
-            if kid in b.uygulanan.get("kalemler", {}):
-                muhur = b.uygulanan["kalemler"][kid]
+            muhur = b.uygulanan.get("kalemler", {}).get(kid)
+            if (isinstance(muhur, dict) and muhur.get("durum") == "atlandi"
+                    and muhur.get("neden") == "ertelendi"):
+                yeniden_onerilen.add(kid)          # karşılanmış DEĞİL ⇒ aşağıda beyan'a girer
+            elif kid in b.uygulanan.get("kalemler", {}):
                 karsilanan.add(kid)
                 if isinstance(muhur, dict) and muhur.get("durum") == "atlandi":
                     neden = muhur.get("neden")
@@ -840,8 +852,6 @@ def komut_plan(b: Baglam, args) -> int:
         print("Klon güncel: bekleyen yayın kalemi yok.")
         return 1
 
-    paketler = _union_find(beyan)
-
     # 2) kapsamın tamamını sınıflandır (sayaçlar), kalem dosyalarını ayrıca kaydet
     sayaclar: dict[str, int] = {}
     vaka_kayitlari: dict[str, dict] = {}
@@ -857,12 +867,52 @@ def komut_plan(b: Baglam, args) -> int:
             if kayit["vaka"] not in ISLEMSIZ_VAKALAR:
                 vaka_kayitlari[yol] = kayit
     sayaclar["VKD"] = sayaclar.get("VKD", 0) + b.kullanici_dosya_sayisi()
+    # v0.5.5 bug gate (P1/P2): taşıma HEDEFİ yukarıda atlandı — işi KAYNAĞIN kaydı taşır (`yeni_yol`).
+    # Hedefi beyan eden kalem bu yüzden "EYLEM yolu yok" sanılıyordu: Z62 düşürmesi ertelenmiş kalemi
+    # sessizce `karsilanan` yapıyor (P2), kapanış da taşıma ertelense bile onu `is-yok` mühürlüyordu
+    # (P1). Hedef yol, kaynağın kaydı/sahibi/durumu üzerinden görülür: aşağıdaki üç ölçüm (düşürme,
+    # paket, `devredilen`) `_eylem_yolu` ile aynı kaynağa bakar. Taşıma HEDEFİ işlemsiz DEĞİLDİR.
+    hedef_kaynak = {kayit["yeni_yol"]: yol for yol, kayit in vaka_kayitlari.items()
+                    if kayit.get("yeni_yol")}
+
+    def _eylem_yolu(yol: str) -> str | None:
+        """Beyan edilen yolun işini taşıyan `vaka_kayitlari` anahtarı (hedef → kaynak) ya da None."""
+        return yol if yol in vaka_kayitlari else hedef_kaynak.get(yol)
 
     # 3) her yolu onu BEYAN EDEN EN SON kaleme bağla
     yol_kalemi: dict[str, str] = {}
     for kid in kalem_kaydi:
         for d in beyan[kid]:
             yol_kalemi[d] = kid  # yayınlar sırayla gezildi → son yazan en yeni kalem
+
+    # Z62: yeniden önerilecek (ertelenmiş) kalemin beyan ettiği yolların HİÇBİRİ bu turda EYLEM
+    # gerektirmiyorsa (hepsi işlemsiz vaka / kapsam dışı) `is-yok` davranışı: plana girmez, sessizce
+    # karşılanır (UYARI kümesine YAZILMAZ). Ölçüt adım 4'ün süzgeciyle AYNI kaynaktır
+    # (`vaka_kayitlari`; taşıma hedefi kaynağı üzerinden — `_eylem_yolu`, v0.5.5 bug gate P2).
+    # ⛔ v0.5.5 entegrasyonu (v0.5.4 `_atlandi_nedeni` ilkesi): EYLEM yolu sonraki bir kaleme
+    # DEVREDİLMİŞ kalem düşürülMEZ. O yolun sahibi `yol_kalemi` ⇒ `kalem_kaydi` üyesidir, yani BU
+    # planda bekleyen kalemdir (mühürlü kalem `kalem_kaydi`'ye girmez) ⇒ plan anında içerik diske
+    # İNMEMİŞTİR ve hiçbir kayıt (`uygulanan.json` sahip mührü, `durum.json`) bunun aksini
+    # söyleyemez. Kalem dosyasız ama `devredilen`li olarak plana girer (sahibiyle aynı pakette:
+    # union-find beyan üzerinden); nedeni kapanışta sahibin mührü + yolun durumu belirler
+    # (`_atlandi_nedeni`: indiyse `is-yok`, yine ertelendiyse `ertelendi` ⇒ sonraki turda yine
+    # önerilir). Eskiden (Z62 dalı) "planda dosyası yok ⇒ is-yok gibi" deniyordu: bağımlısının
+    # önkoşulu içerik inmeden sessizce "karşılanmış" oluyordu.
+    # Düşen kalem hiçbir EYLEM yolunun sahibi değildir ⇒ başka kalemin `dosyalar`ı/`devredilen`i
+    # değişmez. Paketler (union-find) düşürmeden SONRA kurulur ki düşen kalem başka kalemleri
+    # (ortak işlemsiz yol üzerinden) tek pakete bağlamasın.
+    for kid in sorted(yeniden_onerilen):
+        if not any(_eylem_yolu(y) for y in beyan[kid]):
+            yeniden_onerilen.discard(kid)
+            karsilanan.add(kid)
+            del beyan[kid], kalem_kaydi[kid]
+    if not beyan:
+        print("Klon güncel: bekleyen yayın kalemi yok.")
+        return 1
+    # Taşıma hedefini beyan eden kalem, kaynağın sahibiyle aynı pakete girer (sahip seçilince o da
+    # seçilsin ki kapanış nedenini ölçebilsin) ⇒ union-find'e hedefin kaynağı da verilir.
+    paketler = _union_find({kid: ys | {hedef_kaynak[y] for y in ys if y in hedef_kaynak}
+                            for kid, ys in beyan.items()})
 
     # 4) kalemleri kur
     kalemler, restart, uyarilar = [], None, []
@@ -873,10 +923,15 @@ def komut_plan(b: Baglam, args) -> int:
         # Z58 bug gate (v0.5.4): kalemin BEYAN ETTİĞİ ve EYLEM gerektiren ama sonraki bir kaleme
         # devredilen yollar → yeni sahipleri. `_atlandi_nedeni` dosyasız kalemi yalnız bu yolların
         # içeriği bu turda gerçekten indiyse `is-yok` sayar; aksi hâlde devir sessiz bir kayıptı.
-        devredilen: dict[str, str] = {}
+        # v0.5.5 bug gate (P1): taşıma HEDEFİ beyanı kaynağın ANAHTARIYLA yazılır (durum.json ve
+        # `vaka_kayitlari` kaynağı anahtar tutar) ve kaynağın sahibine bağlanır. Kaynağı hiçbir
+        # kalem beyan etmiyorsa sahip `None`dır (taşıma "beyansız EYLEM" uyarısıyla uygulanmaz) ⇒
+        # içerik inmez; `_atlandi_nedeni` onu `is-yok` SAYMAZ (fail-closed).
+        devredilen: dict[str, str | None] = {}
         for yol in sorted(beyan[kid]):
-            if yol in vaka_kayitlari and yol_kalemi.get(yol) not in (None, kid):
-                devredilen[yol] = yol_kalemi[yol]
+            eylem = _eylem_yolu(yol)
+            if eylem is not None and yol_kalemi.get(eylem) != kid:
+                devredilen[eylem] = yol_kalemi.get(eylem)
             if yol_kalemi.get(yol) != kid or yol not in vaka_kayitlari:
                 continue
             kayit = dict(vaka_kayitlari[yol])
@@ -913,6 +968,7 @@ def komut_plan(b: Baglam, args) -> int:
             "gerektirir": kalem.get("gerektirir", []), "min_axet": kalem.get("min_axet"),
             "yayin": etiket, "paket": paketler[kid], "dosyalar": dosyalar,
             "devredilen": devredilen, "testler": testler, "ozel_adimlar": sorted(set(ozel_adimlar)),
+            "yeniden_onerilen": kid in yeniden_onerilen,
         })
 
     # Kapsamda EYLEM gerektiren ama hiçbir kalemin `dosyalar` listesinde geçmeyen yollar:
@@ -953,9 +1009,57 @@ def komut_plan(b: Baglam, args) -> int:
     # sorusunu cevaplayabilir (eskiden cevaplayamadan "koştu" sayıyordu).
     d = durum_oku(k)
     d["plan"] = _plan_muhru(plan)
+    temizlenen = _tuketilmis_ertelemeleri_temizle(d, plan, b.uygulanan)
     durum_yaz(k, d)
     _plan_tablosu(plan)
+    for yol in temizlenen:
+        print(f"  NOT: {yol} önceki turda ertelenmişti; o karar kapanışta mühürlendi, bu turda "
+              f"dosya yeniden karar bekliyor.")
     return 0
+
+
+def _kayit_tuketildi_mi(kayit_zaman, muhur_zaman) -> bool:
+    """Z62: dosya kaydı, kaleminin `uygulanan.json` mührü basılmadan ÖNCE mi verildi?
+
+    `kapanis` mührü dosya kararlarından SONRA basar (`_kapanis_git`), dolayısıyla mühürden önceki
+    (ya da aynı saniyedeki) karar o kapanışta TÜKETİLMİŞTİR. Mühürden sonraki karar, kalem yeniden
+    önerildikten sonra BU turda verilmiştir ⇒ korunur (aynı turda `plan` yeniden koşulabilir).
+    Zaman okunamazsa tüketilmiş sayılır: kaydı silmek dosyayı `bekliyor`a döndürür ve kapanış onu
+    açık madde olarak GÖSTERİR; tutmak ise dosyayı `uygula`da SESSİZCE atlatırdı."""
+    if not (isinstance(kayit_zaman, str) and isinstance(muhur_zaman, str)):
+        return True
+    return kayit_zaman <= muhur_zaman
+
+
+def _tuketilmis_ertelemeleri_temizle(d: dict, plan: dict, uygulanan: dict) -> list[str]:
+    """Z62: bu planın dosyalarındaki, önceki bir kapanışta TÜKETİLMİŞ `atlandi/ertelendi` kayıtlarını
+    `durum.json`'dan siler. Döner: temizlenen yollar.
+
+    Neden gerekli (ölçüldü, `test_Z62_ertelenen_dosyanin_bayat_kaydi_planda_temizlenir_uygula_atlamaz`):
+    `durum.json` turlar arasında SİLİNMEZ (`_plan_muhru`) ve `komut_uygula` yargı vakasında önceki
+    `atlandi` kaydını koruyup dosyayı atlar ⇒ yeniden önerilen kalemin dosyası bu turda hiç
+    `bekliyor` açılmazdı; `_atlandi_nedeni` de bayat kararı okuyup kalemi kullanıcı hiçbir şey
+    demeden yine `ertelendi` mühürlerdi. Aynı bayat kayıt, dosyası SONRAKİ bir yayının kalemine
+    geçmiş ertelenmiş kalemde o yeni kalemi de atlatırdı — bu yüzden ölçüt kalem değil DOSYADIR:
+    kaydın kalemi (`kayit["kalem"]`) mühürlüyse ve kayıt mühürden önce verildiyse temizlenir.
+
+    Neden PLAN anında (uygula değil): turu `plan` başlatır ve `durum.json`'u zaten o damgalar
+    (K2); `uygula` tekrar koşulabilen adımdır ve yalnız seçili kalemleri gezer. Planda silmek her
+    tüketiciye (`uygula`, `isaretle`, `kapanis`, `durum`) aynı temiz durumu verir."""
+    temizlenen = []
+    muhurler = uygulanan.get("kalemler", {})
+    for kalem in plan["kalemler"]:
+        for dosya in kalem["dosyalar"]:
+            kayit = d["dosyalar"].get(dosya["yol"])
+            if not (isinstance(kayit, dict) and kayit.get("durum") == "atlandi"
+                    and kayit.get("karar") == "ertelendi"):
+                continue
+            muhur = muhurler.get(kayit.get("kalem"))
+            if isinstance(muhur, dict) and _kayit_tuketildi_mi(kayit.get("zaman"),
+                                                              muhur.get("zaman")):
+                del d["dosyalar"][dosya["yol"]]
+                temizlenen.append(dosya["yol"])
+    return temizlenen
 
 
 def _plan_tablosu(plan: dict) -> None:
@@ -965,7 +1069,8 @@ def _plan_tablosu(plan: dict) -> None:
         if not kalem["dosyalar"]:
             continue
         isaret = "★" if kalem["kritik"] else " "
-        print(f"{isaret} [{kalem['paket']}] {kalem['id']}  {kalem['baslik']}  ({kalem['tur']})")
+        ek = "  — önceki turda ertelenmişti, yeniden önerildi" if kalem.get("yeniden_onerilen") else ""
+        print(f"{isaret} [{kalem['paket']}] {kalem['id']}  {kalem['baslik']}  ({kalem['tur']}){ek}")
         for d in kalem["dosyalar"]:
             hedef = f" → {d['yeni_yol']}" if d.get("yeni_yol") else ""
             print(f"      {d['vaka']:9s} {d['yol']}{hedef}  [{d['sinif']}]")
@@ -986,7 +1091,11 @@ def plan_oku(k: Klon) -> dict:
 
 
 def _atlandi_aciklamasi(neden) -> str:
-    """Z58: `sec` UYARI'sında önkoşulun NEDEN atlandığı (`uygulanan.json` mührünün `neden` alanı)."""
+    """Z58: `sec` UYARI'sında önkoşulun NEDEN atlandığı (`uygulanan.json` mührünün `neden` alanı).
+
+    Z62 notu: bugünkü `komut_plan` `ertelendi` kalemi `karsilanan_atlandi`'ya YAZMAZ (yeniden önerir
+    ya da beyan yolları işlemsizse `is-yok` gibi karşılar); o dal Z58 motorunun (v0.5.4) ürettiği `plan.json`
+    okunurken doğru metni basmak için durur (`test_Z58_v054_plani_ertelendi_neden_UYARI_ertelenmis_der`)."""
     if neden == "ertelendi":
         return "ertelenmiş: `isaretle --karar ertelendi`"
     if neden == "kabul":
@@ -1025,6 +1134,32 @@ def komut_sec(b: Baglam, args) -> int:
     # `--cikar` paket genişletmesini de bağlar (kullanıcı açıkça çıkardı)
     genisletilmis -= set(args.cikar or [])
 
+    # Z62 + Z63 (kullanıcı kararları): önkoşul PLANDA bekleyen bir kalemse — yeniden önerilen
+    # (önceki turda ertelenmiş, Z62) ya da normal bekleyen (Z63) — `sec` DUR vermez, onu (paketiyle)
+    # kendiliğinden seçer ve stdout'a bir satırla söyler; zincir sabit noktaya kadar izlenir.
+    # İlke: kullanıcı ayrı komut çalıştırmamalı. Aşağıdaki kontrolde YİNE DUR veren iki dal:
+    # `--cikar` ile AÇIKÇA dışlanan önkoşul (kalem adıyla ya da paket adıyla — kullanıcının açık
+    # iradesi) ve planda da `karsilanan`'da da OLMAYAN önkoşul (seçilecek kalem yok ⇒ fail-closed).
+    cikarilan = set(args.cikar or [])
+    for ad in args.cikar or []:
+        if ad in paket_uyeleri:
+            cikarilan |= set(paket_uyeleri[ad])
+    degisti = True
+    while degisti:
+        degisti = False
+        for kid in sorted(genisletilmis):
+            for bag in kalemler[kid]["gerektirir"]:
+                if bag in genisletilmis or bag in cikarilan or bag not in kalemler:
+                    continue
+                ek = set(paket_uyeleri[kalemler[bag]["paket"]]) - cikarilan - genisletilmis
+                genisletilmis |= ek | {bag}
+                neden = (f"; {bag} önceki turda ertelenmişti ve yeniden önerildi"
+                         if kalemler[bag].get("yeniden_onerilen") else "")
+                print(f"{kid} kalemi {bag} kalemini gerektiriyor{neden} — kendiliğinden seçildi"
+                      + (f" (paketiyle: {', '.join(sorted(ek - {bag}))})" if ek - {bag} else "")
+                      + ".")
+                degisti = True
+
     # Z57: bağ, seçimde YA DA önceki bir turda karşılanmışsa (plan `karsilanan`) tamamdır.
     # Alan yoksa/bozuksa (eski motorun planı) karşılanmışlık ÖLÇÜLEMEZ ⇒ boş küme ⇒ fail-closed.
     ham = plan.get("karsilanan")
@@ -1055,6 +1190,30 @@ def komut_sec(b: Baglam, args) -> int:
                       f"ve önceki bir turda karşılanmış da değil (§6 `gerektirir`).{ipucu}",
                       file=sys.stderr)
                 return 2
+
+    # v0.5.5 bug gate (P3): seçili kalemin devredilen yolunun SAHİBİ seçimde yoksa (`--cikar`) o yol
+    # bu turda işlenmez ⇒ kapanış kalemi `ertelendi` mühürler (sonraki turda yeniden önerilir; `kabul`
+    # DEĞİL — `kabul` yalnız `kapanis --kabul` ile). Kullanıcı bunu seçim anında görsün.
+    # ⛔ `ertelendi` vaadi YALNIZ dosyasız kalemde verilir: `_atlandi_nedeni` yalnız `uygulandi`
+    # OLMAYAN kalem için çağrılır; kalemin KENDİ dosyaları (`kalemler[kid]["dosyalar"]`) inerse mühür
+    # `uygulandi` olur (v0.5.5 mini gate, ölçüldü: 3-06 `docs/tasindi2.md` + `kur.cmd`,
+    # `sec --kalem 3-06 --cikar 3-04` ⇒ NOT "ertelendi" diyordu, mühür `uygulandi`).
+    for kid in sorted(genisletilmis):
+        dv = kalemler[kid].get("devredilen")
+        if not isinstance(dv, dict):
+            continue
+        disarida = sorted(y for y, sahip in dv.items() if sahip not in genisletilmis)
+        if disarida:
+            parca = ", ".join(f"{y} → {dv[y] or 'beyansız (hiçbir kalem)'}" for y in disarida)
+            if kalemler[kid]["dosyalar"]:
+                print(f"NOT: {kid} kaleminin bu yolları bu turda işlenmez — işleri seçilmeyen kalemde "
+                      f"({parca}); bu yollar ancak sahip kalem seçildiğinde gelir (beyansız yolu "
+                      f"getirecek kalem yoktur). {kid} kendi "
+                      f"dosyalarıyla işlenir; kapanış mührü o dosyaların sonucuna göre belirlenir.")
+            else:
+                print(f"NOT: {kid} kaleminin işi bu turda seçilmeyen kalemde ({parca}) ⇒ {kid} "
+                      f"kapanışta `ertelendi` mühürlenir ve sonraki turda yeniden önerilir "
+                      f"(`kabul` DEĞİL).")
 
     secim = {"kalemler": sorted(genisletilmis),
              "paketler": sorted({kalemler[k2]["paket"] for k2 in genisletilmis}),
@@ -1995,7 +2154,8 @@ def _tek_satir(metin: str | None) -> str:
     return " ".join((metin or "").split())
 
 
-def _atlandi_nedeni(kalem: dict, durum: dict, uygulanan_kalemler: set) -> str | None:
+def _atlandi_nedeni(kalem: dict, durum: dict, uygulanan_kalemler: set,
+                    secili: set | None = None) -> str | None:
     """Z58 (v0.5.4): hiçbir dosyası `dogrulandi` olmayan kalemin `uygulanan.json` mührüne NEDEN.
 
     Kapanış anında güvenilir biçimde bilinir: `durum` bu turun `durum.json`'udur (`komut_kapanis`
@@ -2007,11 +2167,16 @@ def _atlandi_nedeni(kalem: dict, durum: dict, uygulanan_kalemler: set) -> str | 
     Devredilen bir yol ancak sahibi bu turda `uygulandi` mühürlendiyse VE yolun kendisi
     `dogrulandi` ise İNMİŞ sayılır (sahibin başka dosyası inip bu yol ertelenmiş olabilir).
       · `ertelendi` — kalemin dosyalarından ya da İNMEYEN devredilen yollarından en az birinde
-                      `isaretle --karar ertelendi`;
+                      `isaretle --karar ertelendi`; YA DA (v0.5.5 bug gate P3) inmeyen bir devredilen
+                      yolun sahibi bu turda SEÇİLMEDİ (`secili` verilmişse): o yolun işi sahipte hâlâ
+                      bekliyor, sahip mühürlenmez ve plana yine girer ⇒ devreden kalem de yeniden
+                      önerilmeli. Eskiden `kabul` deniyordu: Z62'ye göre `kabul` KAPALIDIR ⇒ kullanıcı
+                      `--kabul` demeden kalem kalıcı kapanıyordu (ölçüldü, `--cikar <sahip>`);
       · `is-yok`    — kalemin planda dosyası yok VE devredilen her yolu bu turda indi (ya da hiç
                       devredilen yolu yok: işlemsiz vaka) ⇒ yapılacak iş kalmadı;
-      · `kabul`     — inmeyen iş var, ertelenmemiş: `kapanis --kabul` (kod 3) ile buraya gelinir
-                      (dosyalar `bekliyor`/`uygulandi` kaldı ya da sahip kalem seçilmedi);
+      · `kabul`     — inmeyen iş var, ertelenmemiş, sahibi seçiliydi: `kapanis --kabul` (kod 3)
+                      ile buraya gelinir (dosyalar `bekliyor`/`uygulandi` kaldı). `secili` verilmezse
+                      (birim çağrısı) sahip-seçilmedi dalı ölçülemez ⇒ eski davranış (`kabul`);
       · `None`      — plan `devredilen` alanını taşımıyor (v0.5.4 öncesi motorun planı) ve kalem
                       dosyasız: iş-yok mu devir mi ÖLÇÜLEMEZ ⇒ "bilinmiyor" (fail-closed, uyarı üretir).
     ⛔ `is-yok` yalnız yapılacak işi KALMAYAN kalemdir: "ertelendi değilse iş yoktu" DENMEZ —
@@ -2031,6 +2196,8 @@ def _atlandi_nedeni(kalem: dict, durum: dict, uygulanan_kalemler: set) -> str | 
     if any(durum["dosyalar"].get(y, {}).get("karar") == "ertelendi"
            for y in [d["yol"] for d in kalem["dosyalar"]] + inmeyen):
         return "ertelendi"
+    if secili is not None and any(devredilen[y] not in secili for y in inmeyen):
+        return "ertelendi"
     return "kabul"
 
 
@@ -2044,8 +2211,9 @@ def _kapanis_git(b: Baglam, plan: dict, durum: dict, secili: set,
     artık `eksikler`e girer ve çıkış kodunu 1'e düşürür — **ölçülemedi ≠ temiz**.
 
     ⛔ MÜHÜR EN SONA: `uygulanan.json` YÜK TAŞIR (ölçüldü, varsayılmadı):
-      · `komut_plan`: `if kid in b.uygulanan.get("kalemler", {}): continue` ⇒ mühürlü kalem bir
-        daha PLANA GİRMEZ;
+      · `komut_plan`: mühürlü kalem bir daha PLANA GİRMEZ (Z62 istisnası: `atlandi` +
+        `neden: ertelendi` yeniden önerilir; mührün `zaman`ı, `_kayit_tuketildi_mi` ile hangi
+        `durum.json` ertelendi kaydının bu kapanışta tüketildiğini de belirler);
       · `Baglam.taban_ref`: dosya-başı taban o yayın etiketine çekilir ⇒ sonraki 3-yollu
         karşılaştırma yanlış tabandan yapılır.
     Commit atılmadan mühürlemek "uygulandı" yalanını KALICILAŞTIRIR. Bu yüzden mühür yalnız
@@ -2199,7 +2367,7 @@ def _kapanis_git(b: Baglam, plan: dict, durum: dict, secili: set,
         muhur = {"etiket": plan["yeni_etiket"],
                  "durum": "uygulandi" if uygulandi else "atlandi", "zaman": _simdi()}
         if not uygulandi:
-            muhur["neden"] = _atlandi_nedeni(kalem, durum, uygulanan_kalemler)
+            muhur["neden"] = _atlandi_nedeni(kalem, durum, uygulanan_kalemler, secili)
         u["kalemler"][kalem["id"]] = muhur
     _yaz_json(k.durum_dizini / "uygulanan.json", u)
     return kod

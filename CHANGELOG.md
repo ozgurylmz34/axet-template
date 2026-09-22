@@ -6,6 +6,29 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.5 — 2026-09-22
+
+### 0.5.5-01 · `%guncelle`: ertelenen kalem sonraki güncellemede yeniden önerilir; bekleyen önkoşul kendiliğinden seçilir (yetenek)
+
+- **neden:** Ertelenen (`atlandi/ertelendi`) bir kalem bugüne kadar bir daha önerilmiyordu; ona bağlı her kalem seçildiğinde yalnız uyarı çıkıyordu. Artık ertelenen kalem sonraki planda yeniden önerilir (planda "yeniden önerildi" notu) ve içeriği indiğinde eski erteleme kaydı temizlenir; `--kabul` ile açık bırakılan kalem kapalı kalır. Seçtiğin bir kalemin planda bekleyen önkoşulu varsa `sec` onu da kendiliğinden seçer ve bunu tek satırla söyler; önkoşulu `--cikar` ile dışladıysan ya da önkoşul planda yoksa durur ve nedenini yazar. `--cikar` paket adını da kabul eder. Dosyası sonraki bir kaleme geçmiş (ya da yeniden adlandırılmış bir dosyanın yeni yolunu beyan eden) kalem, o dosya gerçekten indirilmeden karşılanmış sayılmaz; v0.5.4'te taşıma ertelendiğinde böyle bir kalem yanlışlıkla `is-yok` diye kapanabiliyordu. Önkoşulun dosyasını devralan kalemi `--cikar` ile dışlarsan kalem kapanmaz, ertelenmiş kalır; kalıcı kapatmak yalnız `kapanis --kabul` ile olur. Test takımında kalıtım yüzünden aynı testleri iki alt sınıfta yeniden koşan kopyalar kaldırıldı (bu dosyada 56 kopya) (davranış değişmedi, takım kısaldı).
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`
+- **test:** `python tests/run_tests.py -k guncelle`, `python tests/run_tests.py -k yayin`
+- **gerektirir:** —
+
+### 0.5.5-02 · Tarayıcı hazırlığı: süre sınırı, kesinti ve geçici dosya düzeltmeleri; `kd_ortam` kilitli dosyada yeniden dener (düzeltme)
+
+- **neden:** Tarayıcı hazırlığının en kötü durumdaki toplam süresi kurulumun ona tanıdığı süreyi aşabiliyordu; artık adımlar ortak bir süre bütçesini paylaşır ve kurulum adımı buna göre bekler. Ctrl+C ile kesildiğinde arka planda kalan npm süreçleri de kapatılır. Kapanmayan bir yardımcı süreç yüzünden geçici klasörde kalan `axet-cikti-*`/`axet-tarayici-*` dizinleri bir gün sonra temizlenir (yalnız aXet'in kendi dizinleri). `kd_ortam.py` ayar dosyasını yazarken dosya kısa süreliğine başka bir program tarafından tutuluyorsa birkaç kez yeniden dener ve dosyanın gizli özniteliğini korur.
+- **dosyalar:** `scripts/install.py`, `scripts/tarayici_hazirla.py`, `skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py`, `tests/test_tarayici_hazirla.py`
+- **test:** `python tests/run_tests.py -k tarayici`, `python tests/run_tests.py -k install`, `python skills-sap/sap-ui5-user-guide/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.5-03 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.5.4 — 2026-09-22
 
 ### 0.5.4-01 · `%guncelle`: atlanan önkoşul uyarısı artık yalnız gerçekten ertelenmiş ya da `--kabul` ile açık bırakılmış kalemde çıkıyor (düzeltme)
