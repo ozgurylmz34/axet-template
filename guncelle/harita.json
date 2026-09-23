@@ -88,11 +88,14 @@
     {
       "sinif": "kurulum-araci-kok",
       "ust_sinif": "kurulum-araci",
-      "glob": ["kur.cmd", "kur.ps1", "yeni-proje.cmd"],
+      "glob": ["kur.cmd", "kur.ps1", "yeni-proje.cmd", "proje-tamamla.cmd", "aXet-Kur.cmd"],
       "yukleme": "aXet'e yüklenmez; kullanıcı terminalden elle çalıştırır (README.md:37-39)",
       "etkin": null,
-      "esler": ["tests/test_kur.py", "tests/test_yeni_proje.py"],
-      "test": [{"komut": "python tests/run_tests.py -k kur", "cwd": ".", "on_kosul": null}],
+      "esler": ["tests/test_kur.py", "tests/test_yeni_proje.py", "tests/test_proje_tamamla.py"],
+      "test": [
+        {"komut": "python tests/run_tests.py -k kur", "cwd": ".", "on_kosul": null},
+        {"komut": "python tests/run_tests.py -k proje_tamamla", "cwd": ".", "on_kosul": null}
+      ],
       "risk": "orta",
       "ozel_adim": null,
       "kritik_yol": false,
@@ -310,7 +313,7 @@
     {
       "sinif": "kurulum-araci-script",
       "ust_sinif": "kurulum-bakim-scripti",
-      "glob": ["scripts/new_project.py", "scripts/new_package.py", "scripts/yeni_proje.py"],
+      "glob": ["scripts/new_project.py", "scripts/new_package.py", "scripts/yeni_proje.py", "scripts/conn_sablon.py"],
       "yukleme": "kullanıcı terminalden çalıştırır (yeni-proje.cmd üzerinden de)",
       "etkin": "aninda",
       "esler": [
@@ -318,9 +321,13 @@
         "templates/package/README.md.tmpl",
         "tests/test_new_project.py",
         "tests/test_new_package.py",
-        "tests/test_yeni_proje.py"
+        "tests/test_yeni_proje.py",
+        "tests/test_proje_tamamla.py"
       ],
-      "test": [{"komut": "python tests/run_tests.py -k new_", "cwd": ".", "on_kosul": null}],
+      "test": [
+        {"komut": "python tests/run_tests.py -k new_", "cwd": ".", "on_kosul": null},
+        {"komut": "python tests/run_tests.py -k proje_tamamla", "cwd": ".", "on_kosul": null}
+      ],
       "risk": "yuksek",
       "ozel_adim": null,
       "kritik_yol": false,

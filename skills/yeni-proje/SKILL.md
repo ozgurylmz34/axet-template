@@ -3,8 +3,8 @@ name: yeni-proje
 description: >
   Use when the user wants to start, open or create a new aXet SAP project folder: asks the setup questions one by
   one in chat, confirms a summary, runs scripts/yeni_proje.py first with --dry-run and then for real (git init,
-  project skeleton, sap-project.json and AGENTS.md filled, doctor), and lists the steps the user must run in their
-  own terminal. Triggers: "yeni proje", "proje aç", "proje oluştur", "yeni projeye başlıyorum", "projeyi kur".
+  project skeleton, sap-project.json and AGENTS.md filled, doctor, KURULUMU-TAMAMLA.cmd shortcut), and tells the user
+  to double-click that shortcut for the remaining steps. Triggers: "yeni proje", "proje aç", "proje oluştur", "yeni projeye başlıyorum", "projeyi kur".
   Not for creating a package inside an existing project (new_package.py), first-day machine setup (%onboard) or
   template maintenance.
 ---
@@ -57,15 +57,20 @@ Tek kod yolu: bu skill ve terminal yedeği `yeni-proje.cmd` aynı script'i çağ
      okunamıyorsa (`ÖLÇÜLEMEDİ`) çıkış yine 1 olur.
    - 2 girdi hatası (hiçbir şey yazılmadı; eksik ya da hatalı alanı sor).
    `[KORUNDU]` + `UYARILAR` satırı (ör. `release` farkı) çıkışı bozmaz; farkı kullanıcıya söyle.
-6. **Terminal adımlarını sırayla tarif et** (script'in sonda bastığı `SENİN TERMİNALİNDE` listesi):
-   ① `setup_credentials.py` ile SAP bağlantısı ② `behavior_manifest.py generate` ile davranış yüzeyi onayı
-   ③ `axet-code -c "<klasör>"` ile projeyi yeni oturumda açıp ilk satırda `proje: <ad>` kontrolü.
+6. **Son adımı tek cümleyle söyle** (script'in sonda bastığı `SON ADIM (SENDE)` satırı): "Proje klasöründeki
+   `KURULUMU-TAMAMLA.cmd`'ye çift tıkla." Kısayol, klondaki `proje-tamamla.cmd`'yi çağırır ve sırayla:
+   ① `conn\DEV.env` / `conn\QA.env` bağlantı şablonlarını yazıp Notepad'de açar (kullanıcı doldurur, kaydeder, tekrar
+   çift tıklar; dosyalar denetlenir, hatalı alan adıyla gösterilir, değer basılmaz; geçerli DEV aktif sistem olur)
+   ② davranış yüzeyi onayını sorar ③ `doctor.py` ④ aXet'i projede açmayı sorar (ilk satırda `proje: <ad>` görünmeli).
+   Kısayol yazılamadıysa (`[YAZILAMADI]`) script'in bastığı elle yolu ver. Sistem değiştirmek için sonra `%sistem`.
 
 ## Rules
 - **Kimlik bilgisi:** kullanıcı adı, parola, host, sistem bilgisi isteme ve yazma; `.conn_adt` ve `conn/` okuma,
-  listeleme. Bağlantıyı kullanıcı kendi terminalinde `setup_credentials.py` ile kurar.
-- `setup_credentials.py` ve `behavior_manifest.py generate` komutlarını **çalıştırma**: ilki terminal ister ve
-  etkileşimsiz çağrıyı reddeder, ikincisini aXet izin kuralları engeller; ikisi de kullanıcının onayıdır.
+  listeleme. Bağlantı bilgisini kullanıcı `KURULUMU-TAMAMLA.cmd`'nin açtığı `conn\*.env` şablonlarına kendisi yazar.
+- `setup_credentials.py`, `behavior_manifest.py generate` ve `KURULUMU-TAMAMLA.cmd` / `proje-tamamla.cmd`'yi
+  **çalıştırma**, `start` ile pencere de **açma**: bağlantı bilgisi ve davranış yüzeyi onayı kullanıcının kendi
+  işlemidir; pencereyi modelin başlatması onayı modelden başlatmak olur (izin kurallarının amacının etrafından
+  dolanır). `generate`'i ayrıca aXet izin kuralları engeller.
 - Script'i bayraksız (etkileşimli) çağırma: aXet kabuğunda terminal yok. Her zaman `--no-input`.
 - SAP'de paket ya da transport yaratmayı önerme: paketi kullanıcı SE21 ile yaratır, sonra `new_package.py`.
 - aXet'in kendi "Initialize Project" komutunu bu projede önerme: `AGENTS.md`'yi yeniden yazıp kesin yasak damgasını

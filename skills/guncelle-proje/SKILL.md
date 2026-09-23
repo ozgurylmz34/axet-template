@@ -75,6 +75,18 @@ Damga, şablon dosyalarından BAĞIMSIZ ölçülür. `%guncelle` kanonik yasak m
 normal akar (onay → `uygula --otomatik` boş geçer → `kapanis` damgayı basar). *(Z55: v0.5.0'da
 plan bu vakada 1 dönüyordu ve damga eski kalıyordu.)* Kapanış raporundaki "Davranış yüzeyi
 DEĞİŞTİ" bölümünde tam komut yazar; kullanıcıya AYNEN ver.
+
+### SAP projesi: `KURULUMU-TAMAMLA.cmd` kısayolu (Z79)
+Kısayol şablon ağacında DEĞİLDİR (makineye özgü klon yolu taşır, git'e kapalı); `%yeni-proje` yalnız
+yeni projeye yazar. Eski SAP projesine de ulaşsın diye plan onu ayrı bir `KISAYOL` kalemi olarak gösterir
+(damga gibi: tek başına da plan 0 döner):
+- **yok** → "kısayol yazılacak" · **resmi ama eski** (ikinci satırda `rem aXet kurulum kisayolu
+  (yeni_proje.py yazdi)` işareti var, içerik farklı; ör. klon yolu değişti) → "kısayol güncellenecek".
+  İkisini de onaydan sonra `uygula --otomatik` yazar; eski hâl yedeklenir (`geri-al KURULUMU-TAMAMLA.cmd`),
+  `kapanis` diskten doğrular.
+- **İşaretsiz** (elle yazılmış / eski geçici sürüm) → EZİLMEZ. Planda ve raporda `BİLGİ` satırı çıkar;
+  kullanıcıya AYNEN ilet: dosyayı silip `%guncelle-proje`'yi tekrar çalıştırması önerilir. Dosyayı sen silme.
+- SAP dışı projede kalem yoktur. Kısayol davranış yüzeyi değildir, manifest onayı gerektirmez.
 **Z48 kararı:** `guncelle-proje` behavior manifest'i KENDİSİ yenilemez. Davranış yüzeyi onayı
 bilinçli olarak kullanıcının kendi terminalinde kalır; sen `behavior_manifest.py generate`
 KOŞMAZSIN.

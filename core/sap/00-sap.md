@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.4.0
+SAP-CORE-ID: AXET-SAP-0.5.0
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -26,6 +26,7 @@ SAP-CORE-ID: AXET-SAP-0.4.0
 - Clean core: released API/CDS varsa onu kullan (ör. `MARA` yerine `I_Product`).
 - Yeni DDIC tablo öncesi alanları, veri elemanlarını ve anahtarı kullanıcıya göster, açık onay al.
 - Paket klasörü `<source_root>/<MODÜL>/<PAKET>/` (`new_package.py` kurar). Pakette çalışmadan önce `.rules.md` ve `SESSION_NOTES.md`'nin son kaydını oku; oturum sonunda kayıt ekle; pakete özgü karar (ad istisnası, bağımlılık, transport) netleşince `.rules.md`'ye yaz. İndirilen objeler obje tipine göre alt klasöre konur (`classes/`, `cds/`, `functions/`, `programs/` …).
+- Z obje adı (tablo, program, sınıf, CDS …) ÖNERMEDEN önce — yalnız öneri istense ve paket söylenmese de — paketin `.rules.md` önek/adlandırma kuralını oku: paket söylenmediyse proje `AGENTS.md` aktif paketi, o da yoksa `<source_root>/*/*/.rules.md` (tek paket varsa o). Hafızadaki proje kuralıyla çelişirse ikisini de göster, hangisinin geçerli olduğunu kullanıcıya sor; birden çok aday paket varsa hangisi olduğunu sor.
 - SAP bağlantı bilgisi proje kökündeki gitignore'lu dosyadadır: içeriğini okuma, sohbete yazma; script'ler okur.
 - Ayrıntılı ADT yöntemleri SAP skill'lerindedir (`skills-sap/`); işlemden önce ilgili skill'i oku.
 

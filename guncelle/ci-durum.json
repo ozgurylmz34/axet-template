@@ -2,14 +2,14 @@
  "surum": 1,
  "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
  "yayinlar": {
-  "v0.5.5": {
-   "kaynak_commit": "daca7e9d354d3b953ee239b0ca92c3257bec160e",
-   "olcum_zamani": "2026-09-22T18:54:52",
+  "v0.5.6": {
+   "kaynak_commit": "d9373eec5072965267252fb48cc831785b2b95e3",
+   "olcum_zamani": "2026-09-23T15:49:32",
    "hepsi_yesil": true,
    "depo": "ozgurylmz34/axet",
    "takimlar": [
     {
-     "ad": "Yayin provasi (guncelle uctan uca)",
+     "ad": "Kurulum dumani (install + doctor)",
      "sonuc": "success"
     },
     {
@@ -17,15 +17,15 @@
      "sonuc": "success"
     },
     {
-     "ad": "Kurulum dumani (install + doctor)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public · Python 3.12)",
+     "ad": "Yayin provasi (guncelle uctan uca)",
      "sonuc": "success"
     },
     {
      "ad": "Testler (kok · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public · Python 3.12)",
      "sonuc": "success"
     }
    ],

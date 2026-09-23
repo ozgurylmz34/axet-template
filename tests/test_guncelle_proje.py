@@ -20,6 +20,7 @@ proje kapsamında UYGULANMAZ (bkz. guncelle_proje.py KAPSAM notu) · `templates/
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -30,13 +31,16 @@ BURASI = Path(__file__).resolve().parent
 if str(BURASI) not in sys.path:
     sys.path.insert(0, str(BURASI))
 
-from _helpers import GeciciTest  # noqa: E402
+from _helpers import GeciciTest  # noqa: E402  — scripts/ yolunu da ekler
+import yeni_proje  # noqa: E402  — kısayol metni (Z79) tek kaynaktan
 
 AXET_HOME = BURASI.parent
 GERCEK_SCRIPTS = AXET_HOME / "scripts"
 
 # Sahte klona kopyalanan gerçek script'ler (motorun kendisi + bağımlı olduğu yardımcılar).
-KOPYALANAN_SCRIPTLER = ("guncelle.py", "guncelle_proje.py", "new_project.py", "sap_stamp.py")
+# Z79: SAP projesinde motor `yeni_proje` (kısayol) içe aktarır → onun `doctor` zinciri de gerekir.
+KOPYALANAN_SCRIPTLER = ("guncelle.py", "guncelle_proje.py", "new_project.py", "sap_stamp.py",
+                        "yeni_proje.py", "doctor.py", "install.py", "new_package.py", "behavior_manifest.py")
 
 V1_SABLON = {
     "templates/project/AGENTS.md": (
@@ -94,9 +98,11 @@ class SahteKlon:
                 fh.write(icerik)
 
     def uret(self, sap: bool = False, onceden: dict | None = None,
-             ikili: dict | None = None) -> "SahteKlon":
+             ikili: dict | None = None, kisayol: bool | None = None) -> "SahteKlon":
         """onceden: new_project'ten ÖNCE projede duran dosyalar (rel -> içerik); aXet'in kendi yazdıkları gibi.
-        ikili: şablona eklenecek ikili dosyalar (klon-göreli yol -> bayt)."""
+        ikili: şablona eklenecek ikili dosyalar (klon-göreli yol -> bayt).
+        kisayol: resmi `KURULUMU-TAMAMLA.cmd`'yi `yeni_proje.py` gibi yaz (varsayılan: SAP projesinde evet —
+        gerçek SAP projeleri `yeni_proje.py` ile doğar, Z70)."""
         (self.home / "scripts").mkdir(parents=True)
         for ad in KOPYALANAN_SCRIPTLER:
             shutil.copy2(GERCEK_SCRIPTS / ad, self.home / "scripts" / ad)
@@ -120,7 +126,22 @@ class SahteKlon:
                             *(["--sap"] if sap else []),
                             scripts_dir=self.home / "scripts")
         self.t.assertEqual(r.returncode, 0, self.t.cikti(r))
+        if sap if kisayol is None else kisayol:
+            self.kisayol_yaz()
         return self
+
+    # --- KURULUMU-TAMAMLA.cmd (Z79) ------------------------------------------------------------
+    def kisayol_bayt(self, axet_home: Path | None = None) -> bytes:
+        """`yeni_proje.kisayol_yaz`'ın diske yazdığı bayt (CRLF, Windows'ta OEM kod sayfası)."""
+        metin = yeni_proje.kisayol_metni((axet_home or self.home).resolve())
+        return metin.encode("oem" if os.name == "nt" else "utf-8")
+
+    def kisayol_yaz(self, veri: bytes | None = None) -> None:
+        (self.proje / yeni_proje.KISAYOL).write_bytes(self.kisayol_bayt() if veri is None else veri)
+
+    def kisayol_oku(self) -> bytes | None:
+        f = self.proje / yeni_proje.KISAYOL
+        return f.read_bytes() if f.is_file() else None
 
     def ilerlet(self, degisim: dict | None = None) -> str:
         self._yaz(degisim if degisim is not None else V2_SABLON)
@@ -1044,12 +1065,23 @@ class TetikKablolamaTest(GeciciTest):
         # Sığ klonda (CI checkout'u, fetch-depth=1) ata commit YOKTUR ⇒ senaryo kurulamaz; geçmişe
         # bağlı öteki testlerle aynı kural (test_install EmekliKuralTest): atla, sessiz geçme.
         # Tüketici klonu tamdır (kur.ps1 --depth kullanmaz; test_kur.py bunu denetler).
-        sig = self.git(AXET_HOME, "rev-parse", "--is-shallow-repository").stdout.strip()
-        if sig == "true":
-            self.skipTest("git geçmişi yok (sığ klon): HEAD~1 çözülemez — tam klonda koşar")
-        eski = self.git(AXET_HOME, "rev-parse", "HEAD~1").stdout.strip()
-        guncel = self.git(AXET_HOME, "log", "-1", "--format=%H", "--",
-                          "templates/project").stdout.strip()
+        #
+        # ⛔ v0.5.6 (2026-09-23, birleşim dalında kırmızı): eskiden `HEAD~1` alınıyordu. HEAD'in hemen
+        # altındaki commit şablona DOKUNAN son commit olduğunda (ölçüldü: HEAD~1 = 8339d45 = son
+        # `templates/project` commit'i) "eski" ile "güncel" aynı çıkıyor, test geçmişin ŞEKLİNE bağlı
+        # kırılıyordu. Artık eski = GÜNCEL ŞABLON COMMIT'İNİN EBEVEYNİ: ebeveyn varsa tanım gereği
+        # güncelden farklıdır. Güncel şablon commit'i kök commit'se (tek commit'li/squash geçmiş, sığ
+        # klon) başka commit yoktur ⇒ senaryo kurulamaz: açık nedenle ATLA.
+        import new_project  # noqa: PLC0415  (_helpers scripts/'i yola ekledi)
+        yollar = new_project.sablon_yollari((proje / "sap-project.json").is_file())
+        guncel = self.git(AXET_HOME, "log", "-1", "--format=%H", "--", *yollar).stdout.strip()
+        self.assertTrue(guncel, "fixture ön koşulu: şablon commit'i okunamadı")
+        ebeveyn = self.git(AXET_HOME, "rev-parse", "--verify", "--quiet", f"{guncel}^",
+                           kontrol=False)
+        if ebeveyn.returncode != 0:
+            self.skipTest(f"şablon commit'i {guncel[:10]} kök commit (tek commit'li/sığ geçmiş): "
+                          "'eski kayıt' için klonda başka commit yok — tam geçmişte koşar")
+        eski = ebeveyn.stdout.strip()
         self.assertNotEqual(eski, guncel, "fixture ön koşulu: iki commit farklı olmalı")
         kayit = json.loads(self.kayit_yolu(proje).read_text(encoding="utf-8"))
         kayit["template_commit"] = eski
@@ -1342,6 +1374,123 @@ class Z55EskiDamgaGuncelSablonTest(ProjeTemel):
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn("damga: DUR", rapor)
         self.assertNotIn("damgası yenilendi", rapor)
+
+
+# =====================================================================================================
+# Z79. KURULUMU-TAMAMLA.cmd kısayolu mevcut SAP projesine de ulaşır
+# =====================================================================================================
+class Z79KisayolTest(ProjeTemel):
+    """Z79 (2026-09-23): `yeni_proje.py` kısayolu yalnız YENİ projeye yazıyordu; `%guncelle-proje`
+    yalnız `templates/project(-sap)` ağacını günceller ⇒ Z70'ten önce kurulmuş SAP projesine kısayol
+    hiç ulaşmıyordu. Kısayol planın AYRI kalemidir (damga/Z55 deseni): plan gösterir, onay kapsar,
+    `uygula --otomatik` yazar (`yeni_proje.kisayol_yaz`), `kapanis` diskten doğrular.
+
+    KAPSAM — bakılmayan: kısayolun cmd.exe'de çift tıklanınca çalışması (test_proje_tamamla ölçer) ·
+    ASCII dışı klon yolu (OEM kodlaması yeni_proje testlerinde) · Linux/macOS.
+    """
+    sap = True
+    ISARETSIZ = b"@echo off\r\nrem elle yazilmis gecici surum\r\ncall C:\\eski\\proje-tamamla.cmd\r\n"
+
+    def _akis(self) -> subprocess.CompletedProcess:
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        return u
+
+    def test_1_eksik_kisayol_planda_gorunur_plan_YAZMAZ(self):
+        (self.f.proje / yeni_proje.KISAYOL).unlink()
+        r = self.planla()      # şablon İLERLEMEDİ: kalem yalnız kısayol
+        self.assertEqual(r.returncode, 0, "eksik kısayol tek başına plan kalemidir (Z55 dersi)\n"
+                         + self.cikti(r))
+        self.assertIn("kısayol yazılacak", self.cikti(r))
+        self.assertEqual(self.f.plan()["kisayol"]["durum"], "yok")
+        self.assertIsNone(self.f.kisayol_oku(), "plan salt-okurdur, kısayolu YAZMAMALI")
+
+    def test_2_eksik_kisayol_uygula_yazar_icerik_kisayol_metni_kapanis_PASS(self):
+        (self.f.proje / yeni_proje.KISAYOL).unlink()
+        u = self._akis()
+        self.assertEqual(self.f.kisayol_oku(), self.f.kisayol_bayt())
+        # sahte şablonun .gitignore'unda kısayol satırı yok ⇒ git'e açık: uyarı (v0.5.6 gate, yeni_proje ile aynı)
+        self.assertIn("git'e kapalı değil", self.cikti(u))
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn(f"[PASS] {yeni_proje.KISAYOL}", rapor)
+
+    def test_2b_kisayol_git_e_kapaliysa_uyari_YOK(self):
+        (self.f.proje / yeni_proje.KISAYOL).unlink()
+        (self.f.proje / ".git" / "info").mkdir(parents=True, exist_ok=True)
+        (self.f.proje / ".git" / "info" / "exclude").write_text(yeni_proje.KISAYOL + "\n", encoding="utf-8")
+        u = self._akis()
+        self.assertEqual(self.f.kisayol_oku(), self.f.kisayol_bayt())
+        self.assertNotIn("git'e kapalı değil", self.cikti(u))
+
+    def test_3_onaysiz_uygula_kisayolu_YAZMAZ(self):
+        (self.f.proje / yeni_proje.KISAYOL).unlink()
+        self.assertEqual(self.planla(onayla=False).returncode, 0)
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertNotEqual(u.returncode, 0, self.cikti(u))
+        self.assertIsNone(self.f.kisayol_oku())
+
+    def test_4_resmi_ama_farkli_kisayol_guncellenir_yedeklenir_geri_alinir(self):
+        eski = self.f.kisayol_bayt(self.tmp / "eski-klon")        # klon yolu değişmiş resmi kısayol
+        self.f.kisayol_yaz(eski)
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("kısayol güncellenecek", self.cikti(r))
+        self.assertEqual(self.f.kisayol_oku(), eski, "plan yazmamalı")
+        self._akis()
+        self.assertEqual(self.f.kisayol_oku(), self.f.kisayol_bayt())
+        g = self.f.calistir("geri-al", yeni_proje.KISAYOL)
+        self.assertEqual(g.returncode, 0, self.cikti(g))
+        self.assertEqual(self.f.kisayol_oku(), eski, "geri-al eski kısayolu bayt bayt geri getirmeli")
+
+    def test_5_resmi_ve_guncel_kisayola_DOKUNULMAZ(self):
+        once = self.f.kisayol_oku()
+        self.assertIsNotNone(once)
+        r = self.planla()
+        self.assertEqual(r.returncode, 1, "kısayol güncel + şablon güncel ⇒ plan yok\n" + self.cikti(r))
+        self.f.ilerlet()
+        u = self._akis()
+        self.assertIsNone(self.f.plan()["kisayol"])
+        self.assertNotIn(yeni_proje.KISAYOL, self.cikti(u))
+        self.assertEqual(self.f.kisayol_oku(), once)
+        self.assertFalse((self.f.durum_dizini() / "yedek" / yeni_proje.KISAYOL).exists())
+
+    def test_6_isaretsiz_kisayol_EZILMEZ_bilgi_satiri_basilir(self):
+        self.f.kisayol_yaz(self.ISARETSIZ)
+        r = self.planla()
+        self.assertEqual(r.returncode, 1, "işaretsiz kısayol tek başına iş kalemi DEĞİL\n" + self.cikti(r))
+        self.assertIn("resmi olmayan kısayol", self.cikti(r))
+        self.assertIn("dosyayı sil", self.cikti(r))
+        self.f.ilerlet()
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("resmi olmayan kısayol", self.cikti(r))
+        self.assertEqual(self.f.plan()["kisayol"]["durum"], "resmi-degil")
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        self.assertEqual(self.f.kisayol_oku(), self.ISARETSIZ, "işaretsiz dosya EZİLMEMELİ")
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("resmi olmayan kısayol", rapor)
+
+
+class Z79SapDisiTest(ProjeTemel):
+    """SAP dışı projede kısayol kalemi YOKTUR (kısayolu `yeni_proje.py` yalnız SAP projesine yazar)."""
+    sap = False
+
+    def test_SAP_disi_projede_kisayol_yazilmaz_planda_gorunmez(self):
+        self.f.ilerlet()
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn(yeni_proje.KISAYOL, self.cikti(r))
+        self.assertIsNone(self.f.plan().get("kisayol"))
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        self.assertIsNone(self.f.kisayol_oku())
 
 
 if __name__ == "__main__":

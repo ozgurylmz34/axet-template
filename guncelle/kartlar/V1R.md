@@ -4,7 +4,8 @@
 
 ## Ne demek
 Yeni yayında bu dosya yeniden adlandırıldı. Sendeki içerik ya tabanla ya yeni sürümle aynı
-olduğundan birleştirilecek bir şey yok: motor yeni yola yazar, eski yolu siler.
+olduğundan birleştirilecek bir şey yok: motor yeni yola yazar, eski yolu siler. Plandan
+sonra eski yolu düzenlediysen içerik `<eski yol>.yerel` olarak saklanır.
 
 ## Neden
 Yol değişimi başlı başına bir eylemdir. İçerik hiç değişmemiş olsa bile dosya taşınmalıdır —

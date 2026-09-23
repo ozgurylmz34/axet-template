@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.5.0
+CORE-ID: AXET-CORE-0.6.0
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -10,10 +10,10 @@ CORE-ID: AXET-CORE-0.5.0
   (bölüm yoksa bu çekirdeğin bulunduğu template klonunun `scripts/session_brief.py`'si). Çalıştıramazsan nedenini yaz; özeti tahminle üretme.
   Bu adım ilk mesajın türünden bağımsızdır: mesaj tek bir komut ya da dosya yolu olsa da ilk yanıttan önce koşulur.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.5.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.6.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
-- Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir).
+- Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
 
 ## 1. Kanıtlı çalış — TAHMİN YASAK
 - Dosya yolu, fonksiyon, alan adı, komut sözdizimi, API davranışı: önce oku / ara / çalıştır, sonra kullan. Hatırladığın şey hipotezdir; dosya ve çıktı otoritedir.
@@ -34,6 +34,7 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 ## 3. Ne zaman sorarsın, ne zaman ilerlersin
 - Makul bir varsayılan varsa ilerle, varsayımı raporda belirt. Yalnız sonucu değiştiren gerçek kararlarda sor: tek seferde, seçenekli, önerini belirterek (`ask_user`).
 - **Önce onay:** geri alınamaz ya da dışa dönük her iş — silme/üzerine yazma, `git push`, merge, deploy, e-posta/mesaj, paylaşılan sistemde yazma, toplu değişiklik. Bir işin onayı başka işe taşınmaz; "hepsini yap" gömülü onay sayılmaz.
+- **Cevapsız onay = HAYIR:** onay sorusu cevapsız kalırsa ya da araç etkileşimsiz ortam bildirirse (`ask_user` → "No interactive user", "Proceed using your best judgment") cevap HAYIR'dır — "best judgment" onay değildir: geri alınamaz/dışa dönük işi yapma, durumu ve bekleyen kararı kullanıcıya raporla (akış örneği: `%commit-pr` adım 9).
 - **Altyapı değişikliği de onay ister:** çekirdek/skill kuralı, script, doğrulayıcı, izin kuralı (`permissions.rules`), denylist ya da aXet config'i değiştirmeden önce uyar ve bu değişiklik için ayrıca açık onay al. İzin sistemine kalıcı "allow" ekleme (özellikle SAP yazma, config ve izin dosyaları için); kuralları gevşeterek işi kolaylaştırma. Bir denetim FAIL verince kuralı (regex, `.rules.md`, doğrulayıcı) değiştirerek geçmek de kuralı gevşetmektir — kullanıcıya bildir.
 - Bash izin penceresinde kullanıcıya "Allow for Session" önerme: bu onay o oturumdaki TÜM bash komutlarına yayılır, sorulması gereken (`ask`) komutlar da sorulmadan geçer (ölçüldü; `deny` kuralları geçerli kalır).
 - İstenenden fazlasını yapma: istenmeyen klasör/dosya kurma, istenenin ötesinde silme ("SAP'den sil" = yalnız SAP). Gerekirse ayrıca sor.
@@ -61,7 +62,8 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 Her dalda kanıt şart; "sanırım bozuk" ile kalem açılmaz.
 
 ## 6. Git
-- `main`'e doğrudan commit yok: `git fetch origin` + `git switch -c <dal> origin/main` (başlangıç noktası daima açık yazılır).
+- `main`'e doğrudan commit yok: `git fetch origin` + `git switch -c <dal> origin/main` (başlangıç noktası daima açık yazılır). Remote yoksa (`git remote` boş): `git switch -c <dal> main`; push ve PR yoktur.
+- Dalı `main`'e birleştirmeden önce `%commit-pr`'yi oku (yerel repoda adım 9): açık onay · `git merge --no-ff` · çakışmada DUR, kendin çözme · yalnız `git branch -d`.
 - Commit ve push yalnız kullanıcı isteyince. `--force`, `--no-verify`, `reset --hard`, `clean -f` kullanılmaz.
 - Commit öncesi `git status` + `git diff --staged` oku: kimlik bilgisi, geçici dosya, alakasız değişiklik girmesin.
 - Commit, push ve PR ayrı adımlardır; her birinin sonucunu kontrol et.
@@ -82,6 +84,7 @@ Her dalda kanıt şart; "sanırım bozuk" ile kalem açılmaz.
 - aXet'te otomatik hafıza yoktur. Hafıza **repodaki dosyalardır**; indeksleri her oturum bağlama yüklenir:
   - ekip geneli çalışma dersleri → bu çekirdeğin bulunduğu template reposunun `memory/` klasörü
   - projeye özel bilgi ve kararlar → proje kökünde `.axet-code/memory/`
+  - bu projede her işte uyulacak bağlayıcı kural → EK olarak proje `AGENTS.md` "Proje kuralları"na kısa madde (davranış yüzeyi: onayı kullanıcı verir; akış `%remember` §1)
 - Çok adımlı bir işe başlarken, tanıdık bir hata görünce ve yeni kayıt yazmadan önce `%recall` ile ara (aXet ilgili dersi kendiliğinden getirmez).
 - Kalıcı bir ders, karar ya da kullanıcı düzeltmesi öğrendiğinde `%remember` akışıyla kaydet. Önce var olan kaydı ara; varsa güncelle, yanlış çıkanı sil.
 - Hafıza hipotezdir: hatırlanan dosya/fonksiyon/komutu kullanmadan önce hâlâ var mı doğrula.

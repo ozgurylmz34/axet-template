@@ -18,6 +18,7 @@ PROJECT-ID: <PROJE_ADI>
 
 ## Proje kuralları
 - <projeye özel kural>
+- Yeni bağlayıcı kural gelince ajan buraya kısa madde yazar (`%remember`; ayrıntı hafıza kaydında), kullanıcı onaylar (bu dosya davranış yüzeyidir, bkz. aşağıda "Hafıza ve güvenlik").
 - Projeye özel yöntem/standart: `.axet-code/skills/<ad>/SKILL.md` (kısa kural buraya, ayrıntı skill'e)
 
 ## Oturum

@@ -450,7 +450,8 @@ def _yaz_json(yol: Path, veri) -> None:
 
 
 def _simdi() -> str:
-    return datetime.datetime.now().isoformat(timespec="seconds")
+    """Saat dilimli yerel an (Z65): `_kayit_tuketildi_mi` damgaları AN olarak karşılaştırır."""
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 # =====================================================================================================
@@ -725,7 +726,12 @@ def dosya_vakasi(b: Baglam, yol: str, yeniden_ad: dict[str, str]) -> dict:
         else:
             kod = "V4R"
     else:
-        hedef_yol = None
+        # Buraya taşımalı bir yol YALNIZ taban çözülemediğinde gelir (⇒ VTB). Z66 ③: hedef yol
+        # KORUNUR. Eskiden `hedef_yol = None` yapılıyordu: hedef plan döngüsünde "yeniden
+        # adlandırma hedefi" olarak atlandığı için hiçbir kayıtta kalmıyor, `isaretle --karar yeni`
+        # "yeni sürümde yok" DUR'u veriyordu ⇒ kullanıcının yeni içeriği alma yolu yoktu (yalnız
+        # yerel/ertelendi; Z62 her tur yeniden önerir — kalıcı çıkmaz). Vaka VTB KALIR (otomatik
+        # birleştirme yasak, §4); `yeni` hedefe yazar + kaynağı siler, `yerel` kaynağı bırakır.
         kod = vaka_kodu(t_sha, l_sha, y_sha, taban_var=taban is not None)
 
     kayit: dict = {"yol": yol, "vaka": kod}
@@ -1010,11 +1016,15 @@ def komut_plan(b: Baglam, args) -> int:
     d = durum_oku(k)
     d["plan"] = _plan_muhru(plan)
     temizlenen = _tuketilmis_ertelemeleri_temizle(d, plan, b.uygulanan)
+    tuketilen = _tuketilmis_dogrulamalari_temizle(d, plan, b.uygulanan)
     durum_yaz(k, d)
     _plan_tablosu(plan)
     for yol in temizlenen:
         print(f"  NOT: {yol} önceki turda ertelenmişti; o karar kapanışta mühürlendi, bu turda "
               f"dosya yeniden karar bekliyor.")
+    for yol in tuketilen:
+        print(f"  NOT: {yol} önceki turda doğrulanmıştı; o kayıt kapanışta mühürlendi, bu "
+              f"yayının değişikliği için dosya bu turda yeniden işlenecek.")
     return 0
 
 
@@ -1025,10 +1035,22 @@ def _kayit_tuketildi_mi(kayit_zaman, muhur_zaman) -> bool:
     (ya da aynı saniyedeki) karar o kapanışta TÜKETİLMİŞTİR. Mühürden sonraki karar, kalem yeniden
     önerildikten sonra BU turda verilmiştir ⇒ korunur (aynı turda `plan` yeniden koşulabilir).
     Zaman okunamazsa tüketilmiş sayılır: kaydı silmek dosyayı `bekliyor`a döndürür ve kapanış onu
-    açık madde olarak GÖSTERİR; tutmak ise dosyayı `uygula`da SESSİZCE atlatırdı."""
+    açık madde olarak GÖSTERİR; tutmak ise dosyayı `uygula`da SESSİZCE atlatırdı.
+
+    Z65: karşılaştırma METİN değil ANDIR — farklı dilimde yazılmış iki damga metin olarak yanlış
+    sıralanır. Dilimsiz (Z65 öncesi `_simdi()`) damga bu makinenin yerel saati kabul edilir."""
     if not (isinstance(kayit_zaman, str) and isinstance(muhur_zaman, str)):
         return True
-    return kayit_zaman <= muhur_zaman
+    try:
+        kayit = datetime.datetime.fromisoformat(kayit_zaman)
+        muhur = datetime.datetime.fromisoformat(muhur_zaman)
+        if kayit.tzinfo is None:
+            kayit = kayit.astimezone()
+        if muhur.tzinfo is None:
+            muhur = muhur.astimezone()
+        return kayit <= muhur
+    except (ValueError, OverflowError, OSError):
+        return True
 
 
 def _tuketilmis_ertelemeleri_temizle(d: dict, plan: dict, uygulanan: dict) -> list[str]:
@@ -1053,6 +1075,33 @@ def _tuketilmis_ertelemeleri_temizle(d: dict, plan: dict, uygulanan: dict) -> li
             kayit = d["dosyalar"].get(dosya["yol"])
             if not (isinstance(kayit, dict) and kayit.get("durum") == "atlandi"
                     and kayit.get("karar") == "ertelendi"):
+                continue
+            muhur = muhurler.get(kayit.get("kalem"))
+            if isinstance(muhur, dict) and _kayit_tuketildi_mi(kayit.get("zaman"),
+                                                              muhur.get("zaman")):
+                del d["dosyalar"][dosya["yol"]]
+                temizlenen.append(dosya["yol"])
+    return temizlenen
+
+
+def _tuketilmis_dogrulamalari_temizle(d: dict, plan: dict, uygulanan: dict) -> list[str]:
+    """Z61 (b): bu planın dosyalarındaki, önceki bir kapanışta TÜKETİLMİŞ `dogrulandi` kayıtlarını
+    `durum.json`'dan siler. Döner: temizlenen yollar. Ölçüt Z62 temizliğinin aynısı (dosya bazlı;
+    kaydın kalemi mühürlü VE kayıt mühürden önce/aynı saniyede ⇒ tüketilmiş; `_kayit_tuketildi_mi`).
+
+    Neden gerekli (ölçüldü, `test_Z61_b_bayat_dogrulandi_yeni_turun_yargi_vakasini_atlatmaz`):
+    `komut_uygula` yargı vakasında önceki `dogrulandi` kaydını "verilmiş karar" sayıp dosyayı
+    `bekliyor` açmadan atlar. Önceki turun `yerel`/`birlesik` kararında disk hâlâ o kaydın
+    `beklenen_sha`sıdır ⇒ kapanış dosyayı PASS sayar ve sonraki yayının kalemini kullanıcıya hiç
+    sorulmadan `uygulandi` mühürler (içeriği diske inmeden; `--kabul` bile gerekmez).
+    `_tuketilmis_ertelemeleri_temizle` yalnız `atlandi/ertelendi`yi siler — bilinçli olarak ayrı
+    fonksiyon: o kaydın silinmesi kullanıcıya "yeniden karar bekliyor" notu verir, bunun notu farklıdır."""
+    temizlenen = []
+    muhurler = uygulanan.get("kalemler", {})
+    for kalem in plan["kalemler"]:
+        for dosya in kalem["dosyalar"]:
+            kayit = d["dosyalar"].get(dosya["yol"])
+            if not (isinstance(kayit, dict) and kayit.get("durum") == "dogrulandi"):
                 continue
             muhur = muhurler.get(kayit.get("kalem"))
             if isinstance(muhur, dict) and _kayit_tuketildi_mi(kayit.get("zaman"),
@@ -1285,14 +1334,17 @@ def komut_uygula(b: Baglam, args) -> int:
             durum_kaydet(k, yol, kalem=kid, vaka=kod, durum="bekliyor")
             continue
         hedef = d.get("yeni_yol") or yol
+        korunan = None
         try:
+            # V6/V1R'nin "L == T"si PLAN anında ölçüldü; plan → uygula arasındaki düzenleme
+            # yedeksizdir ⇒ silme `_sil_korunarak` ile (içerik `.yerel`de kalır).
             if kod == "V6":
-                k.sil(yol)
+                korunan = _sil_korunarak(k, yol)
                 beklenen = None
             elif kod == "V1R":
                 k.checkout_yol(b.yeni_ref, hedef)
                 if hedef != yol:
-                    k.sil(yol)
+                    korunan = _sil_korunarak(k, yol)
                 beklenen = k.blob_sha(b.yeni_ref, hedef)
             else:
                 k.checkout_yol(b.yeni_ref, hedef)
@@ -1302,6 +1354,8 @@ def komut_uygula(b: Baglam, args) -> int:
             durum_kaydet(k, yol, kalem=kid, vaka=kod, durum="bekliyor", not_=str(e))
             hata = 1
             continue
+        if korunan:
+            print(f"Yedeksiz yerel içerik saklandı: {korunan}")
 
         gercek = _yazim_sonrasi_sha(k, hedef)
         if gercek != beklenen:
@@ -1346,11 +1400,15 @@ def komut_oneri(b: Baglam, args) -> int:
     yol = args.yol.replace("\\", "/")
     kid, d = _plan_kaydi(plan, yol)
     taban = b.taban_ref(yol)
-    if taban is None:
-        print(f"DUR: {yol} için taban bilinmiyor (VTB) — otomatik birleştirme YASAK (§4). "
-              f"Fark göster, kullanıcı 'yeniyi al / yereli koru / elle' seçsin.", file=sys.stderr)
-        return 2
     hedef = d.get("yeni_yol") or yol
+    if taban is None:
+        tasima = (f" Yayın dosyayı taşıyor: yeni içerik `{hedef}` yolunda (`--karar yeni` onu "
+                  f"yazar ve `{yol}`u siler; `--karar yerel` taşımayı reddeder)."
+                  if hedef != yol else "")
+        print(f"DUR: {yol} için taban bilinmiyor (VTB) — otomatik birleştirme YASAK (§4). "
+              f"Fark göster, kullanıcı 'yeniyi al / yereli koru / elle' seçsin.{tasima}",
+              file=sys.stderr)
+        return 2
     t_sha, y_sha = k.blob_sha(taban, yol), k.blob_sha(b.yeni_ref, hedef)
     t = k.blob(t_sha) if t_sha else b""
     y = k.blob(y_sha) if y_sha else b""
@@ -1442,10 +1500,12 @@ def komut_isaretle(b: Baglam, args) -> int:
             return 2
         korunan = _yerel_kopya(k, hedef) if _yedeksiz_mi(k, hedef) else None
         k.checkout_yol(plan_ref, hedef)
+        kaynak_korunan = None
         if hedef != yol and (k.kok / yol).is_file():
-            k.sil(yol)
-        if korunan:
-            print(f"Yedeksiz yerel içerik saklandı: {korunan}")
+            kaynak_korunan = _sil_korunarak(k, yol)
+        for ad in (korunan, kaynak_korunan):
+            if ad:
+                print(f"Yedeksiz yerel içerik saklandı: {ad}")
         return _dogrula_ve_kaydet(k, kid, yol, hedef, d["vaka"], "yeni", y_sha)
 
     if args.karar == "yeniden-adlandir":
@@ -1456,11 +1516,15 @@ def komut_isaretle(b: Baglam, args) -> int:
         # ⚠ Ezilecek dosya DAİMA `hedef`tir. Yeniden adlandırmalı bir V7'de (`yol` ≠ `hedef`)
         # kullanıcının dosyası YENİ yolda durur; eski kod `yol`u saklayıp `hedef`i eziyordu.
         korunan = _yerel_kopya(k, hedef)
+        kaynak_korunan = None
         if hedef != yol and (k.kok / yol).is_file():
-            k.sil(yol)  # taşımanın kaynağı: içeriği geri dönüş etiketinde duruyor
+            # taşımanın kaynağı: etikette yalnız `hazirla` ANINDAKİ hâli durur
+            kaynak_korunan = _sil_korunarak(k, yol)
         k.checkout_yol(plan_ref, hedef)
         if korunan:
             print(f"Senin dosyan korundu: {korunan}")
+        if kaynak_korunan:
+            print(f"Yedeksiz yerel içerik saklandı: {kaynak_korunan}")
         return _dogrula_ve_kaydet(k, kid, yol, hedef, d["vaka"], "yeniden-adlandir", y_sha)
 
     # birlesik
@@ -1482,10 +1546,12 @@ def komut_isaretle(b: Baglam, args) -> int:
     beklenen = k.stdin_sha(hedef, veri)
     korunan = _yerel_kopya(k, hedef) if _yedeksiz_mi(k, hedef) else None
     k.yaz(hedef, veri)
+    kaynak_korunan = None
     if hedef != yol and (k.kok / yol).is_file():
-        k.sil(yol)
-    if korunan:
-        print(f"Yedeksiz yerel içerik saklandı: {korunan}")
+        kaynak_korunan = _sil_korunarak(k, yol)
+    for ad in (korunan, kaynak_korunan):
+        if ad:
+            print(f"Yedeksiz yerel içerik saklandı: {ad}")
     return _dogrula_ve_kaydet(k, kid, yol, hedef, d["vaka"], "birlesik", beklenen)
 
 
@@ -1504,6 +1570,26 @@ def _yedeksiz_mi(k: Klon, yol: str) -> bool:
     except Dur:
         return True                       # geri dönüş noktası hiç yok → her yazma yedeksiz
     return k.blob_sha(etiket, yol) != disk
+
+
+def _sil_korunarak(k: Klon, yol: str, kurtarilabilir_ref: str | None = None) -> str | None:
+    """`k.sil` — ama önce yedeksiz içeriği `.yerel` olarak saklar. Döner: saklanan ad ya da None.
+
+    ⛔ Motorun dosya SİLMELERİ buradan geçer (v0.5.6). Eskiden yedek sorusu yalnız ezilen
+    HEDEF için soruluyordu; taşımanın KAYNAĞI, otomatik silmeler (V6/V1R) ve `geri-al`
+    doğrudan `k.sil` ile gidiyordu. İzlenen kaynak etikette durur — ama yalnız `hazirla`
+    ANINDAKİ hâli; sonraki düzenleme (V6/V1R'nin "L == T"si de PLAN anında ölçülür) ve
+    izlenmeyen dosya sessizce kayboluyordu (ölçüldü 2026-09-23, `TasimaKaynagiYedekTest`).
+    Silme davranışı DEĞİŞMEZ: yol boşalır, yalnız içerik korunur.
+    `kurtarilabilir_ref`: içerik bu ref'teki blob'la aynıysa da yedekli sayılır (`geri-al`
+    motorun kendi yazdığı dosyayı silerken `.yerel` çöpü üretmesin).
+    """
+    korunan = None
+    if _yedeksiz_mi(k, yol) and not (
+            kurtarilabilir_ref and k.blob_sha(kurtarilabilir_ref, yol) == k.disk_sha(yol)):
+        korunan = _yerel_kopya(k, yol)
+    k.sil(yol)
+    return korunan
 
 
 def _yerel_kopya(k: Klon, yol: str) -> str | None:
@@ -2116,6 +2202,7 @@ def komut_geri_al(b: Baglam, args) -> int:
     k = b.k
     etiket = geri_donus_etiketi(k)
     plan = plan_oku(k)
+    yeni_ref = plan.get("yeni_etiket") or b.yeni_ref
     if args.hepsi:
         yollar = []
         for kalem in plan["kalemler"]:
@@ -2139,8 +2226,12 @@ def komut_geri_al(b: Baglam, args) -> int:
                 continue
             print(f"GERİ ALINDI: {yol}")
         elif (k.kok / yol).is_file():
-            k.sil(yol)
+            # Etikette blob yok ⇒ ya motorun yazdığı dosya (yeni ref'te var, kurtarılabilir) ya da
+            # kullanıcının İZLENMEYEN dosyası (V7: hiçbir yerde yedeği yok — ölçüldü 2026-09-23).
+            korunan = _sil_korunarak(k, yol, kurtarilabilir_ref=yeni_ref)
             print(f"GERİ ALINDI (silindi): {yol} — tabanda yoktu")
+            if korunan:
+                print(f"Yedeksiz yerel içerik saklandı: {korunan}")
         durum_kaydet(k, yol, durum="geri_alindi")
     return hata
 
@@ -2156,16 +2247,18 @@ def _tek_satir(metin: str | None) -> str:
 
 def _atlandi_nedeni(kalem: dict, durum: dict, uygulanan_kalemler: set,
                     secili: set | None = None) -> str | None:
-    """Z58 (v0.5.4): hiçbir dosyası `dogrulandi` olmayan kalemin `uygulanan.json` mührüne NEDEN.
+    """Z58 (v0.5.4): `uygulandi` mühürlenmeyen kalemin (Z61 c: kendi dosyalarının hepsi `dogrulandi`
+    değil) `uygulanan.json` mührüne NEDEN.
 
     Kapanış anında güvenilir biçimde bilinir: `durum` bu turun `durum.json`'udur (`komut_kapanis`
     okur, hiçbir yer silmez — `_plan_muhru`), dosya→kalem eşlemesi planın `kalem["dosyalar"]`ıdır
     (`komut_plan` adım 3: her yol TEK kaleme, onu beyan eden en son kaleme bağlanır). Kalemin
     beyan ettiği ama sonraki bir kaleme DEVREDİLEN yollar planın `kalem["devredilen"]`ındadır
-    ({yol: sahip kalem}); `uygulanan_kalemler` bu turda `uygulandi` mühürlenen seçili kalemlerdir
-    (`_kapanis_git` onları mühür yazmadan ÖNCE hesaplar).
-    Devredilen bir yol ancak sahibi bu turda `uygulandi` mühürlendiyse VE yolun kendisi
-    `dogrulandi` ise İNMİŞ sayılır (sahibin başka dosyası inip bu yol ertelenmiş olabilir).
+    ({yol: sahip kalem}); `uygulanan_kalemler` bu turda en az bir dosyası İNEN seçili kalemlerdir
+    (Z61 c: `_kapanis_git`in `inen_kalemler`i — onları mühür yazmadan ÖNCE hesaplar; kendi
+    dosyalarının hepsi inmeyen sahip `atlandi` mühürlenir ama burada yine sayılır).
+    Devredilen bir yol ancak sahibinde bu turda bir dosya indiyse VE yolun kendisi `dogrulandi`
+    ise İNMİŞ sayılır (sahibin başka dosyası inip bu yol ertelenmiş olabilir).
       · `ertelendi` — kalemin dosyalarından ya da İNMEYEN devredilen yollarından en az birinde
                       `isaretle --karar ertelendi`; YA DA (v0.5.5 bug gate P3) inmeyen bir devredilen
                       yolun sahibi bu turda SEÇİLMEDİ (`secili` verilmişse): o yolun işi sahipte hâlâ
@@ -2351,15 +2444,34 @@ def _kapanis_git(b: Baglam, plan: dict, durum: dict, secili: set,
     # ⛔ İKİ GEÇİŞ (Z58 bug gate): atlandi kalemin `is-yok` nedeni, devrettiği yolların SAHİBİNİN bu
     # turdaki mührüne bağlıdır (`_atlandi_nedeni`). Sahip plan sırasında SONRA gelir (en son beyan
     # eden kalem) ⇒ önce tüm seçili kalemlerin uygulandi/atlandi hâli hesaplanır, sonra nedenler.
+    # ⛔ Z61 (c) (kullanıcı kararı 2026-09-23, seçenek 1): kalem ancak KENDİ dosyalarının HEPSİ
+    # `dogrulandi` ise `uygulandi` mühürlenir. Eskiden tek bir `dogrulandi` dosya yetiyordu: kalemin
+    # kendi dosyası `ertelendi` (ya da `--kabul` altında `bekliyor`/`uygulandi`) kalsa bile kalem
+    # `uygulandi` mühürleniyor ⇒ Z62 yeniden önerisi hiç devreye girmiyor, o dosyanın içeriği bir
+    # daha önerilmiyordu (ölçüldü, `Z61KismiKalemTest`). Artık böyle kalem `atlandi` olur, nedeni
+    # `_atlandi_nedeni` verir (kendi dosyası ertelendi ⇒ `ertelendi` → Z62 yeniden önerir; yalnız
+    # `--kabul` altında kalan açık FAIL ⇒ `kabul`).
+    # İKİ KÜME bilinçli: `inen_kalemler` (en az bir dosyası indi) `_atlandi_nedeni`nin devredilen-yol
+    # ölçütüdür — orada soru "bu YOL indi mi"dir (yolun kendi `dogrulandi`si ayrıca aranır), sahibin
+    # tamamı değil; sahibin başka dosyası ertelendi diye inmiş bir yolu "inmedi" saymak devreden
+    # kalemi `is-yok` yerine `kabul` ile kapatırdı. Dosya tabanı (`u["dosyalar"]`) da dosya başına
+    # yazılır: inen dosyanın tabanı eski kalsaydı kalem yeniden önerildiğinde o dosya yeniden
+    # YARGI vakası çıkarırdı (taban v3 ⇒ işlemsiz; ölçüldü).
     uygulanan_kalemler: set[str] = set()
+    inen_kalemler: set[str] = set()
     for kalem in plan["kalemler"]:
         if kalem["id"] not in secili:
             continue
+        hepsi = bool(kalem["dosyalar"])
         for d in kalem["dosyalar"]:
             kayit = durum["dosyalar"].get(d["yol"], {})
             if kayit.get("durum") == "dogrulandi":
                 u["dosyalar"][kayit.get("hedef_yol", d["yol"])] = plan["yeni_etiket"]
-                uygulanan_kalemler.add(kalem["id"])
+                inen_kalemler.add(kalem["id"])
+            else:
+                hepsi = False
+        if hepsi:
+            uygulanan_kalemler.add(kalem["id"])
     for kalem in plan["kalemler"]:
         if kalem["id"] not in secili:
             continue
@@ -2367,7 +2479,7 @@ def _kapanis_git(b: Baglam, plan: dict, durum: dict, secili: set,
         muhur = {"etiket": plan["yeni_etiket"],
                  "durum": "uygulandi" if uygulandi else "atlandi", "zaman": _simdi()}
         if not uygulandi:
-            muhur["neden"] = _atlandi_nedeni(kalem, durum, uygulanan_kalemler, secili)
+            muhur["neden"] = _atlandi_nedeni(kalem, durum, inen_kalemler, secili)
         u["kalemler"][kalem["id"]] = muhur
     _yaz_json(k.durum_dizini / "uygulanan.json", u)
     return kod
@@ -2378,6 +2490,7 @@ def komut_kapanis(b: Baglam, args) -> int:
     durum = durum_oku(k)
     secili = secim_oku(k, plan)
     satirlar, eksikler = [], []
+    durum_dustu = False
 
     for kalem in plan["kalemler"]:
         if kalem["id"] not in secili:
@@ -2388,12 +2501,17 @@ def komut_kapanis(b: Baglam, args) -> int:
             dv = kayit.get("durum", "bekliyor")
             karar = kayit.get("karar", "—")
             # §6: ajanın "yaptım" demesi durum değiştirmez — DİSKTEN yeniden doğrula
+            # ⛔ Z61 (a): ölçüm tutmazsa KAYDIN KENDİSİ düşürülür, yalnız yerel `dv` değil. Aynı
+            # `durum` sözlüğünü `_kapanis_git` (mühür + `uygulanan.json` dosya tabanı) ve
+            # `_atlandi_nedeni` (devredilen yol "indi" mi) okur; kayıt `dogrulandi` kalınca
+            # `--kabul`de kalem `uygulandi`, devreden kalem `is-yok` mühürleniyor, içerik diskte
+            # yokken kalem bir daha önerilmiyordu (ölçüldü, `Z61KapanisDiskTutmazTest`).
             if dv == "dogrulandi":
                 hedef = kayit.get("hedef_yol", yol)
                 if k.disk_sha(hedef) != kayit.get("beklenen_sha"):
                     dv = "uygulandi"
                     kayit["not_"] = "kapanışta diskten doğrulanamadı"
-                    eksikler.append(f"{yol}: durum.json 'dogrulandi' diyor ama disk farklı")
+                    eksikler.append(f"{yol}: durum.json 'dogrulandi' diyor ama disk farklı — kayıt geri 'uygulandi'ya alındı; düzelttikten sonra `isaretle`/`uygula` ile yeniden işaretle")
                 else:
                     tam = k.kok / hedef
                     if tam.is_file():
@@ -2403,7 +2521,11 @@ def komut_kapanis(b: Baglam, args) -> int:
                                      if y_sha_ref else None)
                         if cakisma_isaretleri(metin, ref_metin):
                             dv = "uygulandi"
-                            eksikler.append(f"{yol}: çakışma işareti duruyor")
+                            kayit["not_"] = "kapanışta çakışma işareti bulundu"
+                            eksikler.append(f"{yol}: çakışma işareti duruyor — kayıt geri 'uygulandi'ya alındı; düzelttikten sonra `isaretle`/`uygula` ile yeniden işaretle")
+                if dv != "dogrulandi":
+                    kayit["durum"] = dv
+                    durum_dustu = True
             if dv in ("bekliyor", "uygulandi"):
                 eksikler.append(f"{yol}: durum '{dv}' (dogrulandi ya da gerekçeli atlandi gerekir)")
                 satirlar.append(f"[FAIL] {kalem['id']} {yol} {d['vaka']} {karar}")
@@ -2412,6 +2534,10 @@ def komut_kapanis(b: Baglam, args) -> int:
                                 f" ({kayit.get('gerekce', '—')})")
             else:
                 satirlar.append(f"[PASS] {kalem['id']} {yol} {d['vaka']} {karar}")
+    if durum_dustu:
+        # Kalıcı: `durum` tablosu ve sonraki `uygula` da ölçülen hâli görsün (yargı vakası
+        # `uygulandi` kaydında yeniden `bekliyor` açılır; otomatik vaka yeniden yazılır).
+        durum_yaz(k, durum)
 
     # özel adımlar
     beklenen_ozel = sorted({a for kalem in plan["kalemler"] if kalem["id"] in secili

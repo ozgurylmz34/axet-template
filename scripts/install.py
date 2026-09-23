@@ -233,7 +233,9 @@ def check_env() -> list[tuple[str, str, bool]]:
         except Exception as exc:  # noqa: BLE001 — teşhis çıktısı
             results.append((tool, f"çalıştırılamadı: {exc}", False))
     rg = shutil.which("rg")
-    results.append(("rg", rg or "YOK — aXet grep aracı yavaşlar (kurulum: winget install BurntSushi.ripgrep.MSVC)", bool(rg)))
+    rg_yok = ("YOK — aXet grep aracı yavaşlar (kurulum: şirketinin yazılım merkezinden ya da "
+              "https://github.com/BurntSushi/ripgrep/releases)")
+    results.append(("rg", rg or rg_yok, bool(rg)))
     return results
 
 

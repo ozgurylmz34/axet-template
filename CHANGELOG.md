@@ -6,6 +6,71 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.6 — 2026-09-23
+
+### 0.5.6-01 · `%guncelle`: silinen içerik yedeklenir, kapanış diski yeniden ölçer, zaman damgaları saat dilimli (düzeltme)
+
+- **neden:** Motorun sildiği ya da yerine başkasını koyduğu dosyalar artık önce `.yerel` uzantılı yedeğe alınır; yedeksiz içerik kaybı kalmadı. `kapanis` her dosyayı diskten yeniden ölçer: `dogrulandi` kaydı diskle tutmuyorsa (dosya elle değiştirilmiş ya da silinmiş, çakışma işareti kalmış) kayıt kalıcı olarak `uygulandi`ya düşer, kalem `--kabul` ile bile `uygulandi` diye mühürlenmez ve eksik satırı ne yapılacağını söyler (`isaretle`/`uygula` ile yeniden işaretle). Bir kalem ancak KENDİ dosyaları indiğinde kapanır; başka kalemin dosyası yüzünden yanlışlıkla kapanmaz. Zaman damgaları saat dilimiyle yazılır; eski dilimsiz damgalar yerel saat sayılır (yaz saati/farklı saat dilimli makinede yanlış "süresi doldu" kararı kalmadı). Tabanı bilinmeyen taşıma (VTB) kartı eklendi.
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`, `guncelle/kartlar/V1R.md`, `guncelle/kartlar/V4R.md`, `guncelle/kartlar/V6.md`, `guncelle/kartlar/VTB.md`
+- **test:** `python tests/run_tests.py -k guncelle`
+- **gerektirir:** —
+
+### 0.5.6-02 · Proje kurulumunun kullanıcı adımları tek çift tıklama: `KURULUMU-TAMAMLA.cmd` + `%sistem` (yetenek)
+
+- **neden:** `%yeni-proje` sonunda kullanıcıya tek tek kopyalatılan dört komutun yerine proje klasörüne `KURULUMU-TAMAMLA.cmd` bırakılır. Çift tıklayınca sırayla: SAP bağlantı şablonları (`conn\DEV.env`, `conn\QA.env`) Notepad'de açılır — parola pencereye sorulmaz, sohbete girmez; doldurulunca DEV etkinleşir; proje ayarlarının (davranış yüzeyi) onayı sorulur; `doctor` koşar; aXet'i projede açmayı önerir. Onay YALNIZ çift tıklanan pencerede verilir: girdisi yönlendirilmiş (ör. `echo E | …`) çağrıda onay sorulmaz, böylece aXet oturumu kendi değişikliğini onaylayamaz. Tekrar çalıştırmak güvenlidir. Birden çok SAP sistemi arasında geçiş için `%sistem` ("QA'ya geç"). Şablon `.gitignore`'u kısayolu git'e kapatır (makineye özgü yol taşır).
+- **dosyalar:** `proje-tamamla.cmd`, `scripts/conn_sablon.py`, `scripts/yeni_proje.py`, `skills-sap/README.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sistem/SKILL.md`, `skills/yeni-proje/SKILL.md`, `skills/onboard/SKILL.md`, `templates/project-sap/conn/README.md`, `templates/project/.axetcode-denylist`, `templates/project/.gitignore`, `guncelle/harita.json`, `docs/onboarding.md`, `README.md`, `tests/test_proje_tamamla.py`, `tests/test_yeni_proje.py`
+- **test:** `python tests/run_tests.py -k proje_tamamla`, `python tests/run_tests.py -k yeni_proje`
+- **gerektirir:** —
+
+### 0.5.6-03 · `%guncelle-proje` kurulum kısayolunu mevcut SAP projelerine de getirir (yetenek)
+
+- **neden:** `KURULUMU-TAMAMLA.cmd` yalnız yeni kurulan projeye yazılıyordu. Artık `%guncelle-proje` planında ayrı bir kalemdir: eksikse yazılır; aXet'in yazdığı ama eskimiş (ör. klon yolu değişmiş) kısayol yedeklenip yenilenir; elle yazılmış (işaretsiz) dosyaya DOKUNULMAZ, yalnız bilgi verilir. Kısayol git'e kapalı değilse uyarı çıkar (commit etme — makineye özgü yol taşır). `geri-al` kısayolu da kapsar. Bu sürümden sonra SAP projelerinde `%guncelle-proje`yi koşun.
+- **dosyalar:** `scripts/guncelle_proje.py`, `skills/guncelle-proje/SKILL.md`, `tests/test_guncelle_proje.py`
+- **test:** `python tests/run_tests.py -k guncelle_proje`
+- **gerektirir:** `0.5.6-02`
+
+### 0.5.6-04 · Hafıza: projeye bağlayıcı kural AGENTS.md'ye yazılır; `%recall` kayıt gövdelerini ve paket kurallarını da tarar (kural)
+
+- **neden:** "Bu projede hep böyle yap" türü kurallar yalnız hafızaya yazılıyor, proje `AGENTS.md`'si boş kalıyordu. `%remember` artık üçüncü kapsamı bilir: bağlayıcı kural EK olarak `AGENTS.md` "Proje kuralları"na kısa madde (onayı kullanıcı verir). `%recall` yalnız indeks satırlarını değil kayıt gövdelerini ve `<source_root>/**/.rules.md` dosyalarını da tarar, zayıf eşleşmeleri "düşük güven" diye ayrı listeler. SAP'de Z obje adı önermeden önce paketin `.rules.md` adlandırma kuralı okunur; hafızayla çelişirse ikisi gösterilip sorulur. Çekirdek kimlikleri: `AXET-CORE-0.6.0`, `AXET-SAP-0.5.0` — SAP projelerinde kesin yasak damgası bu yüzden "farklı" görünür (`doctor` FAIL); `%guncelle-proje` damgayı yeniler, ardından proje ayarlarını yeniden onaylayın (`KURULUMU-TAMAMLA.cmd`).
+- **dosyalar:** `core/00-temel.md`, `core/sap/00-sap.md`, `skills/recall/SKILL.md`, `skills/recall/scripts/recall.py`, `skills/remember/SKILL.md`, `skills-sap/sap-dev/SKILL.md`, `templates/project/AGENTS.md`, `scripts/yeni_proje.py`, `tests/test_recall.py`
+- **test:** `python tests/run_tests.py -k recall`, `python tests/run_tests.py -k yeni_proje`
+- **gerektirir:** —
+
+### 0.5.6-05 · Uzak deposu olmayan projede dal birleştirme tarifi; cevapsız onay = HAYIR (kural)
+
+- **neden:** Remote'suz (yalnız yerel) projede dalın `main`'e nasıl döneceği yazılı değildi. `%commit-pr` yerel repoda: açık onay → doğrulama → `git merge --no-ff` → çakışmada DUR (kendiliğinden çözme yok) → yalnız `git branch -d`. `%gun-sonu` remote yoksa push da birleştirme de yapmaz. Onay sorusu cevapsız kalırsa ya da araç etkileşimsiz ortam bildirirse ("best judgment") cevap HAYIR sayılır: geri alınamaz iş yapılmaz, bekleyen karar raporlanır.
+- **dosyalar:** `core/00-temel.md`, `skills/commit-pr/SKILL.md`, `skills/gun-sonu/SKILL.md`, `tests/test_yerel_birlestirme.py`
+- **test:** `python tests/run_tests.py -k yerel_birlestirme`
+- **gerektirir:** —
+
+### ★ 0.5.6-06 · İzin: birleşmemiş dalı zorla silen `git branch` biçimleri engellendi (güvenlik)
+
+- **neden:** `git branch -df`, `-fd`, `-fD`, `-D`, `--delete --force` gibi eşdeğer yazımlar izin kuralının dışında kalıyordu ve birleşmemiş bir dal (içindeki commit'lerle) sorgusuz silinebiliyordu (ölçüldü). 12 yeni `deny` deseni bu biçimleri kapatır; `git branch -d` (birleşmiş dal) serbest kalır. Yeni izin kuralları global config'e ancak `install.py` (ya da `kur.cmd`) yeniden koşulup aXet kapatılıp açılınca etkin olur.
+- **dosyalar:** `config/permissions.json`, `tests/test_install.py`, `README.md`
+- **test:** `python tests/run_tests.py -k install`
+- **gerektirir:** —
+
+### 0.5.6-07 · Kurumsal kurulum: eksik araç için winget yerine şirket yazılım merkezi (düzeltme)
+
+- **neden:** Kurulum eksik Git/Python'u winget ile kurmayı öneriyordu; şirket bilgisayarında bu yoldan gelen sürüm kurum izinli olmayabiliyor. Artık `kur.ps1` varsayılanda winget ÇAĞIRMAZ: eksik aracı şirketinin yazılım merkezinden (Software Center / Company Portal) kurmanı ya da BT'den istemeni, sonra YENİ bir PowerShell açıp komutu tekrar çalıştırmanı söyler (resmi indirme adresiyle). Eski soru akışı isteyene `-Winget` ile açıktır. `yeni-proje.cmd`, `proje-tamamla.cmd` ve `install.py` ripgrep ipucu aynı dili kullanır.
+- **dosyalar:** `kur.ps1`, `kur.cmd`, `yeni-proje.cmd`, `proje-tamamla.cmd`, `scripts/install.py`, `tests/test_kur.py`, `README.md`, `docs/onboarding.md`, `skills/onboard/SKILL.md`
+- **test:** `python tests/run_tests.py -k kur`, `python tests/run_tests.py -k install`
+- **gerektirir:** —
+
+### 0.5.6-08 · Çift tıklamalık ilk kurulum dosyası `aXet-Kur.cmd` (yetenek)
+
+- **neden:** Terminal kullanmayan biri için: `aXet-Kur.cmd`yi indir (ya da ekibinden al) ve çift tıkla. README'deki tek satırın aynısını yapar, sonucu sade bir mesajla yazar ve pencereyi açık tutar. Seçenekler aynen geçer (`aXet-Kur.cmd -DenemeModu` hiçbir şey kurmaz). README "Değişiklik notu" artık bu dosyaya (CHANGELOG) yönlendirir; günlük kullanım listesine `%sistem` ve `%guncelle-proje` eklendi.
+- **dosyalar:** `aXet-Kur.cmd`, `README.md`, `docs/onboarding.md`, `guncelle/harita.json`, `tests/test_kur.py`, `tests/test_yayin_hazirla.py`, `tests/test_yayin_surumleri.py`
+- **test:** `python tests/run_tests.py -k kur`, `python tests/run_tests.py -k yayin`
+- **gerektirir:** —
+
+### 0.5.6-09 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.5.5 — 2026-09-22
 
 ### 0.5.5-01 · `%guncelle`: ertelenen kalem sonraki güncellemede yeniden önerilir; bekleyen önkoşul kendiliğinden seçilir (yetenek)

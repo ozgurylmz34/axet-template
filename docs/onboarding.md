@@ -17,11 +17,15 @@ Bu belgedeki yollar template'in varsayılan yere, `%USERPROFILE%\axet` klasörü
 | Gerekli | Kontrol | Nasıl sağlanır |
 |---|---|---|
 | aXet.code (girişi yapılmış) | `axet-code -v` | şirket kanalından; kurulum aracı aXet'i kurmaz |
-| Git | `git --version` | yoksa kurulum aracı `winget` ile kurmayı sorar |
-| Python ≥ 3.12 | `python --version` | yoksa kurulum aracı `winget` ile kurmayı sorar |
+| Git | `git --version` | şirketinin yazılım merkezinden (Software Center / Company Portal) ya da BT'den |
+| Python ≥ 3.12 | `python --version` | şirketinin yazılım merkezinden (Software Center / Company Portal) ya da BT'den |
 | Windows PowerShell | Windows ile gelir | — |
 
-Önerilen: `rg` (ripgrep). Yoksa aXet'in arama aracı yavaşlar; kurulum aracı kurmayı sorar.
+Kurulum aracı Git ve Python'u **kurmaz**: eksikse durur ve yazılım merkezini gösterir. Şirket makinesinde başka
+yoldan (winget, internetten indirme) kurma; şirketin izin verdiği sürüm yazılım merkezindekidir. Yalnız şirket
+dışı, kişisel bir makinede `kur.cmd -Winget` eksikleri winget ile kurmayı sorar.
+
+Önerilen: `rg` (ripgrep). Yoksa aXet'in arama aracı yavaşlar; kurulum aracı hatırlatır ama durmaz.
 Bir şey kurulduktan sonra **yeni terminal ve yeni aXet oturumu** aç: PATH ancak o zaman görünür.
 
 İsteğe bağlı paketler (yalnız ilgili iş gelince kur; kurmak senin kararın):
@@ -37,6 +41,8 @@ Kurulum biçimi: `python -m pip install --user <paket>`.
 
 ## 1. Kurulum
 
+En kolayı: `aXet-Kur.cmd` dosyasını (template deposunun kökünde; ya da ekibinden) indir ve **çift tıkla**. Windows
+"internetten geldi" uyarısı verirse **Daha fazla bilgi → Yine de çalıştır**. Terminal yolu aynı işi yapar —
 PowerShell'i aç ve şu satırı yapıştır:
 
 ```powershell
@@ -45,7 +51,8 @@ $f = Join-Path $env:TEMP 'axet-kur.ps1'; Invoke-WebRequest -UseBasicParsing 'htt
 
 Kurulum aracının yaptıkları:
 1. aXet'i arar; bulamazsa durur.
-2. Git ve Python'u arar; eksikse `winget` ile kurmayı sorar. Kurulum olmazsa ne indirmen gerektiğini yazar.
+2. Git ve Python'u arar; eksikse durur ve yazılım merkezinden (ya da BT'den) kurmanı söyler, resmi indirme
+   adresini de yazar (çıkış kodu 2). Kurduktan sonra yeni bir PowerShell aç ve aynı satırı tekrar yapıştır.
 3. Template'i `%USERPROFILE%\axet` klasörüne klonlar (makinede **bir kez**; tüm projeler aynı klonu kullanır).
 4. `install.py --sap` çalıştırır: global aXet config'ine yalnız kendi yollarını ve izin kurallarını ekler, önce yedek alır.
 5. `doctor.py` ile kontrol eder.
@@ -90,18 +97,23 @@ Terminali tercih edersen aynı işi `& $HOME\axet\yeni-proje.cmd` yapar.
 senin yazdığın değerler ezilmez; araç farkı raporlar.
 
 ### 3.2 SAP kimlik bilgileri
-Bağlantı bilgisi proje kökündeki `.conn_adt` dosyasında durur. Bu dosya git'e girmez, aXet onu okumaz,
-içeriği sohbete yazılmaz.
+Her SAP sistemi `conn\<AD>.env` dosyasıdır; aktif bağlantı proje kökündeki `.conn_adt`'dir. `conn/` ve `.conn_adt`
+git'e girmez, aXet ajanına kapalıdır (denylist), içeriği sohbete yazılmaz.
 
-1. **Bilgileri yaz:** proje kökünde, **kendi PowerShell terminalinde** (aXet oturumunda değil):
-   `python $HOME\axet\skills-sap\sap-adt-foundation\scripts\setup_credentials.py`
-   - Bilgileri terminalde sorar; parola ekrana yansımaz, sohbete hiçbir şey düşmez.
-   - Birden çok sistem için `--slot <AD>` kullan (`conn/<AD>.env` yazar); aralarında `switch_tier.py <AD>` ile geçilir.
-   - Etkileşimsiz çağrıyı (aXet kabuğu, Git Bash) reddeder.
-   - Alan adları için örnek dosya: `skills-sap/sap-adt-foundation/assets/.conn_adt.example`.
-   - Canlı akış DOĞRULANMADI.
-2. **Davranış yüzeyini onayla:** aynı terminalde `python $HOME\axet\scripts\behavior_manifest.py generate`.
-   Proje kuralları (`AGENTS.md`, `.axet-code.json`, denylist, `.githooks/`) her değiştiğinde bu onayı yenile.
+1. **Proje klasöründeki `KURULUMU-TAMAMLA.cmd`'ye çift tıkla** (`%yeni-proje` yazar; yoksa
+   `& $HOME\axet\proje-tamamla.cmd <klasör>`). Pencere SAP bilgisi sormaz:
+   - `conn\DEV.env` ve `conn\QA.env` şablonlarını yazar (var olanı ezmez) ve Notepad'de açar. Dil
+     (`sap-project.json` master_language), tier ve sistem adı (`<proje>_DEV`) hazır gelir.
+   - `<...>` yerleri doldur, kaydet, kısayola tekrar çift tıkla. Hatalı alanlar adıyla gösterilir (değer basılmaz),
+     boş şablon atlanır; QA sistemi yoksa `QA.env`'e dokunma. Geçerli DEV aktif sistem olur.
+   - Parola dosyada düz metin durur. Dosyaya yazmak istemezsen terminal yolu:
+     `python $HOME\axet\skills-sap\sap-adt-foundation\scripts\setup_credentials.py --slot <AD>` (parola ekrana
+     yansımaz; etkileşimsiz çağrıyı reddeder).
+   - Sistem değiştirmek: aXet'te `%sistem` ya da "QA'ya geç". QA/PRD salt-okunurdur.
+2. **Davranış yüzeyini onayla:** aynı pencere onaylanacak dosyaları listeler ve sorar (`behavior_manifest.py
+   generate`). Proje kuralları (`AGENTS.md`, `.axet-code.json`, denylist, `.githooks/`) her değiştiğinde kısayola
+   tekrar çift tıkla; değişenler `!` ile gösterilir.
+   Çift tıklanan pencerede Notepad'in açılışı ve `axet-code -c` açılışı DOĞRULANMADI.
 3. **Doğrula** (proje kökünde):
    ```powershell
    git check-ignore .conn_adt                                        # dosya adını basmalı
@@ -164,7 +176,7 @@ Belirti → çözüm tablosu: [README "Sorun giderme"](../README.md#sorun-giderm
 - [ ] Kurulum aracı bitti; `doctor.py` 0 FAIL
 - [ ] Yeni oturumun ilk satırında `AXET-CORE` görünüyor
 - [ ] İlk proje `%yeni-proje` ile kuruldu; projede `proje: <ad>` görünüyor
-- [ ] (SAP) `setup_credentials.py` ve `behavior_manifest.py generate` kendi terminalimde çalıştı
+- [ ] (SAP) `KURULUMU-TAMAMLA.cmd`: `conn\DEV.env` dolduruldu, ayarlar onaylandı, doctor 0 FAIL
 - [ ] (SAP) `.conn_adt` git'e kapalı; `ping` ve `adt_get` başarılı
 - [ ] `session_brief.py --no-fetch` hatasız
 - [ ] (SAP) Paket SAP'de SE21 ile açıldı, yerelde `new_package.py` ile kuruldu

@@ -33,3 +33,6 @@ Thumbs.db
 # abapGit teslim çıktıları ve SAP dönüş kayıtları (sistem ayrıntısı taşıyabilir)
 **/abapgit/dist/
 **/abapgit/.abapgit-status/
+
+# aXet kurulum kısayolu (yeni_proje.py yazar) — bu makinedeki aXet klonunun MUTLAK yolunu taşır
+KURULUMU-TAMAMLA.cmd

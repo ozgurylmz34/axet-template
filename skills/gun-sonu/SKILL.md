@@ -3,7 +3,8 @@ name: gun-sonu
 description: >
   Use at the end of a working day, or when stopping mid-task, so the next session can resume from
   files instead of memory: writes a checkpoint, updates the package SESSION_NOTES, the project work
-  list and the handoff note, commits the work in progress on a branch and pushes it. Triggers:
+  list and the handoff note, commits the work in progress on a branch and pushes it (no push when the
+  repo has no remote). Triggers:
   "gün sonu", "günü kapat", "bugünlük bu kadar", "yarın devam ederiz", "çıkıyorum", "end of day".
   Do not use for a topic switch inside a running session (use handoff) or for publishing a finished
   change with a pull request (use commit-pr).
@@ -43,10 +44,14 @@ description: >
    - Dosyaları adıyla ekle (`git add <dosyalar>`; listeyi kullanıcıya göster) →
      `git commit -m "wip: <konu> — gün sonu <YYYY-AA-GG>"`.
 8. **Push:** kullanıcının "gün sonu" demesi **bu projenin bu dalını** push etme talebidir:
-   `git push -u origin <dal>`. `--force` yok. Remote yoksa ya da push reddedilirse DUR, çıktıyı aynen bildir.
+   `git push -u origin <dal>`. `--force` yok. Push reddedilirse DUR, çıktıyı aynen bildir.
    Kullanıcı "gün sonu" demeden bu skill'e girdiysen push'u sor.
+   - **Remote yoksa** (`git remote` çıktısı boş = yerel repo): push adımı YOKTUR; bu hata değildir, DURMA. Kendiliğinden remote tanımlama.
+     Raporda yaz: "push yok (remote yok) — iş yalnız bu makinede, yedeği yok". Dal açık kalır: iş listesindeki aktif
+     maddeye `dal: <dal> (main'e birleşmedi)` ekle. Dalı `main`'e birleştirme gün sonunun parçası DEĞİLDİR ("gün sonu"
+     birleştirme onayı sayılmaz); kullanıcı isterse `%commit-pr` adım 9 (yerel birleştirme), ayrı açık onayla.
    - Template reposunda (ekip `memory/` dersleri) değişiklik varsa o **ayrı depodur**: onayı oraya taşıma, ayrıca sor.
-9. **Doğrula:** `git status` (temiz ya da bilinçli bırakılanlar listeli) · `git log -1 --oneline` · push çıktısı ·
+9. **Doğrula:** `git status` (temiz ya da bilinçli bırakılanlar listeli) · `git log -1 --oneline` · push çıktısı (remote yoksa "push yok") ·
    `session_brief.py --no-fetch` son hâli.
 10. **Rapor:** commit ve dal · push sonucu · güncellenen dosyalar · yarın ilk adım. "Yeni oturumda açılış özeti bunları
     gösterecek; 'devam' demen yeter." de.

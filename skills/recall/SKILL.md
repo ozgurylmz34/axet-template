@@ -1,7 +1,8 @@
 ---
 name: recall
 description: >
-  Ekip ve proje hafızasında, skill açıklamalarında işe ilgili ders ve kayıt arar. Çok adımlı bir işe
+  Ekip ve proje hafızasında (indeks + kayıt gövdeleri), paket .rules.md kurallarında ve skill açıklamalarında
+  işe ilgili ders ve kayıt arar. Çok adımlı bir işe
   başlarken, tanıdık görünen bir hata ya da tuzakla karşılaşınca, yeni bir kural/ders/hafıza kaydı
   yazmadan önce ve "bu yapılamaz" demeden önce kullan. Kullanıcı %recall yazarsa da çalıştır.
 ---
@@ -25,5 +26,5 @@ description: >
 
 ## Kurallar
 - Çıkan kayıt hipotezdir: içindeki dosya/komut/obje hâlâ var mı, kullanmadan önce doğrula.
-- "Eşik üstü kayıt yok" ≠ "ilgili ders yok": script yalnız başlık ve özetlere bakar, gövdeleri okumaz.
+- "Eşik üstü kayıt yok" ≠ "ilgili ders yok": script hafıza kaydı gövdelerini ve `<source_root>` altındaki `.rules.md`'leri de tarar ama skill gövdelerine, paket `SESSION_NOTES`/`SPEC`'ine ve kaynak koda bakmaz; gövde eşleşmesi indeks eşleşmesinden düşük puanlıdır; eşik altı kalan gövde eşleşmeleri ayrı "düşük güven" listesinde çıkar — göreve dokunuyorsa aç (çıktıdaki `KAPSAM` satırı neye bakılmadığını söyler).
 - Script hiçbir şey yazmaz, ağa çıkmaz; güvenle her işte çalıştırılabilir.

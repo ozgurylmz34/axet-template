@@ -536,16 +536,17 @@ GIT_C_SIMULASYONLA_OLCULEN = [
 # büyütür ve `-c ayar=değer` kombinatoryaldır. Bu satırlar açıklığı KİLİTLER: biri desen eklerse ya da motor
 # semantiği değişirse test FAIL verir ve README/_aciklama'daki "bilinen sınır" metni güncellenmek zorunda kalır.
 HALA_ACIK_KACIS_BICIMLERI = [
-    'git -c core.pager=cat branch -D feature',   # `-c ayar=değer` biçimi: hiçbir desen tutmuyor
+    'git -c core.pager=cat stash drop',          # `-c ayar=değer` biçimi: hiçbir desen tutmuyor
+    # (`-c … branch -D` Z75'te `*git *branch* -D*` ile KAPANDI → Z75_ZORLA_DAL_SILME)
     'git -c user.name=x checkout -- .',
     'git checkout .',                            # `--` ayıraçsız nokta biçimi (aynı yıkıcılıkta)
     'git checkout -f .',
     'git restore .',                             # `checkout -- .`nın modern eşdeğeri
     'git restore --staged .',
 ]
-# ⚠ `git --git-dir=<yol> …` bu listede YOK ve olmamalı: yol `.git` ile bitiyorsa metinde `.git branch -D`
-# geçtiği için `*git branch -D*` KAZARA eşleşir (ölçüldü). Bu koruma değil, tesadüftür —
-# `git --git-dir=/x/depo branch -D f` (yol `.git` ile bitmiyor) yine açıktır.
+# ⚠ `git --git-dir=<yol> …` bu listede YOK: yol `.git` ile bitiyorsa `*git branch -D*` KAZARA eşleşiyordu
+# (tesadüf); Z75'ten beri dal silme ailesi `*git *branch* …*` biçimiyle global seçenekten bağımsız tutulur
+# (`git --git-dir=/x/depo branch -D f` → Z75_ZORLA_DAL_SILME). Diğer alt komutlarda `--git-dir=` hâlâ açık.
 
 
 # PLAYWRIGHT TARAYICI İNDİRMESİ (2026-09-21, canlı `axet-code run`, aXet.code 1.3.0, lab config XDG_CONFIG_HOME ile).
@@ -620,6 +621,105 @@ class OlculmusDenyKapsamiTest(unittest.TestCase):
                       for k in BILINEN_SINIR_HARF_DUYARLI if _eslesen_desenler(self.kurallar, k)]
         self.assertEqual(kapananlar, [], "Bilinen sınır kapanmış görünüyor; belgeyi (README 'Bilinen sınırlar' + "
                                          "permissions.json _aciklama) ve bu testi güncelle:\n" + "\n".join(kapananlar))
+
+
+# Z75 — ZORLA DAL SİLME EŞDEĞERLERİ (2026-09-23). Önce yalnız `*git branch -D*` vardı; eşdeğer yazımlar hiçbir desene
+# uymuyordu. GERÇEK gitte (scratch repo, birleşmemiş dal) ölçüldü: aşağıdaki yazımların HEPSİ birleşmemiş dalı SİLDİ,
+# yalnız düz `-d` reddetti. Git seçenekleri dal adından SONRA da kabul eder (`-d x -f` sildi) ve uzun seçeneğin
+# tekil önekini kabul eder (`--forc` sildi; `--for` belirsiz: --force/--format). Desenler bu yüzden bayrak sırasından
+# bağımsız ve `*git *branch*` önekli: `-C <yol>`, `-c ayar=değer`, `--git-dir=` global seçenekleri de tutulur.
+# Joker yalnız `*`, harfe duyarlı, tam metne glob (ölçülmüş semantik, yukarıya bkz.). Her satırın 2. alanı yalnız
+# O desenin tuttuğu biçimdir → bir desen silinirse adıyla FAIL verir (mutasyonla doğrulandı).
+Z75_ZORLA_DAL_SILME = [
+    ('git branch -d -f b1',                     '*git *branch* -d* -f*'),
+    ('git branch -d b1 -f',                     '*git *branch* -d* -f*'),       # bayrak dal adından sonra
+    ('git -C /t/r branch -d -f b1',             '*git *branch* -d* -f*'),
+    ('git branch -d --force b1',                '*git *branch* -d* --forc*'),
+    ('git branch -d b1 --force',                '*git *branch* -d* --forc*'),
+    ('git branch --delete -f b1',               '*git *branch* --d* -f*'),
+    ('git branch --delete --force b1',          '*git *branch* --d* --forc*'),
+    ('git branch --delete --forc b1',           '*git *branch* --d* --forc*'),  # tekil önek kısaltması
+    ('git -C /t/r branch --delete --force b1',  '*git *branch* --d* --forc*'),
+    ('git branch -f -d b1',                     '*git *branch* -f* -d*'),
+    ('git branch -f --delete b1',               '*git *branch* -f* --d*'),
+    ('git branch --force -d b1',                '*git *branch* --forc* -d*'),
+    ('git branch --force --delete b1',          '*git *branch* --forc* --d*'),
+    ('git branch -df b1',                       '*git *branch* -df*'),
+    ('git -C /t/r branch -df b1',               '*git *branch* -df*'),
+    ('git branch -fd b1',                       '*git *branch* -fd*'),
+    ('git branch -fD b1',                       '*git *branch* -fD*'),
+    ('git branch -Df b1',                       '*git *branch* -D*'),
+    ('git -c core.pager=cat branch -D feature', '*git *branch* -D*'),
+    ('git --git-dir=/x/depo branch -D f',       '*git *branch* -D*'),
+]
+
+# Yanlış pozitif kontrolü: HİÇBİR kurala uymamalı. Meşru dal silme (commit-pr adım 9: yalnız `git branch -d <dal>`,
+# adında `-f`/`-d` geçen dallar dahil), okuma biçimleri ve adında/mesajında "branch" geçen başka git komutları.
+Z75_KONTROL_GRUBU = [
+    'git branch -d feature',
+    'git branch -d fix/a-feature',
+    'git branch -d z75-fix',
+    'git branch --delete feature',
+    'git -C /t/r branch -d feature',
+    'git branch --list',
+    'git branch -a',
+    'git branch -v',
+    'git branch -vv',
+    'git branch -r',
+    'git branch --merged',
+    'git branch --show-current',
+    'git branch --format=%(refname:short)',
+    'git branch -m eski yeni',
+    'git status --short --branch --untracked-files=all',
+    'git log --branches',
+    'git switch -c feature-branch-fix',
+    'git checkout -b hotfix/branch-delete',
+    'git commit -m "branch --force notu"',
+    'git push -u origin my-branch',
+    'git for-each-ref refs/heads',
+    'git merge --no-ff fix-branch-d',
+]
+
+# BİLİNÇLİ AÇIK (kullanıcı/lider kararı 2026-09-23): zorla TAŞIMA silme değildir — dalın kendi reflog'u korunur
+# (ölçüldü: `git branch -f t1 main` sonrası `t1@{1}` eski commit'i verdi), `-D` ise dalın reflog'unu da siler
+# (ölçüldü: `git reflog show t2` → unknown revision; hiç checkout edilmemiş dalın commit'i yalnız fsck dangling).
+# `-M` (zorla yeniden adlandırma) da silme ailesi dışında bırakıldı. Kapanırsa test FAIL → belge güncellenir.
+Z75_BILINCLI_ACIK = [
+    'git branch -f feature main',
+    'git branch --force feature main',
+    'git branch -M eski yeni',
+]
+
+
+class ZorlaDalSilmeTest(unittest.TestCase):
+    """Z75: `git branch -D`in eşdeğer yazımları deny'a düşer; meşru `-d` ve okuma biçimleri düşmez."""
+
+    def setUp(self):
+        self.kurallar = guncel_kurallar()
+
+    def test_esdeger_yazimlar_deny(self):
+        eksik = []
+        for komut, desen in Z75_ZORLA_DAL_SILME:
+            if self.kurallar.get("bash", {}).get(desen) != "deny":
+                eksik.append(f"{desen!r} config/permissions.json'da deny değil → {komut!r} birleşmemiş dalı siler")
+                continue
+            eslesen = _eslesen_desenler(self.kurallar, komut)
+            if desen not in [p for p, _ in eslesen]:
+                eksik.append(f"{desen!r} artık {komut!r} metnine uymuyor (eşleşenler: {eslesen})")
+            if any(k != "deny" for _, k in eslesen):
+                eksik.append(f"{komut!r} deny DIŞI bir desene de uyuyor: {eslesen}")
+        self.assertEqual(eksik, [], "\n".join(eksik))
+
+    def test_mesru_dal_silme_ve_okuma_dusmez(self):
+        ihlal = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z75_KONTROL_GRUBU
+                 if _eslesen_desenler(self.kurallar, k)]
+        self.assertEqual(ihlal, [], "\n".join(ihlal))
+
+    def test_bilincli_acik_zorla_tasima(self):
+        kapanan = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z75_BILINCLI_ACIK
+                   if _eslesen_desenler(self.kurallar, k)]
+        self.assertEqual(kapanan, [], "Bilinçli açık biçim kural alıyor; README/_aciklama güncellenmeli:\n"
+                         + "\n".join(kapanan))
 
 
 class KlonKorumasiKaldirildiTest(GeciciTest):

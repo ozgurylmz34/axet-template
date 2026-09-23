@@ -378,8 +378,10 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
 
 | Adım | Kim · nasıl | Sonuç |
 |---|---|---|
+| Slot oluştur (şablonla) | geliştirici: proje klasöründeki `KURULUMU-TAMAMLA.cmd` (→ `<TEMPLATE>/proje-tamamla.cmd` → `scripts/conn_sablon.py hazirla/dogrula`); `conn/DEV.env` + `conn/QA.env` şablonu Notepad'de doldurulur | denetim alan adı + kural basar, değer basmaz; parola dahil `<...>` yer tutucu reddedilir |
 | Slot oluştur | geliştirici, kendi terminalinde: `python <foundation>/scripts/setup_credentials.py --slot <SISTEM_ADI> --project-dir <proje>` | `conn/<SISTEM_ADI>.env` (değer basılmaz) |
 | Slotları gör | `python <foundation>/scripts/switch_tier.py --list --project-dir <proje>` | JSON: yalnız ad + tier + aktif sistem |
+| Sistemi seç (aXet) | `%sistem` skill'i: `conn_sablon.py ozet --json` (ad + tier + durum) → seçim → `switch_tier.py <AD>` | canlı ölçüldü 2026-09-23 (sahte slotlar): QA'ya geçiş ve DEV'e dönüş `.conn_adt`'yi değiştirdi, sandbox engellemedi |
 | Sistemi seç | `python <foundation>/scripts/switch_tier.py <SISTEM_ADI \| DEV \| QA \| PRD> --project-dir <proje>` | slot → `.conn_adt`; eski dosya `conn/.conn_adt.bak` |
 | Doğrula | `cli sap_doctor` | bağlantı + tier + dil |
 
@@ -387,6 +389,7 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
   `switch_tier` QA/PRD/UNKNOWN geçişini yapar ama JSON `warnings`'e yazar; yazma kapısı reddeder.
 - Tier kısaltmasıyla seçimde o tier'da birden çok sistem varsa `ambiguous_tier` (çıkış 2) → sistem adıyla seç. Bilinmeyen ad `system_not_found` (2).
 - Slotta doldurulmamış `<...>` değer (parola hariç) → geçiş yapılmaz, `placeholder_values` (1).
+- `conn/` aXet ajanına kapalıdır (proje `.axetcode-denylist` satırı `conn`; ÖLÇÜLDÜ 2026-09-23: satır yokken ajan `conn/QA.env`'i okuyabildi). Betikler (`switch_tier.py`, `conn_sablon.py`) çalışmaya devam eder.
 - Çıkış: 0 geçildi/listelendi · 1 yer tutucu/dosya hatası · 2 çözülemedi/belirsiz · 3 kullanım. Çıktı dosya içeriğini, URL'yi, kullanıcıyı basmaz.
 - aXet CLI her çağrıda yeni süreçtir → geçişten sonra yeniden başlatma adımı yok; sonraki çağrı yeni `.conn_adt`'yi okur.
 - Ortamda `ADT_SAP_URL`/`ADT_SAP_CLIENT` varsa `.conn_adt`'yi ezer → yazma `conn_env_mismatch`, `sap_doctor` `env_override` FAIL.

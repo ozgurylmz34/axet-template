@@ -544,6 +544,127 @@ def _paket_sablonu_satiri(b: Baglam) -> str:
             + ", ".join(degisen))
 
 
+# =====================================================================================================
+# KISAYOL — KURULUMU-TAMAMLA.cmd (Z79)
+# =====================================================================================================
+# Kısayol şablon ağacında DEĞİLDİR (makineye özgü mutlak klon yolu taşır, git'e kapalı): `yeni_proje.py`
+# yalnız YENİ SAP projesine yazar. Z70'ten önce kurulmuş projeye ulaşması için planın AYRI kalemidir —
+# damga (Z55) deseni: plan gösterir, onay kapsar, `uygula --otomatik` yazar (yedek + geri-al aynen), `kapanis`
+# diskten doğrular. Metin ve yazım `yeni_proje`'den (TEK kaynak, kopyalanmaz). İşaretsiz dosya ezilmez.
+KISAYOL_ISLEMLI = ("yok", "farkli")
+
+
+def _yp():
+    """`yeni_proje` GEÇ içe aktarılır: `doctor` zincirini çeker (ölçüldü ≈0,4 sn) ve yalnız SAP projesinde
+    gerekir. Desen aynı (`scripts/` kardeşi, aynı kopya — K4 notu yukarıda)."""
+    import yeni_proje  # noqa: PLC0415
+    return yeni_proje
+
+
+def _ham_ozet(veri: bytes | None) -> str | None:
+    """Kısayolun özeti HAM bayt üzerinden: cmd dosyasında CRLF içeriğin parçasıdır (`_ozet` normalize eder)."""
+    return None if veri is None else hashlib.sha256(veri).hexdigest()
+
+
+def kisayol_plani(b: Baglam) -> dict | None:
+    """None = ilgisiz (SAP değil) ya da kısayol güncel. Aksi hâlde {yol, durum, ...}; durum
+    'yok'/'farkli' iş kalemidir, 'resmi-degil'/'olculemedi' yalnız bilgi (dokunulmaz)."""
+    if not b.p.sap:
+        return None
+    yp = _yp()
+    try:
+        durum = yp.kisayol_durumu(b.p.kok, b.k.kok)
+        beklenen = _ham_ozet(yp.kisayol_bayt(b.k.kok))
+    except (OSError, UnicodeEncodeError, LookupError) as exc:
+        return {"yol": yp.KISAYOL, "durum": "olculemedi", "ayrinti": f"{type(exc).__name__}: {exc}"}
+    if durum == "guncel":
+        return None
+    return {"yol": yp.KISAYOL, "durum": durum, "beklenen_ozet": beklenen}
+
+
+def _kisayol_satiri(k: dict) -> str:
+    yol = k["yol"]
+    return {
+        "yok": f"{'KISAYOL':9s} {yol} — yok → kısayol yazılacak (onaydan sonra `uygula --otomatik`)",
+        "farkli": f"{'KISAYOL':9s} {yol} — resmi kısayol ama içeriği güncel değil (ör. klon yolu değişti) → "
+                  f"kısayol güncellenecek (eski hâli yedeklenir; `geri-al {yol}` ile döner)",
+        "resmi-degil": f"{'BİLGİ':9s} {yol} — resmi olmayan kısayol (aXet işareti yok), EZİLMEYECEK. Elle "
+                       f"değiştirilmesi önerilir: dosyayı sil, %guncelle-proje'yi tekrar çalıştır.",
+        "olculemedi": f"{'BİLGİ':9s} {yol} — kısayol durumu ÖLÇÜLEMEDİ ({k.get('ayrinti')}), dokunulmayacak",
+    }[k["durum"]]
+
+
+def _kisayol_islemli(plan: dict) -> bool:
+    k = plan.get("kisayol")
+    return bool(k) and k["durum"] in KISAYOL_ISLEMLI
+
+
+def _kisayol_uygula(b: Baglam, plan: dict) -> int:
+    if not _kisayol_islemli(plan):
+        return 0
+    p, yp, k = b.p, _yp(), plan["kisayol"]
+    rel = k["yol"]
+    try:
+        simdi = yp.kisayol_durumu(p.kok, b.k.kok)
+        beklenen = _ham_ozet(yp.kisayol_bayt(b.k.kok))
+    except (OSError, UnicodeEncodeError, LookupError) as exc:
+        print(f"FAIL {rel}: kısayol ölçülemedi ({type(exc).__name__}: {exc}).", file=sys.stderr)
+        durum_kaydet(p, rel, vaka="KISAYOL", durum="bekliyor", not_="ölçülemedi")
+        return 1
+    if beklenen != k.get("beklenen_ozet"):
+        print(f"FAIL {rel}: beklenen kısayol içeriği plandan sonra değişti (klon yolu?) — yeniden planla.",
+              file=sys.stderr)
+        durum_kaydet(p, rel, vaka="KISAYOL", durum="bekliyor", not_="plan bayat")
+        return 1
+    if simdi == "resmi-degil":
+        print(f"FAIL {rel}: plandan sonra resmi olmayan bir kısayol belirdi — EZİLMEDİ; yeniden planla.",
+              file=sys.stderr)
+        durum_kaydet(p, rel, vaka="KISAYOL", durum="bekliyor", not_="resmi olmayan kısayol belirdi")
+        return 1
+    if simdi != "guncel":         # ikinci `uygula`da yeniden yazılmaz, yedek EZİLMEZ
+        _yedekle(p, rel)
+        st, aciklama = yp.kisayol_yaz(p.kok, b.k.kok, guncelle=True)
+        if st not in ("yazildi", "guncellendi"):
+            print(f"FAIL {rel}: kısayol yazılamadı ({st}: {aciklama}).", file=sys.stderr)
+            durum_kaydet(p, rel, vaka="KISAYOL", durum="bekliyor", not_=aciklama)
+            return 1
+    if _ham_ozet(p.oku(rel)) != beklenen:
+        print(f"FAIL {rel}: yazıldı ama doğrulanamadı.", file=sys.stderr)
+        durum_kaydet(p, rel, vaka="KISAYOL", durum="uygulandi", beklenen_ozet=beklenen,
+                     not_="doğrulanamadı")
+        return 1
+    durum_kaydet(p, rel, vaka="KISAYOL", durum="dogrulandi", beklenen_ozet=beklenen, karar="otomatik")
+    print(f"KISAYOL: {rel} " + ("yazıldı" if k["durum"] == "yok" else "güncellendi (eski hâli yedekte)"))
+    ignore = subprocess.run(["git", "-C", str(p.kok), "check-ignore", "-q", rel], capture_output=True,
+                            stdin=subprocess.DEVNULL)
+    if ignore.returncode == 1:    # 1 = kapalı değil · 0 = kapalı · 128 = git reposu değil (uyarı gereksiz)
+        # yeni_proje ile aynı uyarı: kısayol klonun MUTLAK yolunu taşır (kullanıcı adı, makine yolu)
+        print(f"  ! UYARI: {rel} git'e kapalı değil — makineye özgü mutlak yol taşır; .gitignore'a "
+              f"`{rel}` satırını ekle, commit etme")
+    return 0
+
+
+def _kisayol_kapanis(b: Baglam, plan: dict, durum: dict, eksikler: list) -> str:
+    k = plan.get("kisayol")
+    if not k:
+        return ("kısayol: güncel — işlem gerekmedi" if plan.get("sap")
+                else "kısayol: proje SAP değil — ilgisiz")
+    if k["durum"] not in KISAYOL_ISLEMLI:
+        return "[BİLGİ] " + _kisayol_satiri(k).split(None, 1)[1]
+    rel = k["yol"]
+    kayit = durum["dosyalar"].get(rel, {})
+    dv = kayit.get("durum", "bekliyor")
+    if dv == "geri_alindi":
+        return f"[WARN] {rel} KISAYOL geri_alindi"
+    if dv == "dogrulandi" and _ham_ozet(b.p.oku(rel)) == kayit.get("beklenen_ozet"):
+        return f"[PASS] {rel} KISAYOL otomatik"
+    if dv == "dogrulandi":
+        eksikler.append(f"{rel}: durum.json 'dogrulandi' diyor ama disk farklı")
+    else:
+        eksikler.append(f"{rel}: durum '{dv}' (kısayol yazılmadı)")
+    return f"[FAIL] {rel} KISAYOL {dv}"
+
+
 def komut_plan(b: Baglam, args) -> int:
     p = b.p
     p.damga_denetle()
@@ -557,18 +678,21 @@ def komut_plan(b: Baglam, args) -> int:
 
     paket_satiri = _paket_sablonu_satiri(b)
     damga = p.damga_plani()     # Z55: şablon güncel olsa da damga eskiyse plan YAZILIR
-    if not dosyalar and not damga:
+    kisayol = kisayol_plani(b)  # Z79: aynı gerekçe — eksik/eski resmi kısayol tek başına kalemdir
+    if not dosyalar and not damga and not _kisayol_islemli({"kisayol": kisayol}):
         print(f"Proje şablonu güncel: işlem gerektiren dosya yok "
               f"(şablon {b.yeni_commit[:10]}, sayaçlar: "
               + ", ".join(f"{k}={v}" for k, v in sorted(sayaclar.items())) + ")")
         print("  " + paket_satiri)
+        if kisayol:             # yalnız bilgi (resmi olmayan / ölçülemedi) — iş kalemi değil
+            print("  " + _kisayol_satiri(kisayol))
         return 1
 
     plan = {
         "surum": 1, "proje": p.kok.as_posix(), "ad": p.ad, "sap": p.sap,
         "taban_kaynagi": b.taban_kaynagi, "taban_commit": b.taban_commit,
         "yeni_commit": b.yeni_commit, "sablon_yollari": b.sablon_yollari,
-        "damgali": p.damga_gerekli, "damga": damga,
+        "damgali": p.damga_gerekli, "damga": damga, "kisayol": kisayol,
         "ad_kaynagi": p.ad_kaynagi, "dosyalar": dosyalar,
         "sayaclar": dict(sorted(sayaclar.items())),
         "paket_sablonu": paket_satiri, "uretim": _simdi(),
@@ -594,6 +718,8 @@ def _plan_tablosu(plan: dict) -> None:
     if plan.get("damga"):
         print(f"  {'DAMGA':9s} AGENTS.md — kesin yasak damgası {plan['damga']['durum']}: "
               f"{plan['damga']['ayrinti']} → onaydan sonra `kapanis` kanonik damgayı yeniden basar")
+    if plan.get("kisayol"):
+        print("  " + _kisayol_satiri(plan["kisayol"]))
     print("Sayaçlar: " + ", ".join(f"{k}={v}" for k, v in plan["sayaclar"].items()))
     print("  " + plan["paket_sablonu"])
     if plan["taban_kaynagi"] != "kayit":
@@ -659,7 +785,7 @@ def komut_uygula(b: Baglam, args) -> int:
             print(f"SİLİNDİ: {rel} — şablon emekliye ayırdı, sende değişmemişti")
         else:
             print(f"ALINDI: {rel} ({kod})")
-    return hata
+    return hata | _kisayol_uygula(b, plan)
 
 
 # =====================================================================================================
@@ -785,7 +911,9 @@ def komut_geri_al(b: Baglam, args) -> int:
     p = b.p
     yedek = p.durum_dizini / "yedek"
     if args.hepsi:
-        yollar = [d["yol"] for d in plan_oku(p)["dosyalar"]]
+        plan = plan_oku(p)
+        yollar = [d["yol"] for d in plan["dosyalar"]] + (
+            [plan["kisayol"]["yol"]] if _kisayol_islemli(plan) else [])
     elif args.yol:
         yollar = [args.yol.replace("\\", "/")]
     else:
@@ -862,6 +990,7 @@ def komut_kapanis(b: Baglam, args) -> int:
         except Dur as e:
             damga_satiri = f"damga: DUR — {e}"
             eksikler.append(str(e))
+    kisayol_satiri = _kisayol_kapanis(b, plan, durum, eksikler)
 
     kabul = bool(args.kabul)
     kod = 0 if not eksikler else (3 if kabul else 1)
@@ -872,6 +1001,7 @@ def komut_kapanis(b: Baglam, args) -> int:
     rapor += satirlar or ["(planda dosya yok)"]
     rapor += ["", "## Sayaçlar", ", ".join(f"{a}={c}" for a, c in plan["sayaclar"].items()),
               "", "## Damga", damga_satiri,
+              "", "## Kısayol", kisayol_satiri,
               "", "## Paket şablonu", plan["paket_sablonu"]]
     ekip = subprocess.run(["git", "-C", str(p.kok), "remote"], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
@@ -913,7 +1043,7 @@ def komut_kapanis(b: Baglam, args) -> int:
     if kabul:
         rapor += ["", f"## Kullanıcı onaylı açık FAIL ile kapandı\n{args.kabul}"]
     rapor += ["", "KAPSAM — bakılanlar: plandaki dosyaların disk durumu (yeniden özetlendi) · "
-                  "çakışma işareti · kesin yasak damgası.",
+                  "çakışma işareti · kesin yasak damgası · KURULUMU-TAMAMLA.cmd kısayolu (SAP).",
               "KAPSAM — bakılmayanlar: değişikliğin ANLAMCA doğru olduğu (temiz birleşme yanlış "
               "olabilir) · aXet'in yeni bağlamı fiilen yüklediği · `templates/package/**` (K5) · "
               "yeniden adlandırma (+R proje kapsamında uygulanmaz) · proje reposunun commit'i · "
@@ -945,6 +1075,10 @@ def komut_durum(b: Baglam, args) -> int:
         s = durum["dosyalar"].get(d["yol"], {})
         print(f"{d['vaka']:10s} {s.get('durum', 'bekliyor'):12s} "
               f"{str(s.get('karar', '—')):16s} {d['yol']}")
+    if _kisayol_islemli(plan):
+        rel = plan["kisayol"]["yol"]
+        s = durum["dosyalar"].get(rel, {})
+        print(f"{'KISAYOL':10s} {s.get('durum', 'bekliyor'):12s} {str(s.get('karar', '—')):16s} {rel}")
     return 0
 
 

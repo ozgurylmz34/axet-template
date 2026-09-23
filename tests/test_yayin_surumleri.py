@@ -40,7 +40,7 @@ SINIFLANDIR = AXET_HOME / "guncelle" / "siniflandir.py"
 SESSION_BRIEF = AXET_HOME / "scripts" / "session_brief.py"
 
 ZORUNLU = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSES/Apache-2.0.txt",
-           "README.md", "AGENTS.md", "kur.cmd", "kur.ps1", "yeni-proje.cmd"]
+           "README.md", "AGENTS.md", "kur.cmd", "kur.ps1", "yeni-proje.cmd", "aXet-Kur.cmd"]
 
 
 def kalem(kid: str, **ek) -> dict:

@@ -20,13 +20,14 @@ description: Use when a durable lesson, decision, user correction or project fac
 1. **Kapsamı seç**
    - Her projede geçerli çalışma dersi → template reposunun `memory/` klasörü (çekirdek dosyasının bulunduğu repo). Bu değişiklik tüm ekibe gider: kullanıcıya commit/PR gerektiğini söyle.
    - Bu projeye özel → proje kökünde `.axet-code/memory/`. Klasör yoksa oluşturmadan önce kullanıcıya sor.
+   - Bu projede **her işte uyulacak bağlayıcı kural** (ör. "bu projede tüm Z tablolar X ile başlar", "her programın başlığında Y geçer") → proje hafızası kaydına EK olarak proje `AGENTS.md` "Proje kuralları" bölümüne tek satırlık kısa madde; ayrıntı ve gerekçe hafıza kaydında kalır, madde kayda işaret eder. `AGENTS.md` her oturum yüklenir ama davranış yüzeyidir: yazdıktan sonra kullanıcıya onayı KENDİSİNİN vermesi gerektiğini söyle — proje kökünde `KURULUMU-TAMAMLA.cmd` varsa ona çift tıklar, yoksa kendi terminalinde `python "<AXET_HOME>/scripts/behavior_manifest.py" generate`. Onay komutunu sen çalıştırma. Kural tek pakete özgüyse `AGENTS.md` yerine paket `.rules.md`.
 2. **Önce ara:** `grep` ile hafıza klasöründe anahtar kelimeleri ara. Aynı konuyu kapsayan kayıt varsa onu güncelle, yeni dosya açma. Yanlış çıkan kaydı sil ve indeksten çıkar.
 3. **Kayıt dosyasını yaz:** `<hafıza klasörü>/<tip>_<kisa-ad>.md`
 
    ```markdown
    ---
    name: <kisa-ad>
-   description: <tek satır; ileride "bu kayıt işime yarar mı" kararını verdirecek özet>
+   description: <tek satır; kaydın GEREKTİĞİ iş türünü somut anahtar kelimelerle söyler — ör. "ALV raporunda Excel'e dışa aktarım yalnız ZCL_… ile; GUI_DOWNLOAD yasak">
    type: feedback | project | reference
    ---
 
@@ -44,6 +45,7 @@ description: Use when a durable lesson, decision, user correction or project fac
    - Göreli tarihleri mutlak tarihe çevir ("dün" → gerçek tarih).
    - İlgili kayıtlara `[[kisa-ad]]` ile bağlantı ver.
 4. **İndekse tek satır ekle:** aynı klasördeki `MEMORY.md`'de ilgili tip başlığının altına `- [Başlık](dosya.md) — kısa özet`. "(henüz kayıt yok)" satırını sil.
+   - Başlık ve özet, kaydın gerektiği **iş türünü somut anahtar kelimelerle** söyler: obje tipi, işlem, araç/sınıf adı (ör. "ALV Excel dışa aktarım", "Z tablo adı öneki"). "Çıktı kanalı kararı", "kullanıcı kararı" gibi konu söylemeyen satır yazma: ajan kaydı ancak göreviyle aynı kelimeleri indekste görünce açar; `%recall` da en yüksek ağırlığı bu satıra verir.
 5. **Doğrula:** kayıt dosyasını ve indeks satırını tekrar oku; kullanıcıya hangi dosyaya ne yazdığını söyle.
 
 ## Rules

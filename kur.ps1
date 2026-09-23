@@ -3,8 +3,11 @@ kur.ps1 — aXet.code template'ini bu makineye kurar, günceller ya da kaldırı
 
 Ne yapar (sırayla):
   1. aXet (axet-code) kurulu mu bakar; yoksa durur. aXet şirket kanalından kurulur, bu betik kurmaz.
-  2. Git ve Python >= 3.12 arar. Yoksa winget ile kurmayı SORAR; winget yoksa ya da hata verirse ne kurulacağını
-     ve resmi indirme adresini yazıp durur. rg (ripgrep) yoksa isteğe bağlı olarak önerir.
+  2. Git ve Python >= 3.12 arar. Yoksa KURMAZ ve SORMAZ: şirketin yazılım merkezinden (Software Center / Company
+     Portal) kurmasını ya da BT'den istemesini söyler, resmi indirme adresini yazar ve durur (çıkış 2). rg (ripgrep)
+     yoksa isteğe bağlı olarak önerir, kurulum durmaz. winget YALNIZ -Winget verilirse kullanılır (o zaman sorarak).
+     Neden (2026-09-23, ölçülmüş vaka): şirket makinesinde "E" yanıtı winget'e izinsiz bir Git kopyası kurdurdu;
+     yazılım merkezinden kurulan izinli Git ile yan yana kaldı.
   3. Template'i klonlar (hedef yoksa) ya da günceller (hedef bu template'in klonuysa: git pull --ff-only).
      Hedef bu template'in klonu değilse (core/00-temel.md CORE-ID + scripts/install.py + skills-sap/) DURUR ve o
      reponun hiçbir betiğini çalıştırmaz. Yerel değişiklik ya da ayrışma varsa DURUR; hiçbir yerel değişikliği silmez,
@@ -28,8 +31,10 @@ Kullanım (kur.cmd aynı parametreleri geçirir):
   kur.cmd -Kaldir                  global config'ten bu klonun kayıtlarını kaldır; bu klonda açılmış SAP'ye yazma
                                    iznini de KAPATIR (izin dosyasını siler). Klon klasörü SİLİNMEZ. -Hedef
                                    verilmezse kaldırılan klon, bu kur.cmd'nin bulunduğu klasördür.
+  kur.cmd -Winget                  eksik Git/Python/rg'yi winget ile kurmayı SORAR. Yalnız şirket dışı, kişisel
+                                   makinede kullan: şirket makinesinde yazılım merkezinden kur.
   -Evet          soruları otomatik "evet" yanıtlar (otomatik testler için)
-  -WingetKapali  winget'i hiç çağırmaz; eksik araç için yalnız tarif yazar (otomatik testler için)
+  -WingetKapali  winget'i hiç çağırmaz, -Winget verilse bile; eksik araç için yalnız tarif yazar (otomatik testler için)
 
 Çıkış kodu: 0 tamam · 1 durduruldu/hata · 2 ön koşul eksik · 3 yeni terminal gerekli · 4 doctor FAIL gösterdi
 #>
@@ -43,6 +48,7 @@ param(
     [switch]$Sifirla,
     [switch]$DenemeModu,
     [switch]$Evet,
+    [switch]$Winget,
     [switch]$WingetKapali,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Fazla
@@ -204,9 +210,22 @@ function Axet-Bul {
     return $null
 }
 
-# winget ile kurmayı dener (sorarak). $true = winget başarıyla bitti (araç yine de yeniden aranmalı).
-function Winget-Kur([string]$ad, [string]$id, [string[]]$tarif) {
+# Eksik aracı bildirir; -Winget verildiyse winget ile kurmayı dener (sorarak). $true = winget başarıyla bitti (araç
+# yine de yeniden aranmalı). -Winget YOKSA (varsayılan) winget ne sorulur ne çağrılır: şirket makinesinde izinsiz
+# kopya kurar (Z80, ölçülmüş vaka 2026-09-23). $istegeBagli: rg gibi; kurulum onsuz sürer, mesaj buna göre yazılır.
+function Winget-Kur([string]$ad, [string]$id, [string[]]$tarif, [bool]$istegeBagli = $false) {
     $tarifYaz = { foreach ($t in $tarif) { Yaz "  $t" } }
+    if (-not $Winget) {
+        if ($DenemeModu) { Yaz "  [deneme] $ad yok: winget kullanılmaz (varsayılan; winget için -Winget). Şu yazılacaktı:" }
+        if ($istegeBagli) {
+            Yaz "  $ad önerilir: şirketinin yazılım merkezinden (Software Center / Company Portal) kurabilir ya da BT'den isteyebilirsin. Kurulum onsuz devam eder."
+        } else {
+            Yaz "  $ad bulunamadı. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste;"
+            Yaz '  kurduktan sonra YENİ bir PowerShell aç ve bu komutu tekrar çalıştır.'
+        }
+        & $tarifYaz
+        return $false
+    }
     $w = $null
     if (-not $WingetKapali) { $w = Get-Command winget -ErrorAction SilentlyContinue }
     if ($DenemeModu) {
@@ -777,8 +796,8 @@ try {
         $eksikArac = $true
     } elseif (-not $g) {
         Yaz '  EKSİK: Git bulunamadı.'
-        $tarif = @('Kurulacak: Git for Windows (varsayılan seçenekler yeterli).', 'Resmi indirme: https://git-scm.com/download/win',
-                   'winget ile: winget install --id Git.Git -e')
+        $tarif = @('Kurulacak: Git for Windows (varsayılan seçenekler yeterli).', 'Resmi indirme: https://git-scm.com/download/win')
+        if ($Winget) { $tarif += 'winget ile: winget install --id Git.Git -e' }
         if (Winget-Kur 'Git' 'Git.Git' $tarif) {
             $g = Git-Bul -BilinenYerler
             if (-not $g) { $yeniTerminal = $true }
@@ -791,8 +810,8 @@ try {
     if (-not $python) {
         Yaz "  EKSİK: Python $script:PyAsgari ya da üstü bulunamadı."
         $tarif = @("Kurulacak: Python 3 ($script:PyAsgari ya da üstü; kurulumda ""Add python.exe to PATH"" işaretli olsun).",
-                   'Resmi indirme: https://www.python.org/downloads/windows/',
-                   'winget ile: winget install --id Python.Python.3.12 -e')
+                   'Resmi indirme: https://www.python.org/downloads/windows/')
+        if ($Winget) { $tarif += 'winget ile: winget install --id Python.Python.3.12 -e' }
         # OLCULEN SURUMU KUR (2026-09-20): CI artik yalniz 3.12 kosuyor. Kurucu 3.14
         # kurarsa her yeni kullanici DOGRUDAN olculmemis kola duserdi — kapi (>=3.12)
         # ust surumlere izin verir, ama VARSAYILAN olarak olculen surum kurulur.
@@ -813,6 +832,7 @@ try {
         Yaz ''
         if ($DenemeModu) { Yaz '[deneme] Eksik ön koşul var; gerçek çalıştırmada burada durulurdu.'; Bitir 2 }
         Yaz 'DURDU: Eksik ön koşul var (yukarıda). Kurduktan sonra YENİ bir terminalde kur.cmd''yi tekrar çalıştır.'
+        if (-not $Winget) { Yaz '  (Şirket dışı, kişisel bir makinedeysen: kur.cmd -Winget eksikleri winget ile kurmayı sorar.)' }
         Bitir 2
     }
 
@@ -823,8 +843,9 @@ try {
         Yaz "  OK rg: $($rg.Source)"
     } else {
         Yaz '  rg yok: aXet''in arama aracı yavaş çalışır (zorunlu değil).'
-        $tarif = @('İsteğe bağlı: winget install --id BurntSushi.ripgrep.MSVC -e', 'Resmi indirme: https://github.com/BurntSushi/ripgrep/releases')
-        if (Winget-Kur 'rg (ripgrep)' 'BurntSushi.ripgrep.MSVC' $tarif) {
+        $tarif = @('Resmi indirme: https://github.com/BurntSushi/ripgrep/releases')
+        if ($Winget) { $tarif = @('İsteğe bağlı: winget install --id BurntSushi.ripgrep.MSVC -e') + $tarif }
+        if (Winget-Kur 'rg (ripgrep)' 'BurntSushi.ripgrep.MSVC' $tarif $true) {
             Yaz '  rg kuruldu; aXet''in görmesi için yeni terminal ve yeni aXet oturumu gerekir.'
         }
     }

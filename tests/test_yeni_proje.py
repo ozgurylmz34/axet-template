@@ -107,15 +107,89 @@ class YeniProjeTest(GeciciTest):
         self.assertIn("- Rapor çıktıları Excel'e aktarılabilir olmalı", agents)
         self.assertIn("- Depo: yerel", agents)
         self.assertIn("SONUÇ: 0 FAIL", r.stdout)
-        # terminal adımları: script çalıştırmaz, sonda sırayla basar (doctor'un WARN satırı da manifest komutunu
-        # içerdiği için sıra yalnız son bölümde ölçülür)
-        self.assertIn("SENİN TERMİNALİNDE", r.stdout)
-        son = r.stdout.split("SENİN TERMİNALİNDE", 1)[1]
-        i1, i2, i3 = (son.find(s) for s in ("setup_credentials.py", "behavior_manifest.py\" generate", "axet-code -c"))
-        self.assertTrue(0 < i1 < i2 < i3, son)
-        self.assertIn("proje: sevkiyat", son)
+        # Z70: kullanıcı adımları tek çift tıklama — son mesaj kısayolu gösterir, 4 ayrı komut kopyalatmaz
+        self.assertNotIn("SENİN TERMİNALİNDE", r.stdout)
+        son = r.stdout.split("SONUÇ: proje kuruldu", 1)[1]
+        self.assertIn(f"SON ADIM (SENDE): proje klasöründeki {yeni_proje.KISAYOL}'ye çift tıkla", son)
+        self.assertIn(str(AXET_HOME / "proje-tamamla.cmd"), son, "elle yol notu klondaki cmd'yi göstermeli")
+        self.assertIn(f"[yazıldı] {yeni_proje.KISAYOL}", r.stdout)
+        self.assertNotIn("git'e kapalı değil", r.stdout, "şablon .gitignore kısayolu kapatmalı")
+        self.assertEqual(self.git(d, "check-ignore", "-q", yeni_proje.KISAYOL, kontrol=False).returncode, 0)
         self.assertFalse((d / ".axet-code" / "behavior-manifest.json").exists(), "manifest üretilmemeli")
         self.assertFalse((d / ".conn_adt").exists())
+
+    def test_z70_kisayol_icerigi_klon_yolunu_tasir(self):
+        d = self.tmp / "kisa"
+        d.mkdir()
+        self.assertEqual(yeni_proje.kisayol_yaz(d)[0], "yazildi")
+        ham = (d / yeni_proje.KISAYOL).read_bytes()
+        self.assertEqual(ham.count(b"\n"), ham.count(b"\r\n"), "kısayol CRLF olmalı")
+        metin = ham.decode("oem" if os.name == "nt" else "utf-8")
+        hedef = str(AXET_HOME / "proje-tamamla.cmd")
+        self.assertIn(f'if exist "{hedef}" call "{hedef}" "%~dp0." & call exit /b %%errorlevel%%', metin)
+        self.assertLessEqual(len(metin.splitlines()), 4)
+        # '%' içeren klon yolu cmd'de genişlemesin
+        self.assertIn("a%%b", yeni_proje.kisayol_metni(self.tmp / "a%b"))
+
+    def test_z70_kisayol_var_olan_ezilmez(self):
+        d = self.tmp / "ezme"
+        d.mkdir()
+        (d / yeni_proje.KISAYOL).write_bytes(b"@echo kullanicinin kendi dosyasi\r\n")
+        durum, aciklama = yeni_proje.kisayol_yaz(d)
+        self.assertEqual(durum, "korundu", aciklama)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), b"@echo kullanicinin kendi dosyasi\r\n")
+
+    def test_z79_kisayol_durumu_dort_hal(self):
+        """Z79: `%guncelle-proje` kısayolu bu sınıflamayla planlar (yok · guncel · farkli · resmi-degil)."""
+        d = self.tmp / "durum"
+        d.mkdir()
+        self.assertEqual(yeni_proje.kisayol_durumu(d), "yok")
+        yeni_proje.kisayol_yaz(d)
+        self.assertEqual(yeni_proje.kisayol_durumu(d), "guncel")
+        self.assertEqual(yeni_proje.kisayol_durumu(d, self.tmp / "baska-klon"), "farkli")
+        (d / yeni_proje.KISAYOL).write_bytes(b"@echo off\r\nrem elle\r\n")
+        self.assertEqual(yeni_proje.kisayol_durumu(d), "resmi-degil")
+
+    def test_z79_guncelle_kipi_yalniz_RESMI_kisayolu_yeniden_yazar(self):
+        d = self.tmp / "guncelle"
+        d.mkdir()
+        eski = self.tmp / "eski-klon"
+        (d / yeni_proje.KISAYOL).write_bytes(yeni_proje.kisayol_bayt(eski))
+        durum, aciklama = yeni_proje.kisayol_yaz(d)                     # varsayılan kip: Z70 ezmez
+        self.assertEqual(durum, "korundu", aciklama)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), yeni_proje.kisayol_bayt(eski))
+        durum, aciklama = yeni_proje.kisayol_yaz(d, guncelle=True)
+        self.assertEqual(durum, "guncellendi", aciklama)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), yeni_proje.kisayol_bayt())
+        (d / yeni_proje.KISAYOL).write_bytes(b"@echo kendi\r\n")
+        durum, aciklama = yeni_proje.kisayol_yaz(d, guncelle=True)       # işaretsiz: güncelle kipinde de EZİLMEZ
+        self.assertEqual(durum, "korundu", aciklama)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), b"@echo kendi\r\n")
+
+    def test_z70_dry_run_kisayol_yazmaz_plana_satir_basar(self):
+        d = self.proje("plankisa", sap=True)
+        r = self.yeni(str(d), *bayraklar(), "--dry-run")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn(f"8. {yeni_proje.KISAYOL}: yazılacak", r.stdout)
+        self.assertFalse((d / yeni_proje.KISAYOL).exists(), "dry-run kısayol yazdı")
+        (d / yeni_proje.KISAYOL).write_bytes(b"x")
+        r = self.yeni(str(d), *bayraklar(), "--dry-run")
+        self.assertIn(f"8. {yeni_proje.KISAYOL}: var — ezilmeyecek [KORUNDU]", r.stdout)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), b"x")
+
+    def test_z70_var_olan_gitignore_kisayolu_kapatmiyorsa_uyarir(self):
+        # new_project var olan .gitignore'a satır eklemez → kısayol git'e açık kalır; araç bunu söylemeli
+        self.global_config(sap=True)
+        d = self.tmp / "eskiproje"
+        d.mkdir()
+        self.git(d, "init", "-q", "-b", "main")
+        (d / ".gitignore").write_text(".conn*\n", encoding="utf-8")
+        (d / yeni_proje.KISAYOL).write_bytes(b"@echo kendi\r\n")
+        r = self.yeni(str(d), *bayraklar())
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn(f"[KORUNDU] {yeni_proje.KISAYOL}", r.stdout)
+        self.assertIn(f"{yeni_proje.KISAYOL} git'e kapalı değil", r.stdout)
+        self.assertEqual((d / yeni_proje.KISAYOL).read_bytes(), b"@echo kendi\r\n")
 
     def test_etkilesimli_mutlu_yol(self):
         self.global_config(sap=True)

@@ -17,7 +17,8 @@ değiştiyse, birleştirme HEDEF yolda yapılır ve eski yol silinir.
    (`guncelle.py kart V4t` / `V4c` / `V4c+ESIK` / `V4B`) ve adımlarını uygula.
 2. `guncelle.py oneri <eski yol>` — öneri ve farklar eski yol adıyla üretilir.
 3. `guncelle.py isaretle <eski yol> --karar birlesik|yerel|yeni` — motor sonucu YENİ yola yazar,
-   eski yolu siler.
+   eski yolu siler. `hazirla`'dan sonra eski yolda düzenleme yapılmışsa o içerik `<eski yol>.yerel`
+   olarak saklanır ve motor yolunu basar — kullanıcıya söyle.
 4. Kullanıcıya iki yolu birlikte söyle; raporda kalem "taşındı" olarak görünür.
 
 ## Örnek

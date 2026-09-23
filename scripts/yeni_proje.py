@@ -13,6 +13,8 @@ korunur. Korunan değer `sap_profile` ya da `master_language`'de istenenden fark
 login dilini master_language'den alır, profil araç yüzeyini belirler. `AGENTS.md`'de yalnız şablondaki TAM satırlar
 (`templates/project/AGENTS.md`) değişir; SAP satırı sap-project.json'un SON hâlinden üretilir; kesin yasak damgasına
 dokunulmaz. Kimlik bilgisi sorulmaz; `setup_credentials.py` ve `behavior_manifest.py generate` ÇALIŞTIRILMAZ.
+Başarılı kurulumun sonunda proje köküne `KURULUMU-TAMAMLA.cmd` kısayolu yazılır (varsa ezilmez): template kökündeki
+`proje-tamamla.cmd`'yi çağırır; kalan kullanıcı adımları (bağlantı · onay · doctor · aXet'i aç) tek çift tıklamadır.
 
 Kullanım:
   python <TEMPLATE>/scripts/yeni_proje.py                         etkileşimli (gerçek terminalde sorar)
@@ -58,7 +60,7 @@ VARSAYILAN_SOURCE_ROOT = "SOURCE_CODES"  # templates/project-sap/sap-project.jso
 TEKNOLOJI = {"ecc": "SAP ECC ABAP", "s4_private": "SAP S/4HANA ABAP",
              "s4_public": "SAP S/4HANA Cloud Public Edition ABAP", "btp_abap": "SAP BTP ABAP Environment"}
 KOMUT_YOK = "henüz tanımlı değil"
-KURAL_YOK = "Henüz projeye özel kural yok; kural netleştikçe buraya kısa madde olarak eklenir."
+KURAL_YOK = "Henüz projeye özel kural yok."
 # session_brief.py `aktif_paket`: değerin ilk sözcüğü SAP paket adı biçimine (Z/Y… ya da /ADALANI/AD, büyük harf) uymazsa
 # "aktif paket ÖLÇÜLEMEDİ"; boş, "<" ya da "—" ile başlayan değer → "AGENTS.md'de yazılı değil" dalı (testli).
 AKTIF_PAKET_YOK = "— henüz seçilmedi"
@@ -703,6 +705,76 @@ def ozet(v: dict) -> None:
 
 
 # --- akış --------------------------------------------------------------------------------------------------------
+# --- KURULUMU-TAMAMLA.cmd kısayolu (Z70) ---------------------------------------------------------------------------
+# Kullanıcının kalan adımları (SAP bağlantısı · davranış yüzeyi onayı · doctor · aXet'i aç) template kökündeki
+# proje-tamamla.cmd'de TEK yerde durur (%guncelle ile güncellenir). Proje köküne yalnız onu çağıran ince kısayol
+# yazılır. Bu araç (ve aXet oturumu) kısayolu ÇALIŞTIRMAZ: iki adım kullanıcının kendi onayıdır.
+KISAYOL = "KURULUMU-TAMAMLA.cmd"
+TAMAMLA_CMD = "proje-tamamla.cmd"
+# Z79: resmi kısayolun İŞARETİ (ikinci satırın başı). `%guncelle-proje` yalnız bu işareti taşıyan dosyayı yeniden
+# yazar; işaretsiz dosya (elle yazılmış / Z70 öncesi geçici sürüm) kullanıcınındır, ezilmez.
+KISAYOL_ISARETI = "rem aXet kurulum kisayolu (yeni_proje.py yazdi)"
+
+
+def kisayol_metni(axet_home: Path | None = None) -> str:
+    """Kısayol içeriği (CRLF, ASCII yorum). Klonun MUTLAK yolunu taşır — makineye özgü; şablon .gitignore'u
+    bu yüzden dosyayı git'e kapatır. Klon yoksa pencere sessizce kapanmasın diye hata + pause."""
+    k = str((axet_home or AXET_HOME) / TAMAMLA_CMD).replace("%", "%%")
+    satirlar = ["@echo off",
+                f"{KISAYOL_ISARETI}: cift tikla. Asil mantik aXet klonundaki "
+                f"{TAMAMLA_CMD} dosyasinda.",
+                # `exit /b` kodsuz → `cmd /c` altında 0 döner (ölçüldü); `call exit /b %%errorlevel%%` çağrı SONRASI kodu taşır
+                f'if exist "{k}" call "{k}" "%~dp0." & call exit /b %%errorlevel%%',
+                f"echo HATA: aXet klonu bulunamadi: \"{k}\" - aXet'i kur.cmd ile kur, sonra bu dosyaya tekrar cift tikla."
+                " & pause & exit /b 1"]
+    return "\r\n".join(satirlar) + "\r\n"
+
+
+def kisayol_bayt(axet_home: Path | None = None) -> bytes:
+    """Diske yazılan bayt. cmd.exe toplu iş dosyasını konsolun OEM kod sayfasıyla okur; UTF-8 yazılırsa ASCII dışı
+    klon yolu bozulur. Kodlanamayan yol UnicodeEncodeError yükseltir (çağıran yakalar)."""
+    return kisayol_metni(axet_home).encode("oem" if os.name == "nt" else "utf-8")
+
+
+def kisayol_resmi_mi(veri: bytes) -> bool:
+    """İkinci satır resmi işaretle mi başlıyor (Z79). İşaret ASCII'dir; kod sayfasından bağımsız okunur."""
+    satirlar = veri.decode("latin-1").splitlines()
+    return len(satirlar) > 1 and satirlar[1].startswith(KISAYOL_ISARETI)
+
+
+def kisayol_durumu(hedef: Path, axet_home: Path | None = None) -> str:
+    """'yok' | 'guncel' (bayt bayt beklenen) | 'farkli' (resmi ama içerik eski, ör. klon yolu değişti) |
+    'resmi-degil' (işaretsiz — kullanıcınındır). `%guncelle-proje` planı bu sınıflamayla kurulur (Z79)."""
+    f = hedef / KISAYOL
+    if not f.exists():
+        return "yok"
+    veri = f.read_bytes()
+    if not kisayol_resmi_mi(veri):
+        return "resmi-degil"
+    return "guncel" if veri == kisayol_bayt(axet_home) else "farkli"
+
+
+def kisayol_yaz(hedef: Path, axet_home: Path | None = None, guncelle: bool = False) -> tuple[str, str]:
+    """('yazildi' | 'guncellendi' | 'korundu' | 'yazilamadi', açıklama). Var olan dosya EZİLMEZ (merge-safe, Z70).
+    `guncelle=True` (yalnız `%guncelle-proje`, Z79): var olan dosya RESMİ işaretliyse yeniden yazılır; işaretsizse
+    yine ezilmez. Yeni proje akışı varsayılan kipi kullanır — davranışı değişmedi."""
+    f = hedef / KISAYOL
+    try:
+        veri = kisayol_bayt(axet_home)
+        if f.exists():
+            if not (guncelle and kisayol_resmi_mi(f.read_bytes())):
+                return "korundu", f"{f} zaten var — ezilmedi"
+            gecici = f.with_name(f.name + ".yeni")
+            gecici.write_bytes(veri)
+            os.replace(gecici, f)       # yarım yazılmış kısayol kalmasın
+            return "guncellendi", str(f)
+        with open(f, "xb") as fh:  # x: arada biri yazdıysa da ezme
+            fh.write(veri)
+    except (OSError, UnicodeEncodeError, LookupError) as exc:
+        return "yazilamadi", f"{type(exc).__name__}: {exc}"
+    return "yazildi", str(f)
+
+
 def plan(v: dict) -> int:
     """--dry-run: hiçbir şey yazmaz; gerçek koşunun doldurma/denetim fonksiyonlarını bellekte koşar. Gerçek koşu
     çıkış 1 verecekse (JSON okunamaz, ÇELİŞKİ, şablon satırı kalır) 1 döner."""
@@ -762,6 +834,8 @@ def plan(v: dict) -> int:
         sorun = True
     print("  6. doğrulama: sap-project.json geçerli · şablon satırı kalmadı · SAP satırı tutarlı · core.hooksPath=.githooks")
     print("  7. doctor.py (proje kökünde) — FAIL varsa çıkış 1")
+    print(f"  8. {KISAYOL}: " + ("var — ezilmeyecek [KORUNDU]" if (hedef / KISAYOL).exists()
+                                 else f"yazılacak (kurulum başarılıysa; {AXET_HOME / TAMAMLA_CMD} dosyasını çağırır)"))
     if sorun:
         print("PLAN SORUNLU — gerçek koşu çıkış 1 verir; önce yukarıdaki ! satırlarını çöz.")
         return 1
@@ -905,16 +979,22 @@ def kur(v: dict) -> int:
         print("\nSONUÇ: KURULUM EKSİK\n" + "\n".join(f"  - {s}" for s in sorunlar)
               + "\nDüzeltip aracı yeniden çalıştır (var olanı ezmez).")
         return 1
-    manifest = (AXET_HOME / "scripts" / "behavior_manifest.py").as_posix()
-    kimlik = AXET_HOME / "skills-sap" / "sap-adt-foundation" / "scripts" / "setup_credentials.py"
+    durum, aciklama = kisayol_yaz(hedef)
+    etiket = {"yazildi": "[yazıldı]", "korundu": "[KORUNDU]", "yazilamadi": "[YAZILAMADI]"}[durum]
+    print(f"\n  {etiket} {KISAYOL}: {aciklama}")
+    if durum != "yazilamadi" and git("check-ignore", "-q", KISAYOL, cwd=hedef).returncode != 0:
+        # Var olan .gitignore'a new_project satır eklemez (ezmez) → bu projede kısayol git'e açık olabilir.
+        print(f"  ! UYARI: {KISAYOL} git'e kapalı değil — makineye özgü mutlak yol taşır; .gitignore'a "
+              f"`{KISAYOL}` satırını ekle, commit etme")
+    tamamla = AXET_HOME / TAMAMLA_CMD
     print(f"\nSONUÇ: proje kuruldu ({hedef}) · doctor 0 FAIL")
-    print("SENİN TERMİNALİNDE (PowerShell/cmd; aXet oturumu bunları çalıştırmaz), sırayla:")
-    print(f"  0. cd \"{hedef}\"")
-    print(f"  1. SAP bağlantısı (parola ekrana yansımaz; bilgiler sohbete girmez):\n"
-          f"       python \"{kimlik}\"")
-    print(f"  2. Davranış yüzeyini (AGENTS.md, .axet-code.json, denylist, .githooks, validators-local, sap-project.json)\n"
-          f"     gözden geçir ve onayla:\n       python \"{manifest}\" generate")
-    print(f"  3. aXet'i projede aç: axet-code -c \"{hedef}\"  → ilk satırda `proje: {v['name']}` görünmeli")
+    if durum == "yazilamadi":
+        print(f"SON ADIM (SENDE): {TAMAMLA_CMD}'ye çift tıkla ya da kendi terminalinde çalıştır: \"{tamamla}\" \"{hedef}\"")
+    else:
+        print(f"SON ADIM (SENDE): proje klasöründeki {KISAYOL}'ye çift tıkla — SAP bağlantı şablonları "
+              "(conn\\DEV.env, conn\\QA.env) Notepad'de açılır; doldurup kaydet, tekrar çift tıkla: ayar onayı, kontrol "
+              "ve aXet'i açma sırayla sorulur.")
+    print(f"  Not: aXet oturumu bu adımları çalıştırmaz (parola ve onay sende kalır). Elle: \"{tamamla}\" \"{hedef}\"")
     return 0
 
 

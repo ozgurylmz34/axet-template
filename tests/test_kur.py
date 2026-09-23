@@ -1015,20 +1015,111 @@ class KurTest(GeciciTest):
         self.assertFalse(kayit.exists(), "winget çağrıldı")
         self.assertFalse(self.hedef.exists())
 
-    def test_git_python_yok_soru_kapali_stdin_winget_cagrilmaz(self):
+    # --- Z80: şirket ortamı — winget varsayılanda KAPALI, yalnız -Winget ile ----------------------------------------
+    # Neden (ölçülmüş vaka, 2026-09-23): kullanıcı "E" deyince winget izinsiz bir Git'i kullanıcı klasörüne kurdu;
+    # şirket yazılım merkezinden kurulan izinli Git ile yan yana kaldı. Varsayılan artık hiç sormaz, hiç çağırmaz.
+    def test_git_python_yok_varsayilanda_winget_sorulmaz_yazilim_merkezi_denir(self):
         env, kayit = self.dar_ortam(axet=True)
-        r = self.kur(env=env, winget_kapali=False)
+        # -Evet bile winget'i açmaz: soru hiç sorulmadığı için "evet" diyecek bir şey yok
+        r = self.kur("-Evet", env=env, winget_kapali=False)
         c = self.cikti(r)
         self.assertEqual(r.returncode, 2, c)
         self.assertNotIn("OK Python", c)  # 0 baytlık sahte python.exe/python3.exe aday olarak elendi
         self.assertIn("EKSİK: Git bulunamadı", c)
         self.assertIn("EKSİK: Python 3.12 ya da üstü bulunamadı", c)
-        self.assertIn("giriş kapalı -> hayır", c)
+        self.assertIn("Git bulunamadı. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur", c)
+        self.assertIn("Python bulunamadı. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur", c)
+        self.assertIn("YENİ bir PowerShell aç", c)
         self.assertIn("https://git-scm.com/download/win", c)
         self.assertIn("https://www.python.org/downloads/windows/", c)
-        self.assertFalse(kayit.exists(), "winget soru onaylanmadan çağrıldı")
+        self.assertNotIn("winget ile kurayım mı", c)
+        self.assertNotIn("winget install", c)  # varsayılanda winget komutu önerilmez de
+        self.assertFalse(kayit.exists(), "winget varsayılanda çağrıldı")
         self.assertFalse(self.hedef.exists())
         self.assertFalse(self.cfg.exists())
+
+    def test_winget_anahtari_ile_soru_sorulur_kapali_stdin_cagrilmaz(self):
+        """-Winget eski soran akışı açar (kur.cmd anahtarı aynen geçirir: kur() kur.cmd üzerinden çağırır)."""
+        env, kayit = self.dar_ortam(axet=True)
+        r = self.kur("-Winget", env=env, winget_kapali=False)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 2, c)
+        # Soru metni Read-Host isteminde (host'a) yazılır, stdout'a düşmez: sorulduğunun izi kapalı girişin yanıtıdır.
+        self.assertIn("giriş kapalı -> hayır", c)
+        self.assertIn("Git kurulmadı. Elle kurmak için", c)
+        self.assertIn("winget install --id Git.Git -e", c)  # -Winget ile tarif winget satırını da taşır
+        self.assertIn("https://git-scm.com/download/win", c)
+        self.assertIn("https://www.python.org/downloads/windows/", c)
+        self.assertNotIn("Software Center", c)
+        self.assertFalse(kayit.exists(), "winget soru onaylanmadan çağrıldı")
+        self.assertFalse(self.hedef.exists())
+
+    def test_winget_ve_wingetkapali_birlikte_winget_cagrilmaz(self):
+        env, kayit = self.dar_ortam(axet=True)
+        r = self.kur("-Winget", "-Evet", env=env, winget_kapali=True)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 2, c)
+        self.assertNotIn("winget ile kurayım mı", c)
+        self.assertIn("Git elle kurulmalı", c)
+        self.assertFalse(kayit.exists(), "-WingetKapali varken winget çağrıldı")
+
+    def test_kur_disi_yardim_metinleri_winget_onermez(self):
+        """Aynı politika kur.ps1 dışındaki yardım metinlerinde: Python/rg eksik mesajı winget komutu önermez,
+        yazılım merkezini gösterir. Kapsam: yalnız bu üç dosyanın metni (çalıştırılmaz)."""
+        for yol in ("yeni-proje.cmd", "proje-tamamla.cmd", "scripts/install.py"):
+            with self.subTest(yol=yol):
+                metin = (AXET_HOME / yol).read_bytes().decode("utf-8")
+                self.assertNotIn("winget install", metin)
+                self.assertRegex(metin.lower(), r"yaz[iı]l[iı]m merkez")
+
+    def test_eski_python_varsayilanda_winget_sorulmaz(self):
+        env, _sahte = self.sahte_python_ortami("3.11")
+        bin_, kayit = self.sahte_winget()
+        env = self.path_degistir(env, str(bin_) + os.pathsep + self.path_oku(env))
+        r = self.kur("-Evet", env=env, winget_kapali=False)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 2, c)
+        self.assertIn("bulundu ama 3.12 ya da üstü gerekli", c)
+        self.assertIn("Python bulunamadı. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur", c)
+        self.assertNotIn("winget ile kurayım mı", c)
+        self.assertFalse(kayit.exists(), "winget varsayılanda çağrıldı")
+
+    def test_deneme_modu_git_yok_winget_kullanilmaz_der(self):
+        env, kayit = self.dar_ortam(axet=True)
+        r = self.kur("-DenemeModu", env=env, winget_kapali=False)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 2, c)
+        self.assertIn("[deneme] Git yok: winget kullanılmaz", c)
+        self.assertIn("Git bulunamadı. Şirketinin yazılım merkezinden", c)
+        self.assertNotIn("önerilecekti (sorarak)", c)
+        # kontrol grubu: -Winget ile deneme modu eski planı anlatır
+        r = self.kur("-DenemeModu", "-Winget", env=env, winget_kapali=False)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 2, c)
+        self.assertIn("winget install --id Git.Git -e önerilecekti (sorarak)", c)
+        self.assertFalse(kayit.exists(), "deneme modunda winget çağrıldı")
+
+    def test_rg_yok_varsayilanda_winget_sorulmaz_kurulum_surer(self):
+        # PATH = sahte winget + gerçek PATH'in rg İÇERMEYEN klasörleri (git/python/klon için gerekenler kalır).
+        # Ölçüldü: yalnız git.exe'nin klasörü (mingw64in) bırakılınca yerel `git clone` başarısız oluyor.
+        bin_, kayit = self.sahte_winget()
+        rg_adlari = ("rg.exe", "rg.cmd", "rg.bat", "rg.ps1")
+        temiz = [d for d in self.path_oku(self.env).split(os.pathsep)
+                 if d and not any((Path(d) / a).exists() for a in rg_adlari)]
+        env = self.path_degistir(self.env, os.pathsep.join([str(bin_)] + temiz))
+        kontrol = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command",
+                                  "if (Get-Command rg -ErrorAction SilentlyContinue) { exit 1 }"], env=env,
+                                 capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+        self.assertEqual(kontrol.returncode, 0, "ortamda rg hâlâ bulunuyor — test rg'siz yolu sınamıyor")
+        r = self.kur("-Evet", env=env, winget_kapali=False)
+        c = self.cikti(r)
+        self.assertIn("rg yok", c)
+        self.assertIn("yazılım merkezinden", c.split("== 3/5")[1].split("== 4/5")[0])
+        self.assertIn("https://github.com/BurntSushi/ripgrep/releases", c)
+        self.assertNotIn("winget ile kurayım mı", c)
+        self.assertIn("== 4/5", c)  # kurulum 3. adımda durmadı
+        self.assertIn("Kurulum tamam (yeni klon)", c)
+        self.assertFalse(kayit.exists(), "rg için winget varsayılanda çağrıldı")
 
     def test_asgari_python_surum_kapisi_karari(self):
         """Asgari sürüm kapısının KARARI (mesajı değil): 3.11 RED · 3.12 KABUL · 3.14 KABUL.
@@ -1086,7 +1177,7 @@ class KurTest(GeciciTest):
 
     def test_winget_hata_verirse_tarif_basar_durur(self):
         env, kayit = self.dar_ortam(axet=True)
-        r = self.kur("-Evet", env=env, winget_kapali=False)
+        r = self.kur("-Evet", "-Winget", env=env, winget_kapali=False)
         c = self.cikti(r)
         self.assertEqual(r.returncode, 2, c)
         cagrilar = kayit.read_text(encoding="ascii", errors="replace")
@@ -1597,6 +1688,45 @@ class KurTest(GeciciTest):
             metin = (AXET_HOME / yol).read_text(encoding=kodlama)
             self.assertNotIn("Depo şu an private", metin, f"{yol}: bayat private notu duruyor")
             self.assertNotIn("private dönemde", metin, f"{yol}: bayat private notu duruyor")
+
+
+class IlkKurulumCmdTest(unittest.TestCase):
+    """Z81: repoda olmayan makineye e-posta/ortak klasörle dağıtılan çift tıklamalık ilk kurulum dosyası.
+    Ağ gerektirmeyen biçim ve sözleşme denetimi; gerçek indirme + `-DenemeModu` koşumu elle ölçüldü (Z81)."""
+
+    CMD = AXET_HOME / "aXet-Kur.cmd"
+
+    def test_ascii_ve_crlf(self):
+        veri = self.CMD.read_bytes()
+        veri.decode("ascii")  # cmd.exe OEM kod sayfasıyla okur; ASCII her sayfada aynı
+        satirlar = veri.split(b"\n")[:-1]
+        self.assertTrue(satirlar and all(s.endswith(b"\r") for s in satirlar),
+                        "her satır CRLF olmalı (cmd LF'li dosyada goto/etiketleri yanlış okuyabilir)")
+
+    def test_readme_tek_satiriyla_ayni_adresi_indirir(self):
+        adres = re.findall(r"https://raw\.githubusercontent\.com/\S+?/kur\.ps1", self.CMD.read_text("ascii"))
+        readme = re.findall(r"https://raw\.githubusercontent\.com/\S+?/kur\.ps1",
+                            (AXET_HOME / "README.md").read_text("utf-8"))
+        self.assertEqual(len(set(adres)), 1, adres)
+        self.assertTrue(readme)
+        self.assertEqual(set(adres), set(readme), "cmd ile README'deki tek satır aynı kur.ps1'i indirmeli")
+
+    def test_secenekleri_gecirir_pencereyi_acik_tutar_kodu_dondurur(self):
+        metin = self.CMD.read_text("ascii")
+        calistir = [s for s in metin.splitlines() if "-File" in s and "powershell" in s.lower()]
+        self.assertEqual(len(calistir), 1, calistir)
+        self.assertIn("%*", calistir[0], "ek seçenekler (ör. -DenemeModu) kur.ps1'e geçmeli")
+        self.assertIn("-ExecutionPolicy Bypass", calistir[0])
+        self.assertRegex(metin, r"(?m)^pause\s*$", "çift tıklamada pencere mesaj okunmadan kapanmamalı")
+        self.assertRegex(metin, r"(?m)^exit /b %RC%\s*$", "kur.ps1'in çıkış kodu korunmalı")
+        for kod in ("0", "3"):
+            self.assertIn(f'if "%RC%"=="{kod}"', metin, f"çıkış kodu {kod} için ayrı kullanıcı mesajı")
+        self.assertNotIn("sap-write", metin.lower())
+        self.assertNotIn("invoke-expression", metin.lower())
+
+    def test_readme_dosyayi_gosterir(self):
+        readme = (AXET_HOME / "README.md").read_text("utf-8")
+        self.assertIn("aXet-Kur.cmd", readme)
 
 
 if __name__ == "__main__":

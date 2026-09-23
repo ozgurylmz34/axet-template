@@ -28,7 +28,7 @@ BETIK = AXET_HOME / "maintenance" / "yayin_hazirla.py"
 # Sahte depoda bulunması gereken dosyalar (betiğin ZORUNLU_DOSYALAR listesi) — eksikse ayrı bir BLOCKER doğar
 # ve ölçtüğümüz şey desen değil, dosya eksikliği olurdu.
 ZORUNLU = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSES/Apache-2.0.txt",
-           "README.md", "AGENTS.md", "kur.cmd", "kur.ps1", "yeni-proje.cmd"]
+           "README.md", "AGENTS.md", "kur.cmd", "kur.ps1", "yeni-proje.cmd", "aXet-Kur.cmd"]
 
 TB, IB = "\\", "/"  # ters/ileri bölü — `C:\Users\...` örneklerini kaynak dosyada yan yana getirmemek için
 

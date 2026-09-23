@@ -111,6 +111,7 @@ kapsam beyanıyla yaz, sistemden tekrar okuyarak doğrula, inaktif obje kalmadı
 | Paket günlüğü | paket `SESSION_NOTES.md` |
 | Fonksiyonel açık karar | paket `SPEC.md` açık kararlar |
 | Proje geneli karar / durum | proje hafızası (`%remember`, proje kapsamı) |
+| Projede her işte uyulacak bağlayıcı kural (ör. Z tablo öneki) | proje hafızası + proje `AGENTS.md` "Proje kuralları"na kısa madde (davranış yüzeyi: onayı kullanıcı verir — `%remember` §1) |
 | Her projede geçerli ADT yöntemi ya da ABAP tuzağı | `%remember` ekip kapsamı ya da template'e öneri |
 
 ## Rules
