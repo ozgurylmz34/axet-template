@@ -1496,6 +1496,85 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.7",
+   "tarih": "2026-09-23",
+   "kalemler": [
+    {
+     "id": "0.5.7-01",
+     "baslik": "SAP projesinde `conn/README.md` artık makine yolu taşımaz",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`conn/README.md` git'e açık tutulan tek `conn/` dosyasıdır; şablon ona aXet klonunun mutlak yolunu (kullanıcı adı dahil) yazıyordu ve dosya commit'lenirse bu yol proje geçmişine giriyordu. Parolasız bağlantı kurma komutu artık `$HOME\\axet` ile yazılır (varsayılan dışı kurulum için not var). Mevcut projede `%guncelle-proje` dosyayı yeniler; kendi elinle değiştirdiysen sorar.",
+     "dosyalar": [
+      "templates/project-sap/conn/README.md",
+      "tests/test_new_project.py",
+      "tests/test_proje_tamamla.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k conn_readme",
+      "python tests/run_tests.py -k test_proje_tamamla"
+     ]
+    },
+    {
+     "id": "0.5.7-02",
+     "baslik": "Git kimliği: kurulum belgesinde anlatılır, `doctor` tanımsızsa söyler",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Git kimliği (`user.name`/`user.email`) tanımsızsa git adresi Windows hesabından türetir ve commit hata vermeden o adresle atılır; proje uzak sunucuya push edilirse bu adres geçmişe girer. README ve `docs/onboarding.md` bir kez yapılacak `git config --global` adımını anlatır (GitHub hesabı gerekmez). `doctor.py` kimlik tanımsızsa projede remote varsa uyarır (WARN), yoksa bilgi verir (INFO); adresi basmaz, çıkış kodunu değiştirmez.",
+     "dosyalar": [
+      "README.md",
+      "docs/onboarding.md",
+      "scripts/doctor.py",
+      "tests/test_doctor.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k GitKimlik"
+     ]
+    },
+    {
+     "id": "0.5.7-03",
+     "baslik": "`%sap-fs-ts-docs`: yedi doküman dersi kontrol listesine girdi + FM imzası ↔ doküman denetimi",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Yeni kontrol listesi maddeleri: defter tasarımında giriş/tüketim/düzeltme üçlüsü (DOC-FS-08), rapor dokümanı kaynak uygulamanın kuralını anlatmaz (DOC-CR-04), veri göçü yapılmadan \"eski alan boştur\" denmez (DOC-CR-05), doküman turu donmuş koda göre yapılır (DOC-CR-06), teslim paketinin içi ölçülür (DOC-CR-07), FM imzası dokümanla eş (DOC-TS-08, build sonrası); alıntı metin onaya götürülmez; FS/TS teslim biçimi varsayılanı. Yeni `scripts/check_fm_signature_doc_sync.py`: dokümandaki `<!-- FM-IMZA: FM -->` bloğunu kaynaktaki FM imzasıyla karşılaştırır (EKSİK/HAYALET); tanıyamadığı imzada sessiz kalmaz, ÖLÇÜLEMEDİ der.",
+     "dosyalar": [
+      "skills-sap/sap-fs-ts-docs/SKILL.md",
+      "skills-sap/sap-fs-ts-docs/references/doc-checklist.md",
+      "skills-sap/sap-fs-ts-docs/references/fs-authoring.md",
+      "skills-sap/sap-fs-ts-docs/references/kd-authoring.md",
+      "skills-sap/sap-fs-ts-docs/references/traceability.md",
+      "skills-sap/sap-fs-ts-docs/references/ts-authoring.md",
+      "skills-sap/sap-fs-ts-docs/scripts/check_fm_signature_doc_sync.py",
+      "skills-sap/sap-fs-ts-docs/tests/_common.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_fm_signature_doc_sync.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_skill_structure.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.7-04",
+     "baslik": "Yayın kataloğu ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    }
+   ]
   }
  ]
 }

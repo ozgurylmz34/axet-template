@@ -11,6 +11,10 @@ Yer   : <source_root>/<MODÜL>/<PAKET>/docs/     (kaynak/dönüşüm belgeleri r
 - İlk `_` öncesi doküman kimliğidir; üretici (Mermaid PNG ön eki) buna dayanır. Aynı klasörde iki doküman aynı kimliği taşımaz.
 - **Durum akışı:** `Taslak → İncelemede → Revize Gerekli → Onaylandı → Arşivlendi` (Revize Gerekli → İncelemede döngüsü).
 - **Modül kodları:** SD · MM · FI · CO · PP · PM · QM · HR · WM/EWM · PS · BC (temel/modüller arası).
+- **Teslim biçimi (varsayılan; proje başka karar verebilir):** FS ve TS için `.md` + `.pdf`. HTML yalnız PDF'e giden yolda
+  **ara üründür**, sürüm kontrolüne alınmaz ve ayrıca güncellenmez; FS/TS için "HTML bayat" diye bulgu yazılmaz. KD için
+  `.md` + `.pdf` + `.html`, çünkü KD'nin HTML'i uygulama içi yardım kopyası olarak kullanılır (`kd-authoring.md` §8).
+  Gerekçe: kimsenin okumadığı üçüncü bir biçimi senkron tutmak her doküman turuna maliyet ekler.
 
 ## 2. İzlenebilirlik matrisi (TS'te zorunlu)
 | FS gereksinim | FS açıklaması | TS bölümü | TS obje/metot | Test |
@@ -28,6 +32,19 @@ Yer   : <source_root>/<MODÜL>/<PAKET>/docs/     (kaynak/dönüşüm belgeleri r
 - Arayüz değişirse → KD aynı revizyonda güncellenir; klasik GUI'de F1 yardımı da.
 - Build sırasında yeni mesaj ya da alan doğarsa TS **önce** revize edilir, sonra kodlanır.
 - Belgeler proje kapanışına kadar güncel tutulur.
+- **Doküman turu donmuş kod ister.** TS/KD, ekran görüntüleri ve PDF kodun o anki hâline bağlıdır: satır referansları,
+  mesaj metinleri, görüntüler. Kod düzeltme turu sürerken doküman turu **başlatılmaz**; sıra seridir: kod donar (dosya
+  özeti/commit kaydedilir) → doküman turu. Paralel koşturmak zaman kazandırmaz: referanslar kayar, görüntüler yeniden
+  çekilir ve kusur **sessizdir** (doküman derlenir, inceleme geçer, yanlışlık ancak satır açılınca görülür). Tur yine de
+  çakışmak zorundaysa doküman yazarına sabit bir dosya özeti verilmez; yazar başlarken kendisi ölçer, tutmuyorsa durur
+  ve sorar. Aynı turda dosya sahipliği açıkça bölünür (bir dokümana tek yazar).
+- **Koda çapa ad ile atılır, satır numarasıyla değil.** Doküman değişebilecek koda metot/FORM/dal adıyla bağlanır (ad
+  da yazılmadan önce kaynakta doğrulanır); satır numarası ilk düzeltmede kayar (DOC-CR-06).
+- **Dışarı gönderilen paket ayrıca ölçülür.** Zip, e-posta eki ya da teslim klasörü çalışma dosyasının bir kopyasıdır ve
+  hiçbir inceleme onu görmez: kaynak dosya düzeltilince paket sessizce bayatlar. Paket **teslim anında** güncel dosyalardan
+  yeniden kurulur ("zaten kurmuştum"a güvenilmez) · açılıp üye üye özet (md5/sha) alınır ve çalışma ağacındaki dosyayla
+  eşitliği ölçülür (boyut yetmez) · beklenen özetler eşlik eden nota yazılır ki alıcı doğrulayabilsin · eski sürüm
+  paketler aynı klasörde bırakılmaz (yanlışının gönderilme riski) (DOC-CR-07).
 
 ## 4. Karar yayılımı ve ikinci kapı
 Bir karar birden çok yerde yaşar (gövde kuralı, ekran tablosu, sözde kod, test, ek belge, onay listesi). Her karar kaydında

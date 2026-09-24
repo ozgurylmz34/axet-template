@@ -28,6 +28,9 @@ def sample(*parts):
 
 def _env():
     env = dict(os.environ)
+    # Kullanıcı kabuğunda ayarlıysa script'ler başka bir projeyi okur (sahte kırmızı/yeşil); testler cwd'deki
+    # geçici projeyi ölçmeli.
+    env.pop("AXET_SAP_PROJECT_DIR", None)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     return env

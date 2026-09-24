@@ -90,6 +90,18 @@ istekle çelişiyorsa: isteği uygula, çelişkiyi soru olarak getir.
 - "Kaydet/İşle" sonrası sistemde ne oluştuğu kullanıcıya görünür mü?
 - Kullanıcının yazdığı her istek FS'te gereksinim ya da kural olarak var mı?
 
+### Defter / havuz tasarımı — giriş, tüketim, düzeltme birlikte
+FS bir defter, havuz ya da bakiye tasarlıyorsa (tahsis havuzu, FIFO lotu, kota, bakiye hesabı) **üç blok birlikte**
+yazılır; yalnız tüketimi anlatmak eksik FS'tir (DOC-FS-08):
+1. **Giriş:** kayıt (lot) hangi belge/kalemden doğar (anahtar) · ne zaman doğar · tarih kuralı (öncelik zinciri) ·
+   miktar · kaynak belge iptal edilir ya da yeniden kesilirse ne olur · dış kaynaktan gecikmeli gelen veri beklenirken durum.
+2. **Tüketim:** sıra kuralı (ör. FIFO) · tetikleyen an · o anda alınan anlık görüntü · eşzamanlılık/kilit.
+3. **Düzeltme, istisna, geçiş:** elle düzeltme ve manuel kayıt · canlıya geçişteki açılış bakiyeleri (nasıl yüklenir) ·
+   yetim kayıt ve anlık görüntü farkı durumları.
+
+Sonuna "senaryo → ne olur → ne yazılır" tablosu eklenir. Gerekçe: giriş tarafı "zaten sistemde var" diye atlanır; yazılmayan
+her giriş kuralı TS'te ve build'de ayrı bir soru olarak geri gelir.
+
 ## 5. Kaynağa bağlılık — uydurma yok
 1. **Sıkı dayanak:** her iş kuralı, süreç akışı, gereksinim ve doğrulama verilen girdilerden (istek, intake artefaktı,
    analiz notu, `ref_docs/`) türer. Deneyim yalnız girdiyi **yapılandırmak** için kullanılır, olgu **eklemek** için değil.
@@ -109,6 +121,14 @@ istekle çelişiyorsa: isteği uygula, çelişkiyi soru olarak getir.
    Mutabakatta gövdede etiketli satır kalmaz: her etiket ya kapanıp sonuca dönüşür ya da ait olduğu bölümde durur.
 6. **Her FS'te düşünülür:** yetkilendirme, veri güvenliği ve kişisel veri, loglama, hata yönetimi, denetim izi. Girdi
    sessizse eksik olarak işaretlenir (11-B), varsayılmaz.
+7. **Tüketici doküman, üretici uygulamanın kuralını anlatmaz.** Bir rapor (ya da başka bir tüketici) için yazılan FS/TS/KD
+   yalnız **o raporda gözlenebileni** anlatır: kolon, filtre, gösterim. Veriyi üreten uygulamanın kuralları (kilit,
+   zorunluluk, muafiyet, iptal davranışı) yazılmaz; sahibine tek cümleyle ve **adıyla** yönlendirilir (hedef dokümanda o
+   içeriğin gerçekten var olduğu kontrol edilir). Test beklentisi rapor kolonuyla yazılır; canlı örnek kaynak tablodan değil
+   raporun kendisinden okunur. Gerekçe: üretici kuralı anlatan doküman o kuralın bütün kaynak zincirini (arayüz, davranış
+   tanımı, uygulama kodu) doğrulamayı üstlenir, bunu da rapordan test edemez. İnceleme böyle bir cümlede bulgu verirse
+   önce "rapordan gözlenebilir mi?" diye sorulur; gözlenemiyorsa cümle düzeltilmez, **çıkarılır**. Düzeltme turunda
+   nitelendirme eklemek her seferinde yeni bir yanlış iddia doğurur (DOC-CR-04).
 
 ## 6. Bölüm yapısı (zorunlu)
 Şablon tüm bölümleri taşır; burada her bölümün kuralı var.
@@ -158,6 +178,8 @@ belirtmeden yazma · kapsam kayması (her kapsam değişikliği ayrı değişikl
 [ ] (İlke 2b) Gövdede sürüm etiketi / süreç anlatısı / alıntı / "önceden→şimdi" yok; §1.1 satırları kısa; yayılım tabloları dolu
 [ ] Girdide olmayan olgu yok; etiketler ait oldukları bölümde
 [ ] Kullanıcı gözü tamlık soruları cevaplı (boş/mükerrer/en çok/sıfır, varsayılan, teyit/geri alma, hata, kaydet sonrası)
+[ ] Defter/havuz varsa giriş + tüketim + düzeltme/geçiş üçü de yazılı; senaryo tablosu var
+[ ] Tüketici dokümansa (rapor) yalnız raporda gözleneni anlatıyor; üretici uygulamanın kuralı yalnız adıyla atıf
 [ ] Anahtar kullanıcı onayı
 ```
 

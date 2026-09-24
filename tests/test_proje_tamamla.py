@@ -153,7 +153,9 @@ class ConnSablonTest(ZProje):
     def test_z70_conn_readme_kurulumda_gelir_git_kurali_ve_ezilmez(self):
         d = self.proje("connproje", sap=True)
         readme = (d / "conn" / "README.md").read_text(encoding="utf-8")
-        self.assertIn(AXET_HOME.as_posix(), readme, "<AXET_HOME> doldurulmadı")
+        # Z83: README git'e açık ⇒ makine yolu TAŞIMAZ (önceden `<AXET_HOME>` klon yoluyla dolduruluyordu)
+        self.assertNotIn(AXET_HOME.as_posix(), readme, "README klonun mutlak yolunu taşıyor")
+        self.assertNotIn("<AXET_HOME>", readme)
         for rel, kapali in (("conn/README.md", False), ("conn/DEV.env", True), ("conn/QA.env", True)):
             with self.subTest(rel=rel):
                 rc = self.git(d, "check-ignore", "-q", "--no-index", rel, kontrol=False).returncode

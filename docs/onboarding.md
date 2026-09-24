@@ -25,6 +25,19 @@ Kurulum aracı Git ve Python'u **kurmaz**: eksikse durur ve yazılım merkezini 
 yoldan (winget, internetten indirme) kurma; şirketin izin verdiği sürüm yazılım merkezindekidir. Yalnız şirket
 dışı, kişisel bir makinede `kur.cmd -Winget` eksikleri winget ile kurmayı sorar.
 
+**Git kimliği (bir kez):** Git kurulduktan sonra adını ve iş e-postanı tanıt:
+
+```powershell
+git config --global user.name "Ad Soyad"
+git config --global user.email "ad.soyad@sirket.com"
+git config --global user.email    # kontrol: adresini basmalı
+```
+
+Değer `git config --global` dosyasına (genelde `%USERPROFILE%\.gitconfig`) yazılır ve bu makinedeki tüm
+repolarda geçerlidir. Girmezsen kurulum ve aXet etkilenmez; ama commit'lerin hata vermeden Windows'un türettiği adresle atılır ve proje uzak sunucuya push edilirse
+o adres geçmişe girer (sonradan silinemez). Kimlik tanımsızsa `doctor.py` projede remote varsa uyarır (WARN),
+yoksa bilgi verir (INFO). **GitHub hesabı gerekmez:** template herkese açık klonlanır.
+
 Önerilen: `rg` (ripgrep). Yoksa aXet'in arama aracı yavaşlar; kurulum aracı hatırlatır ama durmaz.
 Bir şey kurulduktan sonra **yeni terminal ve yeni aXet oturumu** aç: PATH ancak o zaman görünür.
 
@@ -173,6 +186,7 @@ Belirti → çözüm tablosu: [README "Sorun giderme"](../README.md#sorun-giderm
 ## 6. Kontrol listesi
 
 - [ ] `axet-code -v`, `git --version`, `python --version` çalışıyor
+- [ ] `git config --global user.email` adresimi basıyor (git kimliği tanımlı)
 - [ ] Kurulum aracı bitti; `doctor.py` 0 FAIL
 - [ ] Yeni oturumun ilk satırında `AXET-CORE` görünüyor
 - [ ] İlk proje `%yeni-proje` ile kuruldu; projede `proje: <ad>` görünüyor

@@ -87,6 +87,19 @@ class NewProjectTest(GeciciTest):
         self.assertIn("damga BOZUK", r.stdout)
         self.assertNotIn("Sonraki adımlar", r.stdout)
 
+    def test_sap_conn_readme_makine_yolu_tasimaz(self):
+        # Z83: conn/README.md git'e AÇIK tutulur (`conn/*` + `!conn/README.md`) ⇒ klonun mutlak yolunu taşımamalı
+        d = self.proje(sap=True)
+        readme = d / "conn" / "README.md"
+        self.assertTrue(readme.is_file())
+        metin = readme.read_text(encoding="utf-8")
+        self.assertNotIn("<AXET_HOME>", metin)
+        self.assertNotIn(AXET_HOME.resolve().as_posix(), metin)
+        self.assertIn("setup_credentials.py", metin)
+        # kontrol grubu: dosya gerçekten git'e açık (kapalı olsaydı yol taşıması zararsız olurdu)
+        r = self.git(d, "check-ignore", "-q", "conn/README.md", kontrol=False)
+        self.assertEqual(r.returncode, 1, "conn/README.md git'e kapalı görünüyor — test varsayımı geçersiz")
+
     def test_sap_sonraki_adimlar_profil_alanlarini_soyler(self):
         d = self.tmp / "sap"
         d.mkdir()

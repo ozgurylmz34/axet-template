@@ -18,5 +18,6 @@ Bilmen gerekenler:
 - QA ve PRD salt-okunurdur; SAP'ye yazma yalnız DEV'de.
 - Dosyaların içeriğini sohbete yapıştırma, aXet'e okutma.
 - Başka bir sistem (ör. PRD) için aynı biçimde `<AD>.env` ekleyebilirsin. Parolayı dosyaya yazmak istemezsen
-  terminalde: `python "<AXET_HOME>/skills-sap/sap-adt-foundation/scripts/setup_credentials.py" --slot <AD>`
-  (bilgileri sorar, parola ekrana yansımaz).
+  PowerShell'de: `python "$HOME\axet\skills-sap\sap-adt-foundation\scripts\setup_credentials.py" --slot <AD>`
+  (bilgileri sorar, parola ekrana yansımaz). aXet'i varsayılan klasör (`%USERPROFILE%\axet`) dışına kurduysan
+  `$HOME\axet` yerine o klasörü yaz.

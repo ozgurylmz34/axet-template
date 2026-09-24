@@ -10,7 +10,7 @@ from _common import REPO, SCRIPTS, SKILL
 TEXT_EXT = (".md", ".py", ".js", ".json", ".cds", ".bdef", ".csv", ".abap", ".html", ".txt")
 EXPECTED_SCRIPTS = ["doc_tools.py", "build_doc_pdf.py", "build_kd_pdf.py", "capture_kd_screens.js", "html_to_pdf.js",
                     "gen_field_table.py", "doc_equivalence_check.py", "program_to_spec.py", "verify_doc_html.py",
-                    "check_fs_no_analysis_log.py"]
+                    "check_fs_no_analysis_log.py", "check_fm_signature_doc_sync.py"]
 EXPECTED_DOCS = ["SKILL.md", "references/fs-authoring.md", "references/ts-authoring.md", "references/kd-authoring.md",
                  "references/doc-checklist.md", "references/traceability.md", "references/pdf-with-screenshots.md",
                  "references/live-confirmation-tour.md", "templates/FS-template.md", "templates/TS-template.md",

@@ -55,7 +55,7 @@ description: >
 | İş | Önce oku | Şablon | Script |
 |---|---|---|---|
 | FS yaz / revize et | `references/fs-authoring.md` | `templates/FS-template.md` | `check_fs_no_analysis_log.py` (gövdede analiz günlüğü izi, İlke 2b) |
-| FS'ten TS çıkar / TS gözden geçir | `references/ts-authoring.md` | `templates/TS-template.md` | `gen_field_table.py` (CDS→alan tablosu) |
+| FS'ten TS çıkar / TS gözden geçir | `references/ts-authoring.md` | `templates/TS-template.md` | `gen_field_table.py` (CDS→alan tablosu), `check_fm_signature_doc_sync.py` (FM imzası ↔ doküman, §5.3) |
 | KD yaz | `references/kd-authoring.md` | `templates/KD-template.md` | `capture_kd_screens.js`, `build_kd_pdf.py` |
 | İnceleme (her tip) | `references/doc-checklist.md` | brifing bloğu aynı dosyada §E | `verify_doc_html.py` (yalnız mekanik kısım) |
 | FS↔TS↔KD izlenebilirlik, yeniden yazımda kayıp | `references/traceability.md` | — | `doc_equivalence_check.py` |
@@ -120,7 +120,7 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 | `references/ts-authoring.md` | İlke 3/4/5, FS→TS adımları, genişletme seviyesi ağacı, bölüm yapısı (§2-A, §4.5, §10.1, §11-A), beş parçalı üretim, kalite listesi |
 | `references/kd-authoring.md` | KD bölümleri, §4-A grid araçları, alt ekran kuralı, temiz veri, içindekiler kuralı, F1 ikinci ayağı, kalite listesi |
 | `references/doc-checklist.md` | DOC-KD/FS/TS/CR maddeleri, ikinci kapı, hüküm, bağımsız inceleme brifingi |
-| `references/traceability.md` | numaralandırma, dosya adı, durum akışı, izlenebilirlik matrisi, yayılım tablosu, veri kaybı kontrolü, tersine mühendislik |
+| `references/traceability.md` | numaralandırma, dosya adı, teslim biçimi, durum akışı, donmuş kod ve teslim paketi kuralları, izlenebilirlik matrisi, yayılım tablosu, veri kaybı kontrolü, tersine mühendislik |
 | `references/pdf-with-screenshots.md` | bağımlılıklar, temiz ekran görüntüsü, HTML/PDF, doğrulama, Mermaid/Marp, alan tablosu, tuzaklar |
 | `references/live-confirmation-tour.md` | C-1…C-5 ölçüm başlıkları, CLI çağrıları, rapor biçimi |
 | `templates/FS-template.md` · `TS-template.md` · `KD-template.md` | zorunlu bölümleri taşıyan boş iskeletler |
@@ -130,6 +130,7 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 | `scripts/verify_doc_html.py` | ölü içindekiler bağlantısı, ham Mermaid sızıntısı, görsel sayısı/eksik dosya, PDF bağlantı sayısı |
 | `scripts/doc_equivalence_check.py` | yeniden yazımda veri kaybı (kimlik, mockup, değer, cümle) + kapanmış karar ters yönü |
 | `scripts/check_fs_no_analysis_log.py` | FS gövdesinde analiz günlüğü izi sayımı (sürüm etiketi, inceleme kimliği, süreç ifadesi, kullanıcı alıntısı, önceden→şimdi) + §1.1 satır uzunluğu (DOC-FS-05/06a); uyarıdır, kapı değil |
+| `scripts/check_fm_signature_doc_sync.py` | dokümandaki `<!-- FM-IMZA: <FM> -->` bloğu ↔ FM kaynağındaki imza parametreleri, iki yönde (EKSİK · HAYALET); kaynak kökü `sap-project.json` `source_root` (DOC-TS-08); uyarıdır, kapı değil |
 | `scripts/gen_field_table.py` | CDS (+ interface CDS, BDEF, CSV) → alan tablosu |
 | `scripts/program_to_spec.py` | ABAP/CDS kaynağından taslak FS/TS (yalnız kaynakta olan) |
 | `tests/run_tests.py` | çevrimdışı testler (SAP'ye ve tarayıcıya bağlanmaz) |
@@ -137,6 +138,10 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 ## Rules
 - **Uydurma yok:** iş kuralı, süreç, alan adı, standart SAP obje adı, mesaj metni, DTEL/Z obje etiketi girdiden gelir; yoksa
   sorulur ya da `[Açık Konu]`/`[Varsayım]` diye etiketlenir. Öneri gerçek gibi yazılmaz (`[Öneri]`).
+- **Alıntı onay turu açmaz:** metin kanonik bir kaynaktan (onaylı spesifikasyon, DDIC etiketi, emsal uygulama) alınıyorsa
+  kaynağına atıfla yazılır ve geçilir; onaya yalnız kaynağı olmayan **yeni iş kavramının** görünen metni ve Z objenin
+  DDIC etiketleri gider. Öneri o an sorulur, biriktirilmez. Kaynak damgası ("bunu şuradan aldım") bir onay kuyruğu
+  değildir; alıntıyı onaya götürmek her turda kuyruğu büyütür ve işi bitirmez.
 - Kullanıcının açık isteği atlanmaz, gölgelenmez, sessizce yeniden yorumlanmaz; çelişki soru olarak getirilir.
 - Fonksiyonel açık nokta build'e ertelenmez (FS §11-B'de kapanır, TS gövdesinde çözülür).
 - FS ve TS'e ham ekran görüntüsü konmaz (mockup + yapısal tablo); KD'de gerçek arayüz + temiz örnek veri zorunludur.

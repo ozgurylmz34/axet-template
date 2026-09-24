@@ -96,6 +96,13 @@ sözlük + destek bölümü.
 **Yapılmaz:** teknik ayrıntı · kullanıcıyı suçlama ("yanlış girdin" değil "şunu yap") · BÜYÜK HARF/ünlem yığma · tek genel
 mesaj (her duruma ayrı açıklama + aksiyon) · görüntüsüz uzun anlatım · "herkes bilir" varsayımı · mockup/temsili çizim.
 
+**Veri garantisi yazmadan önce ölç ("X boştur / X doludur / artık Y'de görünür"):** tasarım belgesi ve kod yorumu
+*niyeti* anlatır; kılavuz cümlesi ise kullanıcıya *veri garantisi* verir. Bir alanın anlamı **veri göçü yapılmadan**
+değiştirildiyse eski kayıtlar eski alanda kalır ve iki popülasyon birlikte yaşar. Böyle bir cümle yazmadan önce:
+① değişikliğin karar kaydında veri göçü kararını ara ② canlıda **eski tarihli** kayıtla karşı örnek ara (yalnız yeni
+kayıtlara bakmak kör kanıttır) ③ göç yoksa cümleyi daralt ("değişiklikten önceki kayıtlarda bilgi X alanında kalmış
+olabilir"). Aynı alanın kayıt kategorisine göre farklı anlam taşıyıp taşımadığına da bakılır (DOC-CR-05).
+
 ## 8. Uygulama içi yardım kopyası
 UI5 uygulaması bir "Kullanıcı kılavuzu" düğmesiyle KD HTML'ini açıyorsa (`webapp/help/…`), KD her üretildiğinde kopya ve
 görselleri de güncellenir (`build_kd_pdf.py --help-dir`); aksi hâlde uygulamadaki kopya bayatlar. Kopyanın canlıda görünmesi

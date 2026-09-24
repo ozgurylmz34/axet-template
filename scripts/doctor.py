@@ -1193,6 +1193,73 @@ def check_tarayici(env: dict | None = None) -> None:
             "bunu kendisi koşar)")
 
 
+GIT_KIMLIK_KAPSAM = ("yalnız tanımsızlık ölçülür; tanımlı adresin doğruluğu ya da türetilmiş olup olmadığı "
+                     "yargılanmaz · remote yalnız bulunulan repoda ölçülür · GIT_AUTHOR_*/GIT_COMMITTER_* ortam "
+                     "değişkenlerine bakılmaz")
+GIT_KIMLIK_DUZELTME = ("git config --global user.name \"Ad Soyad\" · "
+                       "git config --global user.email \"ad.soyad@sirket.com\"")
+
+
+def _git_remote_var(exe: str, cwd: Path | None) -> tuple[bool | None, str]:
+    """Bulunulan dizinde `git remote` en az bir remote döndürüyor mu. (True, "") remote var · (False, "") remote yok
+    ya da git reposu değil (rc 128) · (None, neden) ÖLÇÜLEMEDİ (başka rc ya da çağrı hatası)."""
+    try:
+        r = subprocess.run([exe, "remote"], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,
+                           cwd=str(cwd) if cwd else None, encoding="utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001 — teşhis
+        return None, f"{type(exc).__name__}: {exc}"
+    if r.returncode == 0:
+        return bool(r.stdout.strip()), ""
+    if r.returncode == 128:  # git reposu değil
+        return False, ""
+    hata = (r.stderr or "").strip().splitlines()
+    return None, f"rc={r.returncode}: {hata[0] if hata else 'çıktı yok'}"
+
+
+def check_git_kimlik(cwd: Path | None = None) -> None:
+    """Z84: git kimliği (user.name/user.email) tanımlı mı — etkin değer (global + bulunulan reponun yerel config'i).
+    Tanımsızsa seviye push riskine bağlıdır: bulunulan repoda remote varsa WARN, remote yoksa ya da git reposu
+    değilse INFO; remote ölçülemezse güvenli taraf WARN (FAIL hiçbir dalda yok). Windows'ta git adresi hesaptan
+    türetir ve commit HATA VERMEDEN o adresle atılır (ölçüldü); push edilirse adres geçmişe girer.
+    Tanımlıysa PASS — adres BASILMAZ (kişisel veri)."""
+    exe = shutil.which("git")
+    if not exe:
+        add("INFO", "git bulunamadı: git kimliği (user.name/user.email) kontrol edilmedi")
+        return
+    eksik = []
+    for anahtar in ("user.email", "user.name"):
+        try:
+            r = subprocess.run([exe, "config", "--get", anahtar], capture_output=True, text=True, timeout=30,
+                               stdin=subprocess.DEVNULL, cwd=str(cwd) if cwd else None,
+                               encoding="utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001 — teşhis
+            add("WARN", f"git kimliği ÖLÇÜLEMEDİ ({anahtar}: {type(exc).__name__}: {exc})")
+            return
+        if r.returncode not in (0, 1):  # 1 = anahtar yok; başka kod = config okunamadı
+            hata = (r.stderr or "").strip().splitlines()
+            add("WARN", f"git kimliği ÖLÇÜLEMEDİ ({anahtar}: rc={r.returncode}: {hata[0] if hata else 'çıktı yok'})")
+            return
+        if not r.stdout.strip():
+            eksik.append(anahtar)
+    if eksik:
+        bas = f"git kimliği tanımsız ({', '.join(eksik)}) — commit'ler Windows'tan türetilen adresle atılır; "
+        kapsam = " (KAPSAM: " + GIT_KIMLIK_KAPSAM + ")"
+        remote, neden = _git_remote_var(exe, cwd)
+        if remote is None:
+            add("WARN", bas + f"bulunulan reponun remote'u ÖLÇÜLEMEDİ ({neden}) → push riski varsayıldı; proje uzak "
+                        "sunucuya push edilirse o adres geçmişe girer → " + GIT_KIMLIK_DUZELTME + kapsam)
+        elif remote:
+            # Kurulumda doctor template klonunda koşar (kur.ps1 Push-Location $Hedef): remote klonun origin'idir,
+            # push edilecek "proje" o değildir → metin bu makinedeki projeler için genel konuşur; seviye aynı (WARN).
+            c = (cwd or Path.cwd()).resolve()
+            hedef = ("bu makinedeki bir proje" if c == inst.AXET_HOME or inst.AXET_HOME in c.parents else "proje")
+            add("WARN", bas + hedef + " uzak sunucuya push edilirse o adres geçmişe girer → " + GIT_KIMLIK_DUZELTME + kapsam)
+        else:
+            add("INFO", bas + "proje uzak sunucuya push edilmeyecekse zararsız · düzeltme: " + GIT_KIMLIK_DUZELTME + kapsam)
+    else:
+        add("PASS", "git kimliği tanımlı (user.name + user.email; değer basılmaz) (KAPSAM: " + GIT_KIMLIK_KAPSAM + ")")
+
+
 def check_live(sap: bool, cwd: Path) -> None:
     exe = shutil.which("axet-code")
     if not exe:
@@ -1259,6 +1326,7 @@ def main() -> int:
         check_baglam_boyutu(cwd)
         for name, info, ok in inst.check_env():
             add("PASS" if ok else "WARN", f"{name}: {info}")
+        check_git_kimlik(cwd)
         check_tarayici()
         if args.live:
             check_live(sap, cwd)

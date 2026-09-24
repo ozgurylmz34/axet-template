@@ -135,6 +135,30 @@ kullanıcı verir; TS'te eksik kalan her mesaj build ortasında bloke eden bir o
   "Şimdilik geçici metin" yazılmaz.
 - Mesajların SAP'ye yazımı `%sap-cds-ddic` / `adt_msgclass_write` işidir (yalnız `s4_private`; araç 73 karakteri reddeder).
 
+### 5.3 FM imzası ↔ doküman senkronu (§9 ve kullanım kılavuzları)
+Bir Z fonksiyon modülünün parametreleri dokümanda (TS §9 arayüz bölümü, paylaşılan bir FM'in kullanım kılavuzu)
+listeleniyorsa ve FM'in kaynağı yazılmışsa (build sonrası) liste **makine-okunur blok** içine alınır:
+```
+<!-- FM-IMZA: Z_DEMO_FM -->
+| Parametre | Tip | Anlam |
+|---|---|---|
+| `IV_BIR` | … | … |
+<!-- /FM-IMZA -->
+```
+FM'in imzası değişince doküman aynı revizyonda güncellenir. Sapmayı `check_fm_signature_doc_sync.py` ölçer: blokları
+bulur, FM kaynağını proje kaynak kökünde (`sap-project.json` `source_root`) `FUNCTION <ad>` satırından bulur ve iki
+yönde raporlar. **EKSİK** imzada olup blokta olmayan parametredir; bayat doküman, bir sonraki geliştiricinin "FM bunu
+yapamıyor" sanmasına yol açar. **HAYALET** blokta olup imzada olmayan parametredir.
+```
+python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/check_fm_signature_doc_sync.py [<doküman ya da klasör> …] [--kaynak-kok <klasör>] [--bulguda-exit1]
+```
+Çıkış kodları: `0` temiz ya da uyarı · `1` sapma var ve `--bulguda-exit1` verildi · `2` ÖLÇÜLEMEDİ. ÖLÇÜLEMEDİ şu
+durumlarda döner: kaynak bulunamadı ya da birden çok dosyada tanımlı · imza ayrıştırılamadı · blok kapanmamış.
+ÖLÇÜLEMEDİ "temiz" demek **değildir**. Sıfır blok da "senkron" demek değildir; blok eklenmemiş dokümana araç hiç bakmaz.
+Blok yalnız FM kaynağı var olduğunda eklenir (build öncesi TS'te FM henüz yazılmadıysa blok build sonrasına kalır).
+Araç yerel kaynağı okur; yerel kaynak bayatsa önce sistemden çekilir. Aracın bakmadıkları KAPSAM çıktısında listelenir
+(tip/varsayılan/istisnalar karşılaştırılmaz).
+
 ## 6. Beş parçalı üretim (büyük TS)
 Büyük TS'i tek seferde üretmek yerine beş parça yazılıp teslimde birleştirilebilir. Bölüm numaraları bu dokümanın numaralarıdır.
 
@@ -156,6 +180,7 @@ Teslim edilen tek dokümandır; parçalar çalışma dosyasıdır. Birleşik dok
 [ ] Performans noktaları, iyileştirme yaklaşımı, transport stratejisi yazılı
 [ ] §4.5 kolon tamlığı + (d) açıklama kolonu kararı + (e) alan kataloğu kararı
 [ ] §10.1 mesaj envanteri TAM (≤ 73, &1..&4 + anlam, üretim noktası, aksiyon; metinler kullanıcıdan)
+[ ] FM kaynağı varsa (build sonrası): parametreleri listelenen her Z FM için FM-IMZA bloğu var ve `check_fm_signature_doc_sync.py` sapma göstermiyor; build öncesi TS'te liste elle karşılaştırılır, blok build sonrası eklenir (§5.3)
 [ ] Birim ve entegrasyon testleri; izlenebilirlik matrisi FS'e bağlı, boş satır yok (İlke 3)
 [ ] §2-A FS denetimi dolu; sorunlu maddeler bilgilendirildi (İlke 4)
 [ ] §11-A yalnız teknik teyit; fonksiyonel kararlar kapalı: eşleştirme + çoklu eşleşme · tüm anahtar · dönüşüm · birim · alan taşıma · kenar durumlar · kilit · hata birleştirme (İlke 5)
