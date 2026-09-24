@@ -77,6 +77,11 @@ python <TEMPLATE>/skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py <tool> --
   | `source_changed_since_pull` (çıkış 2) | çektikten sonra SAP'de biri değiştirmiş → üzerine YAZMA; yeniden çek, değişikliği yeni kaynağa uygula, kullanıcıya bildir |
   | `pull_live_read_failed` (çıkış 1) | yazma öncesi canlı okuma başarısız → bağlantıyı düzelt; kontrolsüz yazma yok |
   | `pull_state_unreadable` (çıkış 2) | durum dosyası bozuk → `adt_get` ile yeniden çek (dosya yeniden yazılır); dosyayı elle düzenleme |
+- Düzenlemeyi DAİMA `adt_get` çıktısının üzerine yap; eski yerel kopyayı (repo, önceki oturum) taban alma. Kıyas "SAP
+  değişmedi"yi kanıtlar, yerel kopyanın çekilen kaynaktan türediğini kanıtlamaz: bayat kopya canlıdaki satırları sessizce geri alır.
+  Bu yüzden push, zaten okuduğu canlı kaynakla yeni kaynağı yazmadan önce kıyaslar; canlıda olup yeni kaynakta olmayan satır varsa
+  yanıta `removed_lines_warning: {removed, added, sample}` + `warning` konur. Yazma DURMAZ. Bu alanı görünce silinen satırları
+  kullanıcıya göster; kasıtlı değilse `adt_get` ile yeniden çekip düzenlemeyi onun üzerine uygula, kullanıcı onayı olmadan tekrar yazma.
 - `adt_post_shell` bu kontrole girmez; ama yeni kabuğa ilk `adt_push_source`'tan önce de `adt_get` çalıştır.
 - Mesaj sınıfında aynı kural mesaj listesine uygulanır: `adt_msgclass_read` kaydeder, `adt_msgclass_write` yazma anındaki canlı listeyi kıyaslar
   (aynı dört kod).
@@ -125,6 +130,7 @@ ağ çağrısından **önce** çalışır. CLI'nin yazma kapısı sırası ve re
 | `reviewer_blocker` | gömülü inceleme BLOCKER → kaynağı düzelt |
 | `preflight_blocker` | `adt_domain_create` argüman ön kontrolü BLOCKER (formülsüz datatype, geçersiz length/decimals/lowercase, boş sabit değer metni) → `result.steps.pre_flight.findings` |
 | `msgclass_overwrite_not_allowed` | `adt_msgclass_write` mevcut mesajı değiştirirdi → `plan.overwritten`'i (önce/sonra) kullanıcıya göster; açık onay gelirse `allow_overwrite=true` |
+| `repeated_failure` | patinaj kesicisi: aynı obje aynı hata koduyla art arda 3 kez başarısız oldu, bu yazma denenmedi → DUR; aynı çağrıyı tekrarlama, ham hata + denenenlerle kök sebebi kullanıcıyla konuş. Seri başarılı yazma, farklı hata kodu ya da 2 saat sonra sıfırlanır; erken sıfırlama kararı kullanıcının (`.axet-code/sap-write-failures.json`) — dosyayı sen silme |
 | `tool_not_available_for_profile` · `type_not_available_for_profile` | araç ya da obje tipi bu `sap_profile`'da kapalı (ör. `adt_screen_generate`, `adt_set_description`, `fugr`/`func`; tablo: `references/profiles.md`) → başka yol yok, kullanıcıya bildir |
 
 Kullanım/araç kodları (çıkış 3, SAP'ye gidilmedi): `invalid_argument` (argüman biçimi — ör. dynpro 4 hane değil, `extra` bu tipte geçersiz) ·

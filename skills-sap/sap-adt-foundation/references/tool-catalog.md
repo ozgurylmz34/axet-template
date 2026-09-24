@@ -24,6 +24,9 @@ Argümanları dosyadan vermek için `--args-json` yerine `--args-file <json dosy
 - **Yönlendirme ipuçları (engellemez, 2026-09-13):** yazma sınıfı her yanıtta üst düzey `checklist_hint` (obje tipine göre okunacak
   skill referansları; `status: var|yazılıyor`) ve çıkış 1/2'de `known_errors_hint` (hata kodu + SAP mesaj sınıfı/numarası deseninden
   bilinen-hata maddesi, `sap_message_keys`) bulunabilir. Karar vermez, çıkış kodunu değiştirmez; eşleşme desen tabanlıdır, teşhis değildir.
+- **Patinaj kesicisi (2026-09-24):** yazma sınıfı araçta aynı obje aynı hata koduyla art arda 3 kez başarısız olunca sonraki çağrı
+  SAP'ye gidilmeden `repeated_failure` (çıkış 2) alır → DUR, kök sebebi kullanıcıyla konuş. Başarısız yanıtta `failure_streak: {code, count, limit}`.
+  Başarı, farklı hata kodu ya da 2 saat seriyi sıfırlar; erken sıfırlama kullanıcının (`.axet-code/sap-write-failures.json`). Ayrıntı: `IMPLEMENTATION.md` §23.
 - Üç değerli alanlar (`true` / `false` / `null`): `null` = **ÖLÇÜLEMEDİ**, "hayır" ya da "doğrulandı" değildir.
 - `client_log` alt katmanın ham satırlarıdır; `exists:false` ya da boş sonuçta önce buna bak.
 - Sayı döndüren her araçta limite eşit sonuç = kırpılmış olabilir.
@@ -277,7 +280,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Amaç:** mevcut objeye tam kaynak gönderme.
 - **Argümanlar:** `name` (Z/Y) · `object_type` · `source` (tam içerik) · `transport` (obje zaten atanmışsa isteğe bağlı) ·
   `skip_reviewer=false` · `ack_drop=""` (ikisi de aXet yazma kapısında **yasak**: verilirse `reviewer_bypass_forbidden`, çıkış 2).
-- **Dönüş:** `{ok, name, type, result, readback_verified, readback_notice?, syntax_precheck?, syntax_precheck_notice?, syntax_errors?, reviewer?, post_check?}`.
+- **Dönüş:** `{ok, name, type, result, readback_verified, readback_notice?, syntax_precheck?, syntax_precheck_notice?, syntax_errors?, reviewer?, post_check?, removed_lines_warning?, warning?}`.
+  `removed_lines_warning: {removed, added, sample}` (2026-09-24): canlıda olup yeni kaynakta olmayan satırlar — yazma DURMAZ; yerel kopya
+  `adt_get` çıktısından türemediyse bu satırlar kaybolur → satırları kullanıcıya göster, onaysız tekrar yazma (SKILL §2).
   `syntax_precheck:"olculemedi"` → aktivasyon öncesi sözdizimi ön-kontrolü **ölçülemedi** (`valid:null`, kontrol istisnası
   ya da çağrı istisnası); push aktivasyona devam etti, `ok` değişmez, `syntax_precheck_notice` sebebi yazar — "sözdizimi temiz" DEĞİLDİR.
 - **Uyarılar:** açıklama "aktivasyon ayrı adım" der, alt katman kilit→yükleme→aktivasyon→readback dener → sonucu

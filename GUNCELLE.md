@@ -12,6 +12,11 @@ etmez, hiçbir şeyi zorla (`--force`) yapmaz.
 izlenen değişikliklerini `guncelle: yerel anlık <tarih>` commit'ine alır — geri dönüş noktan budur;
 ② `kapanis` adımı uygulanan kalemleri `guncelle: <yayın> kalemler <id…>` commit'ine yazar.
 Kullanıcıya bunu BAŞTAN söyle: klonun git geçmişinde bu iki commit görünecek.
+**Bekleyen yayın kalemi yoksa** (klon güncel) hiçbir commit ve etiket atılmaz: `onkontrol` bunu
+ölçer ve 1 döner (`hazirla` da aynı ölçümle 1 döner, hiçbir şey atmaz).
+**"Güncel" nasıl tanınır:** çıkış 1 **VE** çıktıda `Klon güncel:` ile başlayan satır (`onkontrol`,
+`hazirla`, `plan` üçü de aynı satırı basar). Çıkış 1 olup bu satır YOKSA (ör. Python hatası/traceback)
+bu "güncel" DEĞİLDİR — hata sayılır: çıktıyı AYNEN göster, DUR.
 
 Motor: `scripts/guncelle.py`. Akış boyunca **yeni sürümden** çalışır (yerel kopyası eski ya da
 bozuk olabilir). Durum dosyaları klonun `.axet-guncelleme/` klasöründedir ve git tarafından
@@ -25,9 +30,9 @@ izlenmez.
 |---|---|---|---|---|
 | 0 | Başlangıç | `git -C <klon> fetch --tags`, bu dosyayı `origin/main`'den oku | 0 | ağ yoksa "şimdi güncellenemez" de, DUR |
 | 1 | Etkileşim | kullanıcıdan "başlayalım mı" cevabını al | açık onay | etkileşimsiz koşuyorsan DUR |
-| 2 | Ön kontrol | `guncelle.py onkontrol` | 0 | 2 → sebebi AYNEN göster, DUR |
-| 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 | DUR (geri alınamayacak bir güncelleme başlatılmaz) |
-| 4 | Plan | `guncelle.py plan` | 0 (1 = güncel, bitir) | 2 → DUR |
+| 2 | Ön kontrol | `guncelle.py onkontrol` — klon kimliği/origin/TMP + **bekleyen yayın kalemi var mı** (`plan`la aynı ölçüm) | 0 (1 + `Klon güncel:` satırı = güncel: kullanıcıya söyle, BİTİR — etiket atılmaz) | 2 ya da satırsız 1 → çıktıyı AYNEN göster, DUR |
+| 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 (1 + `Klon güncel:` satırı = güncel, hiçbir şey atılmadı → BİTİR) | 2 ya da satırsız 1 → DUR (geri alınamayacak bir güncelleme başlatılmaz) |
+| 4 | Plan | `guncelle.py plan` | 0 (1 + `Klon güncel:` satırı = güncel, bitir) | 2 ya da satırsız 1 → DUR |
 | 5 | Seçim | plan tablosunu göster → `guncelle.py sec --hepsi` ya da `--kalem/--cikar` | 0 | 2 → tutarsızlığı açıkla, yeniden sor |
 | 6 | Önce-ölçüm | `guncelle.py olc --asama once` | 0 | 2 → DUR (ölçülemeyen güncelleme yapılmaz) |
 | 6b | *(6'nın İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi:** planda **yargı vakası yoksa** ve yayının `guncelle/ci-durum.json` kaydı bu etiket için `hepsi_yesil: true` ise adım 6 **test koşmaz**, tabanı CI hükmünden alır ve `[İKAME]` + `KAPSAM` satırlarını basar. **Bu satırları kullanıcıya AYNEN aktar.** Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) **normal ölçüme döner** — *ölçülemedi ≠ yeşil*. | 0 | — |
@@ -112,6 +117,6 @@ hangi testlerin koşacağını ve özel adım gerekip gerekmediğini söyler.
 
 ## Geri alma
 
-`hazirla` adımı her şeyden önce bir `guncelle-oncesi-<tarih>` etiketi atar.
+`hazirla` adımı (bekleyen iş varsa) her şeyden önce bir `guncelle-oncesi-<tarih>` etiketi atar.
 Tek dosya: `guncelle.py geri-al <yol>` · tümü: `guncelle.py geri-al --hepsi`.
 Kapanıştan sonra bile klasik yol açıktır: `git -C <klon> restore --source guncelle-oncesi-<tarih> -- <yol>`.

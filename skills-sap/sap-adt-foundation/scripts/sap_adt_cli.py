@@ -42,7 +42,9 @@ GATE_RESULT_ERRORS = frozenset({"guardrail_violation", "reviewer_blocker", "tier
                                 "pull_before_edit_missing", "pull_state_unreadable",
                                 "source_changed_since_pull",
                                 # aXet 2026-09-13: domain argüman ön kontrolü · mesaj sınıfı üzerine yazma onaysız
-                                "preflight_blocker", "msgclass_overwrite_not_allowed"})
+                                "preflight_blocker", "msgclass_overwrite_not_allowed",
+                                # Z90: patinaj kesicisi (`calistir` üretir, araç çağrılmadan; burada katalog eşliği için)
+                                "repeated_failure"})
 USAGE_RESULT_ERRORS = frozenset({"unsupported_type", "bad_regex", "no_scope", "invalid_argument"})
 TLS_UYARI = "UYARI: TLS sertifika doğrulaması kapalı (ADT_SAP_SSL_VERIFY)"
 
@@ -318,6 +320,17 @@ def calistir(tool: str, args: dict, proj: Path, *, sap_write: bool = False, scop
     if kapi_hatasi:
         return bitir(None, EXIT_GATE, kapi_hatasi)
 
+    # Z90 PATİNAJ KESİCİSİ (sapadt/write_failures.py): aynı obje + aynı hata koduyla ESIK ardışık başarısız
+    # yazmadan sonra araç ÇAĞRILMADAN çıkış 2. Fren, kapı değil: sayaç dosyası okunamazsa yazma sürer (stderr uyarısı).
+    wf = None
+    if sinif == "write":
+        from sapadt import write_failures as wf
+        engel, uyari = wf.kontrol(obje, otip, proj)
+        if uyari:
+            print(f"UYARI: patinaj sayacı: {uyari} — kesici bu çağrıda ölçemedi, yazma engellenmedi.", file=sys.stderr)
+        if engel:
+            return bitir(None, EXIT_GATE, (wf.KOD, wf.red_mesaji(engel)))
+
     try:
         result = spec.fn(**args)
     except Exception as exc:  # noqa: BLE001 — istisna JSON sözleşmesini kırmasın
@@ -327,7 +340,15 @@ def calistir(tool: str, args: dict, proj: Path, *, sap_write: bool = False, scop
         except Exception:  # noqa: BLE001
             result = {"ok": False, "error": "unexpected", "message": f"{type(exc).__name__}: {exc}"}
     kod, err = _sonuc_hatasi(result)
-    return bitir(result, kod, err, ok=(kod == EXIT_OK))
+    seri = None
+    if wf is not None:
+        seri, uyari = wf.kaydet(obje, otip, None if kod == EXIT_OK else (err[0] if err else "tool_failed"), proj)
+        if uyari:
+            print(f"UYARI: patinaj sayacı: {uyari} — seri kaydedilemedi.", file=sys.stderr)
+    payload, kod = bitir(result, kod, err, ok=(kod == EXIT_OK))
+    if seri:
+        payload["failure_streak"] = seri
+    return payload, kod
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@
 # dalına geri alınabilir biçimde (blob olarak) girdiyse siler. İçinde ayrı bir git deposu varsa (yedeğe yalnız
 # gitlink olarak girer) ya da yedeğe hiç alınamadıysa dizine DOKUNMAZ, sebebiyle birlikte adıyla bildirir.
 /.axet-guncelleme/
+# kur.ps1'in kullanıcı PATH'ine eklediği girdilerin kaydı (kur.cmd -Kaldir geri alır) — repoya girmez. Betik dizine
+# ayrıca `*` içeren kendi .gitignore'unu koyar: bu satır eski bir klonda yoksa da git durumu temiz kalır.
+/.axet-kurulum/
 # Deneme alanı
 /_lab/
 # Merkezi araç kurulumu (scripts/tarayici_hazirla.py: @playwright/cli + node_modules) — repoya girmez. Betik dizine

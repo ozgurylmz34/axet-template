@@ -24,6 +24,13 @@ bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
   yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste, sonra yeni bir PowerShell'de
   komutu tekrar çalıştır. (Yalnız şirket dışı, kişisel bir makinede: `kur.cmd -Winget` eksikleri winget ile
   kurmayı sorar.)
+  Python kurulu ama `python` komutu çalışmıyorsa (PATH'te değil ya da Windows mağaza kısayolu çıkıyor) bir şey
+  yapman gerekmez: kurulum aracı bulduğu Python'un klasörünü kullanıcı PATH'ine kendisi ekler.
+- SAP bağlantısının Python paketleri (`requests`, `urllib3`, `python-dotenv`) — **kendiliğinden kurulur**:
+  kurulum aracı (`kur.cmd`) eksik olanı bulduğu Python'un pip'iyle (`--user`) kurar; ayrı komut gerekmez.
+  `%guncelle` bunu yalnız `scripts/install.py`'nin değiştiği bir güncellemede yapar. Paket sonradan eksik kalırsa
+  `doctor.py` (ve oturum açılışı) SAP açıkken WARN verir; o zaman `kur.cmd`'yi tekrar çalıştırman yeter. İnternet
+  ya da şirket proxy'si engellerse kurulum **durmaz**, UYARI verir (aşağıda "Sorun giderme").
 - Git kimliği — bir kez, bu makinede: `git config --global user.name "Ad Soyad"` ve
   `git config --global user.email "ad.soyad@sirket.com"` (değer `git config --global` dosyasına — genelde
   `%USERPROFILE%\.gitconfig` — yazılır, tüm repolarda geçerlidir; kontrol: `git config --global user.email`). Girmezsen kurulum ve aXet etkilenmez; ama
@@ -69,6 +76,12 @@ Kurulum aracı sırayla şunları yapar:
 3. Template'i `%USERPROFILE%\axet` klasörüne klonlar. Klasör zaten varsa günceller.
 4. `install.py --sap` ile global aXet config'ini bu klona bağlar.
 5. `doctor.py` ile kontrol eder.
+6. `python` komutu yeni terminalde çalışmıyorsa bulduğu Python'un klasörünü (ve `Scripts`) **kullanıcı** PATH'inin
+   başına ekler (yönetici gerekmez, mevcut girdilerin metnini değiştirmez). `kur.cmd -Kaldir` yalnız bu eklediğini geri alır. Klonu silmeden ÖNCE çalıştır: kayıt klonun içinde durur, klon silinirse PATH girdisi kalır.
+   Python klasörü PATH'inde zaten var ama önünde çalışmayan bir `python` (ör. Windows mağaza kısayolu) duruyorsa
+   klasörü başa taşır; `-Kaldir` taşınan girdiyi silmez (o senin girdindi). Birden çok klon kullanıyorsan
+   PATH'e yalnız ilk kuran klon ekler ve yalnız onun `-Kaldir`'ı geri alır; öbür klonda `kur.cmd`'yi tekrar
+   çalıştırman yeter.
 
 Bitince **yeni** bir aXet oturumu aç. İlk yanıtın ilk satırı `[AXET-CORE-…` ile başlamalıdır. Görünmüyorsa
 kurulum çalışmıyordur; `python $HOME\axet\scripts\doctor.py` çıktısına bak.
@@ -184,6 +197,8 @@ aXet marketplace'inden skill kurulabilir. Template skill'leriyle çakışmaması
 |---|---|
 | Kurulum aracı aXet'i bulamadı (çıkış 2) | aXet'i şirket kanalından kur, girişi yap, yeni PowerShell aç |
 | Kurulum aracı Git ya da Python eksik dedi (çıkış 2) | Şirketinin yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste. Kurduktan sonra **yeni** bir PowerShell aç ve komutu tekrar çalıştır. Python en az 3.12 olmalı |
+| Kurulum aracı `PAKETLER: EKSİK` dedi ya da SAP aracı `No module named 'requests'` (ya da `'dotenv'`) diyor | pip paketi indiremedi, çoğunlukla şirket proxy'si yüzünden. BT'den bu makine için pip proxy ayarını (ya da şirket paket aynasını) iste, sonra `kur.cmd`'yi tekrar çalıştır: eksik paketi kendisi kurar. "pip bulunamadı" diyorsa Python pip olmadan kurulmuştur: BT'den pip ile kurmasını iste. Çıktıdaki `Elle kurulum:` satırı aynı işi elle yapar. Kurulum bu yüzden durmaz, çıkış kodu değişmez |
+| `python` "bulunamadı" diyor ama Python kurulu | `kur.cmd`'yi tekrar çalıştır: kullanıcı PATH'ine kendisi ekler. Sonra **yeni** terminal / yeni aXet oturumu aç. Araç "UYARI: yeni terminalde 'python' hâlâ başka bir yere gidiyor" derse makine PATH'inde önde eski bir Python vardır: BT'den o girdiyi kaldırmasını iste. `yeni-proje.cmd` ve `proje-tamamla.cmd` bu arada `py -3` ile de çalışır |
 | Kurulum aracı yeni terminal istedi (çıkış 3) | Yalnız `-Winget` ile olur: winget kurulumu PATH'i bu pencereye yansıtmadı. Yeni PowerShell'de `kur.cmd`'yi tekrar çalıştır |
 | Başka bir klonun kayıtlı olduğu uyarısı (çoğunlukla çıkış 4) | Config eski bir klonu da gösteriyor (ör. önceki sürümle `C:\axet`'e kurulmuş). Doctor'daki skill ad çakışması FAIL'leri bundan gelir: skill'leri yeniden adlandırma. Uyarıdaki `--uninstall` komutunu o klon için kendin çalıştır (o klonun `config/sap-write.local` dosyası da silinir), sonra `kur.cmd`'yi tekrar çalıştır. Eski yerde kalmak istersen `kur.cmd -Hedef C:\axet`. Uyarıdaki klon klasörü artık yoksa (silinmiş ya da taşınmış) araç "kayıt bayat" der ve `--uninstall` önermez: sondaki BAYAT KAYIT listesindeki girişleri config dosyasından elle sil (araç config'e kendisi yazmaz), sonra yeni aXet oturumu aç |
 | Kurulum aracı "klon karşılaştırması ÖLÇÜLEMEDİ" dedi | Hedef yol (junction/symlink) Python ile çözülemedi. Config'teki kayıtlı klonun bu klonun kendisi olup olmadığını elle kontrol et; araç bu durumda hiçbir kaydı kaldırmayı önermez |

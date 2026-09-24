@@ -401,7 +401,8 @@ class _Plan:
 
 _OZET_ALANLARI = ("ok", "error", "code", "message", "exists", "exists_after", "exists_probe", "delete_verified",
                   "delete_reason", "changed", "plan", "activated", "activation_verified", "readback_verified",
-                  "pull_state", "notice", "warning", "master_language_warning", "reviewer", "post_check")
+                  "pull_state", "notice", "warning", "removed_lines_warning", "master_language_warning", "reviewer",
+                  "post_check")
 
 
 def _adim_ozeti(adim: str, tool: str, payload: dict, kod: int) -> dict:

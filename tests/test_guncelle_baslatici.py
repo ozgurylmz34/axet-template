@@ -24,14 +24,16 @@ import doctor
 
 SKILL = AXET_HOME / "skills" / "guncelle" / "SKILL.md"
 BASLA, BITIR = "<!-- MOTOR-CIKAR:BASLA -->", "<!-- MOTOR-CIKAR:BITIR -->"
+# Z67: `<TMP>`'yi yaratan hazır komut da belgeden PARSE edilip AYNEN koşulur (tek kaynak).
+TMP_BASLA, TMP_BITIR = "<!-- TMP-OLUSTUR:BASLA -->", "<!-- TMP-OLUSTUR:BITIR -->"
 
 
-def komut_blogu(metin: str) -> list[str]:
+def komut_blogu(metin: str, basla: str = BASLA, bitir: str = BITIR) -> list[str]:
     """İki işaret arasındaki tek kod bloğunun komut satırları (yorum ve boş satır atılır)."""
-    i, j = metin.find(BASLA), metin.find(BITIR)
+    i, j = metin.find(basla), metin.find(bitir)
     if i < 0 or j < 0 or j < i:
-        raise AssertionError(f"kanonik motor-çıkarma bloğu yok ({BASLA} … {BITIR})")
-    govde = metin[i + len(BASLA):j]
+        raise AssertionError(f"kanonik komut bloğu yok ({basla} … {bitir})")
+    govde = metin[i + len(basla):j]
     kodlar = re.findall(r"```[a-zA-Z]*\n(.*?)```", govde, re.S)
     if len(kodlar) != 1:
         raise AssertionError(f"işaretler arasında TAM 1 kod bloğu olmalı, {len(kodlar)} bulundu")
@@ -103,6 +105,115 @@ class BaslaticiSkillTest(GeciciTest):
             self.assertRegex(bolum, kalip, f"'{baslik}' bölümünde `<TMP>` klon dışı kuralı yazmıyor")
 
 
+def komutu_kos(test: GeciciTest, satir: str, klon: Path, tmp: str, env: dict) -> subprocess.CompletedProcess:
+    """Belgedeki bir komut satırını yer tutucuları doldurup AYNEN koşar (kabuk yok: shlex)."""
+    parcalar = [p.replace("<KLON>", str(klon)).replace("<TMP>", tmp) for p in shlex.split(satir)]
+    if parcalar[0] == "python":
+        parcalar[0] = sys.executable
+    return subprocess.run(parcalar, cwd=str(test.tmp), env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=300)
+
+
+class TmpOlusturTest(GeciciTest):
+    r"""Z67 — `<TMP>` belgedeki TEK hazır komutla yaratılır; model yol/yöntem uydurmaz.
+
+    Vaka (ölçüldü 2026-09-23): tarif olmadığı için model `mkdir -p /c/Users/.../axet_guncelle_$(date +%s)`
+    çalıştırdı ⇒ aXet kabuğu `/c/...`yi çalışma dizinine göreli çözdü (proje içinde boş ağaç) ve
+    `$(date +%s)` BOŞ genişledi. aXet ayrıca `%TEMP%`'i proje içindeki `.axet-code/tmp`'ye çekiyor
+    (`mkdtemp` oraya düştü) ⇒ komut tabanı `%LOCALAPPDATA%\Temp`'ten alır; klon ya da bir aXet veri
+    dizini (`.axet-code`) içine düşerse yarattığını siler ve DUR der.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.metin = SKILL.read_text(encoding="utf-8")
+        self.klon = self.tmp / "klon"
+        self.klon.mkdir()
+        self.lad = self.tmp / "lad"                 # sahte %LOCALAPPDATA%
+        (self.lad / "Temp").mkdir(parents=True)
+        self.sistem_tmp = self.tmp / "sistem-tmp"   # sahte %TEMP% (LOCALAPPDATA yoksa geri düşüş)
+        self.sistem_tmp.mkdir()
+        self.env.update({"LOCALAPPDATA": str(self.lad), "TEMP": str(self.sistem_tmp),
+                         "TMP": str(self.sistem_tmp), "TMPDIR": str(self.sistem_tmp)})
+
+    def satir(self) -> str:
+        satirlar = komut_blogu(self.metin, TMP_BASLA, TMP_BITIR)
+        self.assertEqual(len(satirlar), 1, f"TMP-OLUSTUR bloğu TEK komut olmalı: {satirlar}")
+        return satirlar[0]
+
+    def kos(self) -> subprocess.CompletedProcess:
+        return komutu_kos(self, self.satir(), self.klon, "", self.env)
+
+    def test_blok_motor_cikar_blogundan_once(self):
+        i = self.metin.find(TMP_BASLA)
+        self.assertGreater(i, 0, "TMP-OLUSTUR bloğu yok")
+        self.assertLess(i, self.metin.find(BASLA), "`<TMP>` motor çıkarılmadan ÖNCE yaratılmalı")
+
+    def test_komut_klon_disi_bos_dizin_yaratir_ve_C_bicimli_yol_basar(self):
+        r = self.kos()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        yol = r.stdout.strip()
+        self.assertEqual(len(yol.splitlines()), 1, f"çıktı tek satır (yalnız yol) olmalı: {r.stdout!r}")
+        self.assertNotIn("\\", yol, "yol `C:/...` biçiminde (ileri eğik çizgi) basılmalı")
+        self.assertNotRegex(yol, r"^/[a-zA-Z]/", "Git Bash biçimi `/c/...` basıldı")
+        d = Path(yol)
+        self.assertTrue(d.is_dir(), yol)
+        self.assertEqual(list(d.iterdir()), [], "dizin boş olmalı")
+        self.assertTrue(d.name.startswith("axet_guncelle_"), d.name)
+        self.assertEqual(d.resolve().parent, (self.lad / "Temp").resolve(),
+                         r"taban %LOCALAPPDATA%\Temp olmalı (aXet %TEMP%'i proje içine çeker)")
+
+    def test_localappdata_yoksa_sistem_tmp_ye_duser(self):
+        self.env.pop("LOCALAPPDATA")
+        r = self.kos()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(Path(r.stdout.strip()).resolve().parent, self.sistem_tmp.resolve())
+
+    def test_iki_kosu_iki_ayri_dizin(self):
+        """`$(date +%s)` gibi boş genişleyebilen ad yok: her koşu kendi benzersiz dizinini alır."""
+        a, b = self.kos(), self.kos()
+        self.assertEqual((a.returncode, b.returncode), (0, 0), self.cikti(a) + self.cikti(b))
+        self.assertNotEqual(a.stdout.strip(), b.stdout.strip())
+
+    def test_taban_klon_icindeyse_DUR_ve_artik_birakmaz(self):
+        """Kontrol grubu (negatif): taban klonun içine düşerse komut DURur, boş dizin bırakmaz."""
+        (self.klon / "Temp").mkdir()
+        self.env["LOCALAPPDATA"] = str(self.klon)
+        r = self.kos()
+        self.assertNotEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("DUR", self.cikti(r))
+        self.assertEqual(list((self.klon / "Temp").iterdir()), [], "klon içinde artık dizin kaldı")
+
+    def test_taban_axet_veri_dizinindeyse_DUR(self):
+        """aXet `%TEMP%`'i `<proje>/.axet-code/tmp`'ye çeker: oraya düşen `<TMP>` reddedilir."""
+        self.env.pop("LOCALAPPDATA")
+        cekilen = self.tmp / "proje" / ".axet-code" / "tmp"
+        cekilen.mkdir(parents=True)
+        self.env.update({"TEMP": str(cekilen), "TMP": str(cekilen), "TMPDIR": str(cekilen)})
+        r = self.kos()
+        self.assertNotEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn(".axet-code", self.cikti(r))
+        self.assertEqual(list(cekilen.iterdir()), [], "aXet veri dizininde artık dizin kaldı")
+
+    def test_yol_uydurma_yasagi_yazili(self):
+        """Kural metinde: yollar `C:/...`; `/c/...` ve `$(date …)` YASAK. Blokların kendisi de uymalı."""
+        i = self.metin.find("## How to use this skill")
+        j = self.metin.find("\n## ", i + 1)
+        bolum = self.metin[i:j if j > 0 else len(self.metin)]
+        self.assertIn("/c/", bolum, "`/c/...` yasağı How-to bölümünde yazmıyor")
+        self.assertIn("$(date", bolum, "`$(date …)` yasağı How-to bölümünde yazmıyor")
+        self.assertIn("C:/", bolum)
+        for s in komut_blogu(self.metin) + komut_blogu(self.metin, TMP_BASLA, TMP_BITIR):
+            self.assertNotRegex(s, r"""(^|[\s"'])/[a-zA-Z]/""", f"blokta `/c/...` biçimli yol: {s}")
+            self.assertNotIn("$(", s, f"blokta kabuk genişletmesi: {s}")
+
+    def test_cekirdek_kabuk_ortami_satiri_c_yolunu_anar(self):
+        cekirdek = (AXET_HOME / "core" / "00-temel.md").read_text(encoding="utf-8")
+        satir = next((s for s in cekirdek.splitlines() if s.startswith("- **Kabuk ortamı:**")), "")
+        self.assertTrue(satir, "core/00-temel.md 'Kabuk ortamı' satırı yok")
+        self.assertIn("/c/", satir, "Kabuk ortamı satırı `/c/...` tuzağını anmıyor")
+
+
 class MotorSurumTest(GeciciTest):
     """B2 — başlatıcı, yerel motor BOZUKKEN bile `origin/main` sürümünden çalışır mı.
 
@@ -127,9 +238,15 @@ class MotorSurumTest(GeciciTest):
         self.git(self.tmp, "init", "-q", "--bare", str(self.uzak))
         self.git(self.klon, "remote", "add", "origin", str(self.uzak))
         self.git(self.klon, "push", "-q", "-u", "origin", "main")
-        # TMP klonun DIŞINDA (ölçülmüş tuzak: içerideki TMP git testlerini yanlış FAIL'e düşürür)
-        self.motor_tmp = self.tmp / "motor-tmp"
-        self.motor_tmp.mkdir()
+        # TMP klonun DIŞINDA (ölçülmüş tuzak: içerideki TMP git testlerini yanlış FAIL'e düşürür).
+        # Z67: `<TMP>` belgedeki TMP-OLUSTUR komutuyla yaratılır — kullanıcının koşacağı zincirin AYNISI.
+        lad = self.tmp / "lad"
+        (lad / "Temp").mkdir(parents=True)
+        satir = komut_blogu(SKILL.read_text(encoding="utf-8"), TMP_BASLA, TMP_BITIR)[0]
+        r = komutu_kos(self, satir, self.klon, "", dict(self.env, LOCALAPPDATA=str(lad)))
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.motor_tmp = Path(r.stdout.strip())
+        self.assertTrue(self.motor_tmp.is_dir(), r.stdout)
 
     def boz(self) -> None:
         """Yerel motoru ve haritasını kullanılamaz yap (bayat/bozuk kopya senaryosu).
@@ -152,16 +269,8 @@ class MotorSurumTest(GeciciTest):
                               encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=300)
 
     def blogu_kos(self) -> list[subprocess.CompletedProcess]:
-        sonuc = []
-        for satir in komut_blogu(SKILL.read_text(encoding="utf-8")):
-            parcalar = [p.replace("<KLON>", str(self.klon)).replace("<TMP>", str(self.motor_tmp))
-                        for p in shlex.split(satir)]
-            if parcalar[0] == "python":
-                parcalar[0] = sys.executable
-            sonuc.append(subprocess.run(parcalar, cwd=str(self.tmp), env=self.env, capture_output=True,
-                                        text=True, encoding="utf-8", errors="replace",
-                                        stdin=subprocess.DEVNULL, timeout=300))
-        return sonuc
+        return [komutu_kos(self, satir, self.klon, str(self.motor_tmp), self.env)
+                for satir in komut_blogu(SKILL.read_text(encoding="utf-8"))]
 
     def test_kontrol_grubu_yerel_motor_bozukken_calismaz(self):
         """(a) Bozukluk GERÇEKTEN devrede: yerel motor çağrısı başarısız."""

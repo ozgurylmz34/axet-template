@@ -40,7 +40,8 @@ GERCEK_SCRIPTS = AXET_HOME / "scripts"
 # Sahte klona kopyalanan gerçek script'ler (motorun kendisi + bağımlı olduğu yardımcılar).
 # Z79: SAP projesinde motor `yeni_proje` (kısayol) içe aktarır → onun `doctor` zinciri de gerekir.
 KOPYALANAN_SCRIPTLER = ("guncelle.py", "guncelle_proje.py", "new_project.py", "sap_stamp.py",
-                        "yeni_proje.py", "doctor.py", "install.py", "new_package.py", "behavior_manifest.py")
+                        "yeni_proje.py", "doctor.py", "install.py", "new_package.py", "behavior_manifest.py",
+                        "project_precommit.py")  # Z93: doctor onu içe aktarır
 
 V1_SABLON = {
     "templates/project/AGENTS.md": (

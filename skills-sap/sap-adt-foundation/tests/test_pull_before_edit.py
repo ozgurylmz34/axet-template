@@ -145,6 +145,51 @@ class PullBeforeEdit(unittest.TestCase):
         self.kaydet("bozuk pull-state dosyası → red", "pull_state_unreadable · çağrı=[]",
                     f"{r.get('error')} · çağrı={s.cagri}", r.get("error") == "pull_state_unreadable" and s.cagri == [])
 
+    # ── Z87 ⓑ+ (2026-09-24): yerel kopya çekilen kaynaktan türemediyse canlı satırlar sessizce kaybolur.
+    # Kıyas mekanizması bunu YAKALAMAZ (canlı değişmedi); push yazmadan önce canlı ↔ yeni kaynak farkını
+    # hesaplar ve silinen satır varsa UYARI verir. Yazma DEVAM eder (sert red kullanıcı kararıyla YOK).
+    AB = KAYNAK + "WRITE 'B'.\n"
+
+    def test_7_Z87_bayat_yerel_kopya_uyari_verir_yazma_surer(self):
+        s = self.istemci(Sahte(self.AB))
+        self.atom.adt_get(AD, TIP)                       # canlı A+B çekildi
+        s.cagri.clear()
+        r = self.atom.adt_push_source(AD, TIP, KAYNAK)   # eski yerel "A" gönderiliyor
+        u = r.get("removed_lines_warning") or {}
+        self.kaydet("Z87 canlı A+B → yeni A: uyarı var (removed=1, örnek B), yazma yapıldı",
+                    "ok · push · removed=1 · sample∋WRITE 'B' · warning metni",
+                    f"ok={r.get('ok')} · çağrı={s.cagri} · uyarı={u} · warning={bool(r.get('warning'))}",
+                    r.get("ok") is True and "push" in s.cagri and u.get("removed") == 1
+                    and any("WRITE 'B'" in x for x in u.get("sample") or []) and bool(r.get("warning"))
+                    and s.canli == KAYNAK)
+
+    def test_8_Z87_KONTROL_ekleme_ve_esitlik_uyari_yok(self):
+        s = self.istemci(Sahte(KAYNAK))
+        self.atom.adt_get(AD, TIP)
+        r1 = self.atom.adt_push_source(AD, TIP, self.AB)            # yalnız ekleme
+        self.atom.adt_get(AD, TIP)
+        r2 = self.atom.adt_push_source(AD, TIP, s.canli.replace("\n", "\r\n"))  # canlı = yeni (CRLF farkı)
+        self.kaydet("Z87 KONTROL: ekleme ve eşitlik (CRLF farkı dahil) → uyarı alanı YOK",
+                    "ok×2 · uyarı yok×2",
+                    f"ok={r1.get('ok')},{r2.get('ok')} · uyarı={'removed_lines_warning' in r1},"
+                    f"{'removed_lines_warning' in r2}",
+                    r1.get("ok") is True and r2.get("ok") is True
+                    and "removed_lines_warning" not in r1 and "removed_lines_warning" not in r2)
+
+    def test_9_Z87_uyari_yazmadan_once_hesaplanir(self):
+        s = self.istemci(Sahte(self.AB))
+        self.atom.adt_get(AD, TIP)
+
+        def patlayan(**kw):
+            s.cagri.append("push")
+            raise RuntimeError("ağ koptu")
+        s.push_object = patlayan
+        r = self.atom.adt_push_source(AD, TIP, KAYNAK)
+        u = r.get("removed_lines_warning") or {}
+        self.kaydet("Z87 push istisna ile düşse de uyarı yanıtta (yazmadan önce hesaplandı)",
+                    "ok:false · removed=1", f"ok={r.get('ok')} err={r.get('error')} · uyarı={u}",
+                    r.get("ok") is False and u.get("removed") == 1)
+
     def test_6_post_shell_etkilenmez(self):
         s = self.istemci(Sahte(None))
         r = self.atom.adt_post_shell("program", "ZAXET_YENI", "$TMP", "TESTK900001", "Test programı")

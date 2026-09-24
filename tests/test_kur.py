@@ -60,6 +60,14 @@ def _gercek_damga() -> dict:
     for f in izlenen:
         damga[str(f)] = (f.stat().st_size, f.stat().st_mtime_ns) if f.is_file() else None
     damga["yedekler"] = sorted(p.name for p in cfg_dizin.glob("axet-code.json.bak-*")) if cfg_dizin.is_dir() else None
+    # Z98 bekçisi: kur.ps1 artık kullanıcı PATH'ine yazabilir. Testler yalnız AXET_KUR_PATH_KAYDI sahte hedefine yazar;
+    # GERÇEK HKCU\Environment Path ham değeri (genişletilmemiş) ve türü koşum öncesi/sonrası aynı kalmalı.
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            damga["HKCU-Environment-Path"] = winreg.QueryValueEx(k, "Path")
+    except (ImportError, OSError):
+        damga["HKCU-Environment-Path"] = None
     return damga
 
 
@@ -88,6 +96,9 @@ class KurTest(GeciciTest):
         shutil.copytree(self.kaynak_sablon, self.kaynak)
         self.hedef = self.tmp / "hedef"
         self.cfg = self.xdg / "axet-code" / "axet-code.json"
+        # Z98: kur.ps1 hiçbir testte GERÇEK kullanıcı PATH'ine (HKCU\Environment) yazmasın. Varsayılan sahte hedefte
+        # makine PATH'i testi koşan yorumlayıcının klasörüdür: `python` çözülür, kur.ps1 hiçbir şey eklemez.
+        self.path_kaydi(str(self.kur_python().parent), "")
 
     # --- yardımcılar ------------------------------------------------------------------------------------------
     def kur(self, *args: str, env: dict | None = None, winget_kapali: bool = True,
@@ -106,6 +117,38 @@ class KurTest(GeciciTest):
         return subprocess.run([COMSPEC, "/c", "call", str(KUR_CMD), *arglar], env=env or self.env, cwd=str(self.tmp),
                               capture_output=True, text=True, encoding="utf-8", errors="replace",
                               stdin=subprocess.DEVNULL, timeout=600)
+
+    _kur_python: Path | None = None
+
+    def kur_python(self) -> Path:
+        """kur.ps1'in bu test ortamında seçeceği yorumlayıcı: PATH'teki ilk `python`un sys.executable'ı."""
+        if KurTest._kur_python is None:
+            r = subprocess.run([COMSPEC, "/c", "python", "-c", "import sys;print(sys.executable)"], env=self.env,
+                               capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+            if r.returncode != 0 or not r.stdout.strip():
+                raise RuntimeError(f"test ortamında python çözülemedi: {r.stdout}{r.stderr}")
+            KurTest._kur_python = Path(r.stdout.strip().splitlines()[-1])
+        return KurTest._kur_python
+
+    def path_kaydi(self, makine: str, kullanici: str, tur: str = "ExpandString") -> Path:
+        """Z98 enjeksiyon noktası: AXET_KUR_PATH_KAYDI sahte kayıt hedefi (JSON). kur.ps1 bu değişken varken kayıt
+        defterini ne okur ne yazar, ayar yayını da yapmaz; makine PATH'ini de buradan okur."""
+        f = self.tmp / "_path_kaydi.json"
+        f.write_text(json.dumps({"makine": makine, "kullanici": kullanici, "tur": tur}, ensure_ascii=False),
+                     encoding="utf-8")
+        self.env["AXET_KUR_PATH_KAYDI"] = str(f)
+        return f
+
+    @staticmethod
+    def path_kaydi_oku(f: Path) -> dict:
+        return json.loads(f.read_text(encoding="utf-8-sig"))
+
+    def eski_python_dizini(self, surum: str) -> Path:
+        """Sürümünü <surum> diye bildiren çalışan sahte python.cmd'nin klasörü (sahte_python_ortami ile aynı biçim)."""
+        d = self.tmp / f"_eskipy{surum.replace('.', '_')}"
+        d.mkdir()
+        (d / "python.cmd").write_text(f"@echo off\r\necho {surum}^|%~f0\r\nexit /b 0\r\n", encoding="ascii", newline="")
+        return d
 
     def cfg_oku(self) -> dict:
         return json.loads(self.cfg.read_text(encoding="utf-8"))
@@ -546,6 +589,53 @@ class KurTest(GeciciTest):
         self.assertNotIn("git klonunun kökü değil", c)
         self.assertEqual(gitconfig.read_bytes(), once, "global git config'e yazıldı")
         self.assertEqual(self.git(self.hedef, "rev-parse", "HEAD").stdout.strip(), head)
+
+    # --- Z101: SAP'nin zorunlu Python paketleri kur.cmd akışında, bulunan yorumlayıcıyla kurulur ----------------
+    def _paket_ortami(self, kip: str, kurulu: bool = False) -> tuple[dict, Path]:
+        """Gerçek pip yok, ağ yok. "eksik" = PYTHONPATH başında engel modülleri; "kurulu" = boş sahte modüller.
+        Sahte pip (AXET_PAKET_PIP) kendisini çalıştıran yorumlayıcıyı + argümanlarını kayda yazar."""
+        import install
+        d = self.tmp / ("_paket_kurulu" if kurulu else "_paket_engel")
+        for ithal, _ in install.ZORUNLU_PAKETLER:
+            govde = "" if kurulu else f"raise ModuleNotFoundError(\"No module named '{ithal}'\", name='{ithal}')\n"
+            self.yaz(d / f"{ithal}.py", govde)
+        kayit = self.tmp / "_pip_kayit.txt"
+        pip = self.yaz(self.tmp / "_sahte_pip.py",
+                       "import os, sys\n"
+                       "open(os.environ['AXET_TEST_PIP_KAYIT'], 'a', encoding='utf-8').write(\n"
+                       "    sys.executable + '|' + ' '.join(sys.argv[1:]) + '\\n')\n"
+                       # tur 2: proxy tavsiyesi yalnız ağ imzasında verilir ⇒ sahte ağ hatası imzayı da basar
+                       + ("print(\"WARNING: Retrying ... ProxyError('Cannot connect to proxy.')\", file=sys.stderr)\n"
+                          if kip == "ag" else "")
+                       + f"sys.exit({1 if kip == 'ag' else 0})\n")
+        env = {k: v for k, v in self.env.items() if k != "AXET_PAKET_KUR"}
+        env.update({"AXET_PAKET_PIP": str(pip), "AXET_TEST_PIP_KAYIT": str(kayit), "PYTHONPATH": str(d)})
+        return env, kayit
+
+    def test_z101_eksik_paket_bulunan_python_ile_kurulmaya_calisilir_ag_hatasi_durdurmaz(self):
+        env, kayit = self._paket_ortami("ag")
+        r = self.kur("-Evet", env=env)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)  # çıkış sözleşmesi: paket kurulamadı diye 1/2/4 DEĞİL
+        cagri = kayit.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(1, len(cagri), c)
+        exe, argumanlar = cagri[0].split("|", 1)
+        self.assertEqual(os.path.normcase(exe), os.path.normcase(str(self.kur_python())),
+                         "pip, kur.ps1'in bulduğu yorumlayıcıyla çağrılmalı")
+        self.assertIn("install", argumanlar.split())
+        self.assertIn("PAKETLER: EKSİK", c)
+        self.assertIn("proxy", c)
+        self.assertTrue(any(s.startswith("[WARN]") and "SAP Python paketleri EKSİK" in s for s in c.splitlines()), c)
+        self.assertIn("Kurulum tamam", c)
+
+    def test_z101_kontrol_grubu_paketler_kuruluysa_pip_cagrilmaz(self):
+        env, kayit = self._paket_ortami("basari", kurulu=True)
+        r = self.kur("-Evet", env=env)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertFalse(kayit.exists(), c)
+        self.assertIn("PAKETLER: TAMAM", c)
+        self.assertTrue(any(s.startswith("[PASS]") and "SAP Python paketleri" in s for s in c.splitlines()), c)
 
     # --- geçersiz karakterli XDG_CONFIG_HOME: git var ama `git --version` hata veriyor -------------------------
     def test_gecersiz_xdg_git_bulundu_calismadi(self):
@@ -1080,7 +1170,12 @@ class KurTest(GeciciTest):
         c = self.cikti(r)
         self.assertEqual(r.returncode, 2, c)
         self.assertIn("bulundu ama 3.12 ya da üstü gerekli", c)
-        self.assertIn("Python bulunamadı. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur", c)
+        # Z80 nit: eski sürüm KURULU iken "bulunamadı" denmez — yetersiz sürüm ve bulunan sürüm söylenir.
+        # Kontrol grubu (Python hiç yok → "bulunamadı"): test_git_python_yok_varsayilanda_winget_sorulmaz_yazilim_merkezi_denir.
+        self.assertIn("EKSİK: Python sürümü yetersiz (bulunan 3.11", c)
+        self.assertIn("Python sürümü yetersiz (gerekli 3.12 ya da üstü). Şirketinin yazılım merkezinden", c)
+        self.assertNotIn("Python bulunamadı", c)
+        self.assertNotIn("Python 3.12 ya da üstü bulunamadı", c)
         self.assertNotIn("winget ile kurayım mı", c)
         self.assertFalse(kayit.exists(), "winget varsayılanda çağrıldı")
 
@@ -1147,7 +1242,7 @@ class KurTest(GeciciTest):
                     self.assertNotIn("EKSİK: Python", c)
                 else:
                     self.assertIn(f"Python {surum} bulundu ama 3.12 ya da üstü gerekli: {sahte}", c)
-                    self.assertIn("EKSİK: Python 3.12 ya da üstü bulunamadı", c)
+                    self.assertIn(f"EKSİK: Python sürümü yetersiz (bulunan {surum};", c)  # Z80 nit: "bulunamadı" değil
                     self.assertNotIn("OK Python", c)
                 self.assertFalse(self.hedef.exists(), c)
 
@@ -1647,6 +1742,134 @@ class KurTest(GeciciTest):
         self.assertEqual(readme.read_bytes(), ozgun)
         self.assertIn("yerel not", self.yedekte(dal, "README.md"))
 
+    # --- Z98: kurulum bulduğu Python'u kullanıcı PATH'ine ekler (sahte kayıt hedefiyle) ----------------------------
+    def z98_beklenen(self) -> list:
+        d = self.kur_python().parent
+        return [str(d)] + ([str(d / "Scripts")] if (d / "Scripts").is_dir() else [])
+
+    def z98_kayit(self) -> Path:
+        return self.hedef / ".axet-kurulum" / "kullanici-path.json"
+
+    def test_z98_python_cozulmuyorsa_kullanici_pathinin_basina_eklenir(self):
+        self.env["AXET_Z98_DENEME"] = str(self.tmp)
+        ilk = r"C:\kullanicinin\araci;%AXET_Z98_DENEME%\bin"
+        f = self.path_kaydi(str(SYS32), ilk)
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        k = self.path_kaydi_oku(f)
+        beklenen = self.z98_beklenen()
+        # başa eklendi; mevcut değer AYNEN (sıra, %VAR% genişletilmeden) korundu; tür korundu
+        self.assertEqual(k["kullanici"], ";".join(beklenen) + ";" + ilk, c)
+        self.assertEqual(k["tur"], "ExpandString")
+        self.assertEqual(k["makine"], str(SYS32))
+        self.assertIn(f"Python yolu kullanıcı PATH'ine eklendi: {beklenen[0]}", c)
+        self.assertIn("yeni terminal / yeni aXet oturumu aç", c)
+        self.assertNotIn("UYARI: yeni terminalde 'python'", c)
+        self.assertEqual(json.loads(self.z98_kayit().read_text(encoding="utf-8-sig"))["eklenen"], beklenen)
+        self.assertEqual(self.git(self.hedef, "status", "--porcelain").stdout.strip(), "",
+                         "kayıt dosyası git'e görünmemeli (gitignore'lu)")
+        # ikinci koşum: python artık çözülüyor -> hiçbir şey yazılmaz
+        once = f.read_bytes()
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(f.read_bytes(), once, c)
+        self.assertNotIn("PATH'ine eklendi", c)
+
+    def test_z98_kontrol_grubu_python_zaten_dogruysa_hicbir_sey_yazilmaz(self):
+        f = self.path_kaydi(str(self.kur_python().parent), r"C:\x;%AXET_Z98_DENEME%\y")
+        once = f.read_bytes()
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(f.read_bytes(), once, c)
+        self.assertNotIn("PATH'ine eklendi", c)
+        self.assertFalse(self.z98_kayit().exists(), c)
+
+    def test_z98_zaten_varsa_eklenmez_harf_ve_ters_bolu_farki_esit(self):
+        beklenen = self.z98_beklenen()
+        eski = self.eski_python_dizini("3.9")
+        # kullanıcı PATH'inde aynı klasörler zaten var: biri BÜYÜK harf + sonda "\", öbürü küçük harf
+        ilk = ";".join([beklenen[0].upper() + "\\"] + [b.lower() for b in beklenen[1:]] + [r"C:\x"])
+        f = self.path_kaydi(os.pathsep.join([str(eski), str(SYS32)]), ilk)
+        once = f.read_bytes()
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(f.read_bytes(), once, c)
+        self.assertNotIn("PATH'ine eklendi", c)
+        self.assertFalse(self.z98_kayit().exists(), c)
+        self.assertIn("UYARI: yeni terminalde 'python'", c)  # öndeki eski Python yüzünden hâlâ yanlış
+
+    def test_z98_makine_pathinde_eski_python_onde_ise_uyari_fail_degil(self):
+        eski = self.eski_python_dizini("3.9")
+        f = self.path_kaydi(os.pathsep.join([str(eski), str(SYS32)]), r"C:\x", tur="String")
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        k = self.path_kaydi_oku(f)
+        self.assertEqual(k["kullanici"], ";".join(self.z98_beklenen()) + r";C:\x", c)
+        self.assertEqual(k["tur"], "String")  # REG_SZ olan değer REG_SZ kalır
+        self.assertIn("UYARI: yeni terminalde 'python'", c)
+        self.assertIn(str(eski / "python.cmd"), c)
+        self.assertIn("makine PATH", c)  # çözülen komut makine PATH'inden geliyor: BT'ye yönlendirilir
+        self.assertIn("Kurulum tamam", c)
+
+    def test_z98_deneme_modu_eklenecegi_gosterir_yazmaz(self):
+        f = self.path_kaydi(str(SYS32), r"C:\x")
+        once = f.read_bytes()
+        r = self.kur("-DenemeModu")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(f.read_bytes(), once, c)
+        self.assertIn(f"[deneme] Python yolu kullanıcı PATH'ine eklenecekti: {self.z98_beklenen()[0]}", c)
+        self.assertFalse(self.hedef.exists())
+
+    def test_z98_kaldir_bozuk_kayit_uyarir_kaldirma_tamamlanir(self):
+        f = self.path_kaydi(str(SYS32), r"C:\x")
+        r = self.kur("-Evet")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertTrue(self.z98_kayit().is_file(), self.cikti(r))
+        self.z98_kayit().write_text("{bozuk", encoding="utf-8")
+        once = f.read_bytes()
+        r = self.kur("-Kaldir")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertIn("geri alınamadı", c)
+        self.assertIn("kayıtları kaldırıldı", c)  # kaldırmanın geri kalanı sürdü
+        self.assertEqual(f.read_bytes(), once, c)
+
+    def test_z98_kaldir_yalniz_kurulumun_ekledigini_geri_alir(self):
+        d = self.kur_python().parent
+        if not (d / "Scripts").is_dir():
+            self.skipTest("yorumlayıcının Scripts klasörü yok")
+        self.env["AXET_Z98_DENEME"] = str(self.tmp)
+        # Scripts kullanıcının KENDİ girdisi (kurulumdan önce vardı): kurulum yalnız klasörü ekler, -Kaldir onu siler
+        ilk = str(d / "Scripts") + r";C:\kendi;%AXET_Z98_DENEME%\z"
+        f = self.path_kaydi(str(SYS32), ilk)
+        r = self.kur("-Evet")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        k = self.path_kaydi_oku(f)
+        self.assertEqual(k["kullanici"], f"{d};{ilk}", c)
+        # kurulumdan SONRA kullanıcı kendi girdisini ekledi
+        k["kullanici"] = "C:\\sonradan;" + k["kullanici"]
+        f.write_text(json.dumps(k, ensure_ascii=False), encoding="utf-8")
+        r = self.kur("-Kaldir")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        k = self.path_kaydi_oku(f)
+        self.assertEqual(k["kullanici"], "C:\\sonradan;" + ilk, c)
+        self.assertEqual(k["tur"], "ExpandString")
+        self.assertFalse(self.z98_kayit().exists(), c)
+        self.assertIn("kullanıcı PATH'inden çıkarıldı", c)
+        # kayıt yokken -Kaldir PATH'e dokunmaz
+        once = f.read_bytes()
+        r = self.kur("-Kaldir")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(f.read_bytes(), once, self.cikti(r))
+
     # --- statik: sığ klon yasağı + README varyantı --------------------------------------------------------------
     def test_kur_ps1_sig_klon_yapmaz(self):
         """Sığ/kısmi klon `origin/main..HEAD`, `merge-base` ve yedek dalını bozar (TASARIM §1, §12 satır 351)."""
@@ -1688,6 +1911,153 @@ class KurTest(GeciciTest):
             metin = (AXET_HOME / yol).read_text(encoding=kodlama)
             self.assertNotIn("Depo şu an private", metin, f"{yol}: bayat private notu duruyor")
             self.assertNotIn("private dönemde", metin, f"{yol}: bayat private notu duruyor")
+
+
+@unittest.skipUnless(WINDOWS and POWERSHELL.exists(), "yalnız Windows (PowerShell 5.1)")
+class KurPythonYoluTest(GeciciTest):
+    """Z98 düzeltme turu: kur.ps1'in PATH fonksiyonları AST ile yüklenip DOĞRUDAN koşulur (tam kurulum yok, hızlı).
+    Sürücü AXET_KUR_PATH_KAYDI yoksa 99 ile çıkar: kayıt defterine giden yol hiç açılmaz. GERÇEK HKCU Path sınıf
+    öncesi/sonrası karşılaştırılır (_gercek_damga).
+    KAPSAM — bakılmayanlar: kur.ps1 ana akışındaki çağrı yerleri (KurTest ölçer) · gerçek kayıt defteri yazımı ve
+    WM_SETTINGCHANGE yayını · gerçek WindowsApps yönlendirmesi (rc 9009 dönen sahte python.cmd kullanılır) ·
+    kullanıcı PATH'inden gelen uyarı metni (yazımdan sonra oluşturulabilen bir senaryo bulunamadı)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._once = _gercek_damga()
+        cls.sinif_tmp = Path(tempfile.mkdtemp(prefix="axet-kurpy-")).resolve()
+        cls.venv = cls.sinif_tmp / "venv"
+        r = subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(cls.venv)], capture_output=True,
+                           text=True, stdin=subprocess.DEVNULL, timeout=300)
+        if r.returncode != 0:
+            raise RuntimeError(f"venv oluşturulamadı: {r.stdout}{r.stderr}")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        _sil(cls.sinif_tmp)
+        sonra = _gercek_damga()
+        if sonra != cls._once:
+            raise AssertionError(f"GERÇEK aXet config/HKCU Path testte değişti:\nönce={cls._once}\nsonra={sonra}")
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.klon = self.tmp / "klon"
+        self.klon.mkdir()
+        self.kayit = self.tmp / "_path_kaydi.json"
+        self.env["AXET_KUR_PATH_KAYDI"] = str(self.kayit)
+        self.taban = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+        self.pydir = self.taban.parent
+
+    def beklenen(self, d: Path) -> list:
+        return [str(d)] + ([str(d / "Scripts")] if (d / "Scripts").is_dir() else [])
+
+    def path_yaz(self, makine: str, kullanici: str, tur: str = "ExpandString") -> None:
+        self.kayit.write_text(json.dumps({"makine": makine, "kullanici": kullanici, "tur": tur}, ensure_ascii=False),
+                              encoding="utf-8")
+
+    def path_oku(self) -> dict:
+        return json.loads(self.kayit.read_text(encoding="utf-8-sig"))
+
+    def klon_kaydi(self) -> Path:
+        return self.klon / ".axet-kurulum" / "kullanici-path.json"
+
+    def kos(self, govde: str, py: Path | None = None, deneme: bool = False) -> subprocess.CompletedProcess:
+        asgari = re.search(r"^\$script:PyAsgari = \[version\]'([\d.]+)'", KUR_PS1.read_text(encoding="utf-8-sig"), re.M)
+        satirlar = [
+            "Set-StrictMode -Version 2",
+            "$ErrorActionPreference = 'Continue'",
+            "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }",
+            "if (-not $env:AXET_KUR_PATH_KAYDI) { exit 99 }",
+            f"$ast = [System.Management.Automation.Language.Parser]::ParseFile('{KUR_PS1}', [ref]$null, [ref]$null)",
+            "foreach ($f in $ast.EndBlock.Statements) { if ($f -is [System.Management.Automation.Language.FunctionDefinitionAst]) { . ([scriptblock]::Create($f.Extent.Text)) } }",
+            f"$script:PyAsgari = [version]'{asgari.group(1)}'",
+            "$script:PyEski = $null",
+            f"$DenemeModu = ${'true' if deneme else 'false'}",
+            f"$script:PY = '{py or sys.executable}'",
+            f"$klon = '{self.klon}'",
+            govde,
+        ]
+        surucu = self.tmp / "_surucu.ps1"
+        surucu.write_bytes(b"\xef\xbb\xbf" + "\r\n".join(satirlar).encode("utf-8") + b"\r\n")
+        return subprocess.run([str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(surucu)],
+                              env=self.env, cwd=str(self.tmp), capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", stdin=subprocess.DEVNULL, timeout=300)
+
+    def test_magaza_kisayolu_arkasindaki_klasor_basa_tasinir_kaldir_silmez(self):
+        wa = self.tmp / "_wa"
+        wa.mkdir()
+        (wa / "python.cmd").write_text("@echo off\r\nexit /b 9009\r\n", encoding="ascii", newline="")
+        self.env["AXET_Z98_PYDIR"] = str(self.pydir)
+        tasinan = "%AXET_Z98_PYDIR%\\"
+        self.path_yaz(str(SYS32), f"{wa};{tasinan};C:\\x")
+        r = self.kos("Python-Yolu-Adimi $klon")
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        eklenen = self.beklenen(self.pydir)[1:]  # klasörün kendisi zaten vardı: yalnız Scripts eklenir
+        # girdinin METNİ aynen (%VAR% ve sondaki \ dahil) başa taşındı, önündeki kısayol arkaya düştü
+        self.assertEqual(self.path_oku()["kullanici"], ";".join([tasinan] + eklenen + [str(wa), "C:\\x"]), c)
+        self.assertIn("başa taşındı", c)
+        self.assertNotIn("UYARI", c)
+        kayit = json.loads(self.klon_kaydi().read_text(encoding="utf-8-sig"))
+        self.assertEqual(kayit["tasinan"], [tasinan], c)
+        self.assertEqual(kayit["eklenen"], eklenen, c)
+        # -Kaldir: taşınan girdi kullanıcınındı, SİLİNMEZ; yalnız kurulumun eklediği çıkar
+        r = self.kos("Python-Yolu-Kaldir-Adimi $klon")
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(self.path_oku()["kullanici"], ";".join([tasinan, str(wa), "C:\\x"]), c)
+        self.assertFalse(self.klon_kaydi().exists(), c)
+        self.assertIn("yerinde bırakıldı", c)
+
+    def test_venv_icinden_kosulunca_taban_klasor_eklenir(self):
+        vpy = self.venv / "Scripts" / "python.exe"
+        taban = subprocess.run([str(vpy), "-c", "import sys;print(sys._base_executable)"], capture_output=True,
+                               text=True, stdin=subprocess.DEVNULL, timeout=60).stdout.strip()
+        self.assertTrue(Path(taban).is_file(), taban)
+        self.assertNotEqual(Path(taban).parent.resolve(), vpy.parent.resolve())  # senaryo gerçekten venv
+        self.path_yaz(str(SYS32), "C:\\a")
+        r = self.kos("Python-Yolu-Adimi $klon", py=vpy)
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        deger = self.path_oku()["kullanici"]
+        self.assertEqual(deger, ";".join(self.beklenen(Path(taban).parent)) + ";C:\\a", c)
+        self.assertNotIn(str(self.venv).lower(), deger.lower(), c)
+
+    def test_taban_belirlenemezse_eklenmez_uyarir(self):
+        d = self.tmp / "_tabansiz"
+        d.mkdir()
+        sahte = d / "python.cmd"
+        sahte.write_text("@echo off\r\necho 3.12^|%~f0\r\nexit /b 0\r\n", encoding="ascii", newline="")
+        self.path_yaz(str(SYS32), "C:\\a")
+        once = self.kayit.read_bytes()
+        r = self.kos("Python-Yolu-Adimi $klon", py=sahte)
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        self.assertEqual(self.kayit.read_bytes(), once, c)
+        self.assertIn("taban kurulumu belirlenemedi", c)
+        self.assertFalse(self.klon_kaydi().exists(), c)
+
+    def test_kayit_birlestirmesi_tekillestirir(self):
+        self.klon_kaydi().parent.mkdir()
+        self.klon_kaydi().write_text(json.dumps({"eklenen": [str(self.pydir).upper() + "\\"]}), encoding="utf-8")
+        self.path_yaz(str(SYS32), "C:\\a")  # kullanıcı eklenen girdiyi elle silmiş
+        r = self.kos("Python-Yolu-Adimi $klon")
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        kayit = json.loads(self.klon_kaydi().read_text(encoding="utf-8-sig"))
+        self.assertEqual(len(kayit["eklenen"]), len(self.beklenen(self.pydir)), c)
+
+    def test_kaldir_bozuk_kayit_uyarir_devam_eder(self):
+        self.klon_kaydi().parent.mkdir()
+        self.klon_kaydi().write_text("{bozuk", encoding="utf-8")
+        self.path_yaz(str(SYS32), "C:\\a")
+        once = self.kayit.read_bytes()
+        r = self.kos("Python-Yolu-Kaldir-Adimi $klon\r\nYaz 'SONRAKI-ADIM'")
+        c = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, c)
+        self.assertIn("geri alınamadı", c)
+        self.assertIn("SONRAKI-ADIM", c)
+        self.assertEqual(self.kayit.read_bytes(), once, c)
 
 
 class IlkKurulumCmdTest(unittest.TestCase):

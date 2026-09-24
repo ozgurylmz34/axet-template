@@ -23,8 +23,18 @@ echo  aXet kurulum tamamlama - "%PROJE%"
 echo ============================================================
 echo.
 
-python --version >nul 2>nul
-if errorlevel 1 goto python_yok
+rem Z98: `python` calismiyorsa (PATH'te yok ya da Windows magaza kisayolu) `py -3` denenir. PY = secilen
+rem yorumlayicinin TAM yolu (sys.executable): sonraki cagrilar dogrudan python.exe'ye gider (.cmd kisayolu `call`suz
+rem cagrilinca geri donmez). Z80 nit: eski Python 'bulunamadi' degil 'surum yetersiz' der ve erken durur (esik tek
+rem satirda, :python_sec icinde: install.PY_ASGARI, parite testi).
+set "PY="
+set "PY_ESKI="
+call :python_sec python
+if not defined PY call :python_sec py -3
+if defined PY goto python_hazir
+if defined PY_ESKI goto python_eski
+goto python_yok
+:python_hazir
 if not exist "%AXET_HOME%scripts\doctor.py" goto klon_yok
 if not exist "%AXET_HOME%scripts\conn_sablon.py" goto klon_yok
 if not exist "%PROJE%\" goto klasor_yok
@@ -33,10 +43,10 @@ cd /d "%PROJE%"
 
 rem ---------- 1) SAP baglanti sablonlari ----------
 echo [1/4] SAP baglanti bilgileri (conn\DEV.env, conn\QA.env)
-python "%AXET_HOME%scripts\conn_sablon.py" hazirla --project-dir "%PROJE%"
+"%PY%" "%AXET_HOME%scripts\conn_sablon.py" hazirla --project-dir "%PROJE%"
 if errorlevel 1 goto sablon_hata
 rem dogrula: 0 hatali yok + en az biri dolu-gecerli / 1 hatali dosya var / 2 dolu-gecerli dosya yok
-python "%AXET_HOME%scripts\conn_sablon.py" dogrula --project-dir "%PROJE%"
+"%PY%" "%AXET_HOME%scripts\conn_sablon.py" dogrula --project-dir "%PROJE%"
 set "CRC=%errorlevel%"
 if "%CRC%"=="0" goto conn_gecerli
 if "%CRC%"=="2" goto conn_bos
@@ -50,19 +60,19 @@ goto ozet
 :conn_gecerli
 if exist "%PROJE%\.conn_adt" goto ozet
 echo   Aktif sistem DEV olarak ayarlaniyor...
-python "%FOUND%\switch_tier.py" DEV --project-dir "%PROJE%" >nul
+"%PY%" "%FOUND%\switch_tier.py" DEV --project-dir "%PROJE%" >nul
 if errorlevel 1 goto dev_yok
 
 :ozet
 rem Sistem ozeti: yalniz ad + tier + durum (deger basilmaz)
-python "%AXET_HOME%scripts\conn_sablon.py" ozet --project-dir "%PROJE%"
+"%PY%" "%AXET_HOME%scripts\conn_sablon.py" ozet --project-dir "%PROJE%"
 echo   Sistem degistirmek icin aXet'te: %%sistem  (ya da "QA'ya gec" de)
 
 :adim2
 echo.
 rem ---------- 2) Davranis yuzeyi onayi ----------
 echo [2/4] Proje ayarlarinin onayi (davranis yuzeyi)
-python "%AXET_HOME%scripts\behavior_manifest.py" check --project-dir "%PROJE%"
+"%PY%" "%AXET_HOME%scripts\behavior_manifest.py" check --project-dir "%PROJE%"
 if not errorlevel 1 goto onay_var
 echo.
 if errorlevel 2 goto onay_liste
@@ -72,15 +82,15 @@ goto onay_sor
 echo   Onaylanacak dosyalar:
 set "AXET_SCRIPTS=%AXET_HOME%scripts"
 set "AXET_PROJE=%PROJE%"
-python -c "import os,sys;sys.path.insert(0,os.environ['AXET_SCRIPTS']);import behavior_manifest as b;from pathlib import Path;[print('     '+k) for k in b.topla(Path(os.environ['AXET_PROJE']))]"
+"%PY%" -c "import os,sys;sys.path.insert(0,os.environ['AXET_SCRIPTS']);import behavior_manifest as b;from pathlib import Path;[print('     '+k) for k in b.topla(Path(os.environ['AXET_PROJE']))]"
 :onay_sor
 rem Onay YALNIZ gercek konsoldan: `echo E | ...` ile boruyla verilen cevap kabul edilmez (choice boruyu okur - olculdu).
 set "AXET_SCRIPTS=%AXET_HOME%scripts"
-python -c "import os,sys;sys.path.insert(0,os.environ['AXET_SCRIPTS']);import yeni_proje as y;sys.exit(0 if y.etkilesimli_mi() else 1)"
+"%PY%" -c "import os,sys;sys.path.insert(0,os.environ['AXET_SCRIPTS']);import yeni_proje as y;sys.exit(0 if y.etkilesimli_mi() else 1)"
 if errorlevel 1 goto onay_konsol_yok
 choice /c EH /n /m "  Bu proje ayarlarini onayliyor musun? [E/H]: "
 if errorlevel 2 goto onay_yok
-python "%AXET_HOME%scripts\behavior_manifest.py" generate --project-dir "%PROJE%"
+"%PY%" "%AXET_HOME%scripts\behavior_manifest.py" generate --project-dir "%PROJE%"
 if errorlevel 1 goto onay_hata
 goto adim3
 :onay_var
@@ -90,7 +100,7 @@ echo   Ayarlar zaten onayli.
 echo.
 rem ---------- 3) Kontrol ----------
 echo [3/4] Proje kontrolu (doctor)
-python "%AXET_HOME%scripts\doctor.py"
+"%PY%" "%AXET_HOME%scripts\doctor.py"
 if errorlevel 1 goto doctor_fail
 
 rem ---------- 4) aXet'i ac ----------
@@ -128,6 +138,14 @@ goto doldur
 :sablon_hata
 echo   HATA: conn\ sablonlari yazilamadi - yukaridaki mesaja bak.
 set "RC=3"
+goto son
+
+:python_eski
+echo HATA: python bulundu ama surumu yetersiz - Python 3.12+ gerekli. Kurulu surum:
+call %PY_ESKI% --version
+echo Guncelleme: sirketinin yazilim merkezinden (Software Center / Company Portal) kur ya da BT'den iste;
+echo resmi indirme: https://www.python.org/downloads/windows/  - sonra bu dosyaya tekrar cift tikla.
+set "RC=9009"
 goto son
 
 :python_yok
@@ -185,3 +203,16 @@ goto son
 echo.
 pause
 exit /b %RC%
+
+:python_sec
+rem %* = aday komut (python ya da py -3). Calismazsa hicbir sey ayarlanmaz; calisir ama surumu yetersizse PY_ESKI,
+rem yeterliyse PY = yorumlayicinin tam yolu.
+set "ADAY="
+for /f "usebackq delims=" %%P in (`%* -c "import sys;print(sys.executable if sys.version_info>=(3,12) else 'ESKI')" 2^>nul`) do set "ADAY=%%P"
+if not defined ADAY exit /b 0
+if "%ADAY%"=="ESKI" goto python_sec_eski
+if exist "%ADAY%" set "PY=%ADAY%"
+exit /b 0
+:python_sec_eski
+if not defined PY_ESKI set "PY_ESKI=%*"
+exit /b 0

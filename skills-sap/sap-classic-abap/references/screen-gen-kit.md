@@ -34,6 +34,7 @@ CLI yolları 2026-09-13'te eklendi: çevrimdışı test edildi, canlı DOĞRULAN
 Doğruluk kaynağı FM'in kendi kaynağıdır (`ZBC000_FM_SCREEN_GEN.func.abap:1-20`); sistemdeki bir üretecin imzası farklıysa **onun kaynağı kazanır**
 ve `adt_screen_generate` (bu 16 parametreyi gönderir) o üreteçle kullanılmaz.
 
+<!-- FM-IMZA: ZBC000_FM_SCREEN_GEN -->
 | Parametre | Tip | Varsayılan | Anlam |
 |---|---|---|---|
 | `IV_PROGRAM` | `SCRHPROG` | — | hedef program; **Z\*/Y\* şart** (değilse hiçbir şey yazmadan `EV_RC=301`) |
@@ -52,6 +53,7 @@ ve `adt_screen_generate` (bu 16 parametreyi gönderir) o üreteçle kullanılmaz
 | `EV_MESSAGE` | `STRING` | — | tanı metni; **kırpma** (uyarılar sondadır) |
 | `IT_BUTTONS` | `ZBC000_TT_SCREEN_BUTTON` (TABLES) | opsiyonel | `FCODE`, `TEXT`, `ICON`, `QUICKINFO`, `FKEY` |
 | `IT_FIELDS` | `ZBC000_TT_SCREEN_FIELD` (TABLES) | opsiyonel | `RPY_DYFATC` alan adlarıyla ekran alanları; **`DOCKING` şart** |
+<!-- /FM-IMZA -->
 
 ## 3. Sonucu okuma — `EV_RC` ve `EV_MESSAGE` sinyalleri
 | `EV_RC` | Anlam |

@@ -33,7 +33,22 @@ FAIL'e düşürür (`guncelle.py onkontrol` bunu ayrıca denetler).
 
 1. **Klon yolunu belirle.** Varsayılan `%USERPROFILE%\axet`; kullanıcının kurulumu farklıysa ona sor.
    Aşağıda `<KLON>` bu yoldur, `<TMP>` ise **klon dışı**, boş, geçici bir dizindir.
-2. **Motoru ve talimatı `origin/main`'den çıkar.** Komutları AYNEN, sırayla çalıştır; biri sıfırdan
+   **Yol biçimi:** komutlardaki her yol DAİMA `C:/Users/...` biçiminde (sürücü harfi + ileri eğik
+   çizgi) yazılır. Git Bash biçimi `/c/...` YASAK — aXet kabuğu onu çalışma dizinine göreli çözer ve
+   proje içinde boş `c/...` ağacı bırakır (ölçüldü). Dizin adında `$(date …)` gibi kabuk genişletmesi
+   YASAK — boş genişleyebilir (ölçüldü).
+2. **`<TMP>`'yi yarat.** Kendin yol ya da yöntem SEÇME; bu tek komutu AYNEN çalıştır (`<KLON>`'u
+   doldur). Çıktısındaki tek satır `<TMP>`'dir. Sıfırdan farklı dönerse DUR ve çıktıyı aynen göster.
+   aXet `%TEMP%`'i proje içine (`.axet-code/tmp`) çektiği için komut tabanı `%LOCALAPPDATA%\Temp`'ten
+   alır; klon ya da bir `.axet-code` dizini içine düşerse yarattığını silip durur.
+
+<!-- TMP-OLUSTUR:BASLA -->
+```bash
+python -c "import os,sys,tempfile;from pathlib import Path as P;e=os.environ.get('LOCALAPPDATA');b=P(e,'Temp') if e else None;d=P(tempfile.mkdtemp(prefix='axet_guncelle_',dir=str(b) if b and b.is_dir() else None)).resolve();k=P(sys.argv[1]).resolve();i=d==k or k in d.parents or '.axet-code' in d.parts;i and d.rmdir();sys.exit('DUR: gecici dizin klonun ya da bir aXet veri dizininin (.axet-code) icine dustu: '+d.as_posix()) if i else print(d.as_posix())" "<KLON>"
+```
+<!-- TMP-OLUSTUR:BITIR -->
+
+3. **Motoru ve talimatı `origin/main`'den çıkar.** Komutları AYNEN, sırayla çalıştır; biri sıfırdan
    farklı dönerse DUR ve çıktıyı kullanıcıya aynen göster (ağ yoksa "şimdi güncellenemez" de):
 
 <!-- MOTOR-CIKAR:BASLA -->
@@ -45,16 +60,16 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
 ```
 <!-- MOTOR-CIKAR:BITIR -->
 
-3. **Sürümü söyle.** `git -C "<KLON>" rev-parse --short origin/main` çıktısını kullanıcıya bildir:
+4. **Sürümü söyle.** `git -C "<KLON>" rev-parse --short origin/main` çıktısını kullanıcıya bildir:
    akış boyunca çalışan motor budur, klondaki kopya değil.
-4. **`<TMP>/GUNCELLE.md`'yi oku ve adımlarını sırayla uygula.** Akışın sahibi o belgedir; adım
+5. **`<TMP>/GUNCELLE.md`'yi oku ve adımlarını sırayla uygula.** Akışın sahibi o belgedir; adım
    listesini buraya kopyalama, oradan oku. Motoru DAİMA `python "<TMP>/scripts/guncelle.py"
    --klon "<KLON>" <altkomut>` biçiminde çağır — `<KLON>/scripts/guncelle.py`'yi çalıştırma.
-5. **Vaka kartları.** Yargı gereken her dosya için kartını `guncelle.py kart <KOD>` ile oku
+6. **Vaka kartları.** Yargı gereken her dosya için kartını `guncelle.py kart <KOD>` ile oku
    (kart da `origin/main`'den gelir). Kartı okumadan o dosyaya dokunma.
-6. **Bitişte** motorun ürettiği `RAPOR.md`'yi AYNEN göster ve gerekiyorsa "aXet'i kapatıp aç" de.
+7. **Bitişte** motorun ürettiği `RAPOR.md`'yi AYNEN göster ve gerekiyorsa "aXet'i kapatıp aç" de.
    `<TMP>` artık gereksizdir; kullanıcıya yolunu söyle, silmesini kendisi seçsin.
-7. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md`'nin son adımı —
+8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md`'nin son adımı —
    `python "<KLON>/scripts/tarayici_hazirla.py"`. İlk satırı (`TARAYICI: HAZIR|ATLANDI|EKSİK — …`) AYNEN
    aktar. HAZIR değilse de güncelleme **tamamlanmıştır**; eksik kalan o satırda yazar.
 

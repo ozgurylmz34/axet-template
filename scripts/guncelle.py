@@ -778,13 +778,32 @@ def _kart_listesi(kayit: dict, sinif: dict | None) -> list[str]:
     return kartlar
 
 
-def komut_plan(b: Baglam, args) -> int:
-    k = b.k
-    yeniden_ad = b.yeniden_adlandirmalar()
-    kapsam = b.kapsam()
+class Bekleyen:
+    """`bekleyen_kalemler` sonucu — hangi yayın/kalem bu klonda hâlâ bekliyor."""
 
-    # 1) hangi yayınlar bekliyor
-    bekleyen_yayinlar, beyan, kalem_kaydi, cozulemeyen = [], {}, {}, []
+    def __init__(self) -> None:
+        self.bekleyen_yayinlar: list[str] = []
+        self.beyan: dict[str, set[str]] = {}
+        self.kalem_kaydi: dict[str, tuple[str, dict]] = {}
+        self.cozulemeyen: list[str] = []
+        self.karsilanan: set[str] = set()
+        self.karsilanan_atlandi: set[str] = set()
+        self.atlandi_nedenleri: dict[str, str | None] = {}
+        self.yeniden_onerilen: set[str] = set()
+
+
+def bekleyen_kalemler(b: Baglam) -> Bekleyen:
+    """Plan adım 1 — yayın ↔ `uygulanan.json` ölçümü. TEK KAYNAK (Z69, 2026-09-24).
+
+    `komut_plan` VE `onkontrol`/`hazirla` girişi (`_bekleyen_yok_mu`) aynı fonksiyonu kullanır:
+    eskiden ölçüm yalnız `plan`daydı ve `hazirla` ondan ÖNCE koştuğu için her boş tur bir
+    `guncelle-oncesi-*` etiketi bırakıyordu. Ucuzdur: dosya sınıflandırması YAPMAZ (yalnız
+    yayınlar.json + etiket başına iki `git rev-parse`/`merge-base`).
+    """
+    k = b.k
+    s = Bekleyen()
+    bekleyen_yayinlar, beyan, kalem_kaydi, cozulemeyen = (s.bekleyen_yayinlar, s.beyan,
+                                                          s.kalem_kaydi, s.cozulemeyen)
     # Z57: plana ALINMAYAN ama KARŞILANMIŞ kalemler (yayını içerilmiş ya da `uygulanan.json`'da
     # mühürlü). `komut_sec` `gerektirir` bağını bu kümeye de bakarak çözer; eskiden yalnız seçim
     # kümesine bakıyordu ⇒ önceki yayında uygulanmış kaleme bağlı yeni kalem "seçili değil" DUR'u
@@ -805,10 +824,10 @@ def komut_plan(b: Baglam, args) -> int:
     # DEVREDİLMİŞ kalem bu istisnaya GİRMEZ (v0.5.5 entegrasyonu, v0.5.4 `_atlandi_nedeni` ilkesi):
     # plana dosyasız kalem olarak girer, karar kapanışa kalır.
     # `kabul` KAPALI kalır; `is-yok` ve neden YOK (eski kayıt) önerilmez — gerekçe TASARIM §6.
-    karsilanan: set[str] = set()
-    karsilanan_atlandi: set[str] = set()
-    atlandi_nedenleri: dict[str, str | None] = {}
-    yeniden_onerilen: set[str] = set()
+    karsilanan = s.karsilanan
+    karsilanan_atlandi = s.karsilanan_atlandi
+    atlandi_nedenleri = s.atlandi_nedenleri
+    yeniden_onerilen = s.yeniden_onerilen
     for yayin in b.yayinlar.get("yayinlar", []):
         etiket = yayin["etiket"]
         durum_y = yayin_durumu(lambda *a: k.git(*a).returncode, etiket)
@@ -837,6 +856,20 @@ def komut_plan(b: Baglam, args) -> int:
                 continue
             beyan[kid] = set(kalem.get("dosyalar", []))
             kalem_kaydi[kid] = (etiket, kalem)
+    return s
+
+
+def komut_plan(b: Baglam, args) -> int:
+    k = b.k
+    yeniden_ad = b.yeniden_adlandirmalar()
+    kapsam = b.kapsam()
+
+    # 1) hangi yayınlar bekliyor — ölçüm ve gerekçesi `bekleyen_kalemler`de (Z69: tek kaynak)
+    s = bekleyen_kalemler(b)
+    bekleyen_yayinlar, beyan, kalem_kaydi, cozulemeyen = (s.bekleyen_yayinlar, s.beyan,
+                                                          s.kalem_kaydi, s.cozulemeyen)
+    karsilanan, karsilanan_atlandi = s.karsilanan, s.karsilanan_atlandi
+    atlandi_nedenleri, yeniden_onerilen = s.atlandi_nedenleri, s.yeniden_onerilen
 
     if cozulemeyen:
         # ⛔ Buradan sonrası SESSİZ KAYIP olurdu: `yeni_ref` bir ÖNCEKİ yayına düşer, o yayının
@@ -855,7 +888,7 @@ def komut_plan(b: Baglam, args) -> int:
                           "`git -C <klon> fetch --tags origin` çalıştır.")
 
     if not beyan:
-        print("Klon güncel: bekleyen yayın kalemi yok.")
+        print(KLON_GUNCEL)
         return 1
 
     # 2) kapsamın tamamını sınıflandır (sayaçlar), kalem dosyalarını ayrıca kaydet
@@ -2217,14 +2250,28 @@ def komut_geri_al(b: Baglam, args) -> int:
         return 2
 
     hata = 0
+    kayitlar = durum_oku(k)["dosyalar"]
     for yol in sorted(set(yollar)):
         if k.blob_sha(etiket, yol):
+            # Z82: `checkout` diskteki içeriği ezer. O içerik etikette, yeni ref'te ya da motorun
+            # kendi yazdığı (durum.json `beklenen_sha`, ör. birleştirme sonucu) değilse uygula'dan
+            # SONRA elle düzenlenmiştir ve başka kopyası yoktur ⇒ önce `.yerel` olarak saklanır.
+            korunan = None
+            if (_yedeksiz_mi(k, yol)
+                    and k.disk_sha(yol) not in (k.blob_sha(yeni_ref, yol),
+                                                kayitlar.get(yol, {}).get("beklenen_sha"))):
+                korunan = _yerel_kopya(k, yol)
             r = k.git("checkout", etiket, "--", yol)
             if r.returncode != 0:
                 print(f"FAIL geri-al {yol}: {r.stderr.strip()}", file=sys.stderr)
+                if korunan and not (k.kok / yol).exists():
+                    shutil.move(str(k.kok / korunan), str(k.kok / yol))   # geri-al olmadı ⇒ yerine koy
+                    korunan = None
                 hata = 1
                 continue
             print(f"GERİ ALINDI: {yol}")
+            if korunan:
+                print(f"Yedeksiz yerel içerik saklandı: {korunan}")
         elif (k.kok / yol).is_file():
             # Etikette blob yok ⇒ ya motorun yazdığı dosya (yeni ref'te var, kurtarılabilir) ya da
             # kullanıcının İZLENMEYEN dosyası (V7: hiçbir yerde yedeği yok — ölçüldü 2026-09-23).
@@ -2690,6 +2737,29 @@ def _kaynak_anahtari(k: str) -> str:
     return s.lower()
 
 
+def _bekleyen_yok_mu(klon: Klon, args) -> tuple[bool | None, str]:
+    """Z69: `onkontrol`/`hazirla` girişinde ucuz "iş var mı" ölçümü — `plan` adım 1 ile AYNI
+    fonksiyon (`bekleyen_kalemler`). Döner: (True, _) = güncel · (False, _) = bekleyen var ·
+    (None, sebep) = ÖLÇÜLEMEDİ.
+
+    Fail-closed yön: ölçülemeyen ya da etiketi çözülemeyen yayın "güncel" SAYILMAZ — akış `plan`a
+    gider ve kendi DUR'unu verir (etiket atılması zararsızdır; bekleyen işi atlamak değildir).
+    KAPSAM: yalnız `plan`ın İLK "Klon güncel" çıkışını öngörür. Sınıflandırma gerektiren iki çıkış
+    (ertelenmiş kalemin tüm yolları işlemsiz · hiçbir kalem dosya değişikliği gerektirmiyor) burada
+    ÖLÇÜLMEZ; o turlarda etiket yine atılır.
+    """
+    try:
+        s = bekleyen_kalemler(Baglam(klon, harita_yukle(args.harita)))
+    except (Dur, BilinmeyenEtkin, OSError, ValueError) as e:
+        return None, " ".join(str(e).split())[:300]
+    if s.cozulemeyen:
+        return None, f"yayın etiketi çözülemiyor: {', '.join(s.cozulemeyen)}"
+    return (not s.beyan), ""
+
+
+KLON_GUNCEL = "Klon güncel: bekleyen yayın kalemi yok."
+
+
 def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
     sorunlar, bilgi = [], []
     # 1 — klon kimliği (kur.ps1 Template-Eksikleri ile AYNI liste)
@@ -2743,15 +2813,35 @@ def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
     except ValueError:
         bilgi.append(f"TMP: {tmp} (klon dışı)")
 
+    # 8 — Z69: bekleyen yayın kalemi var mı (`plan` adım 1 ile aynı ölçüm). Sorun varsa ölçülmez:
+    # önce o düzeltilir. Güncelse akış burada biter — `hazirla` etiketi hiç atılmaz.
+    guncel = None
+    if not sorunlar:
+        guncel, sebep = _bekleyen_yok_mu(klon, args)
+        if guncel is None:
+            bilgi.append(f"bekleyen kalem: ÖLÇÜLEMEDİ ({sebep}) — `plan` ölçecek")
+        elif not guncel:
+            bilgi.append("bekleyen kalem: VAR")
+
     for s in bilgi:
         print("  " + s)
     for s in sorunlar:
         print("DUR: " + s, file=sys.stderr)
-    return 2 if sorunlar else 0
+    if sorunlar:
+        return 2
+    if guncel:
+        print(KLON_GUNCEL + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
+        return 1
+    return 0
 
 
 def komut_hazirla(b: Baglam | None, args, klon: Klon) -> int:
     klon.durum_dizini.mkdir(parents=True, exist_ok=True)
+    # Z69: iş yoksa geri dönüş noktası (anlık commit + etiket) ATILMAZ — `onkontrol` atlanmış olsa
+    # bile yan etkinin olduğu yerde de ölçülür. Ölçülemezse (None) eski davranış: etiket atılır.
+    if _bekleyen_yok_mu(klon, args)[0]:
+        print(KLON_GUNCEL + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
+        return 1
     st = klon.git("status", "--porcelain", "--untracked-files=no")
     if st.returncode != 0:
         # Ölçülemeyen durum "temiz" sayılırsa anlık commit atlanır ve geri dönüş etiketi
@@ -2801,8 +2891,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="onkontrol'ün beklediği resmî template adresi")
     alt = ap.add_subparsers(dest="altkomut", required=True)
 
-    alt.add_parser("onkontrol", help="klon kimliği, origin, dal, sığ klon, TMP (§6)")
-    alt.add_parser("hazirla", help="yerel anlık commit + geri dönüş etiketi + fetch")
+    alt.add_parser("onkontrol", help="klon kimliği, origin, dal, sığ klon, TMP, bekleyen kalem "
+                                     "(0 devam · 1 güncel · 2 DUR)")
+    alt.add_parser("hazirla", help="yerel anlık commit + geri dönüş etiketi + fetch "
+                                   "(1 = güncel, hiçbir şey atılmaz)")
     alt.add_parser("plan", help="plan.json üretir (0 plan var · 1 güncel · 2 hata)")
 
     p = alt.add_parser("sec", help="kalem/paket seçimi")

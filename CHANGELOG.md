@@ -6,6 +6,92 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.8 — 2026-09-24
+
+### ★ 0.5.8-01 · `%guncelle` geri alma elle düzenlediğin dosyayı artık ezmez (düzeltme)
+
+- **neden:** Güncellemeden sonra elle değiştirdiğin bir dosya, geri alma (`geri-al`) sırasında hiçbir kopyası kalmadan eski hâline dönüyordu. Artık o içerik başka yerde yoksa önce yanına `.yerel` uzantılı kopya olarak saklanır, sonra geri alınır; motorun kendi yazdığı içerik için kopya üretilmez.
+- **dosyalar:** `scripts/guncelle.py`, `tests/test_guncelle.py`
+- **test:** `python tests/run_tests.py -k Z82`, `python tests/run_tests.py -k geri_al`
+- **gerektirir:** —
+
+### 0.5.8-02 · `%guncelle` yapılacak iş yokken iz bırakmaz (düzeltme)
+
+- **neden:** Klon zaten güncelken de her turda bir geri dönüş etiketi ve yerel anlık commit bırakılıyordu. Ön kontrol artık bekleyen yayın kalemi olup olmadığını ölçer; yoksa `Klon güncel:` deyip biter, etiket ve commit atılmaz. Önceki boş turlardan kalan `guncelle-oncesi-*` etiketleri olduğu gibi durur.
+- **dosyalar:** `scripts/guncelle.py`, `GUNCELLE.md`, `tests/test_guncelle.py`
+- **test:** `python tests/run_tests.py -k Z69`, `python tests/run_tests.py -k Onkontrol`
+- **gerektirir:** —
+
+### 0.5.8-03 · `%guncelle` geçici klasörü proje dışında tek komutla açar (düzeltme)
+
+- **neden:** Geçici çalışma klasörü proje klasörünün içinde boş `c\...` klasörleri bırakabiliyordu. Klasör artık hazır tek bir komutla `%LOCALAPPDATA%\Temp` altında açılır; klona ya da `.axet-code` içine düşerse durur.
+- **dosyalar:** `skills/guncelle/SKILL.md`, `tests/test_guncelle_baslatici.py`
+- **test:** `python tests/run_tests.py -k TmpOlustur`
+- **gerektirir:** —
+
+### 0.5.8-04 · Çekirdek: alt ajan brifinginde iş türü ve bağımsız inceleme kuralı (AXET-CORE-0.7.0) (kural)
+
+- **neden:** Alt ajana iş verirken işin türü (bağımsız inceleme mi, yazma mı) yazılır; incelemede önceki bulgular verilmez ve incelenecek hâl commit ya da dosya hash'iyle sabitlenir. Kabuk ortamı notuna `/c/...` yol biçimi ve `$(date …)` uyarısı eklendi. Çekirdek kimliği `AXET-CORE-0.7.0`: yeni aXet oturumu aç.
+- **dosyalar:** `core/00-temel.md`
+- **test:** `python tests/run_tests.py -k cekirdek_satir_siniri`
+- **gerektirir:** —
+
+### 0.5.8-05 · SAP yazmada aynı hata üst üste tekrarlanınca kesici devreye girer (yetenek)
+
+- **neden:** Aynı objeye aynı yazma hatası 2 saat içinde 3 kez alınınca SAP yazma aracı durur ve yeniden denemeden önce sebebin çözülmesini ister (`failure_streak`). Durum `.axet-code/sap-write-failures.json` dosyasında tutulur; dosya okunamazsa kesici devreye girmez ve uyarı basar.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/write_failures.py`, `skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/hints.py`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/tests/test_patinaj_kesici.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k Patinaj`
+- **gerektirir:** —
+
+### 0.5.8-06 · SAP'ye kaynak gönderilirken silinecek satırlar önceden uyarılır (yetenek)
+
+- **neden:** Push, yazmadan önce zaten okuduğu canlı kaynakla yeni kaynağı karşılaştırır. Canlıda olup yeni kaynakta olmayan satır varsa yanıta `removed_lines_warning` (sayı + en çok 5 örnek) ve bir uyarı eklenir; yazma durmaz. Model bu satırları gösterir, onaysız tekrar yazmaz. Kasıtlı silmede de uyarı çıkar. Canlı SAP'de ölçülmedi.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/populate.py`, `skills-sap/sap-adt-foundation/tests/test_pull_before_edit.py`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k PullBefore`
+- **gerektirir:** —
+
+### 0.5.8-07 · `doctor` commit'lenmemiş proje kural ve denetim dosyalarını gösterir (yetenek)
+
+- **neden:** Proje denetimleri (`validators-local/**/*.py`) ve paket `.rules.md` dosyaları yalnız commit anında denetleniyor; commit'lenmemiş hâlleri o ana kadar sessizce kullanılıyordu. `doctor` ve oturum açılışı artık bunları UYARI olarak listeler.
+- **dosyalar:** `scripts/doctor.py`, `tests/test_doctor.py`, `tests/test_guncelle_proje.py`
+- **test:** `python tests/run_tests.py -k CommitsizKural`
+- **gerektirir:** —
+
+### 0.5.8-08 · Eski Python sürümünde net mesaj; eşik her yerde 3.12 (düzeltme)
+
+- **neden:** Python kurulu ama sürümü eskiyse kurulum 'bulunamadı' diyordu. Artık 'sürümü yetersiz (bulunan X; gerekli 3.12+)' der. `yeni-proje.cmd` ve `proje-tamamla.cmd` eski Python ile yarım koşmak yerine açıkça durur; `doctor` Python eşiği 3.9'dan 3.12'ye çıktı (kurulumla eşit, testle zorlanır).
+- **dosyalar:** `scripts/install.py`, `kur.ps1`, `yeni-proje.cmd`, `proje-tamamla.cmd`, `tests/test_install.py`, `tests/test_kur.py`
+- **test:** `python tests/run_tests.py -k PythonAsgari`
+- **gerektirir:** —
+
+### 0.5.8-09 · Ekran üreteci kitinde FM imza tablosu denetime bağlandı (düzeltme)
+
+- **neden:** `screen-gen-kit.md` içindeki FM parametre tablosu FM-IMZA bloğuna alındı; tablo kaynakla ayrışırsa imza denetimi bunu yakalar.
+- **dosyalar:** `skills-sap/sap-classic-abap/references/screen-gen-kit.md`
+- **test:** `python skills-sap/sap-fs-ts-docs/scripts/check_fm_signature_doc_sync.py skills-sap/sap-classic-abap/references/screen-gen-kit.md --kaynak-kok skills-sap/sap-classic-abap/templates/screen-gen`
+- **gerektirir:** —
+
+### 0.5.8-10 · Kurulum bulduğu Python'u kullanıcı PATH'ine kendisi ekler (yetenek)
+
+- **neden:** Python kurulu ama `python` komutu çalışmıyorsa (PATH'te yok ya da Microsoft Store kısayolu önde) kurulum bulduğu Python'un klasörünü kullanıcı PATH'inin başına ekler ya da başa taşır. Yönetici gerekmez; mevcut girdilerin metni değişmez; sanal ortam değil asıl kurulum eklenir; `kur.cmd -Kaldir` yalnız kurulumun eklediğini geri alır (klonu silmeden önce çalıştır). `yeni-proje.cmd` ve `proje-tamamla.cmd` `python` yoksa `py -3` ile çalışır. Yeni terminal ve yeni aXet oturumu aç.
+- **dosyalar:** `kur.ps1`, `.gitignore`, `yeni-proje.cmd`, `proje-tamamla.cmd`, `README.md`, `docs/onboarding.md`, `tests/test_kur.py`, `tests/test_install.py`
+- **test:** `python tests/run_tests.py -k z98`, `python tests/run_tests.py -k KurPythonYolu`
+- **gerektirir:** —
+
+### 0.5.8-11 · Kurulum SAP için gereken Python paketlerini kendisi kurar (yetenek)
+
+- **neden:** SAP bağlantısı `requests`, `urllib3` ve `python-dotenv` paketleri olmadan açılmıyordu ve kurulum bunları kurmuyordu. Kurulum (ve `scripts/install.py`'nin değiştiği güncellemeler) eksik olanları `pip install --user` ile kurar. İnternet ya da şirket proxy'si engellerse kurulum durmaz, ne yapılacağını söyler. `doctor` eksik paketi adıyla gösterir; sürüm alt sınırı denetlenmez.
+- **dosyalar:** `scripts/install.py`, `scripts/doctor.py`, `scripts/session_brief.py`, `kur.ps1`, `README.md`, `docs/onboarding.md`, `tests/_helpers.py`, `tests/test_doctor.py`, `tests/test_install.py`, `tests/test_kur.py`
+- **test:** `python tests/run_tests.py -k Paket`, `python tests/run_tests.py -k z101`
+- **gerektirir:** —
+
+### 0.5.8-12 · Yayın kataloğu ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.5.7 — 2026-09-23
 
 ### 0.5.7-01 · SAP projesinde `conn/README.md` artık makine yolu taşımaz (düzeltme)

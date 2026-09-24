@@ -1678,6 +1678,36 @@ def _push_fm_kaynak(client, name: str, fm_grubu: str, source: str, transport: st
     return sonuc
 
 
+_SILME_ORNEK, _SILME_SATIR_KIRP = 5, 120
+
+
+def _silinen_satir_uyarisi(canli_kaynak: str, yeni_kaynak: str):
+    """Z87 ⓑ+: canlıda olup yeni kaynakta olmayan satırlar → uyarı alanları; silme yoksa None.
+
+    İki taraf readback kıyasıyla AYNI normalize'dan geçer (CRLF / satır sonu boşluğu sahte silme üretmez).
+    Uyarıdır, red değil: meşru düzenleme de satır siler; karar kullanıcıya satırlar gösterilerek verilir."""
+    import difflib
+    from source_normalize import normalize_source  # type: ignore
+    eski = normalize_source(canli_kaynak or "").splitlines()
+    yeni = normalize_source(yeni_kaynak or "").splitlines()
+    silinen, eklenen = [], 0
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, eski, yeni, autojunk=False).get_opcodes():
+        if op in ("delete", "replace"):
+            silinen.extend(eski[i1:i2])
+        if op in ("insert", "replace"):
+            eklenen += j2 - j1
+    if not silinen:
+        return None
+    ornek = [(x if len(x) <= _SILME_SATIR_KIRP else x[:_SILME_SATIR_KIRP] + "…") for x in silinen[:_SILME_ORNEK]]
+    return {
+        "removed_lines_warning": {"removed": len(silinen), "added": eklenen, "sample": ornek},
+        "warning": (f"Canlıda olup yeni kaynakta olmayan {len(silinen)} satır var — yerel kopya `adt_get` "
+                    "çıktısından türemediyse bu satırlar KAYBOLUR. Satırları (removed_lines_warning.sample) "
+                    "kullanıcıya göster; kasıtlı değilse `adt_get` ile yeniden çekip düzenlemeyi onun üzerine "
+                    "uygula, onaysız tekrar yazma."),
+    }
+
+
 def _include_sonucu_esle(result):
     """`SAPClient.push_class_include` sonucunu `adt_push_source` readback sözleşmesine eşle."""
     if not isinstance(result, dict):
@@ -1736,9 +1766,11 @@ def adt_push_source(
     `pull_before_edit_missing`; yazmadan hemen önce canlı kaynak yeniden okunur ve özeti kayıttan
     farklıysa `source_changed_since_pull` (üzerine yazılmaz); canlı okuma başarısızsa
     `pull_live_read_failed`. Başarılı yüklemeden sonra kayıt canlıdan yeniden okunan özetle güncellenir.
+    Z87 (uyarı, red değil): canlıda olup yeni kaynakta olmayan satırlar yazmadan önce hesaplanır →
+    `removed_lines_warning {removed, added, sample}` + `warning`; yazma sürer (SKILL §2).
 
     Returns:
-        {ok, name, type, result, client_log, reviewer?, pull_state?}
+        {ok, name, type, result, client_log, reviewer?, pull_state?, removed_lines_warning?, warning?}
     """
     try:
         require_writable_tier(get_active_tier(), what=f"{object_type} push")
@@ -1780,6 +1812,7 @@ def adt_push_source(
     tmp_file = None
     reviewer_warn = None
     push_denendi = False   # Q271: `client.push_object` çağrısına GİRİLDİ mi (belirsizlik sınırı)
+    silme_uyarisi = None   # Z87 ⓑ+: canlıda olup yeni kaynakta olmayan satırlar (yazmadan önce hesaplanır)
     try:
         # Write source to temp file first — needed by both reviewer and SAPClient.push_object.
         with tempfile.NamedTemporaryFile(
@@ -1852,6 +1885,11 @@ def adt_push_source(
                                 "yeni kaynağın üzerine yeniden uygula (başkasının değişikliğini ezme)."),
                     "pulled_at": kayit.get("pulled_at"), "pulled_sha256": str(kayit.get("sha256"))[:12],
                     "live_sha256": canli_ozet[:12], "reviewer": reviewer_warn}
+        # Z87 ⓑ+ (2026-09-24): kıyas "canlı değişmedi" der ama yerel kopyanın çekilen kaynaktan TÜREDİĞİNİ
+        # doğrulamaz — bayat bir kopya canlıdaki satırları sessizce geri alır. Zaten okunmuş canlı kaynak
+        # (ek ağ çağrısı YOK) ile yeni kaynak kıyaslanır; silinen satır varsa YAZMADAN ÖNCE uyarı hazırlanır.
+        # Yazma DEVAM eder (kullanıcı kararı: sert red yok). Dört push yolunun hepsi bu noktadan geçer.
+        silme_uyarisi = None if include_yok else _silinen_satir_uyarisi(canli["source"], source)
         fm_grubu = None
         if fm_mi:
             # FUGR adı FM adından türetilemez → canlı okuma (arama indeksi) çözdü; TAHMİN yok.
@@ -1889,6 +1927,8 @@ def adt_push_source(
         }
         if reviewer_warn:
             resp["reviewer"] = reviewer_warn
+        if silme_uyarisi:
+            resp.update(silme_uyarisi)
         if (sinif_include or bdef_mi or fm_mi) and isinstance(result, dict):
             resp["activated"] = result.get("activated")
             for alan in ("activation_note", "activation_errors", "activation_error", "unlock_warning"):
@@ -2016,7 +2056,10 @@ def adt_push_source(
             _baseline_belirsiz(name, object_type,
                                f"push çağrısı istisna ile kaçtı ({type(exc).__name__})")
             _pull_state.sil(name, object_type)   # SAP'ye ne yüklendiği bilinmiyor → yeniden çekme şart
-        return _err_from_exc(exc)
+        hata = _err_from_exc(exc)
+        if silme_uyarisi and isinstance(hata, dict):
+            hata.update(silme_uyarisi)
+        return hata
     finally:
         if tmp_file and tmp_file.exists():
             try:

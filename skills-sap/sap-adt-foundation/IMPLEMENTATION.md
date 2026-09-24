@@ -41,7 +41,8 @@ taşınan validator'lar `lib/validators/check_{rap_readonly_consumption,reuse_ga
 - Çıkış kodu: `0` başarı · `2` kapı/guard reddi (SAP'ye gidilmedi) · `1` araç/bağlantı hatası · `3` kullanım hatası.
   Araç sonucundaki hata → exit 2: `guardrail_violation` (kod = `ADR_0005_A|C|D`, `ADR_0010_TIER`, `ADR_0011_PII`), `reviewer_blocker`, `tier_pii_guard`, `not_select`, `write_keyword`, `gecersiz_tablo_adi`, `gecersiz_kolon_adi`,
   `std_dml_scan_unavailable` (§12), `pull_before_edit_missing`, `pull_state_unreadable`, `source_changed_since_pull` (§13),
-  `preflight_blocker`, `msgclass_overwrite_not_allowed` (§15).
+  `preflight_blocker`, `msgclass_overwrite_not_allowed` (§15), `repeated_failure` (§23 — araç sonucu değil, `calistir`
+  aracı çağırmadan üretir; listede katalog eşliği için).
   `pull_live_read_failed` (§13: yazma öncesi canlı okuma başarısız) → exit 1. §15'te eklenen exit 1: `lock_conflict`, `lock_failed`,
   `readback_mismatch`, `readback_failed`, `msgclass_live_incomplete`.
   → exit 3: `unsupported_type`, `bad_regex`, `no_scope`, `invalid_argument` (§14). Diğer `ok:false` → exit 1
@@ -243,6 +244,11 @@ Geri alınınca 3/3 OK. Araç katmanı süreç-içi testle (`test_inprocess_guar
   1. kayıt dosyası bozuk → exit 2 `pull_state_unreadable` · kayıt yok → exit 2 `pull_before_edit_missing` (ağa gidilmez);
   2. canlı kaynak `_adt_get_oku` ile okunur (kapının TEK ağ çağrısı) — okunamazsa exit 1 `pull_live_read_failed` (sessiz geçiş yok);
   3. canlı özet ≠ kayıt → exit 2 `source_changed_since_pull` (push yapılmaz; mesaj: yeniden çek, değişikliği yeni kaynağa uygula);
+  3b. (Z87 ⓑ+, 2026-09-24) aynı canlı metin ile yeni kaynak `difflib` ile kıyaslanır (iki taraf `normalize_source`'tan geçer, ek ağ çağrısı
+     YOK); canlıda olup yeni kaynakta olmayan satır varsa yanıta `removed_lines_warning: {removed, added, sample[≤5, 120 karakter]}` +
+     `warning` konur — **uyarı, red değil**, push sürer (kullanıcı kararı: sert red / onay argümanı yok). Yazmadan ÖNCE hesaplanır;
+     push istisnayla düşerse hata yanıtına da eklenir. Kıyas noktası dört push yolundan (düz, sınıf alt-include'u, BDEF, FM) önce
+     ortaktır ⇒ hepsi kapsanır; yalnız ilk yaratımı yapılan (canlıda KANITLI yok) sınıf alt-include'unda kıyaslanacak canlı metin yoktur.
   4. push; kaynak yüklendiyse canlı **yeniden okunur** ve o özet yazılır (`pull_state: guncellendi`). Okunamazsa kayıt silinir; yükleme belirsizse (istisna / beklenmedik dönüş) kayıt silinir → sonraki push yeniden çekme ister.
 - **"yerel dosya ≠ canlı" kıyası YAPILMAZ** — kaynak çekirdekte her meşru düzenlemeyi bloklayan eski kontrol bu yüzden kaldırılmıştı. Kıyas çekme anındaki canlı ↔ yazma anındaki canlıdır.
 - `adt_post_shell` bu kontrole girmez. Yeni kabuğa ilk push'tan önce de `adt_get` gerekir (boş kabuk kaynağı kaydedilir).
@@ -256,7 +262,9 @@ Kayıt host/client taşımaz: kıyas içerik tabanlıdır; başka sistemden çek
 
 ### 13.3 Sınırlar
 - Canlı okuma ile push arasında (saniyeler) başka birinin yazması yakalanmaz (TOCTOU); `push_object`'in SAP kilidi özete bağlı değil.
-- Kontrol "SAP çekildikten sonra değişmedi"yi kanıtlar; düzenlemenin gerçekten çekilen metin üzerinde yapıldığını kanıtlamaz.
+- Kontrol "SAP çekildikten sonra değişmedi"yi kanıtlar; düzenlemenin gerçekten çekilen metin üzerinde yapıldığını kanıtlamaz
+  (Z87 ölçüldü: canlı A+B → bayat yerel A → push geçti, B kayboldu). 3b'deki uyarı bunu GÖRÜNÜR kılar, engellemez; meşru satır
+  silme ile bayat tabanı ayıramaz. Testler `tests/test_pull_before_edit.py` 7-9 (8 = kontrol grubu: ekleme ve CRLF'li eşitlik → uyarı yok).
 - Paralel CLI süreçleri dosyayı aynı anda yazarsa bir kayıt kaybolabilir → o obje `pull_before_edit_missing` alır (güvenli yön). Yazma atomiktir (geçici dosya + `os.replace`).
 - Model durum dosyasını elle yazabilir; bu bir güvenlik sınırı değil, kaza/kısayol önleyicidir (§10).
 - Push başına ek maliyet: öncesinde 1 okuma (class/program yolunda kaynak + metadata GET), sonrasında 1 okuma — **ölçülmedi**.
@@ -982,7 +990,7 @@ Kapsam: yalnız `populate.py`, iki test dosyası, `foundation-ops.md` §9, bu b�
 |---|---|---|
 | DUR · `sonuc_bilinmiyor` | `unexpected` (`sap_adt_cli.calistir` istisna; `atom._err_from_exc` SAPADTError dışı) · `connection_failed` (`SAPConnectionError`: zaman aşımı/bağlantı) · `unreachable` (`adt_activate`) · `sap_error` + `[502]`/`[503]`/`[504]` · `push_failed` + `error_type` SAP ağacı dışı ya da `SAPConnectionError` · aynı kodlar `steps.*` içinde · `step_exception` (çağrı hattının kendisi) · `delete_verified=None` · başarısız DELETE + sonda ölçülemedi | kalanlar `islenmedi`, çıkış 1 `run_stopped`, satır mesajı "sonuç BİLİNMİYOR, SAP'de durumu kontrol et" |
 | DUR · `hesap_kilidi_riski` | `auth_failed` · `error_type` `SAPAuthenticationError` · `sap_error` + `[401]` | aynı; mesaj "kimlik reddedildi, koşum durduruldu, hesap kilidi riskine karşı kalan satırlar denenmedi" |
-| SATIR HATASI · koşum sürer | kapı kodları · `guardrail_violation` · `reviewer_blocker` · `preflight_blocker` · `msgclass_overwrite_not_allowed` · `pull_*` · `source_changed_since_pull` · `std_dml_scan_unavailable` · `unsupported_type` · `invalid_argument(s)` · `not_found` · `already_exists` · `already_exists_after_retry` (v0.5.1) · `exists_unmeasured` · `locked` · `lock_conflict`/`lock_failed` · `validation_error` · `sap_error` diğer/durumsuz (403, 500 dahil) · `create_failed` · `description_too_long` · `activation_not_executed` · `activation_failed` (+ İNAKTİF notu) · `push_failed` (SAP ağacı istisnası) · `readback_failed` (yeni mesaj) · `readback_mismatch` · `master_language_unresolved` · `msgclass_live_incomplete` · `pull_live_read_failed` · `tool_failed` | çıkış 1 `partial_failure` (değişmedi) |
+| SATIR HATASI · koşum sürer | kapı kodları · `guardrail_violation` · `reviewer_blocker` · `preflight_blocker` · `msgclass_overwrite_not_allowed` · `repeated_failure` (§23) · `pull_*` · `source_changed_since_pull` · `std_dml_scan_unavailable` · `unsupported_type` · `invalid_argument(s)` · `not_found` · `already_exists` · `already_exists_after_retry` (v0.5.1) · `exists_unmeasured` · `locked` · `lock_conflict`/`lock_failed` · `validation_error` · `sap_error` diğer/durumsuz (403, 500 dahil) · `create_failed` · `description_too_long` · `activation_not_executed` · `activation_failed` (+ İNAKTİF notu) · `push_failed` (SAP ağacı istisnası) · `readback_failed` (yeni mesaj) · `readback_mismatch` · `master_language_unresolved` · `msgclass_live_incomplete` · `pull_live_read_failed` · `tool_failed` | çıkış 1 `partial_failure` (değişmedi) |
 Gri alan varsayılanları (lider onaylı): `readback_failed` bilinen red (mesaj "PUT kabul edildi, geri okuma doğrulanamadı; SAP'de kontrol et") ·
 `adt_delete` yolu değişmedi (sonda) · `_get_client` istisnası → DUR (`unexpected`) · `push_object` yerel `ValueError`/`FileNotFoundError` `error_type` → DUR.
 Durma çıktısı: `result.stop = {name,row,step,tool,code,class}` + `error.message`/`stopped` = "satır N · adım/araç · kod=… · gerekçe=…: …".
@@ -1396,3 +1404,25 @@ S12 (FM unlock 4 durum) · S13 (BDEF unlock) · S14 (belirsiz mesajlar + HTTP-re
 `tests/test_populate_hat.py` U2 / L4: sahte istemcilere `get_ddic_object` (404) eklendi — ön kontrol artık `adt_get` üzerinden ölçtüğü için bu
 yöntemi taşımayan sahte `exists_unmeasured` üretip yaratma yoluna hiç girmiyordu (testlerin amacı değişmedi).
 Canlı SAP'de ölçülmedi.
+
+## 23. Patinaj kesicisi — `repeated_failure` (2026-09-24, Z90)
+
+- **Nerede:** `sap_adt_cli.calistir` (CLI + toplu yazıcı aynı hat), yalnız `write` sınıfı ve yalnız kapı/profil (`on_kontrol`)
+  geçtikten SONRA. Durum `sapadt/write_failures.py` → `<proje>/.axet-code/sap-write-failures.json`
+  (`{"<tip>:<AD>": {code, count, last_at}}`; anahtar `pull_state.anahtar` ile aynı; host/kullanıcı yazılmaz).
+- **Kural:** aynı obje + aynı hata koduyla `ESIK=3` ardışık başarısız yazmadan SONRAKİ çağrı aracı ÇAĞIRMADAN
+  `repeated_failure` (çıkış 2) döner; deneme logu `result: repeated_failure` yazar, stderr'e kapı hatırlatması basılır.
+  Hook'taki "aynı objede EN ÇOK 3 deneme" kuralıyla hizalı (3 deneme serbest, 4.'sü durur). Her sayılan başarısızlıkta yanıt
+  üst düzeyde `failure_streak: {code, count, limit}` taşır.
+- **Sayılan / sayılmayan:** araç çağrıldı ve çıkış ≠ 0 → sayılır (hata kodu = `error.code`). Araçtan önceki kapı reddi ve kesicinin
+  kendi reddi sayılmaz. Obje adı olmayan yazma çağrısı (ör. adsız araç) sayaca girmez.
+- **Sıfırlama:** başarılı yazma (kayıt silinir) · farklı hata kodu (seri 1'den başlar) · son başarısızlıktan bu yana 2 saat.
+  Erken sıfırlama kararı kullanıcınındır (kayıt ya da dosya kullanıcı tarafından silinir; araç/AI silmez).
+- **Pencere gerekçesi (2 saat):** patinaj bir iş oturumu içinde dakikalar ölçeğinde art arda gelen denemedir; 2 saat oturumu
+  kapsar ama kök sebep kullanıcıyla konuşulup düzeltildikten sonraki meşru denemeye (ertesi gün vb.) bayat kilit olarak taşınmaz.
+- **Fail-open (lider kararı):** sayaç bir FRENDİR, güvenlik kapısı değil — dosya okunamaz/bozuksa ya da yazılamazsa yazma
+  ENGELLENMEZ, stderr'e tek satır `UYARI: patinaj sayacı: …` basılır; bozuk dosya sonraki kayıtta onarılır.
+- **Testler:** `tests/test_patinaj_kesici.py` P1-P7 (P2-P4 kontrol grubu: farklı kod / başarı / başka obje engellenmez;
+  P5 pencere; P6 bozuk dosya fail-open; P7 kapı reddi sayılmaz). Kırmızı-önce: kablolamasız P1 FAIL + P6 ERROR. Mutasyonlar
+  (ESIK=99 → P1 · kod kıyası yok → P2 · başarı sıfırlamıyor → P3 · pencere yok → P5 · okuma hatasında engel → P6) hepsi ölü.
+  Canlı SAP'de ölçülmedi (gerek yok: kesici ağa gitmez).

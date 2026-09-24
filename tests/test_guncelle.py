@@ -344,6 +344,93 @@ class OnkontrolTest(GuncelleTemel):
         self.assertEqual(r.returncode, 0, self.cikti(r))
 
 
+class Z69BosTurTest(GuncelleTemel):
+    """Z69: yapılacak iş yokken `%guncelle` geri dönüş etiketi BIRAKMAZ.
+
+    Eskiden `hazirla` (etiket) `plan`dan (bekleyen kalem ölçümü) önce koştuğu için her boş tur bir
+    `guncelle-oncesi-*` etiketi ekliyordu (ölçüldü: tüketici klonda 6 etiket). Bekleyen kalem ölçümü
+    artık `onkontrol` ve `hazirla` girişinde de — `plan`la AYNI fonksiyonla — yapılır.
+    """
+
+    def etiketler(self) -> list[str]:
+        return self.git(self.f.tuketici, "tag", "--list", "guncelle-oncesi-*").stdout.split()
+
+    def guncelle_getir(self) -> None:
+        """Tüketiciyi v3'e getir: iki yayın da HEAD'in atası ⇒ bekleyen kalem yok."""
+        self.git(self.f.tuketici, "merge", "-q", "--ff-only", "origin/main")
+
+    def muhurle(self, **ozel) -> None:
+        d = self.f.durum_dizini()
+        d.mkdir(exist_ok=True)
+        kalemler = {k["id"]: {"durum": "uygulandi"} for y in YAYINLAR["yayinlar"] for k in y["kalemler"]}
+        kalemler.update(ozel)
+        (d / "uygulanan.json").write_text(json.dumps(
+            {"surum": 1, "dosyalar": {}, "kalemler": kalemler}, ensure_ascii=False), encoding="utf-8")
+
+    def guncel_satiri_var(self, r: subprocess.CompletedProcess) -> None:
+        """"Güncel" rc 1'i, rc 1 veren bir çöküşten (traceback) SABİT satırla ayrılır (GUNCELLE.md)."""
+        self.assertTrue(any(s.startswith("Klon güncel:") for s in r.stdout.splitlines()),
+                        f"stdout'ta `Klon güncel:` satırı yok: {self.cikti(r)}")
+
+    def test_guncel_klonda_onkontrol_cikis_1_klon_guncel(self):
+        self.guncelle_getir()
+        r = self.f.calistir("onkontrol")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.guncel_satiri_var(r)
+
+    def test_akis_belgesi_guncel_ayrimini_satirla_yapar(self):
+        """GUNCELLE.md 2/3/4. adımlar "1 = güncel"i `Klon güncel:` satırına bağlar (satırsız 1 = hata)."""
+        metin = (AXET_HOME / "GUNCELLE.md").read_text(encoding="utf-8")
+        for no in ("2", "3", "4"):
+            satir = next((s for s in metin.splitlines() if s.startswith(f"| {no} |")), "")
+            self.assertIn("`Klon güncel:`", satir, f"akış adımı {no}: {satir}")
+            self.assertIn("satırsız 1", satir, f"akış adımı {no}: {satir}")
+
+    def test_guncel_klonda_hazirla_etiket_ve_commit_birakmaz(self):
+        self.guncelle_getir()
+        self.f.yerel_degistir("LICENSE", "MIT yerel\n")   # kirli ağaç: anlık commit de ATILMAMALI
+        head = self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip()
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.guncel_satiri_var(r)
+        self.assertEqual(self.etiketler(), [], "boş turda geri dönüş etiketi atıldı (Z69)")
+        self.assertEqual(self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip(), head,
+                         "boş turda yerel anlık commit atıldı")
+
+    def test_tum_kalemler_uygulanan_json_da_muhurluyse_guncel(self):
+        """`plan`la aynı ölçüt: yayın HEAD'de değil ama tüm kalemleri `uygulanan.json`'da mühürlü."""
+        self.muhurle()
+        self.assertEqual(self.f.calistir("onkontrol").returncode, 1)
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertEqual(self.etiketler(), [])
+        # aynı ölçüt: plan da "güncel" der (iki ölçüm iki ayrı sonuç veremez)
+        self.assertEqual(self.f.calistir("plan").returncode, 1)
+
+    def test_kontrol_grubu_bekleyen_kalem_varsa_etiket_atilir(self):
+        """Kontrol grubu: v1'deki tüketici (v2+v3 bekliyor) — davranış DEĞİŞMEMELİ."""
+        self.assertEqual(self.f.calistir("onkontrol").returncode, 0)
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(len(self.etiketler()), 1)
+
+    def test_ertelenmis_kalem_bekleyen_sayilir(self):
+        """Z62: `neden: ertelendi` mühürlü kalem karşılanmış DEĞİLDİR ⇒ tur güncel sayılmaz."""
+        self.muhurle(**{"3-03": {"durum": "atlandi", "neden": "ertelendi"}})
+        self.assertEqual(self.f.calistir("onkontrol").returncode, 0)
+        self.assertEqual(self.f.calistir("hazirla").returncode, 0)
+        self.assertEqual(len(self.etiketler()), 1)
+
+    def test_cozulemeyen_etiket_guncel_sayilmaz(self):
+        """Etiketi çözülemeyen yayının içerilip içerilmediği ÖLÇÜLEMEZ ⇒ "güncel" DENMEZ (fail-closed:
+        akış `plan`a gider, orada kendi DUR'unu verir)."""
+        self.guncelle_getir()
+        self.git(self.f.tuketici, "tag", "-d", "v3")
+        r = self.f.calistir("onkontrol")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("Klon güncel", self.cikti(r))
+
+
 # =====================================================================================================
 # 2. PLAN — §4 vaka kodlarının ALTIN ÇIKTISI
 # =====================================================================================================
@@ -1993,6 +2080,36 @@ class AkisTest(AkisTemel):
         self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n")
         self.assertIn("doctor YEREL",
                       (self.f.tuketici / "scripts/doctor.py").read_text(encoding="utf-8"))
+
+    # --- Z82: geri-al, uygula SONRASI elle yapılan düzenlemeyi yedeksiz ezmez ------------------
+    def _yerel_yedekler(self) -> list[str]:
+        return sorted(p.relative_to(self.f.tuketici).as_posix()
+                      for p in self.f.tuketici.rglob("*.yerel*")
+                      if ".git" not in p.relative_to(self.f.tuketici).parts)
+
+    def test_Z82_geri_al_uygula_sonrasi_elle_duzenlemeyi_yerel_olarak_saklar(self):
+        """Etikette blob'u olan yol `git checkout <etiket> --` ile geri yazılır; uygula'dan SONRA
+        yapılan düzenlemenin hiçbir yerde kopyası yoktur (ne etikette ne yeni ref'te)."""
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        (self.f.tuketici / "LICENSE").write_text("MIT elle duzenlendi\n", encoding="utf-8")
+        r = self.f.calistir("geri-al", "LICENSE")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n",
+                         "geri-al etiketteki hâli geri yazmalı (davranış değişmez)")
+        yedekler = self._yerel_yedekler()
+        self.assertEqual(yedekler, ["LICENSE.yerel"], self.cikti(r))
+        self.assertEqual((self.f.tuketici / "LICENSE.yerel").read_text(encoding="utf-8"),
+                         "MIT elle duzenlendi\n", "elle düzenleme geri alınamaz biçimde ezildi")
+        self.assertIn("Yedeksiz yerel içerik saklandı: LICENSE.yerel", self.cikti(r))
+
+    def test_Z82_kontrol_geri_al_hepsi_elle_duzenleme_yoksa_yerel_uretmez(self):
+        """Diskteki içerik motorun yazdığı (yeni ref blob'u ya da birleştirme sonucu) ise
+        kurtarılabilir: `.yerel` çöpü üretilmez. Tek beklenen yedek fixture'ın V7 kullanıcı dosyasıdır
+        (izlenmeyen; Z82 öncesinden beri saklanır — `test_geri_al_hepsi_izlenmeyen_kullanici_dosyasini_silmez`)."""
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("geri-al", "--hepsi")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(self._yerel_yedekler(), ["skills/cakisan/SKILL.md.yerel"], self.cikti(r))
 
     def test_durum_tablo_basar(self):
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)

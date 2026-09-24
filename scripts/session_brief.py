@@ -229,6 +229,8 @@ def saglik(proj: Path) -> list[str]:
         _, sap = doctor.check_global()
         doctor.check_template()
         doctor.check_project(proj, sap)
+        # Z101: SAP oturumu requests/dotenv eksikken ilk SAP çağrısında düşer — açılışta görünsün (yalnız WARN taşınır)
+        doctor.check_paketler(sap or (proj / "sap-project.json").exists())
     kotu = [f"{s}: {m}" for s, m in doctor.results if s in ("FAIL", "WARN")]
     return kotu or ["doctor statik kontroller: FAIL/WARN yok"]
 

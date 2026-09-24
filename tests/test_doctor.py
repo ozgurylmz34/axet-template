@@ -1527,3 +1527,163 @@ class GitKimlikTest(GeciciTest):
         self.assertIn("git bulunamadı", mesaj)
         self.assertIn("git kimliği", mesaj)
         doctor.results.clear()
+
+
+class CommitsizKuralTest(GeciciTest):
+    """Z93 (2026-09-24): proje validator'ları / paket `.rules.md` yalnız COMMIT anında (pre-commit) denetleniyor;
+    commit'siz bozuk bir `validators-local/*.py` ya da `.rules.md` birden çok tur kullanılabilir. doctor proje modunda
+    commit'siz (izlenen+değişmiş, stage'li ya da izlenmeyen) olanları WARN listeler; session_brief SAĞLIK bunu taşır.
+    Kontrol grubu: commit'lenmiş temiz repo WARN üretmez; template'in `validators-local/README.md`'si validator değildir.
+    KAPSAM — bakılmayan: dosya içeriğinin doğruluğu (yalnız commit'siz olup olmadığı) · gitignore'lu dosyalar."""
+
+    def _olc(self, d: Path) -> list[tuple[str, str]]:
+        doctor.results.clear()
+        doctor.check_commitsiz_kurallar(d)
+        sonuc = [(s, m) for s, m in doctor.results if doctor.COMMITSIZ_ETIKETI in m]
+        doctor.results.clear()
+        self.assertEqual(len(sonuc), 1, sonuc)
+        return sonuc
+
+    def _commitli(self) -> tuple[Path, Path]:
+        d = self.proje(sap=True)
+        pkg = self.paket(d)
+        self.yaz(d / "validators-local" / "kontrol.py", "import sys\nsys.exit(0)\n")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "--no-verify", "-m", "ilk")
+        return d, pkg
+
+    def test_kontrol_grubu_commitli_temiz_repo_warn_yok(self):
+        d, _ = self._commitli()
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "PASS", mesaj)
+
+    def test_izlenmeyen_validator_warn(self):
+        d, _ = self._commitli()
+        self.yaz(d / "validators-local" / "yeni_kontrol.py", "raise SystemExit(1)\n")
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "WARN", mesaj)
+        self.assertIn("validators-local/yeni_kontrol.py", mesaj)
+
+    def test_degismis_ve_stagelenmis_kural_warn(self):
+        d, pkg = self._commitli()
+        kural = pkg / ".rules.md"
+        self.yaz(kural, kural.read_text(encoding="utf-8") + "\nek satır\n")
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "WARN", mesaj)
+        self.assertIn(".rules.md", mesaj)
+        self.git(d, "add", "-A")  # stage'li ama commit'siz de commit'sizdir (pre-commit henüz koşmadı)
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "WARN", mesaj)
+        self.assertIn(".rules.md", mesaj)
+
+    def test_degismis_validator_warn_ve_ilgisiz_dosya_sayilmaz(self):
+        d, _ = self._commitli()
+        self.yaz(d / "notlar.md", "ilgisiz\n")  # kontrol: validator/kural olmayan commit'siz dosya
+        self.yaz(d / "validators-local" / "README.md", "belge\n")  # .py değil → runner koşturmaz
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "PASS", mesaj)
+        self.yaz(d / "validators-local" / "kontrol.py", "import sys\nsys.exit(1)\n")
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "WARN", mesaj)
+        self.assertIn("validators-local/kontrol.py", mesaj)
+        self.assertNotIn("notlar.md", mesaj)
+        self.assertNotIn("README.md", mesaj)
+
+    def test_git_reposu_degilse_olculemedi(self):
+        d = self.proje("gitsiz", git_init=False)
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "INFO", mesaj)
+        self.assertIn("ÖLÇÜLEMEDİ", mesaj)
+
+    def test_bozuk_indexte_temiz_denmez(self):
+        d, _ = self._commitli()
+        (d / ".git" / "index").write_bytes(b"bozuk")
+        self.assertNotEqual(self.git(d, "status", "--porcelain", kontrol=False).returncode, 0,
+                            "enjeksiyon tutmadı — test hiçbir şey ölçmez")
+        (durum, mesaj), = self._olc(d)
+        self.assertEqual(durum, "WARN", mesaj)
+        self.assertIn("ÖLÇÜLEMEDİ", mesaj)
+
+    def test_uctan_uca_doctor_ve_session_brief_saglik(self):
+        self.global_config(sap=True)
+        d, _ = self._commitli()
+        self.yaz(d / "validators-local" / "yeni_kontrol.py", "raise SystemExit(1)\n")
+        r = self.calistir("doctor.py", cwd=d)
+        self.assertTrue(any(s.startswith("[WARN]") and doctor.COMMITSIZ_ETIKETI in s and "yeni_kontrol.py" in s
+                            for s in r.stdout.splitlines()), r.stdout)
+        r = self.calistir("session_brief.py", "--no-fetch", "--project-dir", str(d))
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        saglik = r.stdout.split("SAĞLIK:", 1)[1]
+        self.assertIn("WARN: " + doctor.COMMITSIZ_ETIKETI, saglik)
+        self.assertIn("yeni_kontrol.py", saglik)
+
+
+class PaketDoctorTest(GeciciTest):
+    """Z101: SAP bağlantısının zorunlu Python paketleri eksikse doctor söyler (paket adı + kurulum yolu). Liste
+    install.ZORUNLU_PAKETLER'den okunur. Ölçüm gerçek import'tur (ayrı süreç); testte "eksik" PYTHONPATH başındaki
+    engel modülleri, "kurulu" boş sahte modüllerdir — makinenin gerçek paket durumu sonucu değiştirmez."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        doctor.results.clear()
+        self.env["LOCALAPPDATA"] = str(self.tmp / "_lad")
+
+    def tearDown(self) -> None:
+        doctor.results.clear()
+        super().tearDown()
+
+    def _durum(self, sap: bool, eksik):
+        with mock.patch.object(doctor.inst, "eksik_paketler", return_value=eksik):
+            doctor.results.clear()
+            doctor.check_paketler(sap)
+            self.assertEqual(1, len(doctor.results), doctor.results)
+            return doctor.results[0]
+
+    def test_sap_acikken_eksik_warn_ad_ve_komut(self):
+        eksik = [("requests", "requests>=2.31.0"), ("dotenv", "python-dotenv>=1.0.0")]
+        durum, mesaj = self._durum(True, eksik)
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("requests", mesaj)
+        self.assertIn("python-dotenv", mesaj)
+        self.assertIn("kur.cmd", mesaj)           # birincil yol: kurulumu yeniden çalıştır (ayrı komut değil)
+        self.assertIn("-m pip install --user", mesaj)  # yedek: elle komut
+
+    def test_sap_kapaliyken_eksik_info(self):
+        durum, mesaj = self._durum(False, [("requests", "requests>=2.31.0")])
+        self.assertEqual("INFO", durum, mesaj)
+        self.assertIn("requests", mesaj)
+        # tur 2 madde 5: kur.cmd SAP'yi AÇAR — SAP kapalı kullanıcıya önerilmez
+        self.assertNotIn("kur.cmd", mesaj)
+        self.assertIn("SAP'yi açtığında", mesaj)
+
+    def test_kontrol_grubu_hepsi_kurulu_pass(self):
+        durum, mesaj = self._durum(True, [])
+        self.assertEqual("PASS", durum, mesaj)
+
+    def test_olculemezse_temiz_denmez(self):
+        durum, mesaj = self._durum(True, None)
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("ÖLÇÜLEMEDİ", mesaj)
+
+    def _engel(self) -> None:
+        import install
+        engel = self.tmp / "_engel"
+        for ithal, _ in install.ZORUNLU_PAKETLER:
+            self.yaz(engel / f"{ithal}.py", f"raise ModuleNotFoundError(\"No module named '{ithal}'\", name='{ithal}')\n")
+        self.env["PYTHONPATH"] = str(engel)
+
+    def test_uctan_uca_doctor_sap_config_eksik_paket_warn(self):
+        self.global_config(sap=True)
+        self._engel()
+        r = self.calistir("doctor.py", cwd=self.tmp)
+        self.assertTrue(any(s.startswith("[WARN]") and "requests" in s for s in r.stdout.splitlines()), r.stdout)
+        self.assertIn("Python paketleri", r.stdout.split("KAPSAM", 1)[1])
+
+    def test_uctan_uca_session_brief_saglik_eksik_paketi_tasir(self):
+        self.global_config(sap=True)
+        d = self.proje(sap=True)
+        self._engel()
+        r = self.calistir("session_brief.py", "--no-fetch", "--project-dir", str(d))
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        saglik = r.stdout.split("SAĞLIK:", 1)[1]
+        self.assertIn("requests", saglik)

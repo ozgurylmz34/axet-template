@@ -79,6 +79,10 @@ class GeciciTest(unittest.TestCase):
             # install.py (ve kur.cmd → install.py) tarayici_hazirla.py'yi çağırır: testte gerçek npm kurulumu ve
             # GERÇEK ~/.playwright yazımı olmasın (HOME/USERPROFILE burada değiştirilmiyor).
             "AXET_TARAYICI_HAZIRLA": "0",
+            # Z101: install.py (ve kur.cmd → install.py) eksik SAP Python paketlerini pip ile kurar: testte GERÇEK
+            # pip çalışmasın, ağa çıkılmasın. Adımı ölçen testler (test_install.PaketAdimiTest) bunu kendisi kaldırır
+            # ve AXET_PAKET_PIP ile sahte pip verir.
+            "AXET_PAKET_KUR": "0",
         })
 
     def tearDown(self) -> None:
