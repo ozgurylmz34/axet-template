@@ -2,7 +2,7 @@
 """conn_sablon.py — SAP bağlantı ŞABLONLARI (conn/DEV.env, conn/QA.env): yaz ve doğrula. aXet Z70 (2026-09-23).
 
 `proje-tamamla.cmd` (projede `KURULUMU-TAMAMLA.cmd` kısayolu) bunu çağırır: kullanıcı bağlantı bilgilerini pencereye
-değil Notepad'de şablon dosyaya yazar. Kural KOPYALANMAZ: anahtar listesi ve alan kuralları
+değil şablon dosyaya kendisi yazar (pencere dosyanın TAM yolunu ve alanları söyler; editör açmaz). Kural KOPYALANMAZ: anahtar listesi ve alan kuralları
 `skills-sap/sap-adt-foundation/scripts/setup_credentials.py` (`ANAHTARLAR`, `dogrula`) içinden içe aktarılır. Ek olarak
 her anahtarda (PAROLA DAHİL) `<...>` yer tutucu aranır — `switch_tier.py` parolada yer tutucu aramaz (parola `<`
 içerebilir), bu yüzden doldurulmamış parola ancak burada yakalanır. Sınır: parolanın TAMAMI `<...>` biçimindeyse

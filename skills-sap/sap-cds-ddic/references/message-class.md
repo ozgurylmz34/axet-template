@@ -25,8 +25,11 @@ cli adt_msgclass_read '{"name":"ZSD001_MSG"}'
 dönüş: `%sap-adt-foundation` → `tool-catalog.md`. Ham REST ile yazılmaz.
 - **Yol:** kabuk yoksa `adt_post_shell` `msag` → `adt_msgclass_read` (canlı liste + pull kaydı; kayıt yoksa yazma reddedilir) → nihai tam
   mesaj listesini (numara · metin · kendi kendini açıklar mı) kullanıcıya göster → `adt_msgclass_write` → dönüşte `readback_verified` ve `plan`.
-- **Birleştirme:** SAP PUT tüm listeyi değiştirir (§3.5); araç canlı listeyi okuyup birleştirir — verilmeyen mevcut mesajlar korunur. Mevcut
-  numarayı değiştirmek `allow_overwrite=true`, silmek `delete_numbers` ister; ikisini de kullanıcı onayı olmadan verme.
+- **Birleştirme:** araç canlı listeyi okuyup tam gövdeyi kurar — verilmeyen mevcut mesajlar korunur. Mevcut numarayı değiştirmek
+  `allow_overwrite=true` ister; `allow_overwrite=true`'yu kullanıcı onayı olmadan verme (önce `plan.overwritten`'i göster).
+- **Silme:** yalnız `delete_numbers=["006", …]` ile ve **ayrı bir çağrıda** (aynı çağrıda `messages` verilirse `invalid_argument`).
+  ⛔ Mesajı listeden/gövdeden **çıkarmak SİLMEZ** — SAP gövdede olmayan mesaja dokunmaz (§3.5). Araç gövdeye `<mc:deletedmessages>` yazar;
+  ayrıntı, korumalar ve dönüşteki `delete_gate`: §3.7. Silinecek numaraları ve metinlerini önce kullanıcıya göster, onay al.
 - **Kilit:** araç yalnız kendi kilidini bırakır; kaynak reçetenin enqueue kilidi silen "güvenlik ağı" adımı alınmadı (kesin yasak C).
   `lock_conflict`/`lock_failed` → kullanıcı SM12'de kendi kilidini kontrol eder, açık SE91/ADT oturumunu kapatır; sonra yeniden oku ve dene.
 - `s4_private` dışındaki profilde araç kapalıdır (`tool_not_available_for_profile`): mesajları kullanıcı SE91'de ekler, sen `adt_msgclass_read`
@@ -90,9 +93,14 @@ Arka uç iki yol izliyor: `If-Match` varsa ETag karşılaştırması açılır v
 Eclipse ADT RFC üzerinden konuştuğu için bu HTTP yolunu görmez. Aynı kural DTEL güncellemesi (`domain-dtel.md` §5.3) ve Z tablo
 kaynak PUT'unda (`tables-structures.md` §3.2) geçerlidir; **table type PUT'u istisnadır** (`table-types.md` §4.3). Genelleme yapma.
 
-### 3.5 Yerine yazma semantiği
-PUT gövdesindeki mesaj listesi mevcut listenin **yerine geçer**: 5 mesaj varken 3 mesajlık PUT → 3 mesaj kalır. Mesaj eklemek =
-mevcutları okuyup (`adt_msgclass_read`) **tam listeyi** göndermek. Kullanıcıya gösterilen liste de bu yüzden nihai tam listedir.
+### 3.5 PUT semantiği — gövdeden çıkarmak SİLMEZ
+Eski not *"PUT listesi mevcut listenin yerine geçer, listede olmayan silinir"* ölçümle **çürüdü** (kaynak ekip playbook'u, `s4_private`
+release 2025, 2026-09-24): 229 mesajlı sınıfa 17'si çıkarılmış tam gövde gönderildi → LOCK/PUT/UNLOCK üçü de **200**, readback'te
+T100 **229 → 229** (no-op). SAP kaynağında "listede olmayanı sil" döngüsü yorum satırındadır. Sonuçlar:
+- Gövdedeki mesaj eklenir; metni farklıysa güncellenir. Gövdede **olmayan** mesaja dokunulmaz — eksik liste göndermek mesaj kaybettirmez,
+  ama **silmez de**.
+- "PUT 200" hiçbir şeyin silindiğini göstermez; sonucu yalnız önce/sonra readback kıyası söyler.
+- Silme yalnız gövdedeki `<mc:deletedmessages>` koleksiyonuyla olur (§3.7).
 
 ### 3.6 DENENEN — BAŞARISIZ (50+ varyant denendi; tekrar deneme)
 | Yöntem | Sonuç |
@@ -106,6 +114,40 @@ mevcutları okuyup (`adt_msgclass_read`) **tam listeyi** göndermek. Kullanıcı
 | `_action=UPDATE/REPLACE/UPSERT` | 400 URI mapping error |
 | `accessMode=stateless/READ` | 400 invalid value |
 | `forceLock=true`, `overwrite=true` | tanınmıyor, 403 |
+
+### 3.7 Mesaj silme — `<mc:deletedmessages>`
+Kanıt (kaynak ekip playbook'u, `s4_private` release 2025, 2026-09-24): önce tek mesaj (**229 → 228**, giden küme tam `{006}`), sonra 16 mesaj
+tek PUT'ta (→ 212); kalanların metni/bayrağı birebir. **aXet aracıyla canlı DOĞRULANMADI** (çevrimdışı sahte istemciyle test edildi).
+
+`cli adt_msgclass_write '{"name":"ZSD001_MSG","transport":"<TRANSPORT>","delete_numbers":["006","011"]}' --sap-write ...`
+
+Araç sırası: canlı GET (pull kaydıyla aynı olmalı) → korumalar → gövde = kalan mesajlar **canlı öznitelikleriyle** + her silinen için
+`<mc:deletedmessages mc:msgno="NNN"/>` (son `<mc:messages>`'tan SONRA) → gövde öz-denetimi → LOCK → **kilit altında canlıyı yeniden oku**
+(farklıysa ya da okunamazsa PUT gönderilmez, kilit bırakılır) → PUT (`If-Match` yok) → UNLOCK → **önce/sonra kapısı** (`delete_gate`).
+```xml
+  <mc:messages mc:msgno="001" mc:msgtext="..." mc:selfexplainatory="false" mc:documented="true" adtcore:name=""/>
+  <mc:deletedmessages mc:msgno="006"/>
+  <mc:deletedmessages mc:msgno="011"/>
+</mc:messageClass>
+```
+
+| Koruma / dönüş | Neden |
+|---|---|
+| Numara tam 3 hane, boş değil (`"6"`, `""` → `invalid_argument`) | Boş `msgno` SAP'de `000`'ı siler |
+| Numara canlıda var; tüm sınıf silinmez (en az bir mesaj kalır) → `invalid_argument` | Kapı yalnız var olanın gidişini ölçebilir; obje silme ayrı karar |
+| Oturum (logon, `.conn_adt`) dili = sınıfın master dili, değilse `ADR_0005_D` | Farklıysa SAP yalnız o dilin T100 satırını siler (yarım silme) |
+| Silme + ekleme/değiştirme aynı çağrıda → `invalid_argument` | Karışık tek PUT canlıda ölçülmedi |
+| Kilit altında canlı farklı → `source_changed_since_pull` · okunamadı → `pull_live_read_failed` (`phase: under_lock`); PUT YOK | TOCTOU: arada değişen kalan mesaj gövdeyle eski metne geri çevrilirdi |
+| `delete_gate.ok:false` → `readback_mismatch` (`not_deleted` · `unexpectedly_gone` · `changed`) | Giden küme == silme kümesi, kalanlar (metin/bayrak/`documented`) birebir |
+| `delete_gate.ok:null` (SONRA okunamadı → `readback_failed`; PUT sonrası ağ istisnası) | **Ölçülemedi ≠ silindi**: silme gerçekleşmiş olabilir → `adt_msgclass_read` ile doğrula |
+
+**Kapsam beyanı (`delete_gate.scope_not_checked`):** kapı yalnız ADT GET'i (master dil) ölçer. Başka dillerdeki T100 satırları, T100U,
+uzun metin (DOKHL/DOKTL — SAP uzun metni transport kaydı açmadan siler; başka sisteme taşımada **doğrulanmadı**) ve E071 **ölçülmez**; gerekirse
+SQL ile ayrıca bakılır. Sınıfın `changedAt` değeri silmede güncellenmez (kaynak ölçümü) → başarı ondan okunmaz.
+
+**Tuzaklar:** mesaj alt kaynağı `/messages/<no>` ile LOCK/DELETE 423/403 verir (kullanma) · öznitelikteki çıplak TAB/LF/CR boşluğa
+normalleşir → araç `&#9;` `&#10;` `&#13;` yazar (yoksa kalan çok satırlı mesaj sessizce "güncellenirdi") · metni değişen + kendi kendini açıklar
++ uzun metinli mesajda SAP uzun metni siler (kaynak okuması, canlı ölçülmedi) → silme turunda kalan metinleri değiştirme.
 
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
 - Python REST kodu, script komutları ve CSV biçimi → protokol notu ve kullanıcıya gösterilecek liste biçimi.

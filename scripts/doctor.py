@@ -1252,7 +1252,8 @@ PAKET_ETIKETI = "SAP Python paketleri"
 
 def check_paketler(sap: bool) -> None:
     """Z101: SAP bağlantısının zorunlu Python paketleri (liste: install.ZORUNLU_PAKETLER — tek kaynak) bu
-    yorumlayıcıda yüklenebiliyor mu. SALT-OKUNUR: kurmaz (kurulum install.py'de; kur.cmd ve %guncelle onu koşar).
+    yorumlayıcıda yüklenebiliyor mu. SALT-OKUNUR: kurmaz (kurulum install.py'de; kur.cmd ve her %guncelle —
+    `install.py --paketler`, Z102 — onu koşar).
     SAP açıkken (global SAP paketi ya da sap-project.json) eksik = WARN, kapalıyken INFO; ölçülemezse temiz denmez."""
     eksik = inst.eksik_paketler()
     if eksik is None:
@@ -1267,8 +1268,10 @@ def check_paketler(sap: bool) -> None:
         # kur.cmd SAP paketini AÇAR (install.py --sap) ⇒ SAP kapalı kullanıcıya önerilmez (tur 2, madde 5).
         add("INFO", temel + " (SAP paketi kapalı: şimdilik gerekmez; SAP'yi açtığında kurulum bunları kendisi kurar)")
         return
-    add("WARN", temel + " → kur.cmd'yi yeniden çalıştır (eksik paketi kendisi kurar); olmazsa elle: "
-        + inst.elle_kurulum_komutu(specler))
+    # Z102: %guncelle her güncellemede paket adımını koşar (install.py --paketler) ⇒ birincil yol odur (tek güncelleme
+    # yolu); aXet-Kur.cmd de aynı adımı koşar. Elle komut BT içindir (kullanıcıya komut verilmez).
+    add("WARN", temel + " → aXet'te %guncelle yaz (eksik paketi kendisi kurar; ya da aXet-Kur.cmd'ye tekrar çift "
+        "tıkla); olmazsa BT için elle kurulum komutu (sen çalıştırma): " + inst.elle_kurulum_komutu(specler))
 
 
 GIT_KIMLIK_KAPSAM = ("yalnız tanımsızlık ölçülür; tanımlı adresin doğruluğu ya da türetilmiş olup olmadığı "
@@ -1403,7 +1406,7 @@ def main() -> int:
         check_skills(proje, cfg)
         check_baglam_boyutu(cwd)
         for name, info, ok in inst.check_env():
-            add("PASS" if ok else "WARN", f"{name}: {info}")
+            add("INFO" if ok is None else ("PASS" if ok else "WARN"), f"{name}: {info}")  # None = isteğe bağlı araç yok
         check_git_kimlik(cwd)
         check_paketler(sap or (cwd / "sap-project.json").exists())
         check_tarayici()

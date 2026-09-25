@@ -24,7 +24,7 @@
 | CDS-FROM-1 | Kaynak tablo/view'lar sistemde var; Z kaynak view'lar aktif | BLOCKER | `adt_get` |
 | CDS-FROM-2 | Standart tablo alan adları hedef sistemde teyitli (eski sistemden kopya değil; alan adı ≠ DTEL adı) | BLOCKER | `cds.md` §3.3 |
 | CDS-FROM-3 | Standart tablo yerine released CDS arandı; kullanılmıyorsa gerekçe kullanıcıya bildirildi; halef `#CHECK` + guard ise geçilmedi | WARNING | `cds.md` §2 DCL-02, §5 |
-| CDS-FROM-4 | Classic view'da replacement tablosu (`DD02L-VIEWREF` dolu: `MSEG`, `MKPF`, `MBEW` …) yok → `nsdm_e_*` | BLOCKER | `cds.md` §2 NSDM-01 |
+| CDS-FROM-4 | Replacement tablosu (`DD02L-VIEWREF` dolu: `MSEG`, `MKPF`, `MBEW`, `MSKU` …) yok; `MARC`'tan miktar alanı okunmuyor — classic view **ve view entity** (view entity de fiziksel tabloyu okur: 0 satır ya da 0 miktar). Classic view → `nsdm_e_*`; view entity'de miktar → `I_MaterialStock_2` (`group by` + `sum`) ya da `nsdm_e_*` | BLOCKER | `cds.md` §2 NSDM-01 |
 | CDS-CUR | CURR/QUAN alanlarında `@Semantics.amount.currencyCode` / `quantity.unitOfMeasure` doğru referansla | BLOCKER | `tables-structures.md` §3.3 |
 | CDS-NS | Eski sistemden taşındıysa namespace ve alan rename'leri regex/kontrolle uygulandı; spesifikasyonda silinen alanlar kaynaktan çıkarıldı | BLOCKER | `cds.md` §3.4 |
 | CDS-KEY | En az bir `key` alan | WARNING | `cds.md` §3.1 |

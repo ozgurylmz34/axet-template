@@ -17,7 +17,7 @@ description: >
 
 ## When to use this skill
 - Kullanıcı aktif SAP sistemini görmek ya da DEV/QA/PRD arasında geçmek istiyor ("QA'ya geç", "client switch").
-- **Kullanma:** bağlantı dosyası yaratmak/düzenlemek (kullanıcı `KURULUMU-TAMAMLA.cmd` ile Notepad'de doldurur) ·
+- **Kullanma:** bağlantı dosyası yaratmak/düzenlemek (kullanıcı `KURULUMU-TAMAMLA.cmd`'nin gösterdiği `conn\*.env` dosyasını kendisi doldurur) ·
   bağlantıyı test etmek (`sap_adt_cli.py sap_doctor`, `%sap-adt-foundation`).
 
 ## How to use this skill

@@ -169,6 +169,47 @@ class DdicAdOnerisiKuraliTest(unittest.TestCase):
         self.assertIn("append", a.lower())
         self.assertRegex(a, r"Z DDIC[^|]*canlı[^|]*onay")
 
+    def test_kanonik_yasak_a_append_yaratimini_kullaniciya_birakir(self):
+        """Z103 (canlı T4): kullanıcı adları verse de append'i AI yaratmaz; A ve C'de DEVAM = kullanıcının sonucunu doğrula."""
+        md = _oku(AXET_HOME / "core" / "sap" / "00-sap.md")
+        a = next(s for s in md.splitlines() if s.startswith("| **A — "))
+        self.assertIn("sen yaratmazsın", a)
+        self.assertIn("Kullanıcı adları verse de yaratımı üstlenmezsin", a)
+        devam = next(s for s in md.splitlines() if s.startswith("**Yapılması gerekiyorsa:**"))
+        self.assertIn("A ve C'de işlemi kullanıcı kendisi yapar", devam)
+        ornek = next(s for s in md.splitlines() if s.startswith("**Örnek (A):**"))
+        self.assertIn("yaratımı sen yapmazsın", ornek)
+
+    def test_kanonik_yasak_a_standart_obje_yalniz_okunur(self):
+        """Kullanıcı kuralı 2026-09-24: standart DDIC objesi/program YALNIZ okunur; append alanının Z DTEL'ini de AI yaratmaz."""
+        md = _oku(AXET_HOME / "core" / "sap" / "00-sap.md")
+        a = next(s for s in md.splitlines() if s.startswith("| **A — "))
+        self.assertIn("Standart objeler YALNIZ OKUNUR", a)
+        self.assertIn("program", a)
+        self.assertRegex(a, r"append alanını ve o alanın Z DTEL'ini")
+        self.assertRegex(a, r"Standarda eklenmeyen bağımsız Z DDIC")
+
+    def test_rol_brifingi_s1_kanonik_bolumun_birebir_kopyasi(self):
+        """role-briefs S1 'birebir kopya' der: kanonik KESİN YASAKLAR bölümüyle aynı olmalı (Z103 bug gate)."""
+        import sys
+        sys.path.insert(0, str(AXET_HOME / "scripts"))
+        import sap_stamp
+        kanonik = sap_stamp._BOLUM.search(_oku(AXET_HOME / "core" / "sap" / "00-sap.md")).group(0).strip()
+        rb = _oku(SAP / "sap-dev" / "references" / "role-briefs.md")
+        bas = rb.index("```text\n", rb.index("### S1 — Kesin yasaklar")) + len("```text\n")
+        self.assertEqual(kanonik, rb[bas:rb.index("```", bas)].strip())
+
+    def test_append_kopyalari_yaratim_yasagini_tasir(self):
+        """Z103: append adını anan ikincil metinler yaratım yasağını da söyler (yalnız 'ad önerilmez' T4 hatasını üretti)."""
+        yollar = [SAP / "sap-dev" / "references" / "naming.md", SAP / "sap-adt-foundation" / "references" / "foundation-ops.md",
+                  SAP / "sap-abapgit-delivery" / "SKILL.md", SAP / "sap-cds-ddic" / "SKILL.md",
+                  SAP / "sap-cds-ddic" / "references" / "domain-dtel.md", SAP / "sap-dev" / "SKILL.md",
+                  AXET_HOME / "templates" / "package" / ".rules.md.tmpl"]
+        for yol in yollar:
+            with self.subTest(yol=yol.name):
+                self.assertRegex(_oku(yol), r"(?i)append'i[^.|]*(yaratma|yaratmaz|kullanıcı yaratır|kendisi yaratır|ZIP'e koyma)")
+        self.assertNotIn("yalnız kullanıcı talebiyle", _oku(SAP / "sap-dev" / "references" / "naming.md"))
+
     def test_cekirdek_kabuk_notu_find_kisitini_tasir(self):
         """Her oturum yüklenen çekirdek: Go `find` -iname/-maxdepth desteklemez → rg --files --iglob (Z46)."""
         md = _oku(AXET_HOME / "core" / "00-temel.md")

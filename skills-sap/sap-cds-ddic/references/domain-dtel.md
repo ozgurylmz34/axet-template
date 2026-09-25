@@ -4,7 +4,7 @@
 > ADT geneli: `%sap-adt-foundation` (`foundation-ops.md` §3.2 composite araçlar, §3.3 `master_language`).
 > Adlandırma: domain `ZSD001_D_<AD>`, DTEL `ZSD001_E_<AD>` (`%sap-dev` → `naming.md` §4.7). **Ad önerisi kuralı:**
 > önce yeniden kullanım; yeni Z domain/DTEL adını standarda uygun öner → canlıda kontrol et (varsa başka ad) → tablo hâlinde
-> sun → kullanıcının açık onayı olmadan yaratma (`%sap-dev` §6). Standart objeye append alanı adı önerilmez (kesin yasak A).
+> sun → kullanıcının açık onayı olmadan yaratma (`%sap-dev` §6). Standart objeye append alanı adı önerilmez; append'i ve o alanın Z DTEL'ini/domain'ini AI yaratmaz (kesin yasak A).
 > Alan tipleme sırası (released standart DTEL → mevcut Z DTEL → yeni Z DTEL → ilkel tip): `naming.md` §5.
 > Ölçümler S/4HANA (`s4_private`) sistemlerde yapıldı.
 

@@ -991,9 +991,10 @@ def kur(v: dict) -> int:
     if durum == "yazilamadi":
         print(f"SON ADIM (SENDE): {TAMAMLA_CMD}'ye çift tıkla ya da kendi terminalinde çalıştır: \"{tamamla}\" \"{hedef}\"")
     else:
-        print(f"SON ADIM (SENDE): proje klasöründeki {KISAYOL}'ye çift tıkla — SAP bağlantı şablonları "
-              "(conn\\DEV.env, conn\\QA.env) Notepad'de açılır; doldurup kaydet, tekrar çift tıkla: ayar onayı, kontrol "
-              "ve aXet'i açma sırayla sorulur.")
+        print(f"SON ADIM (SENDE): proje klasöründeki {KISAYOL}'ye çift tıkla — pencere SAP bağlantı dosyalarını "
+              "hazırlar (conn\\DEV.env zorunlu, conn\\QA.env isteğe bağlı) ve hangi dosyaya hangi alanları yazacağını "
+              "tam yoluyla söyler (editör açmaz, soru sormaz). Dosyayı doldurup kaydet, tekrar çift tıkla: ayar onayı, "
+              "kontrol ve aXet'i açma sırayla sorulur.")
     print(f"  Not: aXet oturumu bu adımları çalıştırmaz (parola ve onay sende kalır). Elle: \"{tamamla}\" \"{hedef}\"")
     return 0
 

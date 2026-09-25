@@ -3,11 +3,11 @@
 Her SAP sistemi bu klasörde bir dosyadır: `DEV.env`, `QA.env`. Aktif bağlantı proje kökündeki `.conn_adt`'dir.
 
 1. Proje klasöründeki `KURULUMU-TAMAMLA.cmd`'ye çift tıkla. `DEV.env` ve `QA.env` şablonlarını yazar (var olanı
-   ezmez) ve Notepad'de açar.
+   ezmez) ve hangi dosyaya hangi alanları yazacağını tam yoluyla söyler (dosyayı açmaz; Not Defteri ile sen açarsın).
 2. `<...>` yazan her değeri doldur (köşeli parantezleri de sil), kaydet. `ADT_SAP_TIER`, `ADT_SAP_LANGUAGE` ve
    `ADT_SAP_SYSTEM_NAME` satırları hazır gelir; değiştirme. QA sistemi yoksa `QA.env`'e dokunma, boş şablon atlanır.
 3. `KURULUMU-TAMAMLA.cmd`'ye tekrar çift tıkla. Dosyaları denetler: hatalı alan varsa alan adıyla söyler (değeri
-   basmaz) ve dosyayı yeniden açar. `DEV.env` geçerliyse aktif sistemi DEV yapar.
+   basmaz); düzeltip tekrar çift tıkla. `DEV.env` geçerliyse aktif sistemi DEV yapar.
 4. Sistem değiştirmek için aXet'te `%sistem` yaz ya da "QA'ya geç" / "DEV'e dön" de. Seçilen dosya `.conn_adt`
    olur; eskisi `conn/.conn_adt.bak` olarak saklanır.
 

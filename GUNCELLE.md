@@ -8,6 +8,10 @@
 günceller. Senin değiştirdiğin dosyalar izinsiz ezilmez, her adım ölçülür, her şey geri alınabilir.
 **Ne yapmaz:** projelerini güncellemez (o `%guncelle-proje`), SAP'ye dokunmaz, hiçbir şeyi push
 etmez, hiçbir şeyi zorla (`--force`) yapmaz.
+**Yeri:** kurulum 3 adımdır — ① `aXet-Kur.cmd` (ilk kurulum, çift tık) ② `%guncelle` (bu akış; güncellemenin
+TEK yolu) ③ `%yeni-proje` / `%guncelle-proje` → proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tık. `kur.cmd`
+yalnız sorun gidermededir (`docs/onboarding.md` §5): kullanıcıya güncelleme yolu olarak onu önerme. Her güncelleme
+SAP Python paketlerini de denetler (17. adım; klon güncel olsa da).
 **Klonda İKİ commit atar** (yerel kalır, push edilmez): ① `hazirla` adımı, güncelleme öncesi
 izlenen değişikliklerini `guncelle: yerel anlık <tarih>` commit'ine alır — geri dönüş noktan budur;
 ② `kapanis` adımı uygulanan kalemleri `guncelle: <yayın> kalemler <id…>` commit'ine yazar.
@@ -30,9 +34,9 @@ izlenmez.
 |---|---|---|---|---|
 | 0 | Başlangıç | `git -C <klon> fetch --tags`, bu dosyayı `origin/main`'den oku | 0 | ağ yoksa "şimdi güncellenemez" de, DUR |
 | 1 | Etkileşim | kullanıcıdan "başlayalım mı" cevabını al | açık onay | etkileşimsiz koşuyorsan DUR |
-| 2 | Ön kontrol | `guncelle.py onkontrol` — klon kimliği/origin/TMP + **bekleyen yayın kalemi var mı** (`plan`la aynı ölçüm) | 0 (1 + `Klon güncel:` satırı = güncel: kullanıcıya söyle, BİTİR — etiket atılmaz) | 2 ya da satırsız 1 → çıktıyı AYNEN göster, DUR |
-| 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 (1 + `Klon güncel:` satırı = güncel, hiçbir şey atılmadı → BİTİR) | 2 ya da satırsız 1 → DUR (geri alınamayacak bir güncelleme başlatılmaz) |
-| 4 | Plan | `guncelle.py plan` | 0 (1 + `Klon güncel:` satırı = güncel, bitir) | 2 ya da satırsız 1 → DUR |
+| 2 | Ön kontrol | `guncelle.py onkontrol` — klon kimliği/origin/TMP + **bekleyen yayın kalemi var mı** (`plan`la aynı ölçüm) | 0 (1 + `Klon güncel:` satırı = güncel: kullanıcıya söyle, **adım 17'yi koş**, BİTİR — etiket atılmaz) | 2 ya da satırsız 1 → çıktıyı AYNEN göster, DUR |
+| 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 (1 + `Klon güncel:` satırı = güncel, hiçbir şey atılmadı → adım 17, BİTİR) | 2 ya da satırsız 1 → DUR (geri alınamayacak bir güncelleme başlatılmaz) |
+| 4 | Plan | `guncelle.py plan` | 0 (1 + `Klon güncel:` satırı = güncel → adım 17, bitir) | 2 ya da satırsız 1 → DUR |
 | 5 | Seçim | plan tablosunu göster → `guncelle.py sec --hepsi` ya da `--kalem/--cikar` | 0 | 2 → tutarsızlığı açıkla, yeniden sor |
 | 6 | Önce-ölçüm | `guncelle.py olc --asama once` | 0 | 2 → DUR (ölçülemeyen güncelleme yapılmaz) |
 | 6b | *(6'nın İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi:** planda **yargı vakası yoksa** ve yayının `guncelle/ci-durum.json` kaydı bu etiket için `hepsi_yesil: true` ise adım 6 **test koşmaz**, tabanı CI hükmünden alır ve `[İKAME]` + `KAPSAM` satırlarını basar. **Bu satırları kullanıcıya AYNEN aktar.** Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) **normal ölçüme döner** — *ölçülemedi ≠ yeşil*. | 0 | — |
@@ -48,6 +52,7 @@ izlenmez.
 | 14 | Kapanış | `guncelle.py kapanis` — hükmü verir, `RAPOR.md`'yi üretir ve **kalem commit'ini** atar | 0 | 1 → raporu göster, seçenek sun |
 | 15 | Son | `RAPOR.md`'yi AYNEN göster; kapat-aç gerekip gerekmediğini `plan.json`'daki `yeniden_baslat` alanı söyler (`null` = gerekmez · `yeni-oturum` = kapat-aç · `install-sonra-yeni-oturum` = önce `install.py`, sonra kapat-aç) | — | — |
 | 16 | Tarayıcı hazırlığı *(otomatik, soru SORMA)* | `python "<klon>/scripts/tarayici_hazirla.py"` — kurulu Chrome/Edge + merkezi `playwright-cli` + `~/.playwright/cli.config.json` + duman testi; idempotent. Betik klonda yoksa (kalem alınmadı) koşma, "tarayıcı hazırlığı: betik yok" de | ilk satır `TARAYICI: HAZIR …` · çıkış daima 0 | `ATLANDI`/`EKSİK` güncellemeyi BOZMAZ: güncelleme yine "tamamlandı"; ilk satırı AYNEN aktar (neyin eksik kaldığını o söyler), yeniden deneme, başka komut önerme. Betik sınırlı sürede döner; çıktıda `TARAYICI:` satırı yoksa bu adım başarısız sayılır ama güncelleme yine devam eder/tamamlanır |
+| 17 | Python paketleri *(otomatik, soru SORMA — **her** `%guncelle`de koşar: klon güncel çıkıp 2/3/4. adımda BİTİRİLSE de, bitirmeden önce)* | `python "<klon>/scripts/install.py" --paketler` — SAP bağlantısının zorunlu Python paketlerini denetler, eksikse kurar (Z102: install.py değişmemiş olsa da). Global config'e, SAP yazma iznine DOKUNMAZ; SAP paketi kapalıysa hiçbir şey kurmaz. Klondaki install.py bu seçeneği tanımıyorsa (eski sürüm: çıkış 2 + `unrecognized arguments`) koşma, "paket denetimi: install.py eski" de | `PAKETLER: TAMAM` / `KURULDU` / `ATLANDI` satırı · çıkış daima 0 | `EKSİK`/`ÖLÇÜLEMEDİ` güncellemeyi BOZMAZ: güncelleme yine "tamamlandı"; `PAKETLER:` satırını ve altındaki `UYARI:` satırını AYNEN aktar (ne yapacağını o söyler), yeniden deneme, başka komut önerme, `BT için elle kurulum komutu` satırını kendin ÇALIŞTIRMA |
 
 **2. turda hâlâ FAIL varsa** üç seçeneği sun ve kullanıcı seçsin:
 (a) hepsini geri al — `guncelle.py geri-al --hepsi` (**önerilen**) ·

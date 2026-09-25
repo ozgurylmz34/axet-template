@@ -98,8 +98,9 @@ cli adt_get '{"name":"ZCL_DEMO_CLASS","object_type":"class","include_source":fal
   `create_not_persisted` (MSAG'de DEV olmayan paketle ölçülmüş sahte-200 sınıfı). `ddlx`/`dcls` kabuğu v0.5.2'den beri var (canlı ölçüldü
   2026-09-22); `srvb` → `unsupported_type` (kabuğu kullanıcı ADT/Eclipse'te açar). Açıklama boşsa `ADR_0005_D`.
 - **Mesaj sınıfına mesaj yazma (2026-09-13, çevrimdışı test edildi, canlı DOĞRULANMADI):** `adt_msgclass_read` (canlı liste + pull kaydı) →
-  nihai listeyi kullanıcıya göster → `adt_msgclass_write`. SAP PUT'u tüm listeyi değiştirir; araç canlı listeyi okuyup **birleştirir** (verilmeyen
-  mesajlar korunur), mevcut mesajı değiştirmek `allow_overwrite=true`, silmek `delete_numbers` ister; yazma sonrası canlı liste beklenenle kıyaslanır.
+  nihai listeyi kullanıcıya göster → `adt_msgclass_write`. Araç canlı listeyi okuyup **birleştirir** (verilmeyen mesajlar korunur), mevcut mesajı
+  değiştirmek `allow_overwrite=true` ister; yazma sonrası canlı liste beklenenle kıyaslanır. ⛔ Gövdeden çıkarmak mesajı SİLMEZ (SAP no-op); silme
+  yalnız ayrı çağrıda `delete_numbers` ile (`<mc:deletedmessages>` + kilit altı yeniden okuma + `delete_gate`; `sap-cds-ddic` message-class §3.7).
   Kaynak reçetenin kilit silen "güvenlik ağı" alınmadı (Yasak C): kilit alınamazsa `lock_conflict` → kullanıcı SM12'de kendi kilidini kontrol eder
   (§5). Metin ≤ 73 karakter, `master_language`'de. Ayrıntı: `tool-catalog.md` → `adt_msgclass_write`.
 
@@ -125,7 +126,8 @@ bir kez düzeltme) aynı politikayla (atomik yaratma, geri alma yok) — `tool-c
   birlikte yükseltir/düşürür (5-900 sn), yalnız gate payı için `AXET_DTEL_GATE_BUTCE_SN`; zaman aşımı mesajı bu yolu kendisi yazar (K10 — IMPLEMENTATION §20.9). Standart DTEL'ler
   denetlenmez — onları `adt_get` ile doğrula.
 - DTEL: 4 etiket (kısa/orta/uzun/başlık) `master_language`'de, dolu. Metinler spesifikasyondan; tahmin yok.
-  **DTEL/append adı önerilmez — kullanıcı verir.**
+  **Standart objeye append: adı AI önermez, append'i ve append alanının Z DTEL'ini AI yaratmaz — kullanıcı yaratır (kesin yasak A; standart objeler yalnız okunur).** Yeni bağımsız Z DTEL
+  adı `%sap-dev` §6 kuralıyla: standarda uygun öneri + canlı kontrol + kullanıcının açık onayı.
 - ⚠ **`adt_struct_create` tek başına alanları YAZMAYABİLİR** (ölçülmüş: SAP'de
   `component_to_be_changed : abap.string(0)` yer tutucusu kaldı, araç create+activate OK dedi).
   Önceki araç setinde çalışan yol: struct'ı composite ile kabuk olarak yarat → tam DDL'i
@@ -222,6 +224,31 @@ zararsız" diye geçiştirmek de yanlış (push ≠ aktif). Include tek başına
   Sessiz otomasyon YOK: DUR → açıkla → kullanıcıdan açık onay iste. CLI Z/Y guard'ı bunu reddederse
   guard'ı aşmaya çalışma; kullanıcı bağlam programını SE80/ADT GUI'den aktive edebilir (kanıtlı çözüm).
 - Tek-obje yolu (include URI'si, `also` olmadan) bağlam programını çözmez → kullanma.
+
+### 4.3b Z adlı genişletme objesi — standart hedef kapıda reddedilir (Yasak A, Z104)
+Genişletme objesinin KENDİ adı Z'lidir (`ZZAVBAK`, `ZE_I_SO`); genişlettiği standart obje kaynağın İÇİNDE yazar. Bu yüzden
+ad denetimi yetmez; yazma kapısı (`gate.check_std_extension`, adım 5) ve `adt_push_source` (ikinci katman) kaynağı
+`sapadt/std_ext_scan.py` ile tarar. Yazma anahtarı açık + DEV olsa da red:
+- `extend type <std> with <append>` (DDIC append) · `extend view [entity] <std> with` · `extend custom|abstract entity <std> with`
+  · `annotate view|entity <std> with` (metadata extension) → `ADR_0005_A`, mesajda satır + hedef.
+- BDEF `extension …;`: genişletilen BDEF kaynakta YAZMAZ (ADT metadata'sı; `extend behavior for <X>`'teki X alias olabilir —
+  SAP örneği `extend behavior for Shop`). Hedef yalnız `extension using interface <I>` ile görünür; yoksa fail-closed red.
+- Hedef Z/Y ya da `/Z…/`, `/Y…/` ise serbest (Z objeyi Z extend ile genişletmek). Yorum (`//`, `/* */`) ve `'…'` içindeki metin
+  taranmaz; baştaki BOM (U+FEFF) atılır. SAP'nin CDS/BDL'de `--`'yı yorum sayıp saymadığı DOĞRULANMADI ⇒ kaynak **üç
+  görünümde** taranır ve bulgular birleştirilir: (a) `--` satırı tüketilir, silinmez (içindeki `/*` blok açmaz) · (b) `--`
+  satır yorumu (SAP yorum sayıyorsa gerçek kod) · (c) `--` özel değil, içindeki `/*` blok açar (SAP saymıyorsa gerçek kod).
+  Herhangi bir görünüm standart hedef çözerse red; hiçbiri standart çözmez ama biri hedefi çözemezse `?` red; genişletmeyi
+  gören tüm görünümler yalnız Z/Y çözdüyse serbest. Tek görünüm yetmedi (ölçülen iki kaçak, 2026-09-24): `--` içindeki `/*`
+  blok açınca `-- /*` … `-- */` arasındaki gerçek kod siliniyordu; `--` metni korununca da BDEF başlığı `--` içindeki `;`'da
+  bitip `--` içindeki yem Z arayüzünü topluyordu (`extension -- using interface ZI_X ;` + alt satırda standart arayüz → `[]`).
+  Güvenlik, iki SAP davranışının (b)/(c) ile doğru modellenmesine dayanır — SAP'nin gerçek davranışı ölçülmedi.
+- Bilinen yanlış pozitifler (fail-closed yönü, kod değiştirilmez): ① `--` yorumunda standart hedefli genişletme metni geçerse
+  red. ② Alan/alias adı tam olarak `extend` / `annotate` ise hedef çözülemez → `?` red (ölçüldü:
+  `{ key extend, extend_flag as Extend }` → 2 bulgu `?`; `note as Annotate` → `?`; `extend_flag` tek başına serbest).
+  Çare: alanı/alias'ı yeniden adlandır.
+- Kaynak yok / tarayıcı koşamadı → `std_ext_scan_unavailable`. ABAP kaynak tipleri (class, program, FM…) taranmaz.
+- Ne yapılır: DUR → kullanıcıya açıkla. Append/extend'i kullanıcı yaratır, sonucu sana bildirir; sen `adt_get` ile okuyup
+  doğrularsın. Append/DTEL adı önerme.
 
 ### 4.4 Function module (FUNC/FF) — protokol notları
 - DENENEN — BAŞARISIZ: genel kaynak-yazma yolu (ETag/retry'lı stateful kilit) FM'de `423 InvalidLockHandle` verdi.
@@ -378,7 +405,7 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
 
 | Adım | Kim · nasıl | Sonuç |
 |---|---|---|
-| Slot oluştur (şablonla) | geliştirici: proje klasöründeki `KURULUMU-TAMAMLA.cmd` (→ `<TEMPLATE>/proje-tamamla.cmd` → `scripts/conn_sablon.py hazirla/dogrula`); `conn/DEV.env` + `conn/QA.env` şablonu Notepad'de doldurulur | denetim alan adı + kural basar, değer basmaz; parola dahil `<...>` yer tutucu reddedilir |
+| Slot oluştur (şablonla) | geliştirici: proje klasöründeki `KURULUMU-TAMAMLA.cmd` (→ `<TEMPLATE>/proje-tamamla.cmd` → `scripts/conn_sablon.py hazirla/dogrula`); `conn/DEV.env` + `conn/QA.env` şablonunu kullanıcı doldurur (pencere tam yolu + alanları söyler, editör açmaz) | denetim alan adı + kural basar, değer basmaz; parola dahil `<...>` yer tutucu reddedilir |
 | Slot oluştur | geliştirici, kendi terminalinde: `python <foundation>/scripts/setup_credentials.py --slot <SISTEM_ADI> --project-dir <proje>` | `conn/<SISTEM_ADI>.env` (değer basılmaz) |
 | Slotları gör | `python <foundation>/scripts/switch_tier.py --list --project-dir <proje>` | JSON: yalnız ad + tier + aktif sistem |
 | Sistemi seç (aXet) | `%sistem` skill'i: `conn_sablon.py ozet --json` (ad + tier + durum) → seçim → `switch_tier.py <AD>` | canlı ölçüldü 2026-09-23 (sahte slotlar): QA'ya geçiş ve DEV'e dönüş `.conn_adt`'yi değiştirdi, sandbox engellemedi |

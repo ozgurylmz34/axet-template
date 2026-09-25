@@ -3,15 +3,14 @@
 
 `scripts/conn_sablon.py`: SAP bağlantı ŞABLONLARI conn/DEV.env + conn/QA.env (yaz · doğrula · özet). Kural kopyalanmaz:
 anahtarlar ve alan kuralları setup_credentials.py'den; ek olarak parola dahil `<...>` yer tutucu denetimi.
-`proje-tamamla.cmd` (projede KURULUMU-TAMAMLA.cmd): şablon → Notepad → doğrula → DEV'i etkinleştir → davranış yüzeyi
-onayı → doctor → aXet'i aç. Etkileşim `choice`'a boru ile verilir (ölçüldü: choice boru girdisini okur) — ANCAK
+`proje-tamamla.cmd` (projede KURULUMU-TAMAMLA.cmd): şablon → (boşsa: yalnız BİLGİ — hangi dosya TAM yoluyla, hangi
+alanlar, tekrar çift tık; editör AÇILMAZ, soru SORULMAZ — kullanıcı kararı 2026-09-24) → doğrula → DEV'i etkinleştir →
+davranış yüzeyi onayı → doctor → aXet'i aç. Etkileşim `choice`'a boru ile verilir (ölçüldü: choice boru girdisini okur) — ANCAK
 davranış yüzeyi onayı boruyla VERİLEMEZ (v0.5.6 gate: `echo E | …` ile ajan kendi değişikliğini onaylayabiliyordu);
 testlerde onay, kullanıcının penceredeki `E`sinin eşdeğeri olarak `behavior_manifest.py generate` ile verilir;
-testlerde
-Notepad `AXET_KURULUM_EDITOR_ACMA=1` ile açılmaz. `E` cevabı son soruda VERİLMEZ (axet-code açılmasın). Sahte değerler
+`E` cevabı son soruda VERİLMEZ (axet-code açılmasın). Sahte değerler
 kullanılır, SAP'ye bağlanılmaz. cmd testleri yalnız Windows (cmd.exe).
-KAPSAM — bakılmayanlar: Notepad'in gerçekten açıldığı (yalnız cmd'deki `start "" notepad` satırı statik denetlenir) ·
-çift tıklanan pencerenin davranışı · `axet-code -c`'nin açılışı · aXet içinden geçiş (canlı ölçüm, rapor).
+KAPSAM — bakılmayanlar: çift tıklanan pencerenin davranışı · `axet-code -c`'nin açılışı · aXet içinden geçiş (canlı ölçüm, rapor).
 """
 from __future__ import annotations
 
@@ -186,10 +185,6 @@ class ConnSablonTest(ZProje):
 
 @unittest.skipUnless(os.name == "nt", "cmd.exe yalnız Windows'ta")
 class ProjeTamamlaTest(ZProje):
-    def setUp(self) -> None:
-        super().setUp()
-        self.env["AXET_KURULUM_EDITOR_ACMA"] = "1"
-
     def kos(self, *args: str, girdi: str = "\n", cwd=None) -> subprocess.CompletedProcess:
         # `pause` boru girdisi bitince bekletmez (ölçüldü); çıktı cmd (OEM) + python (utf-8) karışık → ASCII aranır
         return subprocess.run(["cmd", "/c", *args], input=girdi.encode("ascii"), capture_output=True,
@@ -215,12 +210,17 @@ class ProjeTamamlaTest(ZProje):
     def tier(self, d) -> str:
         return anahtar_deger((d / ".conn_adt").read_text(encoding="utf-8"))["ADT_SAP_TIER"]
 
-    def test_z70_dosya_crlf_ascii_ve_notepad_varsayilan(self):
+    def test_z70_dosya_crlf_ascii_editor_acmaz_soru_sormaz(self):
+        """Kullanıcı kararı (2026-09-24): pencere editör AÇMAZ (ne Notepad ne `start`), SAP bilgisi SORMAZ — yalnız
+        bilgi verir. Eski test Notepad satırının VARLIĞINI zorluyordu; sözleşme tersine döndü."""
         ham = CMD.read_bytes()
         self.assertTrue(all(b < 128 for b in ham), "cmd ASCII olmalı (konsol kod sayfası)")
         self.assertEqual(ham.count(b"\n"), ham.count(b"\r\n"), "cmd CRLF olmalı (goto/etiket)")
-        self.assertIn(b'start "" notepad "%CONN%\\DEV.env"', ham, "kullanıcı yolunda Notepad açılmalı")
+        self.assertNotIn(b"notepad", ham.lower(), "pencere editör AÇMAMALI (yalnız bilgi verir)")
+        self.assertNotIn(b'start ""', ham, "pencere başka program başlatmamalı")
+        self.assertNotIn(b"AXET_KURULUM_EDITOR_ACMA", ham, "test kaçış değişkeni artık gereksiz")
         self.assertNotIn(b"setup_credentials.py\" --project-dir", ham, "pencere SAP bilgisi SORMAMALI")
+        self.assertNotIn(b"set /p", ham.lower(), "pencere SAP bilgisi SORMAMALI (set /p girdi okur)")
 
     def test_z70_bos_klasor_once_yeni_proje_der(self):
         d = self.tmp / "bos"
@@ -245,6 +245,13 @@ class ProjeTamamlaTest(ZProje):
         self.assertEqual(r.returncode, 3, m)
         self.assertIn("[şablon yazıldı] conn\\DEV.env", m)
         self.assertIn("YAPMAN GEREKEN", m)
+        # yalnız BİLGİ: hangi dosya (TAM yol; DEV zorunlu, QA isteğe bağlı), hangi alanlar, tekrar çift tık
+        blok = m[m.index("YAPMAN GEREKEN"):]
+        self.assertIn(f'ZORUNLU      : "{d / "conn" / "DEV.env"}"', blok)
+        self.assertIn(f'Istege bagli : "{d / "conn" / "QA.env"}"', blok)
+        for alan in conn_sablon.DOLDURULACAK:
+            self.assertIn(alan, blok)
+        self.assertIn("tekrar cift tikla", blok)
         self.assertNotIn("[2/4]", m, "şablon doldurulmadan devam etti")
         self.assertFalse((d / ".conn_adt").exists())
         self.assertFalse((d / MANIFEST).exists())

@@ -63,7 +63,9 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
 1. `cli adt_get '{"name":"<AD>","object_type":"ddls"}'` → kaynak dolu, `define` satırı var, beklenen tür
    (abstract entity'de `abstract entity` geçmeli), gönderilenle içerik eşit (CRLF/son satır sonu normalize).
 2. `cli adt_inactive_objects` → obje ve bağımlıları (üst view, BDEF, servis bağlaması) listede değil.
-3. Classic view'da `adt_sql_query` ile `SELECT COUNT(*) AS cnt FROM <SQL_VIEW>` → veri olan kapsamda 0 değil (§2 NSDM).
+3. Classic view'da da view entity'de de `adt_sql_query` ile `SELECT COUNT(*) AS cnt FROM <SQL_VIEW>` → veri olan kapsamda 0
+   değil; view miktar okuyorsa ayrıca aynı süzgeçli Open SQL kontrol grubuyla **miktar toplamını** kıyasla (§2 NSDM — satır
+   var ama miktar 0 biçimi `COUNT(*)`'ı geçer).
 4. Toplu bir araç "zaten var, atlandı" deyip çıkış kodu 0 verebilir (önceki araç setinde ölçüldü: "1 başarılı, 0 hatalı",
    hiçbir şey yazılmamıştı) → çıkış kodu değil **readback** kanıttır.
 
@@ -102,21 +104,36 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
 - Released disiplini **proaktiftir** (yazılan koda uygulanır); mevcut koddaki ham tablo kullanımı otomatik iş kalemi değildir —
   migrasyon proje politikası kararıdır.
 
-### CDS-NSDM-01 · Classic DDIC view'da replacement tablosu DAİMA 0 satır (S/4)
+### CDS-NSDM-01 · Replacement tablosu üzerine view: 0 satır ya da 0 miktar (S/4) — classic view VE view entity
 - `@AbapCatalog.sqlViewName`'li classic view ya da SE11 view'ın `FROM`/`JOIN`'inde `DD02L-VIEWREF`'i dolu bir tablo
   (`MSEG`, `MKPF`, stok `MSSA` `MSSL` `MSSQ` `MSCD` `MSFD` `MSID` `MSKU` `MSLB` `MSPR`, değerleme `MBEW` `EBEW` `OBEW` `QBEW`
-  `VMBEW` + tarihsel `*H`, `MARCH` `MARDH` `MCHBH` `MKOLH` …) **hatasız aktive olur ve daima 0 satır döner**.
+  `VMBEW` + tarihsel `*H`, `MARCH` `MARDH` `MCHBH` `MKOLH` …) **hatasız aktive olur ve 0 satır ya da 0 miktar döner** (biçim tabloya göre değişir — aşağıda).
 - Neden: veri `MATDOC`'ta; Open SQL yönlendirmesi classic DB view'da çalışmaz, yönlendirme view'ın `DD25L-VIEWREF`'ine
-  bağlıdır ve bu yalnız SAP'nin kendi view'larında doludur. `MARA`/`MARC`/`MAKT` replacement değildir.
-- **Yerine:** uyumluluk CDS'i — `mseg` → `nsdm_e_mseg` · `mkpf` → `nsdm_e_mkpf` (alan adları aynı; `sqlViewName`, alan
-  listesi, key, WHERE değişmez → DB view yaşar → `USING` ile tüketen AMDP bozulmaz). View entity'de bu sorun yoktur ama
-  view entity DB view üretmez; AMDP `USING` zinciri varsa çözüm o değildir.
+  bağlıdır ve bu yalnız SAP'nin kendi view'larında doludur.
+- ⛔ **View entity de bu tuzağa düşer** (eski metin "view entity'de bu sorun yoktur" diyordu; canlı ölçüm çürüttü):
+  `MSKU` üzerine kurulu bir Z view entity `COUNT(*)=0` döndü; aynı süzgeçli Open SQL `msku` 3 satır getirdi; fiziksel
+  tabloda anahtarlar vardı ama tüm miktarlar 0'dı ⇒ view entity de **fiziksel tabloyu** okur, Open SQL yönlendirmesinden
+  geçmez.
+- **Tuzağın biçimi tabloya göre değişir:** `MSEG`/`MKPF`'te fiziksel tablo **boş** (0 satır); `MSKU` gibi stok
+  tablolarında **satırlar/anahtarlar var, miktar alanları 0** ⇒ `kulab > 0` gibi bir süzgeç sessizce 0 satır, süzgeçsiz
+  okuma "stok 0" gösterir (daha sinsi).
+- `MARA`/`MAKT` replacement değildir. ⛔ **`MARC` replacement'tır** (`DD02L-VIEWREF` dolu; eski metin "değildir" diyordu,
+  canlı ölçümle çürüdü) — yalnız **stok/miktar alanları** etkilenir; ana veri alanları (ör. `STAWN`) fiziksel tabloda
+  doğru okundu. Kural: replacement tablodan **miktar** okuyorsan aşağıdaki yola geç; ana veri okuyorsan satır kıyasıyla
+  kanıtla, varsayma.
+- **Yerine (classic view):** uyumluluk CDS'i — `mseg` → `nsdm_e_mseg` · `mkpf` → `nsdm_e_mkpf` (alan adları aynı;
+  `sqlViewName`, alan listesi, key, WHERE değişmez → DB view yaşar → `USING` ile tüketen AMDP bozulmaz). View entity'ye
+  çevirmek çözüm DEĞİLDİR: tuzak orada da var; üstelik view entity DB view üretmez, AMDP `USING` zincirini kırar.
+- **Yerine (view entity):** released stok görünümü **`I_MaterialStock_2`** (hareket düzeyi ⇒ `group by` +
+  `sum(MatlWrhsStkQtyInMatlBaseUnit)`; `InventorySpecialStockType`/`InventoryStockType` ile süz — ör. müşteri konsinyesi
+  serbest = `'W'` + `'01'`) ya da `nsdm_e_*` (released DEĞİL — projenin clean core politikasına bak). Alan adlarını ve
+  süzgeç değerlerini hedef sistemde `adt_get` / canlı veriyle teyit et.
 - Tam liste: `SELECT tabname, viewref FROM dd02l WHERE as4local = 'A' AND viewref <> ''`.
-- Teşhis: ① `dd02l` → replacement mı ② `SELECT viewname, viewref FROM dd25l WHERE viewname = '<SQL_VIEW>'` → boşsa kusur bu
+- Teşhis: ① `dd02l` → replacement mı ② (yalnız classic view) `SELECT viewname, viewref FROM dd25l WHERE viewname = '<SQL_VIEW>'` → boşsa kusur bu
   ③ aynı tabloyu taşıyan tüm view'larda `COUNT(*)` + `DD25L-VIEWREF`. ⚠ Kontrol grubunda `VIEWREF`'i de ölç: "standart bir
   view satır döndürüyor" demek yanlış elemedir — onun `VIEWREF`'i doludur.
 - Neden geç patlar: veri kapsamı boşken 0 doğru görünür; ilk gerçek veride çıkar. Aktivasyon, ATC, inaktif liste yakalamaz —
-  tek kanıt satır saymak. Boş view'a `NOT EXISTS`/anti-join yapan sayaç ise **şişer**.
+  tek kanıt satır saymak ve miktar okuyan view'da Open SQL kontrol grubuyla miktar toplamını kıyaslamak. Boş view'a `NOT EXISTS`/anti-join yapan sayaç ise **şişer**.
 
 ### CDS-NSDM-01 ek · Bilinen tuzak: çözüm seçimi ve etki taraması
 - **Belirti:** replacement kusuru bulunduktan sonra ya veri doğrudan hedef tabloya inilerek okunur ya da "başka etkilenen Z view yok" denir.

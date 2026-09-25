@@ -4,7 +4,7 @@ aXet.code'un Claude Code'a olabildiğince yakın çalışması için ortak kural
 kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullanıcının global aXet config'ini
 bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 
-> Sürüm: 0.3.0 · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.9 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -19,28 +19,11 @@ bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 | Yükleme kanaryası | ilk yanıtın ilk satırı `[AXET-CORE-… · SAP · proje · hafıza]` | çekirdek §0 |
 
 ## Gereksinimler
-- **aXet.code** — şirket kanalından kurulmuş ve girişi yapılmış (`axet-code -v` çalışıyor). Kurulum aracı aXet'i kurmaz.
-- Git ve Python ≥ 3.12 — kurulum aracı bunları **kurmaz**. Eksikse durur ve ne yapacağını söyler: şirketinin
-  yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste, sonra yeni bir PowerShell'de
-  komutu tekrar çalıştır. (Yalnız şirket dışı, kişisel bir makinede: `kur.cmd -Winget` eksikleri winget ile
-  kurmayı sorar.)
-  Python kurulu ama `python` komutu çalışmıyorsa (PATH'te değil ya da Windows mağaza kısayolu çıkıyor) bir şey
-  yapman gerekmez: kurulum aracı bulduğu Python'un klasörünü kullanıcı PATH'ine kendisi ekler.
-- SAP bağlantısının Python paketleri (`requests`, `urllib3`, `python-dotenv`) — **kendiliğinden kurulur**:
-  kurulum aracı (`kur.cmd`) eksik olanı bulduğu Python'un pip'iyle (`--user`) kurar; ayrı komut gerekmez.
-  `%guncelle` bunu yalnız `scripts/install.py`'nin değiştiği bir güncellemede yapar. Paket sonradan eksik kalırsa
-  `doctor.py` (ve oturum açılışı) SAP açıkken WARN verir; o zaman `kur.cmd`'yi tekrar çalıştırman yeter. İnternet
-  ya da şirket proxy'si engellerse kurulum **durmaz**, UYARI verir (aşağıda "Sorun giderme").
-- Git kimliği — bir kez, bu makinede: `git config --global user.name "Ad Soyad"` ve
-  `git config --global user.email "ad.soyad@sirket.com"` (değer `git config --global` dosyasına — genelde
-  `%USERPROFILE%\.gitconfig` — yazılır, tüm repolarda geçerlidir; kontrol: `git config --global user.email`). Girmezsen kurulum ve aXet etkilenmez; ama
-  commit'lerin Windows'un türettiği adresle atılır ve proje uzak sunucuya push edilirse o adres geçmişe girer
-  (geri alınamaz). Kimlik tanımsızsa `doctor.py` projede remote varsa uyarır (WARN), yoksa bilgi verir (INFO).
-  **GitHub hesabı gerekmez** (template herkese açık klonlanır).
-- Windows PowerShell (Windows ile gelir).
-- Önerilen: `rg` (ripgrep) — yoksa aXet'in arama aracı yavaşlar. Kurulum aracı hatırlatır ama durmaz; yazılım
-  merkezinden kurabilirsin.
-- İsteğe bağlı, yalnız ilgili skill'i kullanırken (skill kendi kurulum satırını söyler):
+Şirket portalından (Software Center / Company Portal) üç program: **aXet**, **Git**, **Python 3.12 ya da üstü**.
+Portalda bulamazsan BT'den iste. Başka bir şey kurman gerekmez: SAP bağlantısının Python paketlerini ve tarayıcı
+testini kurulum kendisi hazırlar. GitHub hesabı gerekmez.
+
+İsteğe bağlı, yalnız ilgili skill'i kullanırken (skill kendi kurulum satırını söyler):
 
 | Paket | Kullanan |
 |---|---|
@@ -50,78 +33,19 @@ bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 | `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
 | Node.js + `playwright-core` (proje içinde), `@abaplint/cli` (npx önbelleği) | `%sap-ui5-fiori` ui-smoke, `%sap-code-review` abaplint |
 
-İlk kez kuruyorsan adım adım rehber: [`docs/onboarding.md`](docs/onboarding.md) (kurulumdan sonra aXet içinde `%onboard`).
-
 ## Kurulum
-**En kolay yol:** [`aXet-Kur.cmd`](aXet-Kur.cmd) dosyasını indir (açılan sayfada **Download raw file** düğmesi) ya da
-ekibinden al ve **çift tıkla**. Aşağıdaki tek satırın aynısını yapar; sonunda sonucu sade bir mesajla yazar ve
-pencereyi açık tutar. Windows "bu dosya internetten geldi" uyarısı verirse **Daha fazla bilgi → Yine de çalıştır**.
+1. **Önce kur:** aXet, Git ve Python 3.12+ — şirket portalından.
+2. **[`aXet-Kur.cmd`](https://github.com/ozgurylmz34/axet-template/blob/main/aXet-Kur.cmd)'yi indir** (açılan sayfada **Download raw file**) ya da ekibinden al ve **çift
+   tıkla**. Soruları cevapla (git adın ve e-postan). Eksik program varsa pencere listesini verir: onları portaldan
+   kur ve dosyaya **tekrar çift tıkla**. Sonunda "Kurulum TAMAM — aXet'i aç." yazar.
+3. **aXet'i aç** (açıksa kapatıp yeniden aç). İlk yanıtın ilk satırı `[AXET-CORE-…` ile başlar. Sonraki
+   güncellemeler için aXet içinde **`%guncelle`** yaz.
+4. **Proje:** aXet içinde **`%yeni-proje`** (yeni proje) ya da **`%guncelle-proje`** (var olan proje) → proje
+   klasöründeki **`KURULUMU-TAMAMLA`**'ya çift tıkla → pencerenin gösterdiği **`conn\DEV.env`** dosyasını doldur →
+   **tekrar çift tıkla**.
 
-Terminal tercih edenler için: **PowerShell**'i aç ve şu satırı yapıştır. Komut kurulum betiğini geçici klasöre indirip çalıştırır:
-```powershell
-$f = Join-Path $env:TEMP 'axet-kur.ps1'; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/ozgurylmz34/axet-template/main/kur.ps1' -OutFile $f; powershell -NoProfile -ExecutionPolicy Bypass -File $f
-```
-Klonun kendisi bozulduysa (yerel `kur.ps1` dahil) aynı satırın **sıfırlayan** varyantı: klonu template ile birebir
-aynı hâle getirir, önce her şeyi `yedek/<tarih-saat>` dalına alır:
-```powershell
-$f = Join-Path $env:TEMP 'axet-kur.ps1'; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/ozgurylmz34/axet-template/main/kur.ps1' -OutFile $f; powershell -NoProfile -ExecutionPolicy Bypass -File $f -Sifirla
-```
-Tek satır komutlar klonu varsayılan yere (`%USERPROFILE%\axet`) kurar: `-Hedef` ile başka bir yere kurduysan
-aynı `-Hedef`'i bu komuta da ver, yoksa ikinci bir klon kurulur.
-
-Kurulum aracı sırayla şunları yapar:
-1. aXet'in kurulu olduğunu kontrol eder. Kurulu değilse durur.
-2. Git ve Python'u kontrol eder. Eksikse durur ve şirketinin yazılım merkezinden (ya da BT'den) kurmanı söyler;
-   kendisi bir şey kurmaz.
-3. Template'i `%USERPROFILE%\axet` klasörüne klonlar. Klasör zaten varsa günceller.
-4. `install.py --sap` ile global aXet config'ini bu klona bağlar.
-5. `doctor.py` ile kontrol eder.
-6. `python` komutu yeni terminalde çalışmıyorsa bulduğu Python'un klasörünü (ve `Scripts`) **kullanıcı** PATH'inin
-   başına ekler (yönetici gerekmez, mevcut girdilerin metnini değiştirmez). `kur.cmd -Kaldir` yalnız bu eklediğini geri alır. Klonu silmeden ÖNCE çalıştır: kayıt klonun içinde durur, klon silinirse PATH girdisi kalır.
-   Python klasörü PATH'inde zaten var ama önünde çalışmayan bir `python` (ör. Windows mağaza kısayolu) duruyorsa
-   klasörü başa taşır; `-Kaldir` taşınan girdiyi silmez (o senin girdindi). Birden çok klon kullanıyorsan
-   PATH'e yalnız ilk kuran klon ekler ve yalnız onun `-Kaldir`'ı geri alır; öbür klonda `kur.cmd`'yi tekrar
-   çalıştırman yeter.
-
-Bitince **yeni** bir aXet oturumu aç. İlk yanıtın ilk satırı `[AXET-CORE-…` ile başlamalıdır. Görünmüyorsa
-kurulum çalışmıyordur; `python $HOME\axet\scripts\doctor.py` çıktısına bak.
-
-Aynı araç klondan da çalışır:
-```powershell
-& $HOME\axet\kur.cmd                 # güncelle (git pull --ff-only + install.py + doctor)
-& $HOME\axet\kur.cmd -DenemeModu     # hiçbir şey yazmadan ne yapacağını göster
-& $HOME\axet\kur.cmd -Sifirla        # klonu template ile birebir aynı hâle getir (önce yedek dalı açılır)
-& $HOME\axet\kur.cmd -Kaldir         # config'ten template kayıtlarını çıkar (klasör silinmez)
-& $HOME\axet\kur.cmd -Hedef D:\araclar\axet   # başka klasöre kur
-```
-Araç yerel değişikliği olan bir klonu **kendiliğinden** güncellemez, `reset` ya da `stash` yapmaz; durur ve iki
-yolu söyler: değişikliklerini korumak istiyorsan onları kendin commit ya da stash et ve `kur.cmd`'yi tekrar
-çalıştır; korumak istemiyorsan `kur.cmd -Sifirla`.
-
-`-Sifirla` hiçbir şeyi silmeden önce yerel değişiklikleri, izlenmeyen dosyaları ve yerel commit'leri `yedek/<tarih-saat>`
-dalına alır ve yedeği doğrular; onayı senden ister (`SIFIRLA` yazarsın; `-DenemeModu` yalnız durumu gösterir).
-gitignore'lu dosyalarına dokunmaz (`.axet-guncelleme/` hariç: o yalnız **içindeki her şey yedek dalından geri
-alınabilir hâlde** yedeğe girdiyse silinir; giremediyse olduğu gibi bırakılır ve sana sebebiyle birlikte adıyla
-bildirilir) ve klon klasörünün dışına çıkmaz.
-Tek istisna: klonun içine dışarıyı gösteren bir bağ (junction/symlink) koyduysan git o bağın içine girer ve
-oradaki dosyaları da yedeğe alır — böyle bir bağın varsa önce kaldır. Klonun içindeki **ayrı bir git deposunu**
-araç silmez; bu `.axet-guncelleme/` içindekiler için de geçerlidir: git böyle bir klasörü yedeğe yalnız bir bağ
-(gitlink — 40 baytlık commit kimliği) olarak alır, dosyaları ve geçmişi yedek dalına GİRMEZ; silinseydi yedekten
-geri getirilemezdi. Araç kalanı sana adıyla bildirir. Klon işlem sonunda `main` dalında olur
-(güncellemenin çalışması için gerekli); klonun dalı başkaysa o dalın işi yedek dalında durur.
-
-Tek bir dosyayı geri almak için son mesajdaki komutu kullan:
-`git -C "$HOME\axet" restore --source yedek/<...> -- <yol>`.
-Çıkış kodları: `0` tamam · `1` durdu · `2` ön koşul eksik · `3` yeni terminal açıp tekrar çalıştır · `4` doctor FAIL.
-
-Elle kurmak istersen:
-```powershell
-git clone https://github.com/ozgurylmz34/axet-template.git $HOME\axet
-python $HOME\axet\scripts\install.py --sap      # --dry-run önce gösterir, --uninstall geri alır
-python $HOME\axet\scripts\doctor.py             # statik kontroller
-python $HOME\axet\scripts\doctor.py --live      # aXet'in çekirdeği fiilen yüklediğini ölçer (1 model çağrısı)
-```
-`install.py` yalnız kendi eklediği yolları ve kuralları yönetir, diğer ayarlarına dokunmaz; yazmadan önce yedek alır.
+Bu kadar. Takılırsan (pencere durdu, Windows uyarısı, paket indirilemedi, `python` bulunamadı, yeniden kurma ya da
+kaldırma, terminal yolu): [`docs/onboarding.md` → Sorun giderme](docs/onboarding.md#5-sorun-giderme).
 
 **SAP'ye yazma varsayılan kapalıdır.** Açmak için komutu **kendi terminalinde** çalıştır (aXet oturumu bu
 komutu çalıştıramaz):
@@ -135,40 +59,24 @@ sistem tipi `DEV`, çağrıda `--sap-write` ve kapsam beyanı (S0/S1 gerekçe, S
 > `-Hedef` ile başka yere kurduysan yolu değiştir.
 
 ## Yeni proje
-En kolay yol **aXet içinde `%yeni-proje`**: sorular sohbette tek tek sorulur, önce deneme çıktısı gösterilir,
-onayınla kurulur. Terminalde aynı işi `& $HOME\axet\yeni-proje.cmd` yapar (sorular terminalde). İkisi de aynı
-betiği (`scripts/yeni_proje.py`) çalıştırır:
-- klasörü açar, git reposu değilse `git init -b main` yapar (pre-commit denetimi ancak böyle kablolanır);
-- proje iskeletini kurar (`AGENTS.md`, `.axet-code.json`, proje hafızası, denylist, `sap-project.json`, kesin yasak damgası);
-- `sap-project.json` ve `AGENTS.md` alanlarını cevaplarınla doldurur; var olan değerleri ezmez;
-- `doctor.py` ile kontrol eder.
+aXet içinde **`%yeni-proje`** yaz: sorular sohbette tek tek sorulur, önce ne yapılacağı gösterilir, onayınla kurulur
+(klasör, git reposu, proje iskeleti, `AGENTS.md` ve `sap-project.json` alanları, kontrol). Var olan değerler ezilmez.
 
-Sonra **proje klasöründeki `KURULUMU-TAMAMLA.cmd`'ye çift tıkla** (araç bu kısayolu yazar ama çalıştırmaz).
-Kısayol klondaki `proje-tamamla.cmd`'yi çağırır; tekrar çalıştırmak güvenlidir, var olanı ezmez:
-1. SAP bağlantı şablonları `conn\DEV.env` ve `conn\QA.env` yazılır ve Notepad'de açılır. `<...>` yerleri doldur,
-   kaydet, kısayola tekrar çift tıkla. Dosyalar denetlenir (hatalı alan adıyla gösterilir, değer basılmaz; boş şablon
-   atlanır); geçerli DEV aktif sistem (`.conn_adt`) olur. QA sistemi yoksa `QA.env`'e dokunma. Parola dosyada düz
-   metindir; `conn/` git'e girmez ve aXet ajanına kapalıdır (denylist).
-2. Davranış yüzeyi onayı sorulur (onaylanacak dosyalar listelenir).
-3. `doctor.py` koşar; FAIL varsa durur.
-4. aXet'i projede açmayı sorar → ilk satırda `proje: <ad>` görünmeli.
+Sonra **proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (aXet bu dosyayı yazar ama çalıştırmaz):
+1. Pencere SAP bağlantı dosyalarını hazırlar ve hangisini dolduracağını tam yoluyla söyler: `conn\DEV.env`
+   (zorunlu) ve `conn\QA.env` (QA sistemin yoksa dokunma). Dosyayı aç, `<...>` yazan yerleri (adres, kullanıcı,
+   parola, client) doldur, kaydet. Pencere soru sormaz, dosyayı da kendisi açmaz.
+2. **Tekrar çift tıkla:** dosya denetlenir (hatalı alan adıyla gösterilir, değer basılmaz), DEV aktif sistem olur,
+   proje ayarlarının onayı sorulur, kontrol (`doctor`) koşar ve aXet'i projede açmayı önerir — ilk satırda
+   `proje: <ad>` görünmeli.
 
-Sistem değiştirmek için aXet'te `%sistem` (ya da "QA'ya geç"). Kısayol olmadan elle:
-`& $HOME\axet\proje-tamamla.cmd <klasör>`. Parolayı dosyaya yazmak istemeyen için terminal yolu:
-`python $HOME\axet\skills-sap\sap-adt-foundation\scripts\setup_credentials.py` (`--slot <AD>` ile `conn\<AD>.env`).
+Parola dosyada düz metindir; `conn/` git'e girmez ve aXet ajanına kapalıdır. Sistem değiştirmek için aXet'te
+`%sistem` (ya da "QA'ya geç"). Var olan projeyi şablona getirmek için `%guncelle-proje`; bitince yine
+`KURULUMU-TAMAMLA`'ya çift tıkla (ayar onayını o sorar).
 
-Bağlantı teşhisi: `sap_adt_cli.py sap_doctor`.
 SAP projesinde `AGENTS.md` içindeki kesin yasak bloğunu elle değiştirme: template güncellenince
 `new_project.py --sap` bloğu yeniler, `doctor.py` eski ya da değiştirilmiş damgayı FAIL olarak gösterir.
-
-Elle kurulum (ayrıntılı denetim isteyenler için):
-```powershell
-cd C:\projeler\benim-projem
-git init -b main
-python $HOME\axet\scripts\new_project.py --sap   # sonra AGENTS.md ve sap-project.json'daki <…> alanlarını doldur
-```
-Davranış yüzeyi (`AGENTS.md`, `.axet-code.json`, denylist, `.githooks/`, `validators-local/`) her değiştiğinde
-onayı yine kendi terminalinde `behavior_manifest.py generate` ile ver.
+Terminal yolu, elle kurulum ve bağlantı teşhisi: [`docs/onboarding.md`](docs/onboarding.md) §3.
 
 ## Yeni paket (SAP projesi)
 ```powershell
@@ -193,30 +101,12 @@ aXet marketplace'inden skill kurulabilir. Template skill'leriyle çakışmaması
   dokunan dış skill'i ve global kurulumu WARN olarak gösterir. Çelişkide template skill'i ve kesin yasaklar geçerlidir.
 
 ## Sorun giderme
-| Belirti | Bak |
-|---|---|
-| Kurulum aracı aXet'i bulamadı (çıkış 2) | aXet'i şirket kanalından kur, girişi yap, yeni PowerShell aç |
-| Kurulum aracı Git ya da Python eksik dedi (çıkış 2) | Şirketinin yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste. Kurduktan sonra **yeni** bir PowerShell aç ve komutu tekrar çalıştır. Python en az 3.12 olmalı |
-| Kurulum aracı `PAKETLER: EKSİK` dedi ya da SAP aracı `No module named 'requests'` (ya da `'dotenv'`) diyor | pip paketi indiremedi, çoğunlukla şirket proxy'si yüzünden. BT'den bu makine için pip proxy ayarını (ya da şirket paket aynasını) iste, sonra `kur.cmd`'yi tekrar çalıştır: eksik paketi kendisi kurar. "pip bulunamadı" diyorsa Python pip olmadan kurulmuştur: BT'den pip ile kurmasını iste. Çıktıdaki `Elle kurulum:` satırı aynı işi elle yapar. Kurulum bu yüzden durmaz, çıkış kodu değişmez |
-| `python` "bulunamadı" diyor ama Python kurulu | `kur.cmd`'yi tekrar çalıştır: kullanıcı PATH'ine kendisi ekler. Sonra **yeni** terminal / yeni aXet oturumu aç. Araç "UYARI: yeni terminalde 'python' hâlâ başka bir yere gidiyor" derse makine PATH'inde önde eski bir Python vardır: BT'den o girdiyi kaldırmasını iste. `yeni-proje.cmd` ve `proje-tamamla.cmd` bu arada `py -3` ile de çalışır |
-| Kurulum aracı yeni terminal istedi (çıkış 3) | Yalnız `-Winget` ile olur: winget kurulumu PATH'i bu pencereye yansıtmadı. Yeni PowerShell'de `kur.cmd`'yi tekrar çalıştır |
-| Başka bir klonun kayıtlı olduğu uyarısı (çoğunlukla çıkış 4) | Config eski bir klonu da gösteriyor (ör. önceki sürümle `C:\axet`'e kurulmuş). Doctor'daki skill ad çakışması FAIL'leri bundan gelir: skill'leri yeniden adlandırma. Uyarıdaki `--uninstall` komutunu o klon için kendin çalıştır (o klonun `config/sap-write.local` dosyası da silinir), sonra `kur.cmd`'yi tekrar çalıştır. Eski yerde kalmak istersen `kur.cmd -Hedef C:\axet`. Uyarıdaki klon klasörü artık yoksa (silinmiş ya da taşınmış) araç "kayıt bayat" der ve `--uninstall` önermez: sondaki BAYAT KAYIT listesindeki girişleri config dosyasından elle sil (araç config'e kendisi yazmaz), sonra yeni aXet oturumu aç |
-| Kurulum aracı "klon karşılaştırması ÖLÇÜLEMEDİ" dedi | Hedef yol (junction/symlink) Python ile çözülemedi. Config'teki kayıtlı klonun bu klonun kendisi olup olmadığını elle kontrol et; araç bu durumda hiçbir kaydı kaldırmayı önermez |
-| Kurulum aracı "git çalıştırılamadı" dedi | Listelenen git.exe kendi terminalinde `git --version` ile çalışıyor mu bak. "unable to access …/git/config" görüyorsan XDG_CONFIG_HOME değerindeki geçersiz karakteri düzelt |
-| Kurulum aracı doctor FAIL ile bitti (çıkış 4) | Kurulum yazıldı ama doğrulama geçmedi: çıktıdaki `[FAIL]` satırları; başka klon uyarısı varsa bir üst satır |
-| İlk satırda `proje: YOK` | Oturum proje kökünde mi açıldı; `AGENTS.md`'de `PROJECT-ID` satırı var mı |
-| İlk satırda `AXET-CORE` yok | Kurulum tamamlandı mı; `doctor.py` global config satırları |
-| SAP CLI yalnız `ping` açıyor | `sap-project.json` yok ya da `sap_profile` / `master_language` geçersiz |
-| Yazma reddi `tier_not_writable` | `.conn_adt` içindeki sistem tipi DEV değil ya da okunamıyor |
-| Skill listede yok | `doctor.py` (frontmatter biçimi, açıklama ≤ 1024 karakter); aXet logu `.axet-code/logs/axet-code.log` |
-| Skill ad çakışması FAIL | Çakışan skill başka bir template klonundaysa: yukarıdaki "başka bir klon" satırı. Dış skill ise yeniden adlandır ya da kaldır (marketplace kurulumu: `skill_uninstall <ad>`) |
-| Denylist değişikliği etkisiz | Yeni oturum aç |
+Belirti → çözüm tablosu: [`docs/onboarding.md` → Sorun giderme](docs/onboarding.md#5-sorun-giderme).
 
 ## Güncelleme
-```powershell
-& $HOME\axet\kur.cmd
-```
-Klonu günceller ve kurulumu yeniler. Yeni kurallar ve skill'ler bir sonraki aXet oturumunda yüklenir.
+aXet içinde **`%guncelle`** yaz. Klonu yeni yayına seçmeli olarak taşır (senin değişikliklerin korunur), SAP Python
+paketlerini denetleyip eksikse kurar ve tarayıcı testini hazırlar. Yeni kurallar ve skill'ler bir sonraki aXet
+oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
 
 ## Günlük kullanım
 - Oturum açılışı: model ilk yanıttan önce `scripts/session_brief.py`'yi çalıştırır (proje `AGENTS.md` "Oturum" bölümü) —
@@ -246,138 +136,53 @@ Klonu günceller ve kurulumu yeniler. Yeni kurallar ve skill'ler bir sonraki aXe
 - `ctrl+p` → **User** sekmesi — projeye özel komutlar (`.axet-code/commands/`)
 - Kimlik bilgilerini (kullanıcı adı, şifre, token) sohbete **yazma**: prompt'lar kurumsal denetime gider.
 
-## Bilinen sınırlar (aXet.code 1.3.0, ölçülmüş)
-- **Hook yok:** kurallar talimat + izin kuralı + script ile uygulanır; mekanik zorlama sınırlıdır.
-- **Merkezi klonun `edit` yazma koruması YOK** (2026-09-18'de kaldırıldı; önce `install.py` global config'e klon
-  klasörleri için `edit` deny yazıyordu). Gerekçe: `%guncelle` klonun içine yazar, koruma kendi akışını
-  engelliyordu; zaten kazara değişikliğe karşı bir hatırlatmaydı — `bash` üzerinden ve farklı harf
-  karışımıyla atlatılabiliyordu (güvenlik sınırı değildi). Yerine **görünürlük** var: `doctor.py` klonun
-  davranış yüzeyindeki (`core/`, `skills/`, `skills-sap/`, `AGENTS.md`, `config/permissions.json`,
-  `.axetcode-denylist`) değişiklikleri git'e karşı raporlar; `%guncelle`'nin kendi commit'leri bilgi satırı,
-  kullanıcı kaynaklı sapma WARN olur. Yeniden kurulum eski `edit` deny'larını config'ten siler.
-- **Özel ajan tanımı çalışmaz** (`.axet-code/agents`, `agent create`): devir yerleşik `agent` aracıyla yapılır.
-- **Bash izninde "Allow for Session" bütün bash'e yayılır** (ölçüldü 2026-09-18): tek bir komuta verilen oturum onayı
-  o oturumdaki TÜM bash komutlarını kapsar; `ask` kuralları da sorulmadan geçer (`deny` geçerli kalır). Bash için
-  oturum onayı verme; her komutu tek tek onayla.
-- **`axet-code run` ve `-y` izin sormaz:** `ask` kuralları run modunda sormadan onaylanır (ölçüldü); deny run modunda
-  da bloklar. Betikten çağırırken stdin kapatılmalı. `ask`'ın TUI'de sorması beklenir (DOĞRULANMADI).
-- **İki desen aynı komuta uyunca uzun olan kazanır.** ⚠ Devamı olan *"eşitlikte ask kazanır, kural sırası etkisizdir"*
-  (2026-09-14, ask↔deny, tek seri) **en azından eksiktir**: 2026-09-17'de allow↔deny çiftlerinde eşit uzunlukta kazanan
-  **değişti** — anahtar sırasına (ya da alfabetik sıraya; ikisi ayırt edilemedi) göre bir vakada `allow`, diğerinde `deny`
-  kazandı. İki ölçüm farklı karar çiftlerine bakıyor ve **hangisinin genel olduğu ÖLÇÜLMEDİ**; ikisi de tek koşumdur.
-  Güvenli okuma: **eşitlikte kazananı öngöremeyiz ⇒ eşit uzunlukta desen yazma.** Bu yüzden izin-verici desenler
-  (`ask` **ve** `allow`) deny'lardan kısa tutulur ve eşitlik de ihlal sayılır
-  (testli: `tests/test_install.py` her izin-verici/deny çiftini denetler). Yeniden kurulum ve
-  `--uninstall` önceki sürümlerin eski desenlerini kullanıcı config'inden siler; karar değiştirilmişse dokunmaz, uyarır
-  (testli). Yeniden kurulum yapılmamış makinede `doctor.py` global config'te kalan eski deseni WARN ile ve
-  `install.py` tarifiyle gösterir; kararı kullanıcı değiştirmişse yalnız bilgi satırı basar (testli). Eski uzun `*Remove-Item*-Recurse*` ask'ı `git reset --hard HEAD~1; powershell … Remove-Item … -Recurse`
-  zincirinde `*git reset --hard*` deny'ını ezdi ve komut sorulmadan çalıştı. Kısa ask'ın dayanağı öncelik ölçümü (deny
-  uzunsa deny kazandı) ve uzunluk testidir; yeni kurallarla aynı zincirin reddedilmesi yalnız deny'ın o zincirde
-  kazandığını gösterir, `*Remove-It*`'in eşleştiğini göstermez.
-  Tek ölçüm serisidir (2026-09-14); uzunluğun sabit karakterle mi toplam uzunlukla mı sayıldığı DOĞRULANMADI (test ikisini
-  birden ister). Proje ya da kullanıcı config'ine eklenen uzun bir desen de template kuralını ezebilir. **`allow` için ölçüldü**
-  (2026-09-17, tek koşum, nötr belirteç): uzunluk kuralı allow'da da işliyor — **uzun `allow` kısa `deny`'ı ezdi**
-  (komut çalıştı), uzun `deny` kısa `allow`'u ezdi. ⚠ **Eşitlikte sonuç tutarsız çıktı:** eşit uzunlukta iki
-  allow/deny çiftinde kazanan değişti (anahtar sırasıyla — ya da alfabetik sırayla; ikisi ayırt EDİLEMEDİ),
-  yani eşitlikte kazananı karar türü belirlemiyor ve sonuç nondeterministik olabilir. **Pratik kural: eşit
-  uzunlukta desen yazma.** Şablonda `allow` deseni yoktur; uzunluk testi bugün yalnız ask↔deny çiftlerini denetler.
-- **Kısa ask desenleri geniş sorar:** `*deploy_ui*` deploy dışı çağrılarda da onay ister (`deploy_ui.py --help`, `prepare`,
-  `verify`); `*Remove-It*` özyinelemesiz `Remove-Item` ve `Remove-ItemProperty`'yi de kapsar.
-- **`rm` ailesinde karar asimetrisi (bilinçli, ölçüme dayalı):** `*rm --recursive*` **deny**'dir ama `*rm -rf *` ve
-  `*rm -r *` **ask**'tır (yani `run` kipinde sormadan onaylanır). Uzun biçim yeni ve dar olduğu için deny yazıldı;
-  kısa biçimler eski, geniş eşleşmeli ve uzunluk-ezme yüzeyini büyüttükleri için ask kaldı. *"Özyinelemeli silme
-  deny'dir"* diye genelleme YAPMA.
-- **İzin deseni komut metninin tamamına glob olarak uyar:** baştaki `*` yoksa desen metnin başına bağlıdır ve
-  `echo x; rm -rf …` ya da `cmd /c "rd /s …"` gibi zincirli/sarmalanmış komutları kaçırır (ölçüldü). Silme ve git
-  desenleri bu yüzden `*` ile başlar: başa bağlı hâlleri `cd … && git reset --hard`, `echo x; git clean -fd` ve
-  `cmd /c "git reset --hard"` biçimlerini geçirdi, `*` önekli hâlleri reddetti. `Remove-Item` eşleşmesi yalnız
-  `powershell -Command` ile sarmalanmış biçimde görüldü; `*Remove-It*` ve `*deploy_ui*` desenlerinin kendi eşleşmesi
-  ölçülmedi. Yeni desenlerden `echo x; git clean -xdf …` reddedildi ve `cmd /c "rd /q /s …"` eşleşti (ölçüldü).
-  **2026-09-17'de canlı ölçüldü** (aXet.code 1.3.0, lab projesi; kanıt motor tarafından: `BgJob started` log satırı +
-  işaret dosyası — model beyanı kanıt sayılmadı): `git clean -df`/`-fdx`/`-d -f`/`--force`, `git -C x push --force`,
-  `rm -fr`, `rm -R`, `del /q /s`, `rmdir /s`, `rd /s ` desenlerinin **hepsi eşleşti**; kontrol grubu
-  (`git clean --dry-run`, `git push origin main`, `git status --short`, `rm -i`, `rmdir empty`) yanlış pozitif vermedi.
-  ⚠ **"Eşleşti" ≠ "reddetti":** son beş desenin (`rm -fr`, `rm -R`, `del /q /s`, `rmdir /s`, `rd /s `) dosyadaki
-  gerçek kararı **`ask`**'tir; eşleşmeyi ölçebilmek için lab config'inde GEÇİCİ olarak `deny` yapıldılar. Ölçülen şey
-  *"desen bu komut metnine uyuyor"*dur, *"`ask` ne yapar"* DEĞİL — o ayrı ve zaten ölçülü: **`axet-code run` kipinde
-  `ask` SORMADAN onaylar** (yukarı bkz.). Yani bu beş komut bugün **bloklanmıyor**.
-  `bash -c` ve değişkenle kurulan komut ölçülmedi; desenler güvenlik sınırı değildir.
-- **`git -C <yol> …` KAÇIŞI — ölçüldü ve KISMEN KAPATILDI (2026-09-17, kullanıcı kararı).**
-  `git` ile alt-komut arasına giren her global seçenek (`-C`, `--git-dir=`, `-c ayar=değer`) `*git <altkomut>…*`
-  kalıbındaki desenleri ATLAR. Ölçüldü (simülasyon, `fnmatch.fnmatchcase`, 40 desenin tamamına karşı):
-  `git -C <yol>` ile `branch -D`, `checkout -- .`, `stash drop`, `push origin +`, `reset --hard`, `clean -xdf`
-  biçimlerinin **hiçbiri** kurala uymuyordu; kontrol `-C`siz `git branch -D f` → deny. Bu, aXet'in kendi
-  belgesinin önerdiği biçimdir (`kur.ps1` çıktısı `git -C "$hedef" branch -D …` önerir) ⇒ sınır teorik değildi.
-  **Eklenen 6 dar desen:** `*git -C * branch -D*`, `*git -C * checkout -- .*`, `*git -C * stash drop*`,
-  `*git -C * push origin +*`, `*git -C * reset *--hard*`, `*git -C * clean -*f*`. Eklendikten sonra 13 hedef
-  biçimin 13'ü de deny; 12 komutluk kontrol grubunda (`status`, `log`, `push`, `push origin main`, `branch -d`,
-  `checkout -- src/foo.py`, `checkout main`, `stash list`, `stash pop`, `reset --soft`, `clean -n`,
-  `clean --dry-run` — hepsi `git -C <yol>` önekli) **yanlış pozitif yok**.
-  *Bilinen yanlış pozitif:* `git -C <yol> clean -n <içinde 'f' geçen yol>` — `clean -*f*` bilinçli olarak
-  `-f`/`-df`/`-xdf`/`-fdx`/`-d -f`/`--force` ailesinin tamamını **tek** desenle tutar; altı ayrı desen yazmak
-  uzunluk-ezme yüzeyini gereksiz büyütürdü.
-  ⚠ **HÂLÂ AÇIK** (bilinçli, `tests/test_install.py::test_git_c_disi_kacis_bicimleri_hala_acik` ile kilitli):
-  `git -c ayar=değer <altkomut>` biçimi (kombinatoryal, desenle kapatılamaz; **istisna:** dal silme ailesi Z75'te
-  `*git *branch* …*` biçimiyle global seçenekten bağımsız kapatıldı — aşağıya bkz.) ·
-  `git --git-dir=<yol>` yalnız yol `.git` ile bitiyorsa **kazara** eşleşir (koruma değil, tesadüf) ·
-  ve bu 6 desenin tamamı **simülasyonla** ölçüldü, canlı `axet-code run` ile **DOĞRULANMADI**
-  (kardeşi `*git -C * push -f*` canlı ölçülmüştü, biçim birebir aynı).
-- **Yeni deny desenleri (2026-09-17, kullanıcı onayı):** `*git -C * push -f*`, `*git push origin +*`, `*git reset *--hard*`,
-  `*rm --recursive*`, `*git stash drop*`, `*gh repo delete*`, `*git branch -D*`, `*git checkout -- .*`. Sekizi de eklendikten
-  sonra canlı ölçüldü: hepsi reddedildi; kontrol grubu (`git -C x push`, `git reset --soft HEAD~1`, `rm --interactive`,
-  `git stash list`, `gh repo view`, `git branch -d`, `git checkout -- src/foo.py`) çalıştı. `*git checkout -- .*` **dar**
-  seçildi: yalnız `--` ayıraçlı nokta-biçimini tutar, **tek dosya geri alma çalışmaya devam eder**;
-  ⚠ ayıraçsız kardeşleri **kapsam dışıdır**: `git checkout .`, `git checkout -f .`, `git restore .`,
-  `git restore --staged .` hiçbir kurala uymuyor (ölçüldü 2026-09-17, simülasyon) — oysa `git checkout .` de
-  tam olarak "tüm ağacı geri alan nokta biçimi"dir. Kapatılmadı, **belgelendi**; bilinen yanlış
-  pozitifi `git checkout -- .gitignore` ve `git checkout -- ./yol`. Seçim ölçütü "daha geri alınamaz olan"dı: commit'siz iş
-  için reflog YOKTUR ⇒ `checkout -- .` bu setin en geri alınamazıdır, `branch -D`/`stash drop` reflog/fsck ile kurtarılabilir.
-- **Zorla dal silme eşdeğerleri (Z75, 2026-09-23, kullanıcı onayı).** Yalnız `*git branch -D*` vardı. Gerçek gitte
-  (scratch repo, birleşmemiş dal) ölçüldü: `-d -f`, `-df`, `-fd`, `-fD`, `-Df`, `-d --force`, `--force -d`, `--delete -f`,
-  `--delete --force`, `-f -d`, `-f --delete`, `--force --delete`, **sondaki** bayrak (`-d <dal> -f`) ve tekil önek
-  kısaltması (`--delete --forc`) birleşmemiş dalı **sildi**; düz `-d` reddetti. 12 deny eklendi — bayrak sırasından
-  bağımsız, `*git *branch*` önekli (`-C`/`-c`/`--git-dir=` de tutulur): `*git *branch* -d* -f*`, `*git *branch* -d* --forc*`,
-  `*git *branch* --d* -f*`, `*git *branch* --d* --forc*`, `*git *branch* -f* -d*`, `*git *branch* -f* --d*`,
-  `*git *branch* --forc* -d*`, `*git *branch* --forc* --d*`, `*git *branch* -df*`, `*git *branch* -fd*`, `*git *branch* -fD*`,
-  `*git *branch* -D*`. Meşru `git branch -d <dal>` (adında `-f` geçen dallar dahil) ve okuma biçimleri (`--list`, `-a`, `-v`,
-  `--show-current`, `--format=…`) ile adında/mesajında "branch" geçen başka git komutları **düşmez**
-  (`tests/test_install.py::ZorlaDalSilmeTest`). **Bilinçli açık:** `git branch -f/--force <dal> <ref>` (zorla taşıma —
-  dalın kendi reflog'u korunur, `<dal>@{1}` ile geri alınır; ölçüldü) ve `-M`. `-D` ise dalın reflog'unu da siler
-  (ölçüldü); kurtarma yalnız HEAD reflog'u ya da `git fsck` dangling commit ile, gc'ye kadar. Bilinen yanlış pozitif:
-  `git branch …` ile **zincirlenmiş** ve sonrasında ` -d…`/` -f…` bayrakları geçen başka komut. Bilinen açık: harf
-  varyantı, `-d`/`-f` ilk harf olmayan kümeler (`-vdf`), çift boşluk.
-- **Yanlış pozitif: desen metni komutun herhangi bir yerinde geçerse eşleşir.** Ölçülen: `echo "rm -rf notu"`,
-  `python x.py "rd /s metni"`, `git commit -m "git push --force notu"`, `echo "git reset --hard açıklaması"`.
-  Simülasyonla beklenen (ölçülmedi): `rg -n "git reset --hard" .` ve `grep -rn "git reset --hard" docs` (deny),
-  `git log --grep="git clean -xdf"` (deny), `git push -u origin dal && gh pr create -f` (deny),
-  `git -C x push origin main --force-with-lease` (deny), `git rm -r --cached build` ve `git rm -R x` (ask),
-  `rg -n "rm -fr" docs` ve `rg "rmdir /s" docs` (ask). Commit mesajında bu metinler geçecekse mesaj dosyasını bash `echo`
-  ile değil düzenleme aracıyla yaz (echo komutu da eşleşir) ve `git commit -F <dosya>` ile ver (`-F` yolu ölçülmedi).
-- **Yerel MCP yok sayılır:** entegrasyonlar script ya da kurumsal Connector ile yapılır.
-- Koşullu (dosya türüne göre) kural yükleme yok: çekirdek her oturum yüklenir, bu yüzden kısa tutulur.
-- **Bağlam dosyaları kesilmez:** `context_paths` ile verilen dosyalar tamamen gönderilir. Toplam 1M token aşılınca
-  oturum uyarısız hatayla biter; Türkçe metinde bu yaklaşık 1,9 MB'a denk gelir (ölçüldü). ~940K token civarında satır
-  hatırlama bozuldu. Proje listesi global listeyi ezmez, birleşir. `doctor.py` toplamı 200 KB'ta WARN, 1 MB'ta FAIL
-  olarak raporlar; alt klasör ve `.md` dışı dosyalar yalnız üst sınıra katılır.
-- **Klon koruması kazaya karşıdır, güvenlik sınırı değildir:** başka bir projede açılan aXet oturumu bu klonun
-  `core/ skills/ skills-sap/ scripts/ config/ templates/` klasörlerine yazamaz (`memory/` serbest). aXet yolu
-  harfe duyarlı eşleştirir; beklenmedik bir harf karışımı ya da bash komutu kuralı atlatabilir. Klonun kendi
-  içinde açılan oturumda kural devreye girmez (bakım bu yüzden serbesttir).
+## Bilinen sınırlar
+aXet.code 1.3.0'da ölçüldü. Bilmen gerekenler:
+
+- **Bash izninde "Allow for Session" verme.** Tek bir komuta verilen oturum onayı o oturumdaki bütün bash
+  komutlarını kapsar; "sor" kuralları da sorulmadan geçer (yasaklar geçerli kalır; ölçüldü 2026-09-18). Her komutu
+  tek tek onayla.
+- **`axet-code run` ve `-y` izin sormaz:** "sor" kuralları sormadan onaylanır, yalnız yasaklar bloklar. SAP'ye yazan
+  işi bu kipte yaptırma. Betikten çağırırken stdin kapatılmalı. Etkileşimli ekranda (TUI) "sor"un gerçekten
+  sorması beklenir; bu DOĞRULANMADI.
+- **İzin kuralları bir güvenlik sınırı değildir.** Kazaya karşı frendir: farklı yazım, takma ad ya da kabuk
+  dolaylamasıyla atlatılabilir. Desen metni komutun herhangi bir yerinde geçerse zararsız bir komutu da
+  engelleyebilir (ör. `echo "git reset --hard notu"`). SAP'ye yazmanın güvenli yolu kapılı araçlardır.
+  Eşleşme kuralları, ölçümler, bilinçli açıklar ve yanlış pozitifler: [`docs/izin-kurallari.md`](docs/izin-kurallari.md).
+- **Hook yok:** kurallar talimat, izin kuralı ve betikle uygulanır; mekanik zorlama sınırlıdır.
+- **Özel ajan tanımı çalışmaz** (`.axet-code/agents`, `agent create`): iş devri yerleşik `agent` aracıyla yapılır.
+- **Merkezi klon yazmaya kapalı değildir.** Sapmayı `doctor.py` git'e karşı raporlar: klonun davranış yüzeyindeki
+  (`core/`, `skills/`, `skills-sap/`, `AGENTS.md`, `config/permissions.json`, `.axetcode-denylist`) senden gelen
+  değişiklik WARN olur, `%guncelle`'nin kendi commit'leri bilgi satırı olur. Eski yazma koruması (config'e yazılan
+  `edit` yasakları) 2026-09-18'de kaldırıldı: `%guncelle` klonun içine yazdığı için kendi akışını engelliyordu, bash
+  ve farklı harf karışımıyla da atlatılabiliyordu. Yeniden kurulum eski sürümlerin yazdığı bu yasakları config'ten siler.
 - **Aynı adlı skill uyarısız çoğalır:** marketplace ya da proje skill'i template skill'iyle aynı adı taşırsa aXet
-  ikisini de listeler ve model hangisini okuyacağını kendisi seçer (`doctor.py` bunu FAIL olarak gösterir).
+  ikisini de listeler ve hangisinin okunacağını model seçer (`doctor.py` bunu FAIL olarak gösterir).
+- **Bağlam dosyaları kesilmez:** `context_paths` dosyaları tamamen gönderilir. Toplam 1M token aşılınca oturum
+  uyarısız hatayla biter (Türkçe metinde yaklaşık 1,9 MB); ~940K token civarında satır hatırlama bozuldu. Projenin
+  listesi global listeyi ezmez, ona eklenir. `doctor.py` toplamı 200 KB'ta WARN, 1 MB'ta FAIL verir; alt klasörler ve
+  `.md` dışı dosyalar ölçülmediği için yalnız üst sınır olarak raporlanır.
+- **Yerel MCP yok sayılır:** entegrasyonlar betikle ya da kurumsal Connector ile yapılır.
+- **Koşullu kural yükleme yok:** çekirdek her oturumda yüklenir, bu yüzden kısa tutulur.
 
 ## Yapı
 ```
-kur.cmd · kur.ps1  kurulum ve güncelleme aracı      yeni-proje.cmd  terminalden proje kurulumu
+aXet-Kur.cmd     çift tıkla kurulum          kur.cmd · kur.ps1  kurulum ve güncelleme aracı (terminal yolu)
+yeni-proje.cmd   terminalden proje kurulumu  proje-tamamla.cmd  projedeki KURULUMU-TAMAMLA'nın hedefi
+GUNCELLE.md      %guncelle adımları          guncelle/          güncelleme kataloğu (yayinlar.json), sınıf haritası, kartlar
+CHANGELOG.md     yayın notları               AGENTS.md          template reposunun bakım talimatı (projelere gitmez)
+.axetcode-denylist  aXet'in okumadığı ve yazmadığı yollar (.conn_adt, .env, secrets; bash'te garanti değil)
 core/            çekirdek kurallar (00-temel.md) · sap/ SAP paketi
 skills/          genel skill'ler            skills-sap/   SAP skill'leri
 memory/          ekip hafızası (indeks + kayıtlar)
 templates/project/  proje iskeleti (+ project-sap/)   templates/package/  new_package.py'nin kurduğu paket iskeleti
 config/          install.py'nin birleştirdiği izin kuralları
-scripts/         install.py · yeni_proje.py · new_project.py · new_package.py · doctor.py · session_brief.py
-                 sap_stamp.py · project_precommit.py · check_package_naming.py · behavior_manifest.py
+scripts/         install.py · doctor.py · session_brief.py · guncelle.py · guncelle_proje.py · yeni_proje.py
+                 new_project.py · new_package.py · conn_sablon.py · tarayici_hazirla.py · sap_stamp.py
+                 project_precommit.py · check_package_naming.py · behavior_manifest.py · merge_pr.py
 tests/           template script'lerinin testleri: python tests\run_tests.py (skill testleri skill klasöründe)
-docs/            onboarding rehberi
+docs/            onboarding.md (kurulum ve sorun giderme) · izin-kurallari.md · sap-api-policy.md
+.github/         CI iş akışı
 LICENSE · NOTICE · THIRD_PARTY_NOTICES.md · LICENSES/
 ```
 
@@ -420,5 +225,5 @@ sürümlerdir; yeni kayıt buraya eklenmez.
   `sap-odata-backend`. `doctor.py` 1024 karakteri aşan skill açıklamasını FAIL verir (aXet böyle skill'i yüklemez).
 - **0.2.0** — **install.py tekrar çalıştırılmalı.** SAP çekirdeğine yazma yolu, hassas veri (KVKK), kimlik
   bilgisi ve ALV paritesi kuralları (`AXET-SAP-0.2.0`); merkezi klon yazma koruması; ekip hafızasına 10 çalışma
-  dersi; template köküne `.axetcode-denylist`. (Klon yazma koruması 2026-09-18'de kaldırıldı — bkz. Bilinen sınırlar.)
+  dersi; template köküne `.axetcode-denylist`. (Klon yazma koruması 2026-09-18'de kaldırıldı.)
 - **0.1.0** — Faz 1 iskeleti: çekirdek, SAP kuralları, hafıza düzeni, `remember` skill'i, kurulum/proje/doğrulama script'leri.

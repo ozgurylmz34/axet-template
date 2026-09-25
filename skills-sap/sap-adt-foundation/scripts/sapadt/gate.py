@@ -25,9 +25,15 @@ KAPI SIRASI (her red ayrı kod; ilk red döner):
   5. araç guard'ları (ağdan ÖNCE):
        ADR_0005_A (Z/Y namespace; silmede standart obje reddi) ·
        ADR_0005_B (kaynakta standart tabloya doğrudan DML; `check_std_dml`, kaynak `tool_args`'tan —
-                   kaynak yok/taranamadı → std_dml_scan_unavailable) · ADR_0005_C (transport) ·
+                   kaynak yok/taranamadı → std_dml_scan_unavailable) ·
+       ADR_0005_A (Z104: kaynak STANDART objeyi genişletiyor — `extend type|view [entity]|custom|abstract <std>`,
+                   `annotate view|entity <std>`, BDEF `extension`; `check_std_extension`, anahtar açık+DEV olsa da red;
+                   hedef çözülemedi → ADR_0005_A, kaynak yok/taranamadı → std_ext_scan_unavailable) ·
+       ADR_0005_C (transport) ·
        language_mismatch (bağlantı dili ≠ master_language) · reviewer_bypass_forbidden
   6. write_log_unavailable                          — deneme logu yazılamıyor (iz bırakmadan yazma YOK)
+  (Hedefi `.conn_adt` dışından alan yazıcılar — UI5 deploy `ui5-deploy.yaml` — `check_write` geçtikten sonra
+   `check_target_system()` da çağırır: hedef ≠ .conn_adt → `write_target_mismatch`.)
   (Reviewer ön kontrolü araç fonksiyonunun içinde koşar: `adt_push_source` + composite'ler;
    BLOCKER → `reviewer_blocker`. Script'ler için `review_preflight()`.)
 """
@@ -158,6 +164,39 @@ def check_connection(proj) -> tuple[str, str] | None:
                 f"Ortam değişkeni .conn_adt'yi eziyor: {', '.join(ayrisan)} (değerler basılmadı). "
                 "Bağlantı ortamdaki sisteme giderdi, tier ise .conn_adt'den okunuyor. "
                 "Bu değişkenleri ortamdan kaldır; sistem yalnız proje kökündeki .conn_adt'den seçilir.")
+    return None
+
+
+def check_target_system(proj, url: str | None, client: str | None) -> tuple[str, str] | None:
+    """Yazma hedefini `.conn_adt` DIŞINDAN alan yol (ör. UI5 deploy: `ui5-deploy.yaml` target.url/client)
+    `.conn_adt`'deki sistemle AYNI sisteme mi yazıyor?
+
+    Z106 (2026-09-24): tier `.conn_adt`'den okunur; hedef başka bir dosyadan gelirse `check_write`'ın
+    "DEV" onayı BAŞKA bir sisteme yazdırır (`check_connection` ile aynı gerekçe). `check_write` geçtikten
+    SONRA çağrılır. FAIL-CLOSED: iki taraftan biri boş/okunamıyorsa da red. Değerler mesaja BASILMAZ.
+    Ayrıştırılamayan HEDEF URL (`ui5-deploy.yaml`; ör. şablonda kalmış `<PORT>` → `urlparse(...).port`
+    ValueError) da red: traceback (rc=1, logsuz) yerine `write_target_mismatch` döner ki çağıran loglayıp 3 ile
+    çıkabilsin. Bilinen sınır (açık kalem): `.conn_adt` ADT_SAP_URL'nin KENDİSİ ayrıştırılamıyorsa bu fonksiyon
+    yine red döner ama çağıranın log yolu (`log_write_attempt` → `redact.host_sirlari` `u.port`) ValueError ile
+    traceback verir (rc=1, log yok, yazma da yok).
+    """
+    conn_url = _project.effective_conn_value("ADT_SAP_URL", None, proj)
+    conn_client = _project.effective_conn_value("ADT_SAP_CLIENT", None, proj)
+    ayrisan = []
+    try:
+        hedef_url, conn_norm, url_etiket = _norm_url(url), _norm_url(conn_url), "url"
+    except ValueError:  # geçersiz port / bozuk IPv6 — hangisi olduğu basılmaz (değer sızmasın)
+        hedef_url, conn_norm, url_etiket = "", "", "url (ayrıştırılamadı)"
+    if not hedef_url or hedef_url != conn_norm:
+        ayrisan.append(url_etiket)
+    if not (client or "").strip() or (client or "").strip() != (conn_client or "").strip():
+        ayrisan.append("client")
+    if ayrisan:
+        return ("write_target_mismatch",
+                f"Yazma hedefi .conn_adt'deki sistemle aynı değil ya da okunamadı: {', '.join(ayrisan)} "
+                "(değerler basılmadı). Tier .conn_adt'den okunuyor; ayrışan hedef, DEV diye doğrulanan kapıyı "
+                "başka bir sisteme yazdırırdı. Hedef dosyasındaki url/client .conn_adt ADT_SAP_URL/ADT_SAP_CLIENT "
+                "ile aynı olmalı.")
     return None
 
 
@@ -337,6 +376,56 @@ def check_std_dml(tool: str, tool_args: dict | None, object_type=None,
     return None
 
 
+def _ext_kaynagi(tool: str, tool_args: dict | None) -> tuple[str | None, str | None]:
+    """Z104: genişletme taraması için yazılacak kaynak → (metin, None) | (None, eksik-gerekçesi) | (None, None)=denetim yok.
+
+    `adt_push_source`: `source` argümanı. `adt_struct_create`: alan adı DOĞRULANMAZ (composite.py yalnız dolu mu bakar)
+    ⇒ yazılacak DDL aynı render'la (`yapi_ddl_kaynagi`) üretilip taranır. Render girdiyi reddederse (satır sonu,
+    geçersiz alan listesi) araç da ağa gitmeden reddeder → burada denetim atlanır (None, None)."""
+    a = tool_args if isinstance(tool_args, dict) else {}
+    anahtar = SOURCE_ARG_TOOLS.get(tool)
+    if anahtar is not None:
+        kaynak = a.get(anahtar)
+        return (kaynak, None) if isinstance(kaynak, str) else (None, f"`{anahtar}` metni kapıya verilmedi (tool_args)")
+    if tool == "adt_struct_create":
+        alanlar = a.get("fields")
+        if not isinstance(alanlar, list) or not all(isinstance(f, dict) for f in alanlar):
+            return None, None
+        from utils.ddic_dtel import yapi_ddl_kaynagi  # type: ignore  (sapadt import'u lib/'i sys.path'e ekler)
+        try:
+            return yapi_ddl_kaynagi(str(a.get("name") or ""), alanlar, a.get("description") or ""), None
+        except ValueError:
+            return None, None
+    return None, None
+
+
+def check_std_extension(tool: str, tool_args: dict | None, object_type=None,
+                        ayrinti: dict | None = None) -> tuple[str, str] | None:
+    """Kesin Yasak A (Z104): Z adlı objenin kaynağı STANDART objeyi genişletiyor mu — DDIC append
+    (`extend type <std>`), CDS `extend view [entity] <std>`, metadata extension `annotate … <std>`, BDEF extension.
+
+    Ad denetimi (`check_names`) bunu göremez: genişletme objesinin kendi adı Z'lidir, hedef kaynağın içindedir.
+    Yazma anahtarından BAĞIMSIZ: opt-in + --sap-write + DEV olsa da red. FAIL-CLOSED: kaynak yok/metin değil ya da
+    tarayıcı koşamazsa `std_ext_scan_unavailable`; hedef çözülemezse (tarayıcı "?" bulgusu) `ADR_0005_A`."""
+    try:
+        kaynak, eksik = _ext_kaynagi(tool, tool_args)
+        if kaynak is None and eksik is None:
+            return None
+        if kaynak is None:
+            return ("std_ext_scan_unavailable",
+                    f"Kesin Yasak A genişletme taraması koşamadı: {tool} için {eksik}. Kaynak taranmadan yazma yapılmaz.")
+        from sapadt import std_ext_scan
+        bulgular = std_ext_scan.tara(kaynak, object_type if isinstance(object_type, str) else None)
+    except Exception as exc:  # noqa: BLE001 — tarayıcı/render koşamadıysa GEÇMEZ
+        return ("std_ext_scan_unavailable",
+                f"Kesin Yasak A genişletme taraması koşamadı ({type(exc).__name__}) — fail-closed.")
+    if ayrinti is not None:
+        ayrinti["std_ext_bulgular"] = [b.as_dict() for b in bulgular]
+    if bulgular:
+        return ("ADR_0005_A", std_ext_scan.mesaj(bulgular))
+    return None
+
+
 def log_path(proj) -> Path:
     return _project.project_dir(proj) / LOG_REL
 
@@ -429,6 +518,9 @@ def check_write(tool: str, proj, *, obje_adi=None, object_type=None, ek_obje_adl
     dml = check_std_dml(tool, tool_args, object_type, res.details)
     if dml:
         return red(*dml)
+    genisletme = check_std_extension(tool, tool_args, object_type, res.details)
+    if genisletme:
+        return red(*genisletme)
     if require_transport_flag if require_transport_flag is not None else transport_gerekli(tool, tool_args):
         try:
             require_transport(transport if isinstance(transport, str) else None, what=f"{tool}",

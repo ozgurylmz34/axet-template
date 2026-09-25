@@ -293,6 +293,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   (`skip_reviewer`) ve Z tablo alanı silme BLOCKER'ını onaylı geçirmek (`ack_drop`) aXet'te kapıda reddedilir — alan silme
   gerekiyorsa DUR, veri kaybı riskini kullanıcıya açıkla · 412/423 → `known-errors-adt.md` K-01…K-03 ·
   **Kesin Yasak B:** kaynakta standart tabloya doğrudan DML → `ADR_0005_B` (çıkış 2, mesajda satır + hedef; kaynak taranamazsa `std_dml_scan_unavailable`) ·
+  **Kesin Yasak A (Z104):** kaynak standart objeyi genişletiyorsa (`extend type|view [entity]|custom|abstract entity <std>`, `annotate view|entity <std>`, BDEF `extension` — `using interface <Z…>` yoksa hedef kanıtlanamaz) → `ADR_0005_A` (çıkış 2, mesajda satır + hedef; kaynak taranamazsa `std_ext_scan_unavailable`; `adt_struct_create`'te yazılacak DDL de taranır) ·
   **pull-before-edit:** önce `adt_get` şart — kayıt yok `pull_before_edit_missing` (2) · çekildikten sonra SAP'de değişmiş `source_changed_since_pull` (2) ·
   canlı okuma başarısız `pull_live_read_failed` (1) · durum dosyası bozuk `pull_state_unreadable` (2); başarılı push kaydı günceller (`pull_state: guncellendi`).
 - **Tipe özel yazma (2026-09-13; çevrimdışı test edildi, canlı DOĞRULANMADI):**
@@ -422,18 +423,28 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 - **Sıra:** kabuk yoksa `adt_post_shell(object_type="msag")` → `adt_msgclass_read` (canlı liste + pull kaydı) → nihai listeyi kullanıcıya göster → `adt_msgclass_write`.
 - **Argümanlar:** `name` (Z/Y) · `transport` (zorunlu) · `messages=[{"no":"001","text":"<master_language metni, ≤ 73>","selfexplanatory":false}]` ·
   `delete_numbers=["005"]` · `allow_overwrite=false` · `package` (yalnız canlı okumada paket yoksa; farklıysa red).
-- **Semantik:** SAP tarafında PUT tüm listeyi değiştirir; araç önce canlı listeyi okur ve **birleştirir**: yeni numara eklenir, verilmeyen mevcut mesajlar
+- **Semantik:** araç önce canlı listeyi okur ve tam gövdeyi **birleştirerek** kurar: yeni numara eklenir, verilmeyen mevcut mesajlar
   **korunur** (`documented` bayrağı dahil). Mevcut numaraya farklı metin/bayrak → `allow_overwrite=true` yoksa `msgclass_overwrite_not_allowed` (çıkış 2,
-  `plan.overwritten` önce/sonra). Silme yalnız `delete_numbers` ile; canlıda olmayan numara → `invalid_argument`. Değişiklik yoksa kilit alınmaz (`changed:false`).
+  `plan.overwritten` önce/sonra). Değişiklik yoksa kilit alınmaz (`changed:false`).
+- **Silme (Z113):** ⛔ SAP tam PUT'tan **çıkarılan mesajı SİLMEZ** (kaynak ölçümü 229→229 no-op). Silme yalnız `delete_numbers` ile ve **ayrı çağrıda**
+  (`messages` ile birlikte → `invalid_argument`): gövdeye kalanlar canlı öznitelikleriyle + `<mc:deletedmessages mc:msgno="NNN"/>` yazılır, gövde öz-denetimi
+  (bozuksa `delete_body_selfcheck_failed`, kilit yok), LOCK → **kilit altında canlı yeniden okunur** (farklı → `source_changed_since_pull`, okunamadı →
+  `pull_live_read_failed`, ikisinde `phase:"under_lock"`, PUT YOK) → PUT → UNLOCK → **önce/sonra kapısı** `delete_gate`. Korumalar (ağ/kilit öncesi): canlıda
+  olmayan numara ya da tüm sınıf → `invalid_argument`; oturum (logon) dili ≠ sınıfın master dili → `ADR_0005_D` (yarım silme riski).
+  Canlı aXet ölçümü YOK (`sap-cds-ddic/references/message-class.md` §3.7).
 - **Dönüş:** `{ok, name, changed, plan{added, overwritten[{no,before,after}], deleted[{no,text}], unchanged, preserved_count}, message_count_before,
-  message_count_after, readback_verified, pull_state, http{lock,put,unlock}, unlock_warning?}`.
+  message_count_after, readback_verified, pull_state, http{lock,put,unlock}, unlock_warning?, delete_gate?}` — `delete_gate` yalnız silmede:
+  `{ok: true|false|null, errors, gone, not_deleted, unexpectedly_gone, appeared, changed, scope_checked, scope_not_checked}`; `ok:null` = **ÖLÇÜLEMEDİ**
+  (silme gerçekleşmiş olabilir; `note` okunur). `scope_not_checked` (T100 çeviri satırları, T100U/DOKHL, E071) kullanıcıya aktarılır.
 - **Kilit:** kendi aldığı kilidi kendisi bırakır; enqueue kilidi **silmez**. Kilit alınamazsa `lock_conflict` (403/409/423 ya da gövdede kilit izi) /
   `lock_failed` (çıkış 1) → kullanıcı SM12'de kendi kilidini kontrol eder, SE91/ADT'de açık sınıfı kapatır; sonra `adt_msgclass_read` → tekrar.
   `unlock_warning` görürsen aynı yönlendirmeyi kullanıcıya ilet.
 - **Doğrulama:** yazmadan sonra canlı liste beklenen tam listeyle kıyaslanır: fark → `readback_mismatch` (`ok:false`, `readback_diff`), okunamadı →
   `readback_failed`; ikisinde de pull kaydı silinir (yeniden oku).
-- **Red kodları:** `ADR_0005_A` (standart sınıf) · `ADR_0005_C` (transport) · `ADR_0005_D` (boş metin; sınıfın master dili ≠ `master_language`) ·
-  `invalid_argument` (numara 3 haneli metin değil, metin > 73, tekrar eden numara, yaz+sil çakışması, `documented` alanı, boş istek — çıkış 3) ·
+- **Red kodları:** `ADR_0005_A` (standart sınıf) · `ADR_0005_C` (transport) · `ADR_0005_D` (boş metin; sınıfın master dili ≠ `master_language`;
+  silmede oturum dili ≠ master dil) ·
+  `invalid_argument` (numara 3 haneli metin değil, metin > 73, tekrar eden numara, yaz+sil aynı çağrıda, silinecek numara canlıda yok, tüm sınıfı silme,
+  `documented` alanı, boş istek — çıkış 3) · `delete_body_selfcheck_failed` (1) ·
   `pull_before_edit_missing` / `source_changed_since_pull` / `pull_state_unreadable` (2) · `pull_live_read_failed` · `master_language_unresolved` ·
   `msgclass_live_incomplete` (canlıda paket/açıklama/sorumlu yok; tahmin edilmez) · `push_failed` (1).
 - **Uyarı:** canlı davranış **DOĞRULANMADI** (çevrimdışı sahte istemciyle test edildi). Uzun metin (`documented`) bu araçla yazılmaz.

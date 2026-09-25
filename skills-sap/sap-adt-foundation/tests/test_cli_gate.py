@@ -303,6 +303,28 @@ class Kapi(unittest.TestCase):
                                 project=p, rc=1, code="pull_live_read_failed")
         self.assertNotEqual((d2.get("error") or {}).get("code"), "ADR_0005_B")
 
+    # ── 6j-ext. Z104 Kesin Yasak A: Z adlı append kaynağı standart tabloyu genişletiyor (kapıda red) ──
+    def test_06j_std_ext_gate(self):
+        p = proje()
+        append = "extend type vbak with zzavbak {\n  zzfield : abap.char(10);\n}\n"
+        d, _o, _e = self.kos("6j-ext Z append (extend type vbak) push → ADR_0005_A",
+                             ["adt_push_source", "--args-json",
+                              json.dumps({"name": "ZZAVBAK", "object_type": "tabl", "source": append,
+                                          "transport": TR}), *S1],
+                             project=p, rc=2, code="ADR_0005_A")
+        kapida = d["result"] is None and str(d["gate"]["review"]).startswith("NOT_RUN: kapı")
+        hedef = "hedef VBAK" in d["error"]["message"]
+        H.kaydet("6j-ext2 red KAPIDA + mesajda hedef VBAK", "kapıda + hedef VBAK",
+                 f"kapida={kapida} hedef={hedef}", kapida and hedef)
+        self.assertTrue(kapida and hedef, d)
+        # KONTROL GRUBU: aynı Z adı, Z tabloyu genişleten append → kapıdan geçer (araçta pull-state reddi).
+        d2, _o2, _e2 = self.kos("6j-ext3 KONTROL: Z tabloya append → kapıdan geçer",
+                                ["adt_push_source", "--args-json",
+                                 json.dumps({"name": "ZZAVBAK", "object_type": "tabl", "transport": TR,
+                                             "source": append.replace("vbak", "zaxet_t")}), *S1],
+                                project=p, rc=2, code="pull_before_edit_missing")
+        self.assertNotEqual((d2.get("error") or {}).get("code"), "ADR_0005_A")
+
     # ── 6k. PULL-BEFORE-EDIT: çekme kaydı yoksa push reddi (ağdan önce) ──────────────
     def test_06k_pull_before_edit_missing(self):
         p = proje()

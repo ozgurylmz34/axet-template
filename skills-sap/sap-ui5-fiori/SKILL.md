@@ -99,7 +99,9 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 - **Önce oku:** `references/deploy-and-local-run.md` §2–6.
 - **Kullanıcıdan:** BSP adı, SAP paketi, transport; lokal testten sonra sohbette açık **OK**.
 - **Sıra:** `deploy_ui.py prepare <app>` → lokal test kullanıcıya gösterildi → OK → (geliştirici kabuğunda
-  `FIORI_TOOLS_USER`/`FIORI_TOOLS_PASSWORD` set) → `deploy_ui.py deploy <app> --user-ok "<onay cümlesi>"` →
+  `FIORI_TOOLS_USER`/`FIORI_TOOLS_PASSWORD` set) → `deploy_ui.py deploy <app> --user-ok "<onay cümlesi>" --sap-write
+  --scope S1 --reason "<gerekçe>" --project-dir <proje>` (SAP yazma kapısı: `sap-write.local` + tier DEV +
+  `ui5-deploy.yaml` hedefi == `.conn_adt`; red → çıkış 3, kullanıcıya bildir, ayar değiştirme) →
   sonuç + `verify` aynı mesajda. Statik yardım sayfaları varsa `verify_ui_static_assets.py`.
 - Parola okunmaz, yazdırılmaz, komut satırına konmaz. Yalın `fiori deploy` / `npm run deploy` koşulmaz.
 
@@ -128,7 +130,7 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 | `scripts/check_filter_search_pattern.py` | `caseSensitive:false` BLOCKER; filtre VH'si MultiInput değil WARNING |
 | `scripts/check_i18n_keys.py` | kullanılan anahtar iki dosyada mı, yer tutucu kümesi, tek kesme |
 | `scripts/check_ui_odata_refs.py` | kaydedilmiş `$metadata`'ya karşı entity set / function import / property (çok servisli), çevrimdışı |
-| `scripts/deploy_ui.py` | `prepare` (ağ yok) · `verify` (canlı preload ↔ dist) · `deploy` (`--user-ok` + env kimlik zorunlu) |
+| `scripts/deploy_ui.py` | `prepare` (ağ yok) · `verify` (canlı preload ↔ dist) · `deploy` (`--user-ok` + env kimlik + SAP yazma kapısı `gate.check_write`/`check_target_system` zorunlu) |
 | `scripts/verify_ui_static_assets.py` | canlı BSP statik dosyaları ↔ dist ↔ webapp (enjekte meta ayıklanır) |
 | `scripts/ui-smoke/` | Playwright smoke: config, genel spec, hesap kilidi güvenli koşucu |
 | `tests/run_tests.py` | script'lerin çevrimdışı pozitif/negatif testleri (örnek uygulamalar + sahte yerel sunucu) |
@@ -144,6 +146,10 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 - **Kör hata düzeltme yok:** önce gerçek HTTP hatası; bir çare tutmadıysa tekrarlanmaz, teşhis sorgulanır.
 - **Deploy yalnız kullanıcı lokal testten sonra sohbette açıkça OK dediğinde**, `deploy_ui.py` ile. Parola okunmaz,
   yazdırılmaz; `fiori deploy`/`npm run deploy` doğrudan koşulmaz; transport ve paket kullanıcıdan (yasak C).
+- `deploy_ui.py deploy` SAP'ye yazar ⇒ `sap_adt_cli` yazmalarıyla AYNI kapıdan geçer (`references/deploy-and-local-run.md`
+  §3.2a): anahtar kapalı, tier DEV değil, hedef `.conn_adt` ile aynı değil, `ui5-deploy.yaml` `app.package` boş/yer tutucu
+  ya da paket `$TMP` değilken `app.transport` boş/`null`/yer tutucu (`ADR_0005_C`) → red. `ask` izin kuralı ikincil katmandır
+  (oturum izni verilince sormadan geçer).
 - SAP'ye yazan `deploy_ui.py deploy` etkileşimsiz `axet-code run` modunda yaptırılmaz: ask kuralları run modunda sormadan
   onaylar (ölçüldü, 1.3.0, eski `*deploy_ui.py*deploy *` deseniyle); `*deploy_ui*` deseninin kendi eşleşmesi ölçülmedi.
   TUI'de sorması beklenir (DOĞRULANMADI); desen kısa olduğu için `prepare`/`verify` da eşleşir (simülasyon).

@@ -50,19 +50,33 @@ def maskele(metin: str, kimlik: tuple[str, str] | None) -> str:
     return metin
 
 
+# YAML'da TIRNAKSIZ bu değerler null'dur (PyYAML: None). Tırnaklı `'null'` / `"~"` dizedir, dokunulmaz.
+YAML_NULL = frozenset({"null", "Null", "NULL", "~"})
+
+
 def _temiz(v: str) -> str:
+    """Tek skaler → dize. Null (tırnaksız null/Null/NULL/~) ve yalnız yorumdan oluşan değer (`# TODO ...`) → "".
+
+    Z106 (2026-09-24, bug gate ölçümü): `transport: # TODO transport gir` "# TODO transport gir", `transport: null`
+    "null", `transport: ~` "~" dönüyordu ⇒ boş olması gereken transport DOLU sayılıp deploy kapısından geçiyordu."""
     v = v.strip()
+    if not v:
+        return ""
     if v[:1] in "\"'":
         q = v[0]
         j = v.find(q, 1)
         return v[1:j] if j > 0 else v[1:]
-    return re.split(r"\s+#", v, 1)[0].strip()
+    if v[:1] == "#":
+        return ""
+    v = re.split(r"\s+#", v, 1)[0].strip()
+    return "" if v in YAML_NULL else v
 
 
 def yaml_duzlestir(metin: str) -> tuple[dict, dict]:
     """ui5*.yaml için KÜÇÜK alt küme okuyucu → ({"a.b[0].c": skaler}, {"a.b": [liste öğeleri]}).
 
-    Desteklenen: girintili eşleme, `- skaler` listesi, `- anahtar: değer` eşleme-listesi, tırnak, satır sonu yorumu.
+    Desteklenen: girintili eşleme, `- skaler` listesi, `- anahtar: değer` eşleme-listesi, tırnak, satır sonu yorumu,
+    tırnaksız null (`null`/`Null`/`NULL`/`~`) ve yalnız-yorum değer (`# ...`) → boş (skaler yazılmaz).
     Desteklenmeyen (yok sayılır): anchor/alias, akış stili `{}`/`[]`, çok satırlı blok metin içeriği.
     """
     yigin: list[tuple[int, str]] = []
@@ -77,7 +91,10 @@ def yaml_duzlestir(metin: str) -> tuple[dict, dict]:
         return s
 
     def kv(ind: int, anahtar: str, deger: str | None) -> None:
-        if deger is None or not deger.strip() or deger.strip()[:1] in "|>":
+        d = (deger or "").strip()
+        # Değer yok / blok metin / tırnaksız null ya da yalnız yorum (`app:  # açıklama`) → alt eşleme olabilir:
+        # yığına it (alt anahtar yoksa bir sonraki kardeş satır onu çıkarır; skaler YAZILMAZ = boş).
+        if not d or d[:1] in "|>" or (d[:1] not in "\"'" and not _temiz(d)):
             yigin.append((ind, anahtar))
         else:
             skaler[yol([anahtar])] = _temiz(deger)
@@ -101,7 +118,7 @@ def yaml_duzlestir(metin: str) -> tuple[dict, dict]:
                 sayac[ust] = i + 1
                 yigin.append((ind, f"[{i}]"))
                 kv(ind + (len(govde) - len(ic)), m.group(1), m.group(2))
-            elif ic:
+            elif ic and (ic[:1] in "\"'" or _temiz(ic)):  # null / yalnız-yorum liste öğesi eklenmez
                 listeler.setdefault(ust, []).append(_temiz(ic))
             continue
         while yigin and yigin[-1][0] >= ind:

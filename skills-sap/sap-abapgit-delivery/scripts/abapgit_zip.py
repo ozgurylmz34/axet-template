@@ -169,6 +169,24 @@ def load_scanner():
     return tara, mesaj
 
 
+# Z104: kaynağında standart objeyi genişletebilen tipler (DDL/BDEF metni; abapGit uzantısı xml/json/abap DEĞİL).
+_EXT_KAYNAK_TIPLERI = frozenset({"ddls", "ddlx", "dcls", "bdef", "srvd", "tabl"})
+
+
+def load_ext_scanner():
+    """Kesin Yasak A genişletme tarayıcısı (sap-adt-foundation `std_ext_scan`; yazma kapısıyla AYNI fonksiyon).
+    Yüklenemezse None → çağıran RED verir (fail-closed)."""
+    if not (SCANNER_DIR / "sapadt" / "std_ext_scan.py").is_file():
+        return None
+    if str(SCANNER_DIR) not in sys.path:
+        sys.path.insert(0, str(SCANNER_DIR))
+    try:
+        from sapadt.std_ext_scan import mesaj, tara, tara_tabl_xml  # type: ignore
+    except Exception:  # noqa: BLE001
+        return None
+    return tara, tara_tabl_xml, mesaj
+
+
 # ── seçim ──────────────────────────────────────────────────────────────────────────────────────────
 def workspace_files(root: Path) -> list[str]:
     skip_top = {DIST_DIR, STATUS_DIR, ".git"}
@@ -275,6 +293,8 @@ def check(root: Path, a) -> tuple[list[str], list[dict], dict]:
 
     scanner = None
     scanner_loaded = False
+    ext_scanner = None
+    ext_loaded = False
     present = set(workspace_files(root))
     siblings = {f["file"] for f in sel_findings if f["code"] == "object_siblings_added"}
     for rel in selected:
@@ -313,6 +333,25 @@ def check(root: Path, a) -> tuple[list[str], list[dict], dict]:
         if not is_binary(data) and b"\r\n" in data:
             add("INFO", "crlf_converted", "CRLF → LF çevrilecek (abapGit yalnız LF kabul eder)", rel)
         text = data.decode("utf-8", errors="replace")
+        # A — Z adlı obje içinden standart objeyi genişletme (append/extend/annotate/BDEF extension; Z104)
+        ext_kaynak = info["type"] in _EXT_KAYNAK_TIPLERI and info["ext"] not in ("xml", "json", "abap")
+        ext_xml = info["type"] == "tabl" and info["ext"] == "xml"
+        if ext_kaynak or ext_xml:
+            if not ext_loaded:
+                ext_scanner, ext_loaded = load_ext_scanner(), True
+            if ext_scanner is None:
+                add("FAIL", "std_ext_scan_unavailable", f"Kesin Yasak A genişletme tarayıcısı yüklenemedi ({SCANNER_DIR}): "
+                    "tarama yapılmadan teslim üretilmez", rel)
+            else:
+                ext_tara, ext_tara_xml, ext_mesaj = ext_scanner
+                try:
+                    hits = ext_tara_xml(text) if ext_xml else ext_tara(text, info["type"])
+                except Exception as exc:  # noqa: BLE001 — yüklenip çalışırken patlayan tarayıcı da GEÇMEZ (fail-closed)
+                    hits = None
+                    add("FAIL", "std_ext_scan_unavailable", f"Kesin Yasak A genişletme tarayıcısı çalışırken hata verdi "
+                        f"({type(exc).__name__}: {exc}): tarama yapılmadan teslim üretilmez", rel)
+                if hits:
+                    add("FAIL", "ADR_0005_A", ext_mesaj(hits), rel)
         if info["ext"] == "abap":
             if not scanner_loaded:
                 scanner, scanner_loaded = load_scanner(), True
@@ -349,11 +388,14 @@ def check(root: Path, a) -> tuple[list[str], list[dict], dict]:
 
 
 SCOPE = ("KAPSAM — bakılanlar: .abapgit.xml varlığı ve dili · başlangıç klasörü · dosya adı kalıbı · DEVC/yeni alt klasör (C) · "
-         "Z/Y ad alanı (A) · meta dosyası varlığı · .abap kaynağında standart tabloya doğrudan yazım (B, foundation "
-         "tarayıcısı) · XML'de boş DDTEXT/DESCRIPT, DTEL dört etiket, LANGU/DDLANGUAGE/MASTERLANG (D) · taban çizgisi "
+         "Z/Y ad alanı (A) · Z objenin standart objeyi genişletmesi (A: DDLS/DDLX/DCLS/BDEF/SRVD/TABL kaynağında "
+         "extend/annotate/BDEF extension, TABL XML'inde APPEND→SQLTAB; foundation tarayıcısı) · meta dosyası varlığı · "
+         ".abap kaynağında standart tabloya doğrudan yazım (B, foundation tarayıcısı) · XML'de boş DDTEXT/DESCRIPT, "
+         "DTEL dört etiket, LANGU/DDLANGUAGE/MASTERLANG (D) · taban çizgisi "
          "yaşı/değişiklik.\nBAKILMAYANLAR: ABAP sözdizimi ve aktivasyon · XML şemasının abapGit sürümüne uygunluğu · "
          "bağımlı nesnelerin varlığı · SAP'deki güncel sürümle çakışma (yalnız taban çizgisi yaşı) · transport · "
-         "yetki · standart nesneye örtük değişiklik (ör. enhancement içeriği) · JSON (AFF) biçimli nesnelerde metin/dil.")
+         "yetki · enhancement (ENHO/ENHS) içeriğiyle standart programa örtük değişiklik · JSON (AFF) biçimli nesnelerde "
+         "metin/dil ve genişletme hedefi.")
 
 
 def report(findings: list[dict], selected: list[str], as_json: bool) -> int:

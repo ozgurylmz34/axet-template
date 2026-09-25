@@ -22,6 +22,9 @@ Kullanım:
   python scripts/install.py --sap --sap-write   SAP'ye yazma iznini AÇ (yalnız kendi terminalinde; aXet
                                          oturumu bu komutu çalıştıramaz — bash deny kuralı)
   python scripts/install.py --no-sap-write     SAP'ye yazma iznini KAPAT
+  python scripts/install.py --paketler   YALNIZ zorunlu Python paketlerini denetle/kur (Z102; %guncelle her
+                                         güncellemede koşar). Global config'e, SAP yazma bayrağına DOKUNMAZ;
+                                         SAP durumunu config'ten OKUR; çıkış kodu daima 0 (güncellemeyi bozmaz)
 
 Global config: %XDG_CONFIG_HOME% ya da %USERPROFILE%\\.config altında axet-code\\axet-code.json
 (ölçüldü: `axet-code dirs config`; global ve proje config'i birleşir). Değişiklikten önce yedek alınır.
@@ -234,7 +237,10 @@ def apply_ours(cfg: dict, rules: dict, sap: bool) -> None:
         current.update(patterns)
 
 
-def check_env() -> list[tuple[str, str, bool]]:
+def check_env() -> list[tuple[str, str, bool | None]]:
+    """Ortam satırları (ad, bilgi, durum). durum: True = tamam · False = uyarı · None = yalnız bilgi (isteğe bağlı araç
+    yok; uyarı değildir, kurulum önerisi ya da indirme adresi basılmaz — kullanıcı kararı 2026-09-24: kullanıcıya ek
+    uygulama önerilmez, rg bunlardan biridir)."""
     py_surum = sys.version.split()[0]
     py_yeterli = tuple(sys.version_info[:2]) >= PY_ASGARI
     results = [("python", py_surum if py_yeterli else f"{py_surum} — sürüm yetersiz, gerekli %d.%d ya da üstü" % PY_ASGARI,
@@ -258,9 +264,7 @@ def check_env() -> list[tuple[str, str, bool]]:
         except Exception as exc:  # noqa: BLE001 — teşhis çıktısı
             results.append((tool, f"çalıştırılamadı: {exc}", False))
     rg = shutil.which("rg")
-    rg_yok = ("YOK — aXet grep aracı yavaşlar (kurulum: şirketinin yazılım merkezinden ya da "
-              "https://github.com/BurntSushi/ripgrep/releases)")
-    results.append(("rg", rg or rg_yok, bool(rg)))
+    results.append(("rg", rg, True) if rg else ("rg", "yok (isteğe bağlı)", None))
     return results
 
 
@@ -403,7 +407,7 @@ def paket_adimi(sap: bool, dry_run: bool = False) -> None:
         # Sonuç bilinmiyor: "kurulamadı" demek kanıtsız olurdu (ilk ölçümdeki ÖLÇÜLEMEDİ ile aynı dil).
         print(f"PAKETLER: ÖLÇÜLEMEDİ — pip koştu (çıkış {rc}) ama kurulum sonrası denetim çalışmadı ({sys.executable}); "
               "doğrulama: python scripts/doctor.py")
-        print(f"  Elle kurulum: {elle}")
+        print(f"  BT için elle kurulum komutu (sen çalıştırma): {elle}")
         if son:
             print("  pip çıktısının sonu: " + " | ".join(son))
         return
@@ -411,25 +415,52 @@ def paket_adimi(sap: bool, dry_run: bool = False) -> None:
     print(f"PAKETLER: EKSİK — {kalan_adlar} kurulamadı. Kurulum DEVAM ediyor: SAP bağlantısı bu paketler olmadan "
           "çalışmaz, diğer özellikler çalışır.")
     sinif = pip_hata_sinifi(cikti, rc)
+    # Kullanıcıya dönük: önce sade Türkçe ne olduğu, sonra ne yapacağı (komut YOK). "Tekrar dene" yolu kullanıcının
+    # zaten bildiği iki yoldur: aXet'te %guncelle (her güncellemede bu adımı koşar — Z102) ya da aXet-Kur.cmd.
+    tekrar = "Sonra aXet'te %guncelle yaz (ya da aXet-Kur.cmd'ye tekrar çift tıkla): eksik paketi kendisi kurar."
     if sinif == "pip-yok":
-        print(f"  UYARI: pip bulunamadı ({sys.executable}). Yapılacak: BT'den Python'u pip ile birlikte kurmasını "
-              "iste, sonra kur.cmd'yi yeniden çalıştır.")
+        print(f"  UYARI: Bu bilgisayardaki Python'da paket kurma aracı (pip) yok ({sys.executable}). pip bulunamadı. "
+              f"Yapılacak: BT'den Python'u pip ile birlikte kurmasını iste. {tekrar}")
     elif sinif == "pep668":
-        print("  UYARI: bu Python 'dışarıdan yönetilen' bir kurulum (PEP 668): paketleri pip ile değil, onu kuran "
-              "yönetici kurar. Yapılacak: BT'den şirketin standart Python kurulumunu (python.org dağıtımı) iste ya da "
-              "paketleri onlara kurdur, sonra kur.cmd'yi yeniden çalıştır.")
+        print("  UYARI: Bu Python'a paketi kendimiz kuramıyoruz: 'dışarıdan yönetilen' bir kurulum (PEP 668), paketleri "
+              "onu kuran yönetici kurar. Yapılacak: BT'den şirketin standart Python kurulumunu (python.org dağıtımı) "
+              f"iste ya da paketleri onlara kurdur. {tekrar}")
     elif sinif == "ag":
-        print("  UYARI: pip paketi indiremedi (ağ ya da şirket proxy'si). Yapılacak: BT'den bu makine için pip proxy "
-              "ayarını (ya da şirket paket aynasını) iste, sonra kur.cmd'yi yeniden çalıştır.")
+        print("  UYARI: Paket internetten indirilemedi (ağ ya da şirket proxy'si engelledi). Yapılacak: BT'den bu "
+              f"makine için pip proxy ayarını (ya da şirket paket aynasını) iste. {tekrar}")
     elif sinif == "rc0":
-        print("  UYARI: pip kurulumun bittiğini söyledi ama paket yine yüklenemiyor (farklı Python ya da bozuk kurulum). "
-              "Yapılacak: python scripts/doctor.py çıktısını BT'ye ilet.")
+        print("  UYARI: Kurulum bitti dendi ama paket yine çalışmıyor (farklı Python ya da bozuk kurulum). "
+              "Yapılacak: bu penceredeki satırları BT'ye ilet.")
     else:
-        print(f"  UYARI: pip hata verdi (çıkış {rc}); sebep aşağıdaki pip çıktısının sonunda. Yapılacak: o satırları "
-              "BT'ye ilet, sonra kur.cmd'yi yeniden çalıştır.")
-    print(f"  Elle kurulum: {elle}")
+        print(f"  UYARI: Paket kurulamadı; pip hata verdi (çıkış {rc}), sebep aşağıdaki pip çıktısının sonunda. "
+              f"Yapılacak: o satırları BT'ye ilet. {tekrar}")
+    print(f"  BT için elle kurulum komutu (sen çalıştırma): {elle}")
     if son:
         print("  pip çıktısının sonu: " + " | ".join(son))
+
+
+def paketler_kipi(dry_run: bool) -> int:
+    """`--paketler` (Z102): %guncelle her güncellemede koşar — install.py değişmese de eksik zorunlu paket kurulsun
+    (önceden yalnız install.py'nin DEĞİŞTİĞİ yayında koşuyordu). SALT-OKUR kip: global config'i ve SAP yazma bayrağını
+    YAZMAZ, yedek almaz; SAP paketinin açık olup olmadığını config'ten OKUR. Tarayıcı adımını koşmaz (%guncelle onu
+    ayrı adımda koşar). Çıkış kodu DAİMA 0: güncellemeyi hiçbir sonuç durdurmaz; durumu `PAKETLER:` satırı söyler."""
+    cfg_file = config_path()
+    try:
+        metin = cfg_file.read_text(encoding="utf-8-sig") if cfg_file.exists() else ""
+        cfg = json.loads(metin) if metin.strip() else {}
+    except (OSError, ValueError) as exc:
+        print(f"\nPython paketleri (SAP bağlantısı):\nPAKETLER: ÖLÇÜLEMEDİ — aXet ayar dosyası okunamadı ({cfg_file}: "
+              f"{exc}); SAP paketinin açık olup olmadığı bilinmiyor. Dosyaya dokunulmadı.")
+        return 0
+    if not isinstance(cfg, dict):
+        print(f"\nPython paketleri (SAP bağlantısı):\nPAKETLER: ÖLÇÜLEMEDİ — {cfg_file} bir JSON nesnesi değil. "
+              "Dosyaya dokunulmadı.")
+        return 0
+    try:
+        paket_adimi(sap_enabled(cfg), dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 — güncellemeyi durdurma
+        print(f"PAKETLER: ÖLÇÜLEMEDİ — paket adımı beklenmeyen hata verdi ({type(exc).__name__}: {exc})")
+    return 0
 
 
 def main() -> int:
@@ -442,7 +473,15 @@ def main() -> int:
     write_group.add_argument("--no-sap-write", action="store_true", help="SAP'ye yazma iznini kapat")
     ap.add_argument("--dry-run", action="store_true", help="yazmadan sonucu göster")
     ap.add_argument("--uninstall", action="store_true", help="bu reponun eklediklerini kaldır")
+    ap.add_argument("--paketler", action="store_true",
+                    help="YALNIZ zorunlu Python paketlerini denetle/kur (config'e yazmaz; %%guncelle her seferinde koşar)")
     args = ap.parse_args()
+    if args.paketler:
+        if args.sap or args.no_sap or args.sap_write or args.no_sap_write or args.uninstall:
+            print("HATA: --paketler yalnız başına (ya da --dry-run ile) kullanılır; SAP/yazma/kaldırma bayraklarıyla "
+                  "birleşmez.")
+            return 3
+        return paketler_kipi(args.dry_run)
     if args.uninstall and args.sap_write:
         print("HATA: --uninstall ile --sap-write birlikte kullanılamaz.")
         return 3
@@ -496,7 +535,7 @@ def main() -> int:
         print(f"UYARI: eski template kuralının kararı config'te değiştirilmiş, dokunulmadı: {satir}")
     print("Ortam:")
     for name, info, ok in check_env():
-        print(f"  [{'OK' if ok else 'UYARI'}] {name}: {info}")
+        print(f"  [{'BİLGİ' if ok is None else ('OK' if ok else 'UYARI')}] {name}: {info}")
 
     if args.dry_run:
         print("\n--- yazılacak içerik ---\n" + new_text + "(dry-run: hiçbir şey yazılmadı)")

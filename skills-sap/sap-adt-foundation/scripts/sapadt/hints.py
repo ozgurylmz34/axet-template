@@ -119,7 +119,7 @@ KOD_KURALLARI = (
      _SKILL, "§2 Önce oku — pull-before-edit", "çekme kaydı / canlı değişiklik"),
     ({"ADR_0005_A", "ADR_0005_B", "ADR_0005_C", "ADR_0005_D", "ADR_0010_TIER", "std_dml_scan_unavailable",
       "sap_project_missing", "sap_project_invalid", "write_not_optin_global", "write_flag_missing", "scope_missing",
-      "scope_invalid", "reason_missing", "intake_missing", "intake_invalid", "reviewer_bypass_forbidden",
+      "std_ext_scan_unavailable", "scope_invalid", "reason_missing", "intake_missing", "intake_invalid", "reviewer_bypass_forbidden",
       "tool_not_available_for_profile", "type_not_available_for_profile", "repeated_failure"},
      _SKILL, "§4 Yazma ön koşulları ve kapsam beyanı", "kapı reddi — aşmaya çalışma, kullanıcıya bildir"),
 )

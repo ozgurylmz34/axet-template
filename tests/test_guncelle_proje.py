@@ -1418,6 +1418,11 @@ class Z79KisayolTest(ProjeTemel):
         self.assertEqual(k.returncode, 0, self.cikti(k))
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn(f"[PASS] {yeni_proje.KISAYOL}", rapor)
+        # kurulum sadeleştirme (2026-09-24): onay yolu önce çift tık (kısayol var) — komut BT/terminal yedeği olarak kalır
+        onay = rapor[rapor.index("## Kullanıcının kendi terminalinde"):]
+        self.assertIn(f"proje klasöründeki {yeni_proje.KISAYOL}'ye çift tıkla", onay)
+        self.assertIn(str(self.f.proje / yeni_proje.KISAYOL), onay)
+        self.assertLess(onay.index("çift tıkla"), onay.index('behavior_manifest.py" generate'))
 
     def test_2b_kisayol_git_e_kapaliysa_uyari_YOK(self):
         (self.f.proje / yeni_proje.KISAYOL).unlink()
@@ -1492,6 +1497,12 @@ class Z79SapDisiTest(ProjeTemel):
         u = self.f.calistir("uygula", "--otomatik")
         self.assertEqual(u.returncode, 0, self.cikti(u))
         self.assertIsNone(self.f.kisayol_oku())
+        # kontrol grubu (çift tık satırı): kısayolu olmayan projede rapor olmayan dosyayı göstermez, komutu verir
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertNotIn("çift tıkla", rapor)
+        self.assertIn('behavior_manifest.py" generate --project-dir "', rapor)
 
 
 if __name__ == "__main__":

@@ -59,14 +59,15 @@ Tek kod yolu: bu skill ve terminal yedeği `yeni-proje.cmd` aynı script'i çağ
    `[KORUNDU]` + `UYARILAR` satırı (ör. `release` farkı) çıkışı bozmaz; farkı kullanıcıya söyle.
 6. **Son adımı tek cümleyle söyle** (script'in sonda bastığı `SON ADIM (SENDE)` satırı): "Proje klasöründeki
    `KURULUMU-TAMAMLA.cmd`'ye çift tıkla." Kısayol, klondaki `proje-tamamla.cmd`'yi çağırır ve sırayla:
-   ① `conn\DEV.env` / `conn\QA.env` bağlantı şablonlarını yazıp Notepad'de açar (kullanıcı doldurur, kaydeder, tekrar
+   ① `conn\DEV.env` / `conn\QA.env` bağlantı şablonlarını yazar ve hangi dosyaya (tam yol; DEV zorunlu, QA isteğe
+   bağlı) hangi alanları yazacağını söyler — editör açmaz, soru sormaz (kullanıcı doldurur, kaydeder, tekrar
    çift tıklar; dosyalar denetlenir, hatalı alan adıyla gösterilir, değer basılmaz; geçerli DEV aktif sistem olur)
    ② davranış yüzeyi onayını sorar ③ `doctor.py` ④ aXet'i projede açmayı sorar (ilk satırda `proje: <ad>` görünmeli).
    Kısayol yazılamadıysa (`[YAZILAMADI]`) script'in bastığı elle yolu ver. Sistem değiştirmek için sonra `%sistem`.
 
 ## Rules
 - **Kimlik bilgisi:** kullanıcı adı, parola, host, sistem bilgisi isteme ve yazma; `.conn_adt` ve `conn/` okuma,
-  listeleme. Bağlantı bilgisini kullanıcı `KURULUMU-TAMAMLA.cmd`'nin açtığı `conn\*.env` şablonlarına kendisi yazar.
+  listeleme. Bağlantı bilgisini kullanıcı `KURULUMU-TAMAMLA.cmd`'nin hazırladığı `conn\*.env` şablonlarına kendisi yazar.
 - `setup_credentials.py`, `behavior_manifest.py generate` ve `KURULUMU-TAMAMLA.cmd` / `proje-tamamla.cmd`'yi
   **çalıştırma**, `start` ile pencere de **açma**: bağlantı bilgisi ve davranış yüzeyi onayı kullanıcının kendi
   işlemidir; pencereyi modelin başlatması onayı modelden başlatmak olur (izin kurallarının amacının etrafından

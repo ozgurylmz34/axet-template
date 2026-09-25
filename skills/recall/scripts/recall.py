@@ -17,17 +17,24 @@ Puan (Z71, 2026-09-23 — gövde taraması eklendi):
   · gövde: başlık/özette ZATEN eşleşmemiş her FARKLI sorgu sözcüğü için +GOVDE_AGIRLIK (tekrar sayılmaz).
     Gerekçe: indeks satırı ve description kaydın özenle yazılmış özetidir; gövde uzun ve gürültülüdür — tekrar
     sayılsaydı uzun kayıt kısa kaydı ezerdi. Eşik (5) değişmedi: yalnız gövdesiyle çıkan kaydın sorgunun en az
-    beş farklı sözcüğünü taşıması gerekir. Gövdede Türkçe ek için önek eşleşmesi var (sorgu sözcüğü ≥ 5 harf ve
-    gövde sözcüğü onunla başlıyorsa: "aktarim" ↔ "aktarimi"); başlık/özet eşleşmesi eskisi gibi tam sözcük.
+    beş farklı sözcüğünü taşıması gerekir. Türkçe ek/çoğul için önek eşleşmesi var (sorgu sözcüğü ≥ ONEK_EN_AZ harf ve
+    kayıt sözcüğü onunla başlıyorsa: "aktarim" ↔ "aktarimi"); Z108'den beri başlık/özette de aynı kural geçerli
+    ("transport" ↔ "transports").
   · Kayıtların çoğunda geçen (genel) sorgu sözcükleri puana katılmaz: başlık/özet için başlık/özetlerde, gövde için
-    gövdelerde ayrı ayrı sayılır (bir sözcük özetlerde seyrek, gövdelerde yaygın olabilir). Eşik altı sonuç basılmaz.
+    gövdelerde ayrı ayrı sayılır (bir sözcük özetlerde seyrek, gövdelerde yaygın olabilir). Başlık/özet sayımı TAM
+    sözcükle yapılır (önekle sayılsaydı "review" → reviewer/reviews ile genel sayılıp düşerdi). Eşik altı sonuç basılmaz.
   · İstisna — gövde adayları: toplam puanı eşik altında kalan ama gövdesinde sorgunun ≥ GOVDE_ESIK farklı sözcüğü
     geçen en çok GOVDE_TOP kayıt ayrı ve "düşük güven" etiketiyle basılır. Ölçülen sebep (Z71 kapanış C3, 2026-09-23):
     model sorgusu "... ALV rapor Excel export ..." iken belirsiz indeksli kaydın gövdesi 3 sözcükle eşleşti, eşik 5'in
     altında kaldı ve kayıt görünmedi; aynı kaydı "dışa aktarım" da yazan sorgu buldu. Ana listenin eşiği değişmedi.
+  · Eşik ölçekleme (Z108, 2026-09-24): --esik verilmezse eşik, başlık/özette genel sayılmayan sorgu terimi sayısına (n)
+    göre min(5, max(1, 2n − 1)) olur: 1 terim → 1, 2 terim → 3, 3+ terim → 5 (değişmez). Ölçülen sebep: "transport"
+    sorgusu açıklamasında terimi taşıyan skill'i (1-2 puan) sabit eşik 5'te hiç göstermiyordu. Ölçeklenmiş eşik YALNIZ
+    gövdesiyle eşleşen kayda uygulanmaz (o kayıt yine 5 farklı sözcük ister). Açık --esik ölçeklenmez. Sorgunun tüm
+    terimleri başlık/özetlerde genel sayılırsa ölçekleme yapılmaz ve UYARI basılır (sessiz boş sonuç yerine).
 
 Kullanım:
-  python recall.py "<görevin kısa özeti ve anahtar terimler>" [--project-dir DİZİN] [--top 5] [--esik 5] [--json]
+  python recall.py "<görevin kısa özeti ve anahtar terimler>" [--project-dir DİZİN] [--top 5] [--esik N] [--json]
 Çıkış kodu: 0 (sonuç olsun olmasın) · 3 kullanım hatası.
 """
 from __future__ import annotations
@@ -48,11 +55,12 @@ _STOP = {"ve", "ile", "icin", "bir", "bu", "da", "de", "the", "for", "and", "yok
          "yap", "olarak", "sonra", "gibi", "daha", "cok", "ama", "nasil", "neden", "hangi", "ise", "kullan"}
 GENEL_ORAN = 0.05
 GENEL_TABAN = 4
+ESIK_VARSAYILAN = 5
 GOVDE_AGIRLIK = 1
 GOVDE_ESIK = 3            # eşik altı kalan kayıt, gövdesinde bu kadar FARKLI sorgu sözcüğü geçiyorsa ayrı listelenir
 GOVDE_TOP = 3
 GOVDE_SINIRI = 20000       # kayıt başına okunan gövde karakteri (performans üst sınırı; aşan kısım taranmaz)
-ONEK_EN_AZ = 5             # gövdede önek eşleşmesi için sorgu sözcüğünün en az harf sayısı
+ONEK_EN_AZ = 5             # önek eşleşmesi (gövde + Z108'den beri başlık/özet) için sorgu sözcüğünün en az harf sayısı
 RULES_DERINLIK = 4         # <source_root> altında .rules.md aranan en derin klasör seviyesi
 PAKET_OZ = "paket kuralları: obje adlandırma, önek, naming, bağımlılık, transport, istisna"
 _LINK = re.compile(r"\[((?:[^\[\]]|\[[^\]]*\])+)\]\(([^)]+\.md)\)")
@@ -168,8 +176,9 @@ def skill_kayitlari(tur: str, kok: Path) -> list[dict]:
     return out
 
 
-def govde_eslesen(q: set[str], sozcukler: set[str]) -> set[str]:
-    """Gövdede geçen sorgu sözcükleri: tam eşleşme ya da (≥ ONEK_EN_AZ harfli sorgu sözcüğü için) önek eşleşmesi."""
+def eslesen(q: set[str], sozcukler: set[str]) -> set[str]:
+    """Sözcük kümesinde geçen sorgu sözcükleri: tam eşleşme ya da (≥ ONEK_EN_AZ harfli sorgu sözcüğü için) önek eşleşmesi.
+    Gövde ve indeks (başlık/özet) AYNI kuralı kullanır."""
     if not sozcukler:
         return set()
     bulunan = q & sozcukler
@@ -179,12 +188,28 @@ def govde_eslesen(q: set[str], sozcukler: set[str]) -> set[str]:
     return bulunan
 
 
+def sozcuk_eslesir(sozcuk: str, q: set[str]) -> bool:
+    """Tek indeks sözcüğü sorgunun bir sözcüğüyle eşleşiyor mu (tam ya da `eslesen` ile aynı önek kuralı)."""
+    return sozcuk in q or any(len(t) >= ONEK_EN_AZ and sozcuk.startswith(t) for t in q)
+
+
+def varsayilan_esik(terim_sayisi: int) -> int:
+    """Z108: varsayılan eşik, başlık/özette genel sayılmayan sorgu terimi sayısına (n) göre:
+    min(ESIK_VARSAYILAN, max(1, 2n − 1)).
+    n=1 → 1 · n=2 → 3 · n≥3 → 5 (değişmez). Önce/sonra ölçümünde k·n (k=1) 3-4 terimli sorgulara alakasız kayıt
+    ekledi (ör. "mesaj sınıfı mesaj silme" eşik 3 → 2 alakasız ekip kaydı); 2n − 1 üç ve daha çok terimli sorguyu
+    hiç değiştirmez."""
+    return min(ESIK_VARSAYILAN, max(1, 2 * terim_sayisi - 1))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="ekip/proje hafızası, paket kuralları ve skill araması")
     ap.add_argument("sorgu", nargs="+", help="görevin kısa özeti ve anahtar terimler")
     ap.add_argument("--project-dir", default=".", help="proje kökü (varsayılan: bulunulan dizin)")
     ap.add_argument("--top", type=int, default=5)
-    ap.add_argument("--esik", type=int, default=5, help="en düşük puan (varsayılan 5)")
+    ap.add_argument("--esik", type=int, default=None,
+                    help=f"en düşük puan (verilmezse {ESIK_VARSAYILAN}; 1 terimli sorguda 1, 2 terimlide 3 — açık verilen "
+                         "değer ölçeklenmez)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     proje = Path(args.project_dir).resolve()
@@ -198,32 +223,58 @@ def main() -> int:
     }
     kayitlar = [k for liste in kaynaklar.values() for k in liste]
     govdeli = [k for k in kayitlar if k["govde"]]
+    anahtar_kumeleri = [set(k["anahtar"]) for k in kayitlar]
     q_tum = set(tokenle(" ".join(args.sorgu)))
     genel: set[str] = set()
     govde_genel: set[str] = set()
     if kayitlar and q_tum:
         tavan = max(GENEL_ORAN * len(kayitlar), GENEL_TABAN)
-        genel = {t for t in q_tum if sum(1 for k in kayitlar if t in k["anahtar"]) > tavan}
+        # Genel sayımı TAM eşleşmedir (önek DEĞİL), puanlama önekli olsa da. Ölçüldü (Z108 bug gate, tüketici projesi 55 kayıt,
+        # tavan 4): önekle sayılınca "review" (tam 3 kayıt; reviewed/reviewer/reviewing/reviews ile 5) ve 22 terim daha
+        # genel sayıldı, "code review" sorgusu code-review skill'ini kaybetti. Tam sayımla 4190 sentetik sorguda
+        # (1-3 terim) tabanın (f2b2839) bulduğu kayıtlardan kaybolan 0; önekli sayımda 32.
+        genel = {t for t in q_tum if sum(1 for a in anahtar_kumeleri if t in a) > tavan}
     if govdeli and q_tum:
         g_tavan = max(GENEL_ORAN * len(govdeli), GENEL_TABAN)
         sayim: dict[str, int] = {}
         for k in govdeli:
-            for t in govde_eslesen(q_tum, k["govde"]):
+            for t in eslesen(q_tum, k["govde"]):
                 sayim[t] = sayim.get(t, 0) + 1
         govde_genel = {t for t, n in sayim.items() if n > g_tavan}
     q = q_tum - genel
     q_govde = q_tum - govde_genel
+    # Z108: varsayılan eşik başlık/özet puanı getirebilen terim sayısına (q = indekste genel sayılmayanlar) göre
+    # ölçeklenir. q boşsa ölçeklenecek bir şey yoktur (indeks puanı alan kayıt olamaz) → varsayılan kalır.
+    terim_sayisi = len(q)
+    if args.esik is None and q:
+        esik = varsayilan_esik(terim_sayisi)
+        olceklendi = esik != ESIK_VARSAYILAN
+    else:
+        esik, olceklendi = (ESIK_VARSAYILAN if args.esik is None else args.esik), False
+    # Ölçeklenmiş eşik yalnız başlık/özette eşleşen kayda uygulanır; YALNIZ gövdesiyle eşleşen kayıt varsayılan eşiği
+    # (sorgunun ESIK_VARSAYILAN farklı sözcüğü) korur. Ölçüldü (tüketici projesi): aksi hâlde "test", "backend", "UI5 bootstrap
+    # backend" sorgusu gövdesinde sözcüğü bir kez geçen alakasız kayıtları listeliyordu (sonuncusunda 7 kayıt).
+    govde_esik = ESIK_VARSAYILAN if olceklendi else esik
+    uyari = ""
+    if q_tum and not q:
+        uyari = (f"sorgunun tüm terimleri ({', '.join(sorted(q_tum))}) başlık/özetlerde genel sayıldı ve indeks puanına "
+                 "katılmadı" + ("; gövdede de genel — hiçbir kayıt puan alamaz" if not q_govde else
+                                f"; yalnız gövde eşleşmesi aranır (eşik {govde_esik})")
+                 + ". Daha belirli bir terim ekle (obje tipi, işlem, araç adı).")
+
+    def gecer(s: int, g: int) -> bool:
+        return s >= (esik if s > g else govde_esik)
 
     def puanla(k: dict) -> tuple[int, int]:
-        indeks_puani = sum(1 for a in k["anahtar"] if a in q)
-        govde_puani = GOVDE_AGIRLIK * len(govde_eslesen(q_govde, k["govde"]) - set(k["anahtar"]))
+        indeks_puani = sum(1 for a in k["anahtar"] if sozcuk_eslesir(a, q))
+        govde_puani = GOVDE_AGIRLIK * len(eslesen(q_govde, k["govde"]) - eslesen(q_tum, set(k["anahtar"])))
         return indeks_puani + govde_puani, govde_puani
 
     skorlu = sorted(((*puanla(k), k) for k in kayitlar), key=lambda x: -x[0])
-    sonuc = [(s, g, k) for s, g, k in skorlu if s >= args.esik][: args.top]
+    sonuc = [(s, g, k) for s, g, k in skorlu if gecer(s, g)][: args.top]
     secilen = {id(k) for _, _, k in sonuc}
     govde_aday = [(s, g, k) for s, g, k in sorted(skorlu, key=lambda x: -x[1])
-                  if id(k) not in secilen and s < args.esik and g >= GOVDE_ESIK][:GOVDE_TOP]
+                  if id(k) not in secilen and not gecer(s, g) and g >= GOVDE_ESIK][:GOVDE_TOP]
 
     sayac = {ad: len(liste) for ad, liste in kaynaklar.items()}
     if args.json:
@@ -231,7 +282,9 @@ def main() -> int:
                                     for s, g, k in sonuc],
                           "govde_adaylari": [{"puan": s, "govde_puani": g, **{x: k[x] for x in ("tur", "baslik", "yol")}}
                                              for s, g, k in govde_aday],
-                          "taranan": sayac, "govdesi_taranan": len(govdeli), "esik": args.esik,
+                          "taranan": sayac, "govdesi_taranan": len(govdeli), "esik": esik,
+                          "esik_varsayilan": ESIK_VARSAYILAN, "esik_olceklendi": olceklendi, "terim_sayisi": terim_sayisi,
+                          "govde_esik": govde_esik, "uyari": uyari,
                           "genel_sayilan": sorted(genel), "govdede_genel_sayilan": sorted(govde_genel)},
                          ensure_ascii=False, indent=2))
         return 0
@@ -245,11 +298,16 @@ def main() -> int:
               "söylemiyor olabilir — göreve dokunuyorsa aç):")
         for s, g, k in govde_aday:
             print(f"· [{k['tur']}] {k['baslik']}  (gövdede {g} sözcük)\n    {k['yol']}")
+    if uyari:
+        print(f"UYARI: {uyari}")
     if not sonuc and not govde_aday:
         print("Eşik üstü kayıt yok. Bu 'ilgili ders yok' demek DEĞİL: başka anahtar terimlerle tekrar dene "
               "ya da MEMORY.md indekslerini doğrudan oku.")
     print(f"KAPSAM: taranan {', '.join(f'{ad} {n}' for ad, n in sayac.items())} · gövdesi taranan kayıt {len(govdeli)} "
-          f"(ilk {GOVDE_SINIRI} karakter) · eşik {args.esik} · gövde-aday eşiği {GOVDE_ESIK}"
+          f"(ilk {GOVDE_SINIRI} karakter) · eşik {esik}"
+          + (f" (varsayılan {ESIK_VARSAYILAN}, {terim_sayisi} terimli sorgu için ölçeklendi) · yalnız gövdesiyle "
+             f"eşleşen kayıt için eşik {govde_esik}" if olceklendi else "")
+          + f" · gövde-aday eşiği {GOVDE_ESIK}"
           + (f" · genel sayılıp yok sayılan sözcükler: {', '.join(sorted(genel))}" if genel else "")
           + (f" · gövdede genel sayılan: {', '.join(sorted(govde_genel))}" if govde_genel else "")
           + (" · paket kuralı: sap-project.json source_root yok/okunamadı → taranmadı"

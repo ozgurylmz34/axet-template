@@ -6,6 +6,78 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.9 — 2026-09-25
+
+### ★ 0.5.9-01 · SAP çekirdeği: standart objeler yalnız okunur; append ve Z DTEL'ini AI yaratmaz (AXET-SAP-0.5.1) (kural)
+
+- **neden:** Standart DDIC objesi, program, FM, sınıf, BAdI, CDS ve mesaj sınıfı yalnız okunur; enhancement ve metin değişikliği de buna dahil. Standart tabloya append eklemek ve append alanının Z DTEL'ini ya da domain'ini yaratmak kullanıcıya bırakılır: adları sen versen de AI yaratımı üstlenmez, sen yaratınca sonucu sistemden okuyup doğrular. Çekirdek kimliği `AXET-SAP-0.5.1`: SAP projelerinde `%guncelle-proje` ile `AGENTS.md` damgasını yenile, sonra yeni aXet oturumu aç.
+- **dosyalar:** `core/sap/00-sap.md`, `skills-sap/sap-dev/SKILL.md`, `skills-sap/sap-dev/references/naming.md`, `skills-sap/sap-dev/references/role-briefs.md`, `skills-sap/sap-cds-ddic/SKILL.md`, `skills-sap/sap-cds-ddic/references/domain-dtel.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-abapgit-delivery/SKILL.md`, `templates/package/.rules.md.tmpl`, `tests/test_sap_skill_bilgi.py`
+- **test:** `python tests/run_tests.py -k kanonik_yasak_a`
+- **gerektirir:** —
+
+### ★ 0.5.9-02 · SAP yazma kapısı standart objeyi genişleten kaynağı reddeder (güvenlik)
+
+- **neden:** Z adlı bir objenin kaynağı standart bir objeyi genişletebiliyordu (`extend type`, `extend view`, `annotate view`, BDEF `extension`) ve kapı bunu geçiriyordu. Artık yazma anahtarı açık ve bağlantı DEV olsa bile `ADR_0005_A` ile reddedilir; hedef çözülemezse de red verilir. Aynı tarama `adt_push_source`'ta ve abapGit `check`/`pack` adımlarında da çalışır.
+- **dosyalar:** `skills-sap/sap-abapgit-delivery/SKILL.md`, `skills-sap/sap-abapgit-delivery/references/abapgit-delivery.md`, `skills-sap/sap-abapgit-delivery/scripts/abapgit_zip.py`, `skills-sap/sap-abapgit-delivery/tests/run_tests.py`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/hints.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/std_ext_scan.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py`, `skills-sap/sap-adt-foundation/tests/test_cli_gate.py`, `skills-sap/sap-adt-foundation/tests/test_std_ext_gate.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k std_ext`, `python skills-sap/sap-abapgit-delivery/tests/run_tests.py`
+- **gerektirir:** —
+
+### ★ 0.5.9-03 · UI5 deploy artık SAP yazma kapısından geçer (davranış değişikliği) (güvenlik)
+
+- **neden:** UI5 uygulamasını SAP'ye deploy etmek hiçbir kapıdan geçmiyordu. Artık diğer SAP yazmalarıyla aynı kapıdan geçer: SAP yazma anahtarı açık olmalı, çağrıda `--sap-write` ve kapsam beyanı (S0/S1 gerekçe ya da S2 intake) bulunmalı, bağlantı DEV olmalı, `ui5-deploy.yaml` hedefi `.conn_adt` ile aynı sistemi göstermeli (port farkı bile reddedilir), oturum dili projenin ana diliyle aynı olmalı ve `$TMP` dışı pakette transport numarası dolu olmalı. Biri eksikse deploy build'den önce durur ve sebebini söyler.
+- **dosyalar:** `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-fiori/scripts/_bspnet.py`, `skills-sap/sap-ui5-fiori/scripts/deploy_ui.py`, `skills-sap/sap-ui5-fiori/tests/test_deploy_ui.py`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`
+- **gerektirir:** —
+
+### ★ 0.5.9-04 · İzin kuralları: paket yöneticisiyle kapısız deploy/undeploy engellenir (güvenlik)
+
+- **neden:** `npm`/`pnpm`/`yarn`/`bun` ile `deploy`/`undeploy` betiği ya da `ui5 build … ui5-deploy.yaml` çağırmak SAP yazma kapısını atlıyordu. 20 yeni yasak eklendi (toplam 82 bash kuralı). SAP'ye UI5 yazmanın yolu kapılı `deploy_ui.py deploy`'dur; onu zincirsiz çağır. Takma ad, bayrak ve tırnak birleşimleri hâlâ yakalanmıyor: izin kuralı güvenlik sınırı değildir. Yeni aXet oturumunda etkin olur.
+- **dosyalar:** `config/permissions.json`, `tests/test_install.py`, `README.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`
+- **test:** `python tests/run_tests.py -k PaketYoneticisiDeploy`
+- **gerektirir:** —
+
+### 0.5.9-05 · Mesaj sınıfından mesaj silme gerçekten siler (düzeltme)
+
+- **neden:** `adt_msgclass_write` silinecek mesajı gövdeden çıkarıyordu; SAP bu durumda başarı döner ama mesajı silmez. Artık silme SAP'nin beklediği biçimde gönderilir, kilit altında canlı kaynak yeniden okunur ve sonuç okunarak doğrulanır. Olmayan numara, tüm sınıfı silme, dil uyuşmazlığı ve aynı çağrıda silme ile yazma yazmadan önce reddedilir. Metni olmayan mesaja artık `None` yazılmaz. Canlı SAP'de bu araçla ölçülmedi.
+- **dosyalar:** `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/msgclass.py`, `skills-sap/sap-adt-foundation/tests/test_msgclass_domain.py`, `skills-sap/sap-cds-ddic/references/message-class.md`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k msgclass`
+- **gerektirir:** —
+
+### 0.5.9-06 · `%recall` tek kelimelik aramada da sonuç bulur (düzeltme)
+
+- **neden:** Eşik sabit olduğu için tek kelimelik sorgu (ör. `transport`) boş dönüyordu. Eşik artık terim sayısına göre ölçeklenir, çok kayıtta geçen genel terimler sayıma katılmaz ve indekste önek eşleşmesi var (`transports` ↔ `transport`). `--esik N` ile elle verilebilir.
+- **dosyalar:** `skills/recall/SKILL.md`, `skills/recall/scripts/recall.py`, `tests/test_recall.py`
+- **test:** `python tests/run_tests.py -k recall`
+- **gerektirir:** —
+
+### 0.5.9-07 · Belge düzeltmeleri: proje denetimi sözleşmesi ve NSDM tuzağı (düzeltme)
+
+- **neden:** `validators-local/README.md` denetim betiğine verilen değişkeni artık doğru anlatıyor: değişken dosya listesinin kendisini değil, listeyi içeren dosyanın yolunu verir. CDS rehberindeki NSDM bölümü ölçümle düzeltildi: view entity de replacement tuzağına düşer, MARC da replacement'tır (yalnız stok ve miktar alanları etkilenir); doğrulamada miktar toplamı kontrol grubuyla karşılaştırılır.
+- **dosyalar:** `skills-sap/sap-cds-ddic/SKILL.md`, `skills-sap/sap-cds-ddic/references/cds.md`, `skills-sap/sap-cds-ddic/references/checklists.md`, `templates/project/validators-local/README.md`
+- **test:** —
+- **gerektirir:** —
+
+### 0.5.9-08 · Kurulum 3 adım: çift tık kurulum, `%guncelle` paket adımı, bilgi veren KURULUMU-TAMAMLA (yetenek)
+
+- **neden:** Kurulum üç adıma indi: `aXet-Kur.cmd`'ye çift tıkla → aXet içinde `%guncelle` → `%yeni-proje` ya da `%guncelle-proje`, sonra proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla. Kurulum eksik programları tek listede söyler, Git'i ve Python'u bilinen klasörlerde de arar, git kimliğini sorar. `%guncelle` her turda SAP Python paketlerini denetler (klon güncel olsa da). `KURULUMU-TAMAMLA` soru sormaz, Not Defteri açmaz: doldurulacak `conn\DEV.env` dosyasını tam yoluyla söyler, doldurup tekrar çift tıklayınca bağlantıyı kurar. Terminal yolu ve sorun giderme `docs/onboarding.md` §5'e taşındı.
+- **dosyalar:** `GUNCELLE.md`, `README.md`, `aXet-Kur.cmd`, `docs/onboarding.md`, `kur.ps1`, `proje-tamamla.cmd`, `scripts/conn_sablon.py`, `scripts/doctor.py`, `scripts/guncelle_proje.py`, `scripts/install.py`, `scripts/yeni_proje.py`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sistem/SKILL.md`, `skills/guncelle-proje/SKILL.md`, `skills/guncelle/SKILL.md`, `skills/onboard/SKILL.md`, `skills/yeni-proje/SKILL.md`, `templates/project-sap/conn/README.md`, `tests/_helpers.py`, `tests/test_doctor.py`, `tests/test_guncelle_proje.py`, `tests/test_install.py`, `tests/test_kur.py`, `tests/test_proje_tamamla.py`, `tests/test_yeni_proje.py`
+- **test:** `python tests/run_tests.py -k proje_tamamla`, `python tests/run_tests.py -k PaketAdimi`
+- **gerektirir:** —
+
+### 0.5.9-09 · README sadeleşti; izin kuralı ayrıntıları `docs/izin-kurallari.md`'de (düzeltme)
+
+- **neden:** README'nin "Bilinen sınırlar" bölümü kullanıcının bilmesi gereken kısa maddelere indi; izin desenlerinin eşleşme kuralları, ölçümleri, bilinçli açıkları ve yanlış pozitifleri kelimesi kelimesine yeni `docs/izin-kurallari.md` belgesine taşındı, diğer maddelerin olguları README'de kısaltılarak korundu. Kaldırılmış olan klon yazma korumasını hâlâ varmış gibi anlatan eski madde silindi. "Yapı" bölümü güncel klasörleri gösteriyor.
+- **dosyalar:** `README.md`, `docs/izin-kurallari.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `tests/test_install.py`
+- **test:** `python tests/run_tests.py -k Readme`, `python tests/run_tests.py -k IlkKurulumCmd`
+- **gerektirir:** —
+
+### 0.5.9-10 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) — her yayında beyan edilir. README'nin başındaki `Sürüm:` satırı artık her yayında yayın etiketiyle yazılır (önceki yayınlarda elle yazılmış `0.3.0` kalmıştı); satır yoksa yayın durur.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`, `tests/test_yayin_surumleri.py`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
 ## v0.5.8 — 2026-09-24
 
 ### ★ 0.5.8-01 · `%guncelle` geri alma elle düzenlediğin dosyayı artık ezmez (düzeltme)

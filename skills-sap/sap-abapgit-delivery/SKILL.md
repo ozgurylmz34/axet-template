@@ -40,7 +40,7 @@ description: >
 1. **Çalışma alanı:** önerilen `<source_root>/<MODÜL>/<PAKET>/abapgit/`. Geliştiriciden SAP'de abapGit ile
    paketin **güncel** ZIP'ini iste (adımlar: `references/abapgit-delivery.md` §2) ve `unpack` ile aç.
 2. **Düzenle:** yalnız çalışma alanındaki dosyalar. Yeni nesne gerekiyorsa meta dosyasını (`<ad>.<tip>.xml`) aynı
-   tipte SAP'den gelmiş bir nesneden kopyala; alan adı ya da değer uydurma. Standart objeye append alanı adı önerme; yeni Z DDIC adı
+   tipte SAP'den gelmiş bir nesneden kopyala; alan adı ya da değer uydurma. Standart objeye append alanı adı önerme, append'i ZIP'e koyma — append'i kullanıcı yaratır (kesin yasak A); yeni Z DDIC adı
    (DTEL, domain …) yalnız `%sap-dev` §6 kuralıyla: standarda uygun öneri + canlı kontrol + kullanıcının açık onayı.
 3. **Denetle ve paketle:** `pack --root WS --all --project-dir <PROJE_KÖKÜ>`. FAIL varsa ZIP üretilmez; FAIL'i
    atlatmak için dosya adını/klasörü değiştirme, sebebini kullanıcıya açıkla.
@@ -52,6 +52,9 @@ description: >
 
 ## Rules (Kesin Yasaklar ile eşleşme)
 - **A:** Z/Y dışı nesne dosyası teslime giremez (kilit nesnesi EZ/EY; ad alanı `/Z…/`, `/Y…/`). → `ADR_0005_A`
+- **A (genişletme, Z104):** Z adlı DDLS/DDLX/DCLS/BDEF/SRVD/TABL kaynağı standart objeyi genişletiyorsa (`extend type|view …`,
+  `annotate …`, BDEF `extension`; TABL XML'inde `TABCLASS=APPEND` + standart `SQLTAB`) → `ADR_0005_A`. Tarayıcı yazma kapısıyla
+  AYNI fonksiyondur (`sapadt/std_ext_scan.py`); yüklenemezse teslim üretilmez (`std_ext_scan_unavailable`).
 - **B:** `.abap` kaynağında standart tabloya doğrudan `INSERT/UPDATE/DELETE/MODIFY` → `ADR_0005_B`; tarayıcı
   yüklenemezse teslim üretilmez (`std_dml_scan_unavailable`).
 - **C:** paket tanımı (`*.devc.xml`) ve taban çizgisinde olmayan yeni klasör (abapGit alt paket yaratır) → FAIL.

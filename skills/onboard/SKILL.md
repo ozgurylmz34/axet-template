@@ -25,7 +25,7 @@ Bir adım geçmeden sonrakine geçme; kullanıcı atlamak isterse atlanan adım�
 
 | # | Adım | Kontrol (model çalıştırır) | Geçti sayılır |
 |---|---|---|---|
-| 0 | Ön koşullar | `axet-code -v` · `git --version` · `python --version` · `rg --version` | ilk üçü sürüm basar (rg yoksa yalnız öneri) |
+| 0 | Ön koşullar | `axet-code -v` · `git --version` · `python --version` · `rg --version` | ilk üçü sürüm basar (rg isteğe bağlı: yoksa yalnız bilgi; kurmayı önerme) |
 | 1 | Kurulum | `git -C <AXET_HOME> rev-parse --show-toplevel` · `python <AXET_HOME>/scripts/doctor.py` | klon yolu basılır · global config satırlarında FAIL yok |
 | 2 | Yükleme | bu oturumun ilk satırı (kanarya) | `AXET-CORE-…` var; SAP işi yapılacaksa `SAP:` açık |
 | 3 | Proje | proje kökünde `doctor.py` proje satırları · `session_brief.py --no-fetch` | 0 FAIL · hatasız özet · ilk satırda `proje: <ad>` |
@@ -34,8 +34,8 @@ Bir adım geçmeden sonrakine geçme; kullanıcı atlamak isterse atlanan adım�
 | 4 | Günlük kullanım | — | `docs/onboarding.md` §4'ü özetle |
 
 Eksik adımda yönlendirme:
-- **1 eksik:** kurulum kullanıcının PowerShell'inde yapılır. `docs/onboarding.md` §1'deki başlatma satırını ver.
-  Klon zaten varsa güncelleme komutu `& $HOME\axet\kur.cmd`.
+- **1 eksik:** kullanıcı `aXet-Kur.cmd`'yi indirip çift tıklar (`docs/onboarding.md` §1); terminal komutu verme.
+  Klon zaten varsa güncelleme yolu aXet'te `%guncelle`; `kur.cmd` yalnız sorun gidermede (§5).
 - **3 eksik:** `%yeni-proje` skill'ine geç; proje kurulunca buraya dön.
 
 Ayrıntılı komutlar ve beklenen çıktılar: `docs/onboarding.md` ilgili bölüm.
@@ -43,7 +43,7 @@ Ayrıntılı komutlar ve beklenen çıktılar: `docs/onboarding.md` ilgili böl�
 ## Rules
 - **Kimlik bilgisi:** `.conn_adt` dosyasını açma, okuma, listeleme. Şifre, kullanıcı, host ya da sistem bilgisi
   isteme ve yazdırma. Kimlik adımını kullanıcı kendisi yapar: proje klasöründeki `KURULUMU-TAMAMLA.cmd`'ye çift
-  tıklar, açılan `conn\DEV.env` / `conn\QA.env` şablonlarını Notepad'de doldurur (ya da terminalde
+  tıklar, pencerenin tam yoluyla gösterdiği `conn\DEV.env` / `conn\QA.env` şablonlarını kendisi doldurur (ya da terminalde
   `skills-sap/sap-adt-foundation/scripts/setup_credentials.py --slot <AD>`). Bu dosyaları ve pencereyi sen
   çalıştırma/açma. Dosya biçimini uydurma: alan adları `skills-sap/sap-adt-foundation/assets/.conn_adt.example`'dadır.
 - **Kurulum komutları:** `kur.cmd` önce `-DenemeModu` ile çalıştırılır. `new_project.py` ve `new_package.py` önce

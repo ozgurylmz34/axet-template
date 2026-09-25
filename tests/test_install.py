@@ -10,7 +10,7 @@ import subprocess
 import sys
 import unittest
 
-from _helpers import AXET_HOME, GeciciTest
+from _helpers import AXET_HOME, GeciciTest, rg_siz_path
 
 # Önceden kurulmuş makinelerin config'indeki template kuralları: 42b37b8'de yayımlanan config/permissions.json
 # (bash). Git'ten okunmaz ki test sığ klonda da çalışsın ve RETIRED_RULES'tan türetilmez ki listeden eksik anahtar
@@ -316,7 +316,7 @@ class InstallTest(GeciciTest):
         # (b) KULLANICININ kendi kuralı — template bunu düzeltemez, yalnız belgeleyebilir. Buradaki kullanıcı
         # kuralı ('*benim-aracim*'=allow, sabit 12) birkaç template deny'ından uzun; ÖLÇÜLDÜ (2026-09-17) ki
         # uzun bir allow kısa bir deny'ı gerçekten ezer ⇒ bu birleşimde koruma fiilen delinir. Bunu "ihlal yok"
-        # diye örtmek yerine KİLİTLİYORUZ: risk gerçek ve README "Bilinen sınırlar"da yazılı. Denetim
+        # diye örtmek yerine KİLİTLİYORUZ: risk gerçek ve docs/izin-kurallari.md'de yazılı. Denetim
         # izin-verici kararları görmeyi bırakırsa (regresyon) bu assert FAIL verir.
         kullanici_ihlali = [i for i in ask_deny_uzunluk_ihlalleri(kurallar) if "'*benim-aracim*'" in i]
         self.assertTrue(kullanici_ihlali, "kullanıcının uzun 'allow' kuralı template deny'larıyla çakışıyor ama "
@@ -501,7 +501,7 @@ KONTROL_GRUBU_IZINLI = [
 ]
 
 # BİLİNEN SINIR (ölçüldü 2026-09-17): eşleşme büyük/küçük harfe duyarlı → büyük harfli biçim deny'ı ATLAR.
-# Kombinatoryal olduğu için desenle kapatılmadı (bkz. README "Bilinen sınırlar"). Bu satırlar sınırı KİLİTLER:
+# Kombinatoryal olduğu için desenle kapatılmadı (bkz. docs/izin-kurallari.md). Bu satırlar sınırı KİLİTLER:
 # motor bir gün harf-duyarsız olursa ya da biri kombinatoryal varyant eklerse test FAIL verip kararı geri getirir.
 BILINEN_SINIR_HARF_DUYARLI = [
     'echo "RD /S x" > b09.txt',                  # canlı: ÇALIŞTI (kontrol: 'rd /s x' reddedildi)
@@ -535,7 +535,7 @@ GIT_C_SIMULASYONLA_OLCULEN = [
 
 # HÂLÂ AÇIK (ölçüldü 2026-09-17) — bilinçli olarak kapatılMADI, çünkü her yeni desen uzunluk-ezme yüzeyini
 # büyütür ve `-c ayar=değer` kombinatoryaldır. Bu satırlar açıklığı KİLİTLER: biri desen eklerse ya da motor
-# semantiği değişirse test FAIL verir ve README/_aciklama'daki "bilinen sınır" metni güncellenmek zorunda kalır.
+# semantiği değişirse test FAIL verir ve docs/izin-kurallari.md/_aciklama'daki "bilinen sınır" metni güncellenmek zorunda kalır.
 HALA_ACIK_KACIS_BICIMLERI = [
     'git -c core.pager=cat stash drop',          # `-c ayar=değer` biçimi: hiçbir desen tutmuyor
     # (`-c … branch -D` Z75'te `*git *branch* -D*` ile KAPANDI → Z75_ZORLA_DAL_SILME)
@@ -608,7 +608,7 @@ class OlculmusDenyKapsamiTest(unittest.TestCase):
     def test_git_c_disi_kacis_bicimleri_hala_acik(self):
         """`-c ayar=değer` ve ayıraçsız `checkout .`/`restore .` bugün KURALSIZ (ölçüldü) — bilinçli karar.
 
-        Kapanırsa bu test FAIL verir: o an README "Bilinen sınırlar" ve `_aciklama` KAPSAM BEYANI metinleri
+        Kapanırsa bu test FAIL verir: o an docs/izin-kurallari.md ve `_aciklama` KAPSAM BEYANI metinleri
         de güncellenmek zorundadır, yoksa belge kapsamdan sessizce sapar (K11 gate'inin yakaladığı sınıf).
         """
         kapananlar = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}"
@@ -617,10 +617,10 @@ class OlculmusDenyKapsamiTest(unittest.TestCase):
                                          + "\n" + ("\n").join(kapananlar))
 
     def test_bilinen_sinir_harf_duyarliligi_hala_acik(self):
-        """Büyük harfli biçim bugün kuralsız (ölçüldü). Kapanırsa bu test FAIL verir → README/_aciklama güncellenir."""
+        """Büyük harfli biçim bugün kuralsız (ölçüldü). Kapanırsa bu test FAIL verir → docs/izin-kurallari.md/_aciklama güncellenir."""
         kapananlar = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}"
                       for k in BILINEN_SINIR_HARF_DUYARLI if _eslesen_desenler(self.kurallar, k)]
-        self.assertEqual(kapananlar, [], "Bilinen sınır kapanmış görünüyor; belgeyi (README 'Bilinen sınırlar' + "
+        self.assertEqual(kapananlar, [], "Bilinen sınır kapanmış görünüyor; belgeyi (docs/izin-kurallari.md + "
                                          "permissions.json _aciklama) ve bu testi güncelle:\n" + "\n".join(kapananlar))
 
 
@@ -719,7 +719,264 @@ class ZorlaDalSilmeTest(unittest.TestCase):
     def test_bilincli_acik_zorla_tasima(self):
         kapanan = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z75_BILINCLI_ACIK
                    if _eslesen_desenler(self.kurallar, k)]
-        self.assertEqual(kapanan, [], "Bilinçli açık biçim kural alıyor; README/_aciklama güncellenmeli:\n"
+        self.assertEqual(kapanan, [], "Bilinçli açık biçim kural alıyor; docs/izin-kurallari.md/_aciklama güncellenmeli:\n"
+                         + "\n".join(kapanan))
+
+
+# Z106-EK — PAKET YÖNETİCİSİ İLE KAPISIZ DEPLOY/UNDEPLOY (2026-09-24, kullanıcı onayı). SAP'ye yazan tek meşru yol
+# kapılı `deploy_ui.py deploy`dır (`*deploy_ui*` ask). İskelet package.json'da `deploy`/`undeploy`/`deploy-test`
+# script'leri durur (skills-sap/sap-ui5-fiori/references/app-skeleton.md §4) ve eski 4 desen (`*fiori deploy*`,
+# `*fiori undeploy*`, `*npm run deploy*`, `*npm --prefix * run deploy*`) şu biçimleri KAÇIRIYORDU (ölçüldü,
+# fnmatchcase simülasyonu, eklemeden ÖNCE): `npm run undeploy`, `npm --prefix app run undeploy`, `npm run-script
+# deploy`, `npm run --silent deploy`, `npm -w app run deploy`, `yarn deploy`, `yarn run undeploy`, `pnpm undeploy`,
+# `bun run deploy`, `npm.cmd run deploy` (PowerShell'de npm.ps1 bloklanınca kullanılan biçim) ve
+# `ui5 build --config ui5-deploy.yaml` (iskeletteki ui5-deploy.yaml'da `builder.customTasks: deploy-to-abap` var;
+# UI5 CLI belgesi: özel görev "designated position"ında koşar, başvurduğu standart görev devre dışı olsa bile ·
+# @sap-ux/deploy-tooling README: `deploy` komutu "the same functionality as the abap-deploy UI5 task independent of
+# the ui5 build execution" ⇒ görev `ui5 build` İÇİNDE deploy eder — BELGE kanıtı, canlı ÖLÇÜLMEDİ).
+# DESEN SEÇİMİ (ölçülerek karşılaştırıldı): ilk taslak `*npm*run* deploy*` / `*yarn* deploy*` / `*bun * deploy*`
+# biçimindeydi; paket yöneticisi komutundan SONRA herhangi bir ` deploy` geçen metni tutuyordu ⇒ kapılı yolun
+# kendisini (`npm run build && … deploy_ui.py deploy …` ve hatta ZİNCİRSİZ `deploy_ui.py deploy app --user-ok "npm run
+# build tamam, deploy et"`) deny'a düşürüyordu. Seçilen setin `deploy` ailesi `run deploy` / `run-script deploy` /
+# `yarn deploy` gibi BİTİŞİK metin taşır; `*` yalnız paket yöneticisi ile `run` arasında ya da `run -` bayrak aralığında
+# durur. ⚠ `undeploy` ailesi BİTİŞİK DEĞİLDİR (`*npm*undeploy*`, `*yarn*undeploy*`, `*bun *undeploy*` araya `*` alır) →
+# `yarn test undeploy` gibi metinler de düşer (aşağıda (d) sınıfı, kilitli). Ölçülen hedeflerin tamamı yine tutuldu.
+# ⚠ Bu tablo SİMÜLASYONLA ölçüldü (fnmatchcase, ölçülmüş semantik: tam metne glob, harfe duyarlı). CANLI `axet-code run`
+# (2026-09-24, lab config XDG_CONFIG_HOME, kanıt DB 'denied … rule bash:<desen>=deny' + işaret dosyası) ilk koşumda 4 desen
+# ölçüldü ve reddetti: `*npm*undeploy*`, `*yarn deploy*`, `*ui5 build*ui5-deploy*`, `*npm*run -* deploy*` (ikinci
+# koşumda `*npm*rum deploy*`, `*npm*urn deploy*`, `*npm*run "deploy*` de; `*npm*run 'deploy*` yalnız simülasyon); kontrol
+# `npm run build`, `npm run lint && echo deploy`, `npm run build && python deploy_ui.py deploy app` çalıştı.
+# Her satırın 2. alanı o biçimi tutan desenlerden biridir ve testte adıyla aranır → desen silinirse adıyla FAIL verir
+# (mutasyonla doğrulandı). Yeni desen satırlarında başka desenle çakışmayan biçim seçildi; ⚠ sondaki "eski desenler"
+# bloğundan 4 satır (`npm run deploy`, `npm run deploy-test`, `pnpm run deploy`, `npm --prefix app run deploy`) yeni
+# `*npm*run deploy*` deseninin de alt kümesidir — eski desen silinirse satır yine adıyla FAIL verir ama komut deny'da kalır.
+Z106_PAKET_YONETICISI_DEPLOY = [
+    ('npm -w app run deploy',                              '*npm*run deploy*'),
+    ('npm --workspace app run deploy',                     '*npm*run deploy*'),
+    ('pnpm --filter app run deploy',                       '*npm*run deploy*'),
+    ('npm.cmd run deploy',                                 '*npm*run deploy*'),
+    ('npm run-script deploy',                              '*npm*run-script deploy*'),
+    ('npm run --silent deploy',                            '*npm*run -* deploy*'),
+    ('npm run -s deploy',                                  '*npm*run -* deploy*'),
+    ('npm run -w app deploy',                              '*npm*run -* deploy*'),
+    ('npm run --workspace=app deploy',                     '*npm*run -* deploy*'),
+    ('npm run-script --silent deploy',                     '*npm*run-script -* deploy*'),
+    # npm run-script takma adları (`npm run-script --help` → "aliases: run, rum, urn"; gate ölçümü: npm 10.9.3'te KOŞTU)
+    ('npm rum deploy',                                     '*npm*rum deploy*'),
+    ('npm.cmd rum deploy',                                 '*npm*rum deploy*'),
+    ('npm urn deploy',                                     '*npm*urn deploy*'),
+    ('npm rum undeploy',                                   '*npm*undeploy*'),
+    ('npm urn undeploy',                                   '*npm*undeploy*'),
+    # tırnaklı script adı (gate ölçümü: npm 10.9.3'te KOŞTU)
+    ('npm run "deploy"',                                   '*npm*run "deploy*'),
+    ("npm run 'deploy'",                                   "*npm*run 'deploy*"),
+    ('npm run "undeploy"',                                 '*npm*undeploy*'),
+    ('npm run undeploy',                                   '*npm*undeploy*'),
+    ('npm --prefix app run undeploy',                      '*npm*undeploy*'),
+    ('npm run-script undeploy',                            '*npm*undeploy*'),
+    ('npm run --silent undeploy',                          '*npm*undeploy*'),
+    ('cd ui/app && npm run undeploy',                      '*npm*undeploy*'),
+    ('pnpm undeploy',                                      '*npm*undeploy*'),
+    ('pnpm run undeploy',                                  '*npm*undeploy*'),
+    ('yarn deploy',                                        '*yarn deploy*'),
+    ('yarn deploy-test',                                   '*yarn deploy*'),
+    ('cd app; yarn deploy',                                '*yarn deploy*'),
+    ('yarn.cmd deploy',                                    '*yarn.cmd deploy*'),
+    ('yarn run deploy',                                    '*yarn*run deploy*'),
+    ('yarn --cwd app deploy',                              '*yarn --cwd * deploy*'),
+    ('yarn workspace app deploy',                          '*yarn workspace * deploy*'),
+    ('yarn undeploy',                                      '*yarn*undeploy*'),
+    ('yarn run undeploy',                                  '*yarn*undeploy*'),
+    ('bun deploy',                                         '*bun deploy*'),
+    ('bun run deploy',                                     '*bun run deploy*'),
+    ('bun run --silent deploy',                            '*bun run -* deploy*'),
+    ('bun undeploy',                                       '*bun *undeploy*'),
+    ('bun run undeploy',                                   '*bun *undeploy*'),
+    ('ui5 build --config ui5-deploy.yaml',                 '*ui5 build*ui5-deploy*'),
+    ('ui5 build --config=ui5-deploy.yaml',                 '*ui5 build*ui5-deploy*'),
+    ('npx ui5 build -c ui5-deploy.yaml',                   '*ui5 build*ui5-deploy*'),
+    ('npx ui5 build preload --clean-dest --config ui5-deploy.yaml --include-task=generateCachebusterInfo',
+     '*ui5 build*ui5-deploy*'),
+    # Eski desenlerin tuttuğu biçimler (regresyon kilidi; ilk 4'ü `*npm*run deploy*` ile de örtüşür):
+    ('npm run deploy',                                     '*npm run deploy*'),
+    ('npm run deploy-test',                                '*npm run deploy*'),
+    ('pnpm run deploy',                                    '*npm run deploy*'),
+    ('npm --prefix app run deploy',                        '*npm --prefix * run deploy*'),
+    ('npx --no-install fiori undeploy --config ui5-deploy.yaml', '*fiori undeploy*'),
+    ('npx fiori deploy --config ui5-deploy.yaml --yes',    '*fiori deploy*'),
+]
+
+DEPLOY_UI = 'python C:/x/skills-sap/sap-ui5-fiori/scripts/deploy_ui.py'
+
+# Yanlış pozitif kontrolü: HİÇBİR kurala uymamalı (deny DE ask DA).
+Z106_KONTROL_GRUBU = [
+    'npm run build', 'npm run start', 'npm start', 'npm install', 'npm ci', 'npm test', 'npm run lint',
+    'npm run start-noflp', 'npm run start-mock', 'npm --prefix app run build', 'npm -w app run start',
+    'yarn build', 'yarn install', 'yarn run build', 'pnpm install', 'pnpm run build', 'bun run build',
+    'ui5 build --config=ui5.yaml --clean-dest --dest dist',
+    'cat ui5-deploy.yaml',
+    'grep -n "url:" ui5*.yaml',
+    'npm install -D @sap-ux/deploy-tooling',             # adında deploy geçen paket kurulumu
+    'yarn add -D @sap-ux/deploy-tooling',
+    'docker run ubuntu echo deploy',                     # "ubuntu" içindeki "bun" düşmemeli
+    'git commit -m "deploy notu"',
+    'git commit -m "npm run build sonrasi deploy notu"',
+    # zincirde ` deploy` geçen ama deploy ETMEYEN biçimler (lider ölçüm listesi):
+    'npm run lint && echo deploy',
+    'npm run build -- --dest deploy',
+    'npm run start:deploy-preview',
+    'npm run test -- deploy.test.js',
+    'yarn test deploy',
+    # çıkış yolu: desen metnini ararken paket yöneticisi adını dışarıda bırak
+    'rg -n "run deploy" .',
+    'npm run "build"',
+    "npm run 'lint'",
+    'npm run build && return 0',
+    # undeploy ailesi için SERBEST kalması gerekenler — `*bun*undeploy*`/`*npm*deploy*` gibi genişletmeleri öldürür
+    'docker run ubuntu ls /srv/undeploy',                # "ubuntu" içindeki "bun" + undeploy
+    'ubuntu-deploy undeploy.sh',
+    'git log --grep undeploy',
+    'rg -n undeploy package.json',
+]
+
+# Kapılı meşru yol: `deploy_ui.py` çağrıları YALNIZ `*deploy_ui*` ask'ına uymalı — yeni deny'lara TAKILMAMALI.
+# Zincirli biçimler dahil (bayraksız paket yöneticisi komutu + deploy_ui) ve onay cümlesinde "npm run" geçse bile.
+Z106_KAPILI_YOL = [
+    f'{DEPLOY_UI} prepare app',
+    f'{DEPLOY_UI} prepare app --no-build',
+    f'{DEPLOY_UI} verify app',
+    f'{DEPLOY_UI} deploy app --user-ok "OK deploy et"',
+    f'{DEPLOY_UI} --help',
+    f'{DEPLOY_UI} deploy app --user-ok "npm run build tamam, deploy et"',
+    f'npm run build && {DEPLOY_UI} deploy app --user-ok "OK"',
+    f'cd ui && npm run build && {DEPLOY_UI} deploy app --user-ok "OK"',
+    f'npm install && {DEPLOY_UI} deploy app --user-ok "OK"',
+    f'yarn install; {DEPLOY_UI} deploy app --user-ok "OK"',
+    f'bun run build && {DEPLOY_UI} deploy app --user-ok "OK"',
+    f'npm run build; {DEPLOY_UI} prepare app',
+]
+
+# BİLİNEN YANLIŞ POZİTİF (bilinçli, kilitli): deny ALIR ama deploy etmez. 2. alan komutun uyduğu desen kümesinin
+# TAMAMIDIR — küme değişirse (daraltma ya da örtüşen yeni desen, ör. `*yarn * undeploy*` EKLE mutantı) test FAIL →
+# docs/izin-kurallari.md/_aciklama güncellenir. Kaynakları: (a) bayrak aralığı `run -*` / `--cwd *` zincirde sonraki ` deploy`e uzanır;
+# (b) desen metni argümanda/mesajda/aramada geçer (dosyanın genel yan etkisi); (c) `ui5 build` ile ui5-deploy aynı
+# metinde; (d) `undeploy` ailesi BİTİŞİK DEĞİLDİR (`*npm*undeploy*`, `*yarn*undeploy*`, `*bun *undeploy*` araya `*`
+# alır) → paket yöneticisi adından sonra herhangi bir yerde `undeploy` geçen metin düşer; (e) `*npm*urn deploy*`
+# "return deploy" gibi metne de uyar; (f) `*npm*rum deploy*` Türkçe metinde sık geçen "-rum ile biten kelime + deploy" (durum/yorum/forum/spectrum)
+# metnine de uyar — kapılı yol zincirinde onay cümlesinde geçerse deny (13 sabit karakter) `*deploy_ui*` ask'ını ezer.
+Z106_BILINEN_YANLIS_POZITIF = [
+    ('npm run deploy-config',                            ['*npm run deploy*', '*npm*run deploy*']),   # (b) eskiden de
+    ('npm run "deploy-config"',                          ['*npm*run "deploy*']),                        # (b)
+    ('npm run -s build && echo deploy',                  ['*npm*run -* deploy*']),                      # (a)
+    (f'npm run -s build && {DEPLOY_UI} deploy app --user-ok "OK"', ['*deploy_ui*', '*npm*run -* deploy*']),  # (a)
+    (f'yarn --cwd app build && {DEPLOY_UI} deploy app --user-ok "OK"', ['*deploy_ui*', '*yarn --cwd * deploy*']),
+    (f'{DEPLOY_UI} deploy app --user-ok "npm run deploy yerine bunu kullan"',
+     ['*deploy_ui*', '*npm run deploy*', '*npm*run deploy*']),                                          # (b)
+    ('git commit -m "npm run deploy notu"',              ['*npm run deploy*', '*npm*run deploy*']),     # (b)
+    ('rg "yarn deploy" .',                               ['*yarn deploy*']),                            # (b) → rg -n "run deploy"
+    ('ui5 build --config ui5-deploy.yaml --exclude-task deploy-to-abap', ['*ui5 build*ui5-deploy*']),  # (c)
+    ('ui5 build && cat ui5-deploy.yaml',                 ['*ui5 build*ui5-deploy*']),                   # (c)
+    ('yarn test undeploy',                               ['*yarn*undeploy*']),                          # (d)
+    ('npm run test -- --grep undeploy',                  ['*npm*undeploy*']),                           # (d)
+    ('npm pkg get scripts.undeploy',                     ['*npm*undeploy*']),                           # (d)
+    ('rg -n "npm.*undeploy" .',                          ['*npm*undeploy*']),                           # (d)
+    ('npm run build && rg undeploy .',                   ['*npm*undeploy*']),                           # (d)
+    ('bun test src/undeploy.test.ts',                    ['*bun *undeploy*']),                          # (d)
+    ('npm ci && echo return deploy',                     ['*npm*urn deploy*']),                         # (e)
+    ('npm run build && echo "durum deploy hazir"',       ['*npm*rum deploy*']),                         # (f)
+    ('npm install && echo "spectrum deploy"',            ['*npm*rum deploy*']),                         # (f)
+    ('npm run build && echo "yorum deploy"',             ['*npm*rum deploy*']),                         # (f)
+    (f'npm run build && {DEPLOY_UI} deploy app --user-ok "forum deploy onayı"', ['*deploy_ui*', '*npm*rum deploy*']),  # (f)
+]
+
+# BİLİNEN AÇIK (bilinçli, kilitli): kapanırsa test FAIL → docs/izin-kurallari.md/_aciklama güncellenir.
+Z106_BILINEN_ACIK = [
+    'pnpm deploy',               # pnpm'in YERLEŞİK `deploy` komutu (paketi dizine kopyalar) script'i koşmaz (DOĞRULANMADI)
+    'pnpm -C app deploy',
+    'npx deploy',                # @sap-ux/deploy-tooling bin'i; iskelette doğrudan bağımlılık değil (registry:
+    'npx undeploy',              #   @sap/ux-ui5-tooling 1.32.0 dependencies={}, bin yalnız `fiori`)
+    './node_modules/.bin/deploy -c ui5-deploy.yaml',
+    'node node_modules/@sap/ux-ui5-tooling/bin/fiori.cjs deploy',   # CLI dosyasının doğrudan çağrısı
+    'npm run ship',              # package.json'a başka adla eklenmiş deploy script'i — desenle kapatılamaz
+    'ui5 build --config my-deploy.yaml',                  # başka adlı deploy config'i
+    'yarn --silent deploy',      # yarn'da script öncesi bayrak (`--cwd`/`workspace` dışı)
+    'bun --cwd app deploy',
+    'npm run  deploy',           # çift boşluk
+    'NPM RUN DEPLOY',            # harf duyarlılığı (ölçülmüş semantik)
+    'npm run Deploy',
+    'yarn Deploy',
+    'npm rum -s deploy',         # takma adın bayraklı biçimi (`run -*` karşılığı rum/urn için eklenmedi)
+    'npm run-script "deploy"',   # tırnaklı biçim yalnız `run` için eklendi
+    # kabuk dolaylaması — komut metninde script adı hiç geçmez, desenle kapatılamaz
+    'X=deploy; npm run $X',
+    'npm run $(echo deploy)',
+    'Start-Process npm -ArgumentList "run","deploy"',   # PowerShell argüman listesi
+    'npx @ui5/cli build --config ui5-deploy.yaml',      # `ui5 build` metni geçmez
+    'bun --cwd app run deploy',  # bun'da `run` öncesi bayrak
+    'bun.exe run deploy',
+    'pnpm --dir app deploy',     # pnpm'in yerleşik deploy'u (DOĞRULANMADI) — `pnpm deploy` ile aynı sınıf
+    'yarn.cmd --cwd app deploy', # `.cmd` + bayrak birlikte
+    # SINIF (lider kararı 2026-09-24): takma ad / bayrak / tırnak BİRLEŞİMLERİ desenle kovalanmaz — izin kuralı güvenlik
+    # sınırı değildir, SAP'ye yazmanın güvenli yolu deploy_ui.py kapısıdır. npm 10.9.3'te bu 6'sının deploy script'ini
+    # ÇALIŞTIRDIĞI gate tarafından ölçüldü:
+    'npm run -s "deploy"',
+    'npm rum "deploy"',
+    'npm urn "deploy"',
+    'npm urn -s deploy',
+    'npm rum --silent deploy',
+    "npm run-script 'deploy'",
+    # yarn/bun tırnaklı — araç kurulu değil, script'i çalıştırdığı DOĞRULANAMADI; desen yok:
+    'yarn "deploy"',
+    'yarn run "deploy"',
+    'bun run "deploy"',
+]
+
+
+class PaketYoneticisiDeployTest(unittest.TestCase):
+    """Z106-EK: paket yöneticisi ile kapısız deploy/undeploy deny'a düşer; kapılı `deploy_ui.py` ask'ta kalır."""
+
+    def setUp(self):
+        self.kurallar = guncel_kurallar()
+
+    def test_paket_yoneticisi_deploy_bicimleri_deny(self):
+        eksik = []
+        for komut, desen in Z106_PAKET_YONETICISI_DEPLOY:
+            if self.kurallar.get("bash", {}).get(desen) != "deny":
+                eksik.append(f"{desen!r} config/permissions.json'da deny değil → {komut!r} SAP'ye kapısız deploy eder")
+                continue
+            eslesen = _eslesen_desenler(self.kurallar, komut)
+            if desen not in [p for p, _ in eslesen]:
+                eksik.append(f"{desen!r} artık {komut!r} metnine uymuyor (eşleşenler: {eslesen})")
+            if any(k != "deny" for _, k in eslesen):
+                eksik.append(f"{komut!r} deny DIŞI bir desene de uyuyor: {eslesen}")
+        self.assertEqual(eksik, [], "\n".join(eksik))
+
+    def test_kontrol_grubu_dusmez(self):
+        ihlal = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z106_KONTROL_GRUBU
+                 if _eslesen_desenler(self.kurallar, k)]
+        self.assertEqual(ihlal, [], "\n".join(ihlal))
+
+    def test_kapili_deploy_ui_yalniz_ask(self):
+        ihlal = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z106_KAPILI_YOL
+                 if _eslesen_desenler(self.kurallar, k) != [("*deploy_ui*", "ask")]]
+        self.assertEqual(ihlal, [], "kapılı yol yalnız `*deploy_ui*` ask'ına uymalı:\n" + "\n".join(ihlal))
+
+    def test_bilinen_yanlis_pozitif_hala_deny(self):
+        degisen = []
+        for k, beklenen in Z106_BILINEN_YANLIS_POZITIF:
+            eslesen = _eslesen_desenler(self.kurallar, k)
+            if "deny" not in [v for _, v in eslesen]:
+                degisen.append(f"{k!r} artık deny almıyor → {eslesen}")
+            elif sorted(p for p, _ in eslesen) != sorted(beklenen):
+                degisen.append(f"{k!r} eşleşen desen kümesi değişti: beklenen {sorted(beklenen)}, "
+                               f"gerçek {sorted(p for p, _ in eslesen)}")
+        self.assertEqual(degisen, [], "Belgelenmiş yanlış pozitif artık deny almıyor; docs/izin-kurallari.md/_aciklama "
+                                      "güncellenmeli:\n" + "\n".join(degisen))
+
+    def test_bilinen_acik_hala_acik(self):
+        kapanan = [f"{k!r} → {_eslesen_desenler(self.kurallar, k)}" for k in Z106_BILINEN_ACIK
+                   if _eslesen_desenler(self.kurallar, k)]
+        self.assertEqual(kapanan, [], "Bilinen açık biçim kural alıyor; docs/izin-kurallari.md/_aciklama güncellenmeli:\n"
                          + "\n".join(kapanan))
 
 
@@ -849,6 +1106,40 @@ class OrtamDenetimiRcTest(unittest.TestCase):
         bilgi, ok = self._kos(0, "git version 2.55.0\n")["git"]
         self.assertTrue(ok, bilgi)
         self.assertEqual(bilgi, "git version 2.55.0")
+
+
+class OrtamRgBilgiTest(GeciciTest):
+    """Kullanıcı kararı (2026-09-24): kullanıcıya ek uygulama önerilmez; rg bunlardan biri. rg yoksa install.py Ortam
+    satırı UYARI değil BİLGİ'dir ve kurulum yeri/indirme adresi basmaz (eskiden "[UYARI] rg: YOK ... yazılım merkezinden
+    ya da https://github.com/BurntSushi/ripgrep/releases" — aXet-Kur.cmd penceresinde görünüyordu). Kontrol grubu: rg
+    varsa [OK] + yol. doctor karşılığı: test_doctor.DoctorTest.test_rg_yoksa_yalniz_bilgi_oneri_adres_yok."""
+
+    def test_check_env_rg_yoksa_durum_none_bilgi(self):
+        import install
+        from unittest import mock
+        sahte = subprocess.CompletedProcess([], 0, stdout="v 1\n", stderr="")
+        with mock.patch.object(install.shutil, "which", side_effect=lambda ad: None if ad == "rg" else "arac"), \
+                mock.patch.object(install.subprocess, "run", return_value=sahte):
+            satir = {ad: (bilgi, ok) for ad, bilgi, ok in install.check_env()}
+        self.assertEqual(satir["rg"], ("yok (isteğe bağlı)", None))
+        self.assertIs(satir["git"][1], True)  # diğer araçlar etkilenmez
+
+    def test_install_rg_yoksa_bilgi_satiri_oneri_adres_yok(self):
+        self.env = rg_siz_path(self.env)
+        r = self.calistir("install.py", "--dry-run")
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertIn("  [BİLGİ] rg: yok (isteğe bağlı)", c)
+        for yasak in ("ripgrep", "yazılım merkez", "[UYARI] rg"):
+            self.assertNotIn(yasak, c)
+        # kontrol grubu: rg varsa [OK] + yolu
+        bin_ = self.tmp / "_rg"
+        bin_.mkdir()
+        (bin_ / "rg.cmd").write_text("@echo off\r\nexit /b 0\r\n", encoding="ascii", newline="")
+        self.env = rg_siz_path(self.env, bin_)
+        c = self.cikti(self.calistir("install.py", "--dry-run"))
+        self.assertIn(f"  [OK] rg: {bin_ / 'rg'}.", c)  # uzantı harfi PATHEXT'ten gelir (ölçüldü: rg.CMD)
+        self.assertNotIn("[BİLGİ] rg", c)
 
 
 class PythonAsgariTest(unittest.TestCase):
@@ -1226,6 +1517,86 @@ class PaketAdimiTest(GeciciTest):
         self.assertIn("Değişiklik yok", r2.stdout)
         self.assertEqual(1, len(self.pip_cagrilari()))
 
+    # --- Z102: `--paketler` — %guncelle her güncellemede koşar; config'e YAZMAZ ---------------------------------------
+    def _config_izi(self) -> dict:
+        """Global config klasörünün tam izi: dosya adı → (sha256, mtime_ns). Yeni .bak ya da içerik değişimi görünür."""
+        import hashlib
+        kok = self.xdg / "axet-code"
+        if not kok.exists():
+            return {}
+        return {f.name: (hashlib.sha256(f.read_bytes()).hexdigest(), f.stat().st_mtime_ns)
+                for f in sorted(kok.iterdir()) if f.is_file()}
+
+    def test_paketler_kipi_config_yazmaz_eksigi_kurar(self):
+        self.hepsi_kurulu()
+        r = self.install("--sap")  # SAP açık kurulum: config yazıldı
+        self.assertEqual(0, r.returncode, self.cikti(r))
+        once = self._config_izi()
+        self.assertIn("axet-code.json", once)
+        yazma = self.klon / "config" / "sap-write.local"
+        self.eksik()
+        r = self.install("--paketler")
+        c = self.cikti(r)
+        self.assertEqual(0, r.returncode, c)
+        self.assertEqual(1, len(self.pip_cagrilari()))  # eksik paket kuruldu (install.py değişmemiş olsa da)
+        self.assertIn("PAKETLER: KURULDU", r.stdout)
+        self.assertEqual(once, self._config_izi(), "--paketler global config klasörüne yazdı (içerik/mtime/.bak)")
+        self.assertFalse(yazma.exists(), "--paketler SAP yazma bayrağına dokundu")
+        self.assertNotIn("Global config", r.stdout)  # kurulum kipinin çıktısı yok
+        self.assertNotIn("Tarayıcı hazırlığı", r.stdout)  # tarayıcı adımı %guncelle'de ayrı adım
+
+    def test_paketler_kipi_sap_kapaliysa_atlar_config_olusturmaz(self):
+        self.eksik()
+        r = self.install("--paketler")
+        self.assertEqual(0, r.returncode, self.cikti(r))
+        self.assertIn("PAKETLER: ATLANDI — SAP paketi kapalı", r.stdout)
+        self.assertEqual([], self.pip_cagrilari())
+        self.assertEqual({}, self._config_izi())  # config yoktu, yine yok
+
+    def test_paketler_kipi_bozuk_config_olculemedi_rc0_dokunmaz(self):
+        f = self.yaz(self.xdg / "axet-code" / "axet-code.json", "{bozuk")
+        once = self._config_izi()
+        self.eksik()
+        r = self.install("--paketler")
+        self.assertEqual(0, r.returncode, self.cikti(r))  # güncellemeyi bozmaz
+        self.assertIn("PAKETLER: ÖLÇÜLEMEDİ", r.stdout)
+        self.assertEqual([], self.pip_cagrilari())
+        self.assertEqual(once, self._config_izi())
+        self.assertEqual("{bozuk", f.read_text(encoding="utf-8"))
+
+    def test_paketler_kipi_dry_run_kurmaz(self):
+        self.hepsi_kurulu()
+        self.assertEqual(0, self.install("--sap").returncode)
+        self.eksik()
+        r = self.install("--paketler", "--dry-run")
+        self.assertEqual(0, r.returncode, self.cikti(r))
+        self.assertEqual([], self.pip_cagrilari())
+        self.assertIn("kurulacaktı", r.stdout)
+
+    def test_paketler_baska_bayrakla_birlesmez(self):
+        self.eksik()
+        for ek in ("--sap", "--no-sap", "--sap-write", "--no-sap-write", "--uninstall"):
+            with self.subTest(ek=ek):
+                r = self.install("--paketler", ek)
+                self.assertEqual(3, r.returncode, self.cikti(r))
+                self.assertIn("--paketler yalnız başına", r.stdout)
+        self.assertEqual([], self.pip_cagrilari())
+        self.assertEqual({}, self._config_izi())
+        self.assertFalse((self.klon / "config" / "sap-write.local").exists())
+
+    def test_pip_mesaji_sade_ve_elle_komut_bt_etiketli(self):
+        """Kullanıcıya dönük: önce sade Türkçe ne olduğu, tekrar deneme yolu %guncelle; elle komut yalnız BT için
+        etiketli. Eski 'kur.cmd'yi yeniden çalıştır' (terminal komutu) ve etiketsiz 'Elle kurulum:' kalmadı."""
+        out = self._hata("ag")
+        self.assertIn("Paket internetten indirilemedi", out)
+        self.assertIn("%guncelle", out)
+        self.assertIn("BT için elle kurulum komutu (sen çalıştırma): ", out)
+        self.assertNotIn("  Elle kurulum:", out)
+        self.assertNotIn("kur.cmd'yi yeniden çalıştır", out)
+        uyari = next(s for s in out.splitlines() if "UYARI:" in s)
+        bt = next(i for i, s in enumerate(out.splitlines()) if "BT için elle kurulum komutu" in s)
+        self.assertLess(out.splitlines().index(uyari), bt)  # önce açıklama, sonra BT komutu
+
     def test_kapatma_ortami_pip_cagirmaz(self):
         """Test takımının güvencesi: _helpers AXET_PAKET_KUR=0 verir → hiçbir install.py koşumu pip'e gitmez."""
         self.eksik()
@@ -1275,15 +1646,57 @@ class PaketKaynakTest(unittest.TestCase):
         req_kayit = next(s for s in harita["siniflar"] if s["sinif"] == req)
         self.assertFalse(req_kayit.get("ozel_adim"), "requirements.txt'in özel adımı yoksa tek kaynak o olamaz")
 
-    def test_readme_guncelle_iddiasi_dar(self):
-        """Tur 2 madde 4: README "%guncelle eksik olanı kurar" diyordu; oysa %guncelle install.py'yi yalnız
-        install.py'nin DEĞİŞTİĞİ yayında koşar. Madde bu sınırı, sonrasında doctor'un gösterdiğini ve kur.cmd yolunu söyler."""
-        metin = (AXET_HOME / "README.md").read_text(encoding="utf-8")
+    def test_onboarding_paket_maddesi_guncelle_iddiasi_olculu(self):
+        """Tur 2 madde 4: belge "%guncelle eksik olanı kurar" diyordu ama o zaman %guncelle install.py'yi yalnız
+        install.py'nin DEĞİŞTİĞİ yayında koşuyordu. Z102 (2026-09-24) bu sınırı kaldırdı: %guncelle HER seferinde
+        `install.py --paketler` koşar — iddia artık doğru VE mekanizmasıyla yazılı olmalı (GUNCELLE.md 17. adım ayrıca
+        test_guncelle_her_seferinde_paket_adimini_kosar'da). Madde README'den onboarding "Sorun giderme"ye taşındı
+        (README sadeleştirme); doctor'un gösterdiği ve kur.cmd yolu yine yazılı."""
+        metin = (AXET_HOME / "docs" / "onboarding.md").read_text(encoding="utf-8")
         madde = next(m for m in metin.split("\n- ") if m.startswith("SAP bağlantısının Python paketleri"))
         self.assertIn("install.py", madde)
+        self.assertIn("install.py --paketler", madde)  # iddianın mekanizması
+        self.assertIn("%guncelle", madde)
         self.assertIn("doctor", madde)
         self.assertIn("kur.cmd", madde)
+        self.assertIn("BT için elle kurulum komutu (sen çalıştırma)", madde)  # install.py'nin bastığı etiketle aynı
         self.assertNotIn("kurulum aracı ve `%guncelle`, eksik olanı", madde)
+        self.assertNotIn("yalnız `scripts/install.py`'nin değiştiği", madde)  # Z102 öncesi sınır artık yanlış
+        kaynak = (AXET_HOME / "scripts" / "install.py").read_text(encoding="utf-8")
+        self.assertIn("BT için elle kurulum komutu (sen çalıştırma)", kaynak)
+
+    def test_guncelle_her_seferinde_paket_adimini_kosar(self):
+        """Z102: %guncelle install.py'yi yalnız install.py DEĞİŞİNCE koşuyordu (harita özel adımı) ⇒ paketi eksik
+        kullanıcı, install.py'ye dokunmayan her yayında eksik kalıyordu. GUNCELLE.md'nin otomatik 17. adımı paket
+        kipini HER güncellemede — klon güncel çıkıp 2/3/4'te bitse de — koşar; skill aynı adımı anar."""
+        import re
+        metin = (AXET_HOME / "GUNCELLE.md").read_text(encoding="utf-8")
+        satirlar = {m.group(1): m.group(0) for m in re.finditer(r"^\|\s*(\d+)\s*\|.*$", metin, re.M)}
+        adim = satirlar.get("17", "")
+        self.assertIn('`python "<klon>/scripts/install.py" --paketler`', adim)
+        self.assertIn("soru SORMA", adim)
+        self.assertIn("BOZMAZ", adim)
+        self.assertIn("çıkış daima 0", adim)
+        self.assertEqual(6, adim.count("|"), "tablo hücresi içinde çıplak '|' var (satır bölünür)")
+        for no in ("2", "3", "4"):  # "güncel → BİTİR" dalları paket adımını atlamaz
+            self.assertIn("adım 17", satirlar[no], f"adım {no}")
+        skill = (AXET_HOME / "skills" / "guncelle" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('python "<KLON>/scripts/install.py" --paketler', skill)
+        # belge ile motor aynı bayrağı konuşuyor (bayrak adı install.py'nin argparse'ında)
+        self.assertIn('"--paketler"', (AXET_HOME / "scripts" / "install.py").read_text(encoding="utf-8"))
+
+    def test_paketler_komutu_izin_desenlerine_takilmaz(self):
+        """%guncelle `python "<klon>/scripts/install.py" --paketler` çağırır; bu metin template bash desenlerinden
+        hiçbirine uymamalı (fnmatch simülasyonu; aXet eşleştiricisi değil — test_tarayici_hazirla ile aynı yöntem).
+        Kontrol grubu: `--sap-write` çağrısı deny desenine UYAR (simülasyon kör değil)."""
+        import fnmatch
+        kurallar = json.loads((AXET_HOME / "config" / "permissions.json").read_text(encoding="utf-8"))["rules"]["bash"]
+        for komut in ('python "C:/Users/x/axet/scripts/install.py" --paketler',
+                      'python "C:/Users/x/axet/scripts/install.py" --paketler --dry-run'):
+            with self.subTest(komut=komut):
+                self.assertEqual([], [d for d in kurallar if fnmatch.fnmatchcase(komut, d)])
+        kontrol = 'python "C:/Users/x/axet/scripts/install.py" --sap --sap-write'
+        self.assertEqual(["deny"], [kurallar[d] for d in kurallar if fnmatch.fnmatchcase(kontrol, d)])
 
     def test_venv_icinde_user_verilmez(self):
         import install

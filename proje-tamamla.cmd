@@ -1,6 +1,7 @@
 @echo off
 rem proje-tamamla.cmd - aXet proje kurulumunun KULLANICI adimlari, tek pencerede sirayla:
-rem   1) SAP baglanti sablonlari conn\DEV.env + conn\QA.env (kullanici Notepad'de doldurur; pencere parola SORMAZ)
+rem   1) SAP baglanti sablonlari conn\DEV.env + conn\QA.env (kullanici kendisi doldurur; pencere soru/parola SORMAZ,
+rem      editor ACMAZ - yalniz hangi dosyanin, hangi alanlarin doldurulacagini TAM yoluyla soyler; kullanici karari)
 rem   2) davranis yuzeyi onayi (behavior_manifest.py generate - onayi kullanici verir)
 rem   3) doctor.py   4) aXet'i projede ac (axet-code -c)
 rem Kullanim: proje-tamamla.cmd [PROJE_KLASORU]   (verilmezse bulunulan dizin)
@@ -8,7 +9,6 @@ rem Projedeki KURULUMU-TAMAMLA.cmd kisayolu (yeni_proje.py yazar) bunu cagirir. 
 rem var olan dosyayi ezmez, yapilmis adimi atlar.
 rem aXet oturumu bu dosyayi CALISTIRMAZ ve pencere ACMAZ: baglanti bilgisi ve onay kullanicinindir.
 rem Etiketli goto kullanilir: parantezli blok icinde ')' iceren yol (orn. "Program Files (x86)") blogu bozar.
-rem AXET_KURULUM_EDITOR_ACMA tanimliysa Notepad acilmaz (yalniz otomatik testler icin).
 setlocal
 set "AXET_HOME=%~dp0"
 set "FOUND=%AXET_HOME%skills-sap\sap-adt-foundation\scripts"
@@ -120,14 +120,17 @@ goto son
 
 :doldur
 echo.
-echo   YAPMAN GEREKEN: Notepad'de acilan dosyalarda ^<...^> yazan yerleri doldur (koseli parantezleri de sil), kaydet.
-echo   - DEV.env zorunlu. QA sistemi yoksa QA.env'e dokunma (bos sablon atlanir).
-echo   - Dosyalar git'e girmez; parola yalniz bu dosyalarda durur. Icerigini sohbete yapistirma.
-echo   Bitince bu dosyaya tekrar cift tikla.
-if defined AXET_KURULUM_EDITOR_ACMA goto doldur_son
-if exist "%CONN%\DEV.env" start "" notepad "%CONN%\DEV.env"
-if exist "%CONN%\QA.env" start "" notepad "%CONN%\QA.env"
-:doldur_son
+echo   YAPMAN GEREKEN: SAP baglanti bilgilerini su dosyaya yaz (dosyayi Not Defteri ile ac, doldur, kaydet):
+echo     ZORUNLU      : "%CONN%\DEV.env"
+echo     Istege bagli : "%CONN%\QA.env"   (QA sistemin yoksa bu dosyaya dokunma; bos sablon atlanir)
+echo   Doldurulacak alanlar - dosyada ^<...^> yazan yerler (koseli parantezleri de sil):
+echo     ADT_SAP_URL      : SAP sisteminin adresi (orn. https://sunucu:port)
+echo     ADT_SAP_USER     : SAP kullanici adin
+echo     ADT_SAP_PASSWORD : SAP parolan
+echo     ADT_SAP_CLIENT   : client numarasi (3 hane, orn. 100)
+echo     ADT_SAP_LANGUAGE : yalniz ^<...^> duruyorsa - 2 harf (orn. TR)
+echo   Dosyalar git'e girmez; parola yalniz bu dosyalarda durur. Icerigini sohbete yapistirma.
+echo   Bitince bu dosyaya (KURULUMU-TAMAMLA) tekrar cift tikla.
 set "RC=3"
 goto son
 
@@ -157,7 +160,7 @@ goto son
 
 :klon_yok
 echo HATA: aXet klonu eksik gorunuyor: "%AXET_HOME%scripts" altinda doctor.py / conn_sablon.py yok.
-echo aXet'i %%guncelle ile guncelle ya da kur.cmd ile yeniden kur.
+echo aXet'te %%guncelle yaz; olmazsa aXet-Kur.cmd dosyasina tekrar cift tikla.
 set "RC=1"
 goto son
 
@@ -195,7 +198,8 @@ set "RC=5"
 goto son
 
 :axet_yok
-echo   axet-code komutu bulunamadi (PATH). Kurulum icin kur.cmd; sonra: axet-code -c "%PROJE%"
+echo   Kurulum tamam ama aXet bu pencereden acilamadi (axet-code komutu bulunamadi). aXet'i kendin ac;
+echo   aXet kurulu degilse sirket portalindan (Software Center / Company Portal) kur.
 set "RC=6"
 goto son
 

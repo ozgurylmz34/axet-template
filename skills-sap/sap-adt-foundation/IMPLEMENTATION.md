@@ -40,17 +40,17 @@ taşınan validator'lar `lib/validators/check_{rap_readonly_consumption,reuse_ga
   `adt_unit_run`: `allow_risky_tests` truthy ise yazma (araç `if allow_risky_tests:` ile okur — `"false"` dizesi de truthy'dir; sınıflandırma araçla aynı kuralı kullanır).
 - Çıkış kodu: `0` başarı · `2` kapı/guard reddi (SAP'ye gidilmedi) · `1` araç/bağlantı hatası · `3` kullanım hatası.
   Araç sonucundaki hata → exit 2: `guardrail_violation` (kod = `ADR_0005_A|C|D`, `ADR_0010_TIER`, `ADR_0011_PII`), `reviewer_blocker`, `tier_pii_guard`, `not_select`, `write_keyword`, `gecersiz_tablo_adi`, `gecersiz_kolon_adi`,
-  `std_dml_scan_unavailable` (§12), `pull_before_edit_missing`, `pull_state_unreadable`, `source_changed_since_pull` (§13),
+  `std_dml_scan_unavailable` (§12), `std_ext_scan_unavailable` (Z104), `pull_before_edit_missing`, `pull_state_unreadable`, `source_changed_since_pull` (§13),
   `preflight_blocker`, `msgclass_overwrite_not_allowed` (§15), `repeated_failure` (§23 — araç sonucu değil, `calistir`
   aracı çağırmadan üretir; listede katalog eşliği için).
   `pull_live_read_failed` (§13: yazma öncesi canlı okuma başarısız) → exit 1. §15'te eklenen exit 1: `lock_conflict`, `lock_failed`,
-  `readback_mismatch`, `readback_failed`, `msgclass_live_incomplete`.
+  `readback_mismatch`, `readback_failed`, `msgclass_live_incomplete`; Z113 (silme): `delete_body_selfcheck_failed`.
   → exit 3: `unsupported_type`, `bad_regex`, `no_scope`, `invalid_argument` (§14). Diğer `ok:false` → exit 1
   (§14'te eklenenler: `create_not_persisted`, `push_failed`, `activation_failed`, `screen_gen_rc`, `nav_remap_off`,
   `soap_fault`, `ev_rc_missing`, `master_language_unresolved`).
 - Kapı sırası (`gate.check_write`, ilk red döner, her red ayrı kod):
   0 `sap_project_missing|sap_project_invalid` → 1 `write_not_optin_global` → 2 `write_flag_missing` → 3 `tier_not_writable`, `conn_env_mismatch`
-  → 4 `scope_missing|scope_invalid|reason_missing|intake_missing|intake_invalid` → 5 `ADR_0005_A` (Z/Y; silmede standart obje; §14: `name` dışındaki ad argümanları — `adt_screen_generate` `fm_name`+`program`, `adt_post_shell(func)` `extra.function_group`; argüman kapıya verilmezse fail-closed), `ADR_0005_B` / `std_dml_scan_unavailable` (kaynakta standart tabloya doğrudan DML — §12), `ADR_0005_C` (paket tipi; transport: post_shell + 3 composite + `adt_msgclass_write` + `adt_screen_generate` mode≠READ), `language_mismatch`, `reviewer_bypass_forbidden`
+  → 4 `scope_missing|scope_invalid|reason_missing|intake_missing|intake_invalid` → 5 `ADR_0005_A` (Z/Y; silmede standart obje; §14: `name` dışındaki ad argümanları — `adt_screen_generate` `fm_name`+`program`, `adt_post_shell(func)` `extra.function_group`; argüman kapıya verilmezse fail-closed), `ADR_0005_B` / `std_dml_scan_unavailable` (kaynakta standart tabloya doğrudan DML — §12), `ADR_0005_A` / `std_ext_scan_unavailable` (Z104: kaynak standart objeyi genişletiyor — `extend type|view …`, `annotate …`, BDEF `extension`; `gate.check_std_extension` + `sapadt/std_ext_scan.py`, `adt_push_source` ikinci katman, `adt_struct_create` render edilen DDL), `ADR_0005_C` (paket tipi; transport: post_shell + 3 composite + `adt_msgclass_write` + `adt_screen_generate` mode≠READ), `language_mismatch`, `reviewer_bypass_forbidden`
   → 6 `write_log_unavailable`. Ardından (CLI) profil denetimi: `tool_not_available_for_profile`, `type_not_available_for_profile` (§14.2). Sonra araç fonksiyonunun kendi guard'ları ve reviewer'ı koşar (ikinci katman).
 - Okuma çağrıları (`ping` hariç): `sap_project_*`, `conn_env_mismatch`, `tool_not_available_for_profile` (bugün `adt_transport_list` ∉ `btp_abap`; yazma aracı `adt_screen_generate` yalnız `ecc`/`s4_private`).
 - Ek kullanım kodları: `usage_error`, `unknown_tool`, `invalid_args`, `args_invalid_json`, `args_not_object`, `args_file_unreadable`, `project_dir_invalid`.
@@ -62,7 +62,9 @@ taşınan validator'lar `lib/validators/check_{rap_readonly_consumption,reuse_ga
 
 ### İçe aktarılabilir kapı (toplu/push script'leri için)
 `from sapadt import gate` → `check_write(tool, proj, obje_adi=, object_type=, ek_obje_adlari=, transport=, require_transport_flag=, scope=, reason=, intake=, sap_write_flag=, tool_args=, log=True) -> GateResult`
-(`allowed, code, message, gate_dict()`), `log_write_attempt(...)`, `check_read`, `check_data_access` (PII), `review_preflight(task, artifact)`, `tool_class`.
+(`allowed, code, message, gate_dict()`), `log_write_attempt(...)`, `check_read`, `check_data_access` (PII), `review_preflight(task, artifact)`, `tool_class`,
+`check_target_system(proj, url, client)` (Z106: hedefi `.conn_adt` DIŞINDAN alan yazıcı — UI5 deploy `ui5-deploy.yaml` — `check_write` geçtikten sonra çağırır; url/client ≠ `.conn_adt` ya da boş → `write_target_mismatch`).
+Kullanan script'ler: `sapadt/populate.py` (CLI `on_kontrol` üzerinden) · `sap-ui5-fiori/scripts/deploy_ui.py deploy` (araç adı `deploy_ui`, Z106 2026-09-24).
 Red kararını `log=True` iken kapı kendisi loglar; izin verilen işlemin sonucunu çağıran loglar.
 
 ### KURAL — kapısız yazma yok
@@ -466,8 +468,17 @@ Yeni zincir icat edilmedi (görev sınırı). İki araçta da create hatası dö
 - **Reçete (alınan):** `playbook/adt-message-class.md:66-137` (LOCK stateful + lock Accept → PUT `?corrNr&lockHandle&accessMode=MODIFY`,
   `Content-Type: application/vnd.sap.adt.mc.messageclass+xml; charset=utf-8`, **If-Match YOK** → UNLOCK) · `:139-150` (If-Match self-collision kök sebebi) ·
   `:152-165` (`mc:messages` çoğul, `mc:msgno` 3 hane, `mc:msgtext`, `mc:selfexplainatory`, `mc:documented`, `adtcore:name=""`, kaçış) ·
-  `:167-191` (try/finally UNLOCK) · `:200-205` (tam liste değiştirme) · `:232` + `scripts/populate_message_class.py:68-79` (T100 metni ≤ 73 karakter) ·
+  `:167-191` (try/finally UNLOCK) · `:200-205` (tam liste değiştirme — ⛔ **2026-09-24 kaynakta ÇÜRÜDÜ**, aşağıda Z113) · `:232` +
+  `scripts/populate_message_class.py:68-79` (T100 metni ≤ 73 karakter) ·
   `populate_message_class.py:179-201` (gövde: responsible, masterLanguage, name, `MSAG/N`, description, language, packageRef uri/type/name).
+  *(Satır no'ları 2026-09-13 kaynak sürümüne aittir; güncel referanslar `tools/msgclass.py` başlığında.)*
+- **Z113 silme (2026-09-24, kaynak çekirdek 2026-09-24 portu):** kaynak canlı ölçtü — tam PUT'tan mesajı çıkarmak SİLMEZ (229→229); silme gövdedeki
+  `<mc:deletedmessages mc:msgno="NNN"/>` ile (229→228). Eski uygulama silmeyi listeden çıkararak yapıyordu (canlıda iş görmezdi; readback
+  `readback_mismatch` verirdi) ve test sahtesi PUT'u tam liste DEĞİŞTİRME sayıyordu (çürümüş varsayım → test yeşil). Şimdi: silme ayrı çağrıda
+  (`messages` + `delete_numbers` → `invalid_argument`), kalanlar canlı öznitelikleriyle + `deletedmessages` (son `<mc:messages>`'tan sonra), gövde öz-denetimi,
+  tüm-sınıf / oturum dili ≠ master korumaları, KİLİT ALTINDA yeniden okuma (TOCTOU; `phase:"under_lock"`), ÖNCE/SONRA kapısı `delete_gate` + kapsam beyanı;
+  öznitelik kaçışına TAB/LF/CR eklendi. Sahte istemci ölçülmüş davranışa çevrildi (`test_msgclass_domain._sap_put_uygula`); testler MS1-MS7.
+  **aXet ile canlı ÖLÇÜLMEDİ.**
 - **Bilinçli farklar:** (1) `clear_enqueue_lock` güvenlik ağı (`adt-message-class.md:136,193-197`, `populate_message_class.py:305-310`) **alınmadı** —
   Kesin Yasak C; yalnız aracın kendi LOCK handle'ı UNLOCK edilir. Kilit alınamazsa DUR: HTTP 403/409/423 ya da gövdede `EU 510|locked|gesperrt|
   currently being edited|enqueue` → `lock_conflict`, aksi `lock_failed` (ikisi çıkış 1) + SM12 yönlendirmesi; PUT ve UNLOCK gönderilmez.

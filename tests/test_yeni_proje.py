@@ -111,6 +111,9 @@ class YeniProjeTest(GeciciTest):
         self.assertNotIn("SENİN TERMİNALİNDE", r.stdout)
         son = r.stdout.split("SONUÇ: proje kuruldu", 1)[1]
         self.assertIn(f"SON ADIM (SENDE): proje klasöründeki {yeni_proje.KISAYOL}'ye çift tıkla", son)
+        # kullanıcı kararı 2026-09-24: pencere Notepad AÇMAZ, yalnız bilgi verir — son mesaj bunu söyler
+        self.assertNotIn("Notepad", son)
+        self.assertIn("editör açmaz", son)
         self.assertIn(str(AXET_HOME / "proje-tamamla.cmd"), son, "elle yol notu klondaki cmd'yi göstermeli")
         self.assertIn(f"[yazıldı] {yeni_proje.KISAYOL}", r.stdout)
         self.assertNotIn("git'e kapalı değil", r.stdout, "şablon .gitignore kısayolu kapatmalı")

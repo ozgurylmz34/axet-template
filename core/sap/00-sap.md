@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.5.0
+SAP-CORE-ID: AXET-SAP-0.5.1
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -7,14 +7,14 @@ SAP-CORE-ID: AXET-SAP-0.5.0
 
 | Kategori | Yasak |
 |---|---|
-| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | Hiçbir şekilde yaratılmaz/değiştirilmez/silinmez: append yapı, alan ekleme, standart FM/BAdI/program ve mesaj sınıfı değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapı / append alanı / DTEL adını sen önermezsin — kullanıcı belirler.** (Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
+| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
 | **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
 
-**Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok.
+**Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok. A ve C'de işlemi kullanıcı kendisi yapar; "DEVAM", onun bildirdiği sonucu sistemden okuyup doğrulamak ve kendi işine dönmektir — yasak işlemi sen yapmazsın.
 
-**Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar.
+**Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar. Kullanıcı "adları ben veririm" derse de yaratımı sen yapmazsın: append'i ve append alanının Z DTEL'ini kullanıcı yaratır, sonucu sana bildirir; sen sistemden okuyup doğrularsın.
 
 ## SAP çalışma disiplini
 - **Tetik cümleleri (duyunca DUR, yasak tablosuna bak):** A — "standart tabloya alan ekle", "VBAK'a custom field", "append yarat" · B — "VBAK'a kayıt ekle", "T001'i güncelle" · C — "yeni transport aç", "transport release et", "yeni paket yarat", "kilidi sil" · D ihmali — Z obje etiketi başka dilde ya da boş.

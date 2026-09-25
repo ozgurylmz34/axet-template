@@ -97,7 +97,7 @@ Rolü ne olursa olsun (iş mantığı, yardımcı, behavior implementation) tek 
 | BAdI implementation | `ZZ1_IMP_` | `ZZ1_IMP_PO_CUST` |
 | Customizing include (`EEW*`, `CI_*`) alanı | `ZZ_` | `ZZ_…` |
 
-Append yapı ve standart objeye alan ekleme kesin yasak A'dır; ad kullanıcıdan gelir.
+Append yapı ve standart objeye alan ekleme kesin yasak A'dır: adı kullanıcı verir ve append'i (append alanının Z DTEL'i/domain'i dahil) kullanıcı kendisi yaratır — AI ad önermez, yaratmaz. Standart objeler yalnız okunur.
 
 ### 4.7 Veri sözlüğü
 | Obje | Tip | Örnek |
@@ -105,7 +105,7 @@ Append yapı ve standart objeye alan ekleme kesin yasak A'dır; ad kullanıcıda
 | Table | `T` | `ZSD001_T_DESC` |
 | Table type | `TT` | `ZSD001_TT_INVOICE` |
 | Structure | `S` | `ZSD001_S_REPORT` |
-| Append structure | `ZZ` | `ZZMARA` (yalnız kullanıcı talebiyle) |
+| Append structure | `ZZ` | `ZZMARA` (kullanıcı yaratır — AI yaratmaz, kesin yasak A) |
 | View (klasik) | `V` | `ZSD001_V_SIZE` |
 | Data element | **`E`** | `ZSD001_E_AMOUNT` |
 | Domain | **`D`** | `ZSD001_D_AMOUNT` |
@@ -158,7 +158,7 @@ Yeni alan tiplerken yeni obje yaratmadan önce mevcudu ara:
 2. Mevcut Z data element (bu paket ya da ortak paket) — kopya yaratma.
 3. Yoksa yeni Z data element: 4 etiket `master_language`'de ve tam (kesin yasak D). Adı bu standarda uygun
    **önerebilirsin**; canlıda kontrol et (varsa başka ad), kullanıcı açıkça onaylamadan yaratma (`SKILL.md` §6).
-   Standart objeye append alanının adı ise önerilmez (§4.6, kesin yasak A).
+   Standart objeye append alanının adı ise önerilmez; append'i ve o alanın Z DTEL'ini de AI yaratmaz (§4.6, kesin yasak A).
 4. Son çare ilkel tip (`abap.char(n)` …) — tercih edilmez.
 
 Ortak master/value-help CDS için yerel kopya yaratılmaz: ortak view yeniden kullanılır, association kurulur.

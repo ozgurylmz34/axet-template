@@ -56,7 +56,8 @@ TR→`T` eşlemesi foundation kütüphanesindeki T100 örneğine (`sprsl = 'T'`)
 | `ADR_0005_C_subpackage` | yeni klasör → abapGit alt paket yaratır | alt paketi geliştirici SE21'de açar, sonra `--subpackages-exist` |
 | `language_mismatch` | repo dili ile proje dili farklı | ZIP'i doğru dilde bağlanmış repodan yeniden dışa aktar |
 | `baseline_stale` | taban çizgisi eski | SAP'den güncel ZIP al, `unpack` (yerel değişiklik varsa önce pack) |
-| `std_dml_scan_unavailable` | foundation tarayıcısı bulunamadı | template klonu eksik; `doctor.py` çalıştır |
+| `std_dml_scan_unavailable` · `std_ext_scan_unavailable` | foundation tarayıcısı bulunamadı | template klonu eksik; `doctor.py` çalıştır |
+| `ADR_0005_A` + "genişletme" mesajı | Z objenin kaynağı standart objeyi genişletiyor (append/extend/annotate/BDEF extension) | DUR: append/extend'i kullanıcı SAP'de yaratır, sonucu bildirir; teslimden çıkar |
 | Pull sırasında satır sonu hatası / fark | CRLF | `pack` LF'ye çevirir; ZIP'i elle yeniden paketleme |
 | Aktivasyon hatası | sözdizimi/bağımlılık (araç denetlemez) | çıktıyı `status-in` ile al, satırı dosyaya eşle, düzelt, yeniden `pack` |
 

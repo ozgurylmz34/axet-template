@@ -1022,9 +1022,12 @@ def _parse_msgclass_xml(xml_text: str) -> dict:
     for el in root.findall("{%s}messages" % _MC_NS_MC):
         def _g(a: str, _el=el):
             return _el.get("{%s}%s" % (_MC_NS_MC, a))
+        # `mc:msgtext` özniteliği yoksa '' (None DEĞİL): kaynak çekirdek populate_message_class.py:462
+        # `m.get(_NS_MC + 'msgtext', '')`. None kalırsa yazma aracı gövdeye `mc:msgtext="None"` yazardı (Z113 L1).
+        metin = _g("msgtext")
         messages.append({
             "no": _g("msgno"),
-            "text": _g("msgtext"),
+            "text": "" if metin is None else metin,
             "selfexplanatory": (_g("selfexplainatory") == "true"),
             "documented": (_g("documented") == "true"),
         })
@@ -1807,6 +1810,17 @@ def adt_push_source(
     if _dml:
         return GuardrailViolation("ADR_0005_B", _dml_mesaj(_dml),
                                   bulgular=[b.as_dict() for b in _dml]).as_dict()
+    # Kesin Yasak A (Z104) — İKİNCİ katman (birincisi `gate.check_std_extension`): Z adlı obje kaynağında
+    # standart objeyi genişletme (`extend type|view …`, `annotate …`, BDEF `extension`). Ağdan ÖNCE koşar.
+    try:
+        from sapadt import std_ext_scan as _ext
+        _gen = _ext.tara(source, object_type)
+    except Exception as exc:  # noqa: BLE001 — tarayıcı koşamadıysa GEÇMEZ (fail-closed)
+        return {"ok": False, "error": "std_ext_scan_unavailable", "name": name, "type": object_type,
+                "message": f"Kesin Yasak A genişletme taraması koşamadı ({type(exc).__name__}) — fail-closed."}
+    if _gen:
+        return GuardrailViolation("ADR_0005_A", _ext.mesaj(_gen),
+                                  bulgular=[b.as_dict() for b in _gen]).as_dict()
 
     client = None   # PULL-BEFORE-EDIT: istemci kayıt kontrolünden SONRA alınır (kayıt yoksa ağa hiç gidilmez)
     tmp_file = None

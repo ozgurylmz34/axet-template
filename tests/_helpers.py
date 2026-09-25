@@ -155,3 +155,13 @@ CLASS zcl_sd001_helper IMPLEMENTATION.
 ENDCLASS.
 """
 ABAP_TEMIZ = ABAP_TYPE_C.replace("TYPE c LENGTH 10", "TYPE string")
+
+
+def rg_siz_path(env: dict, sahte_rg: Path | None = None) -> dict:
+    """PATH'ten rg taşıyan klasörler çıkarılır; sahte_rg verilirse (rg.cmd'nin klasörü) başa eklenir."""
+    adlar = ("rg.exe", "rg.cmd", "rg.bat", "rg.com")
+    anahtar = next(k for k in env if k.upper() == "PATH")
+    parca = [d for d in env[anahtar].split(os.pathsep) if d and not any((Path(d) / a).exists() for a in adlar)]
+    env = dict(env)
+    env[anahtar] = os.pathsep.join(([str(sahte_rg)] if sahte_rg else []) + parca)
+    return env

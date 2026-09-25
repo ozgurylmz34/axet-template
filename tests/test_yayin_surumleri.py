@@ -16,7 +16,9 @@ eşlemesiz dosya FAIL'i · kalemde bildirilen dosya değişmemişse FAIL · etik
 yabancı origin reddi · `session_brief.template_bolumu` satır değişimi ve kritik hatırlatması ·
 GERÇEK yayın kolundaki üç koruma (şema sorunu · `yayinlar.json` yok · kalem listesi boş) mesajıyla
 birlikte · dolu hedefe yazılmaması · `tur=guvenlik ⇒ kritik` türetmesinin `guncelle.py` ile ayna
-olması · ÖLÇÜLEMEDİ satırlarının kalem satırıyla birlikte korunması.
+olması · ÖLÇÜLEMEDİ satırlarının kalem satırıyla birlikte korunması · README sürüm satırının
+damgalanması (ilk ve ikinci yayın, satır yok / iki satır ⇒ yayın durur, beyansız README ⇒ FAIL +
+İPUCU, içerik farkında İPUCU yok).
 
 KAPSAM — bakılmayan: gerçek `git push` (araç push etmez, yalnız komutu yazar) · gerçek GitHub ·
 `guncelle.py`'nin plan SONRASI komutları (sec/uygula/kapanis — P2'nin kendi takımı) ·
@@ -55,6 +57,10 @@ def kalem(kid: str, **ek) -> dict:
 # Yayın aracının ürettiği dosyalar (yayin_hazirla.URETILEN_DOSYALAR ile aynı küme).
 # Z17 (2026-09-20) sonrası bunlar da kalem-diff kapsamındadır: beyan edilmezse yayın DURUR.
 URETILEN = ["CHANGELOG.md", "guncelle/yayinlar.json", "guncelle/ci-durum.json"]
+# README'nin sürüm satırı her yayında değişir ⇒ README her yayının "yayın kaydı" kalemine beyan edilir
+# (muafiyet YOK: kalemsiz değişen dosyayı tüketici motoru uygulamaz).
+YAYIN_KAYDI = URETILEN + ["README.md"]
+README_SURUMLU = "# Deneme\n\n> Sürüm: v0.0.0 · Lisans: MIT\n\ngövde\n"
 
 
 def yayinlar(*yayin: dict) -> dict:
@@ -80,6 +86,8 @@ class YayinTemeli(GeciciTest):
         d = self.tmp / "depo"
         for z in ZORUNLU:
             self.yaz(d / z, "deneme\n")
+        # Yayın aracı README'nin `> Sürüm: … · ` satırını etiketle yazar; satırsız README yayını durdurur.
+        self.yaz(d / "README.md", README_SURUMLU)
         self.yaz(d / "scripts" / "doctor.py", "# sahte doctor v1\n")
         for yol, metin in dosyalar.items():
             self.yaz(d / yol.replace("__", "/"), metin)
@@ -410,7 +418,7 @@ class YayinAkisiTest(YayinTemeli):
                                      # Z17: üretilen dosyalar da beyan edilmek ZORUNDA,
                                      # yoksa tüketici klonuna hiç ulaşmazlar.
                                      kalem("0.2.0-uv", baslik="yayın üstverisi",
-                                           dosyalar=list(URETILEN), test=[]))),
+                                           dosyalar=list(YAYIN_KAYDI), test=[]))),
                             ensure_ascii=False, indent=1) + "\n")
         self.commitle(d, "ikinci yayin hazirligi")
         r = self.arac(d, "--hedef", str(yayinevi), "--origin", str(bare))
@@ -470,7 +478,8 @@ class YayinAkisiTest(YayinTemeli):
         d, bare, yayinevi = self.ikinci_yayina_hazirla()
         onceki = self.git(yayinevi, "rev-parse", "HEAD").stdout.strip()
         self.yaz(d / "scripts" / "doctor.py", "# sahte doctor v2\n")
-        self.yaz(d / "README.md", "eslemesiz degisiklik\n")          # HİÇBİR kalemde yok
+        # HİÇBİR kalemde yok; sürüm satırı dışında da değişti ⇒ README yayın aracının yazdığı fark değil
+        self.yaz(d / "README.md", README_SURUMLU.replace("gövde", "eslemesiz degisiklik"))
         self.yaz(d / "guncelle" / "yayinlar.json",
                  json.dumps(yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
                                      yayin("v0.2.0", kalem("0.2.0-01"))),
@@ -485,6 +494,92 @@ class YayinAkisiTest(YayinTemeli):
                          "FAIL'e rağmen commit atıldı")
         self.assertEqual("v0.1.0", self.git(yayinevi, "tag", "-l").stdout.strip(),
                          "FAIL'e rağmen etiket atıldı")
+
+    # --- README sürüm satırı (2026-09-25: public README v0.4.0→v0.5.8 boyunca elle yazılmış "0.3.0" taşıdı) ---
+    def test_readme_surum_satiri_ilk_yayinda_etiketle_yazilir(self):
+        d = self.depo(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))))
+        self.commitle(d)
+        hedef, r = self.ilk_yayin(d)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        readme = (hedef / "README.md").read_text(encoding="utf-8")
+        self.assertIn("> Sürüm: v0.1.0 · Lisans: MIT", readme)
+        self.assertNotIn("v0.0.0", readme)
+        self.assertIn("gövde", readme, "sürüm satırı dışındaki içerik değişmemeli")
+        self.assertIn("KAPSAM — README sürüm satırı: v0.1.0", c)
+
+    def test_readme_surum_satiri_yoksa_yayin_durur(self):
+        d = self.depo(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))), **{"README.md": "# Deneme\n\nsürüm satırı yok\n"})
+        self.commitle(d)
+        hedef, r = self.ilk_yayin(d)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 1, c)
+        self.assertIn("README sürüm satırı: README.md'de `> Sürüm: <etiket> · …` satırı 0 kez var", c)
+        self.assertIn("Git geçmişi kurulmadı", c)
+        self.assertFalse((hedef / ".git").exists(), "damgasız README ile depo kuruldu")
+
+    def test_readme_iki_surum_satiri_yayini_durdurur(self):
+        d = self.depo(yayinlar(yayin("v0.1.0", kalem("0.1.0-01"))),
+                      **{"README.md": "> Sürüm: v0.0.0 · a\n\n> Sürüm: v0.0.0 · b\n"})
+        self.commitle(d)
+        hedef, r = self.ilk_yayin(d)
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 1, c)
+        self.assertIn("satırı 2 kez var (tam 1 olmalı)", c)
+        self.assertFalse((hedef / ".git").exists())
+
+    def test_ikinci_yayinda_readme_beyansizsa_fail_ve_ipucu(self):
+        """Muafiyet YOK: yalnız sürüm satırı değişse de README bir kaleme ait olmalı (tüketici motoru kalemsiz
+        dosyayı uygulamaz). Araç yalnız bu durumda ne yapılacağını söyleyen İPUCU ekler."""
+        d, bare, yayinevi = self.ikinci_yayina_hazirla()
+        onceki = self.git(yayinevi, "rev-parse", "HEAD").stdout.strip()
+        self.yaz(d / "scripts" / "doctor.py", "# sahte doctor v2\n")
+        self.yaz(d / "guncelle" / "yayinlar.json",
+                 json.dumps(yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
+                                     yayin("v0.2.0", kalem("0.2.0-01"),
+                                           kalem("0.2.0-uv", dosyalar=list(URETILEN), test=[]))),
+                            ensure_ascii=False, indent=1) + "\n")
+        self.commitle(d, "readme beyansiz")
+        r = self.arac(d, "--hedef", str(yayinevi), "--origin", str(bare))
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 1, c)
+        self.assertIn("eşlemesiz dosya (hiçbir kaleme ait değil): README.md", c)
+        self.assertIn("İPUCU: README.md yalnız sürüm satırında değişti", c)
+        self.assertIn(" · 1 sorun", c, "İPUCU sorun sayısına katılmamalı")
+        self.assertEqual(onceki, self.git(yayinevi, "rev-parse", "HEAD").stdout.strip(), "FAIL'e rağmen commit")
+
+    def test_KONTROL_ikinci_yayinda_readme_beyanliysa_etiketle_yazilir(self):
+        d, bare, yayinevi = self.ikinci_yayina_hazirla()
+        self.yaz(d / "scripts" / "doctor.py", "# sahte doctor v2\n")
+        self.yaz(d / "guncelle" / "yayinlar.json",
+                 json.dumps(yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
+                                     yayin("v0.2.0", kalem("0.2.0-01"),
+                                           kalem("0.2.0-uv", dosyalar=list(YAYIN_KAYDI), test=[]))),
+                            ensure_ascii=False, indent=1) + "\n")
+        self.commitle(d, "readme beyanli")
+        r = self.arac(d, "--hedef", str(yayinevi), "--origin", str(bare))
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 0, c)
+        self.assertNotIn("İPUCU", c)
+        self.assertIn("> Sürüm: v0.2.0 · Lisans: MIT", (yayinevi / "README.md").read_text(encoding="utf-8"))
+
+    def test_eslemesiz_readme_icerik_farkinda_ipucu_basilmaz(self):
+        """İPUCU yalnız 'yalnız sürüm satırı' durumunda: içerik farkında README'yi kaleme koymak doğru cevap değildir,
+        o farkın kendi kalemi gerekir."""
+        d, bare, yayinevi = self.ikinci_yayina_hazirla()
+        self.yaz(d / "scripts" / "doctor.py", "# sahte doctor v2\n")
+        self.yaz(d / "README.md", README_SURUMLU.replace("gövde", "yeni paragraf"))
+        self.yaz(d / "guncelle" / "yayinlar.json",
+                 json.dumps(yayinlar(yayin("v0.1.0", kalem("0.1.0-01")),
+                                     yayin("v0.2.0", kalem("0.2.0-01"),
+                                           kalem("0.2.0-uv", dosyalar=list(URETILEN), test=[]))),
+                            ensure_ascii=False, indent=1) + "\n")
+        self.commitle(d, "readme icerik")
+        r = self.arac(d, "--hedef", str(yayinevi), "--origin", str(bare))
+        c = self.cikti(r)
+        self.assertEqual(r.returncode, 1, c)
+        self.assertIn("eşlemesiz dosya (hiçbir kaleme ait değil): README.md", c)
+        self.assertNotIn("İPUCU", c)
 
     def test_kalemde_bildirilen_dosya_degismemisse_fail(self):
         d, bare, yayinevi = self.ikinci_yayina_hazirla()

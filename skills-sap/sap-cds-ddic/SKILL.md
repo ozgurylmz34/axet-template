@@ -76,7 +76,7 @@ okuyarak doğrularsın. `adt_post_shell` `structure`/`tabl`/`doma`/`dtel` → `u
 
 Yeni Z DDIC adı (domain, DTEL, tablo, yapı, tablo tipi …): önce yeniden kullanım; değilse standarda uygun **öner** →
 canlıda kontrol et (`adt_search_objects` / `adt_get`; varsa başka ad) → tablo hâlinde sun → **açık onay** (`%sap-dev` §6).
-Standart objeye append alanı adını önerme; açıklama ve etiketleri tahmin etme (kesin yasak A/D).
+Standart objeye append alanı adını önerme, append'i ve o alanın Z DTEL'ini yaratma (kullanıcı yaratır; standart objeler yalnız okunur); açıklama ve etiketleri tahmin etme (kesin yasak A/D).
 
 ### 3. Yaz — bağımlılık sırasıyla
 Sıra: **domain → DTEL → structure / table type → Z tablo → lock object → CDS (alt view'dan üste)**; mesaj sınıfı bağımsız.
@@ -100,8 +100,9 @@ ya da "ekle → tüketiciyi çevir → sil" üç turu (`cds.md` §4 T6/T11).
 - "HTTP 201 / 200 / activated / uploaded" kanıt değildir. `adt_get` ile canlı kaynağı oku, gönderdiğinle kıyasla
   (boyut + içerik; CRLF normalize). "Active source differs" uyarısını **ölç**: boyut farkı büyükse kaynak persist etmemiştir.
 - DDIC: `adt_sql_query` ile `DD03L` alan sayısı (tablo/yapı) · `DD40L.ROWTYPE` (table type) · DTEL `typeName` + 4 etiket.
-- CDS: `adt_inactive_objects` (bağımlı view/BDEF sessizce inaktif kalabilir) · classic view'da `COUNT(*)` ile satır say
-  (replacement tablo tuzağı aktivasyonda görünmez) · abstract entity'de kaynakta `abstract entity` geçmeli.
+- CDS: `adt_inactive_objects` (bağımlı view/BDEF sessizce inaktif kalabilir) · classic view'da da view entity'de de `COUNT(*)` ile satır say;
+  miktar okuyorsa Open SQL kontrol grubuyla miktar toplamını kıyasla (replacement tablo tuzağı aktivasyonda görünmez,
+  "satır var ama miktar 0" biçimi `COUNT(*)`'ı geçer — `references/cds.md` NSDM-01) · abstract entity'de kaynakta `abstract entity` geçmeli.
 - Yeni Z objede metadata'dan `masterLanguage` ve açıklama.
 
 ### 5. Kapanış

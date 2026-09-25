@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from unittest import mock
 
-from _helpers import GeciciTest  # önce: scripts/ yolunu ekler
+from _helpers import GeciciTest, rg_siz_path  # önce: scripts/ yolunu ekler
 import doctor
 import sap_stamp
 
@@ -38,6 +38,22 @@ class DoctorTest(GeciciTest):
         r = self.calistir("behavior_manifest.py", "generate", "--project-dir", str(d))
         self.assertEqual(r.returncode, 0, self.cikti(r))
         return d
+
+    def test_rg_yoksa_yalniz_bilgi_oneri_adres_yok(self):
+        """Kullanıcı kararı (2026-09-24): ek uygulama önerilmez. rg yoksa doctor satırı WARN değil INFO; kurulum
+        yeri/indirme adresi yok. Kontrol grubu: rg varsa PASS. doctor rg'yi başka hiçbir denetimde kullanmaz (yalnız
+        install.check_env satırı; koddan okundu 2026-09-24)."""
+        self.env = rg_siz_path(self.env)
+        r = self.doctor(self.tmp)
+        self.var(r, "INFO", "rg: yok (isteğe bağlı)")
+        for yasak in ("ripgrep", "[WARN] rg"):
+            self.assertNotIn(yasak, r.stdout)
+        bin_ = self.tmp / "_rg"
+        bin_.mkdir()
+        (bin_ / "rg.cmd").write_text("@echo off\r\nexit /b 0\r\n", encoding="ascii", newline="")
+        self.env = rg_siz_path(self.env, bin_)
+        r = self.doctor(self.tmp)
+        self.var(r, "PASS", f"rg: {bin_ / 'rg'}.")  # uzantı harfi PATHEXT'ten gelir (ölçüldü: rg.CMD)
 
     def test_global_config_yok(self):
         d = self.proje()
@@ -1645,15 +1661,19 @@ class PaketDoctorTest(GeciciTest):
         self.assertEqual("WARN", durum, mesaj)
         self.assertIn("requests", mesaj)
         self.assertIn("python-dotenv", mesaj)
-        self.assertIn("kur.cmd", mesaj)           # birincil yol: kurulumu yeniden çalıştır (ayrı komut değil)
-        self.assertIn("-m pip install --user", mesaj)  # yedek: elle komut
+        self.assertIn("%guncelle", mesaj)         # birincil yol: tek güncelleme yolu (Z102: her %guncelle paketleri kurar)
+        self.assertIn("aXet-Kur.cmd", mesaj)      # ikinci yol: kurulumu yeniden çalıştır (ayrı komut değil)
+        self.assertNotIn("kur.cmd'yi yeniden çalıştır", mesaj)
+        self.assertIn("BT için elle kurulum komutu (sen çalıştırma)", mesaj)
+        self.assertIn("-m pip install --user", mesaj)  # yedek: elle komut (BT için)
 
     def test_sap_kapaliyken_eksik_info(self):
         durum, mesaj = self._durum(False, [("requests", "requests>=2.31.0")])
         self.assertEqual("INFO", durum, mesaj)
         self.assertIn("requests", mesaj)
         # tur 2 madde 5: kur.cmd SAP'yi AÇAR — SAP kapalı kullanıcıya önerilmez
-        self.assertNotIn("kur.cmd", mesaj)
+        self.assertNotIn("kur.cmd", mesaj.lower())
+        self.assertNotIn("%guncelle", mesaj)
         self.assertIn("SAP'yi açtığında", mesaj)
 
     def test_kontrol_grubu_hepsi_kurulu_pass(self):

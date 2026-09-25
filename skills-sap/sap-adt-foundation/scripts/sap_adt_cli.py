@@ -38,7 +38,7 @@ EXIT_OK, EXIT_TOOL, EXIT_GATE, EXIT_USAGE = 0, 1, 2, 3
 # Araç sonucu `ok:false` iken çıkış kodu sınıfı (hepsi SAP'ye gidilmeden üretilir).
 GATE_RESULT_ERRORS = frozenset({"guardrail_violation", "reviewer_blocker", "tier_pii_guard",
                                 "not_select", "write_keyword", "gecersiz_tablo_adi",
-                                "gecersiz_kolon_adi", "std_dml_scan_unavailable",
+                                "gecersiz_kolon_adi", "std_dml_scan_unavailable", "std_ext_scan_unavailable",
                                 "pull_before_edit_missing", "pull_state_unreadable",
                                 "source_changed_since_pull",
                                 # aXet 2026-09-13: domain argüman ön kontrolü · mesaj sınıfı üzerine yazma onaysız

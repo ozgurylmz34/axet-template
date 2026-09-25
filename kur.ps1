@@ -2,12 +2,19 @@
 kur.ps1 — aXet.code template'ini bu makineye kurar, günceller ya da kaldırır (son kullanıcı aracı).
 
 Ne yapar (sırayla):
-  1. aXet (axet-code) kurulu mu bakar; yoksa durur. aXet şirket kanalından kurulur, bu betik kurmaz.
-  2. Git ve Python >= 3.12 arar. Yoksa KURMAZ ve SORMAZ: şirketin yazılım merkezinden (Software Center / Company
-     Portal) kurmasını ya da BT'den istemesini söyler, resmi indirme adresini yazar ve durur (çıkış 2). rg (ripgrep)
-     yoksa isteğe bağlı olarak önerir, kurulum durmaz. winget YALNIZ -Winget verilirse kullanılır (o zaman sorarak).
-     Neden (2026-09-23, ölçülmüş vaka): şirket makinesinde "E" yanıtı winget'e izinsiz bir Git kopyası kurdurdu;
-     yazılım merkezinden kurulan izinli Git ile yan yana kaldı.
+  0. Bu pencerenin PATH'ini kayıttaki makine + kullanıcı PATH'iyle tazeler (eksik girdiler SONA eklenir): portaldan az
+     önce kurulan bir program pencere kapatılmadan görülür.
+  1. aXet (axet-code), Git ve Python >= 3.12'ye BİRLİKTE bakar. Python: PATH, py launcher, bilinen klasörler ve kayıt
+     defteri (PEP 514: HKCU/HKLM Software\Python\PythonCore\*\InstallPath). Git: PATH ve bilinen klasörler. Eksik
+     varsa KURMAZ ve SORMAZ: eksiklerin hepsini TEK mesajda "şirket portalından kur, bitince bu dosyaya tekrar çift
+     tıkla" diye söyler ve durur (çıkış 2). rg (ripgrep) yoksa yalnız bilgi satırı basar, önermez. winget YALNIZ -Winget verilirse
+     kullanılır (o zaman sorarak). Neden (2026-09-23, ölçülmüş vaka): şirket makinesinde "E" yanıtı winget'e izinsiz
+     bir Git kopyası kurdurdu; yazılım merkezinden kurulan izinli Git ile yan yana kaldı.
+  2. Git kimliği (user.name / user.email): İŞE BAŞLAMADAN sorulur. Tanımlıysa gösterilir ve "doğru mu?" sorulur;
+     değilse sorulur ve `git config --global` ile yazılır. Pencere gerçek bir konsol değilse (test/otomasyon) soru
+     sorulmaz, bu söylenir. Otomasyon için: AXET_KUR_GIT_AD + AXET_KUR_GIT_EPOSTA (ikisi birlikte) yanıt yerine geçer;
+     AXET_KUR_SORMA=1 soruyu kapatır; AXET_KUR_KONSOL=1 konsol denetimini atlar (yalnız testler). SAP'ye yazma izni
+     SORULMAZ ve açılmaz.
   3. Template'i klonlar (hedef yoksa) ya da günceller (hedef bu template'in klonuysa: git pull --ff-only).
      Hedef bu template'in klonu değilse (core/00-temel.md CORE-ID + scripts/install.py + skills-sap/) DURUR ve o
      reponun hiçbir betiğini çalıştırmaz. Yerel değişiklik ya da ayrışma varsa DURUR; hiçbir yerel değişikliği silmez,
@@ -18,7 +25,8 @@ Ne yapar (sırayla):
      kodu değişmez; -DenemeModu'nda install.py --dry-run yalnız "kurulacaktı" der)
   5. python <Hedef>\scripts\doctor.py          (statik doğrulama)
   6. `python` komutu yeni terminalde asgari sürüme gitmiyorsa bulunan Python'un klasörünü (+ Scripts) KULLANICI
-     PATH'inin başına ekler (HKCU, yönetici gerekmez; mevcut girdiler ve %VAR% biçimi aynen kalır). Eklediğini
+     PATH'inin başına ekler (HKCU, yönetici gerekmez; mevcut girdiler ve %VAR% biçimi aynen kalır). `git` komutu yeni
+     terminalde bulunmuyorsa bulunan Git'in klasörünü aynı yolla kullanıcı PATH'inin SONUNA ekler. Eklediğini
      <Hedef>\.axet-kurulum\kullanici-path.json'a yazar; -Kaldir yalnız onları geri alır (Z98).
 
 Kullanım (kur.cmd aynı parametreleri geçirir):
@@ -110,6 +118,103 @@ function Sor([string]$soru) {
     return ($yanit.Trim() -eq '' -or $yanit.Trim() -match '^(e|evet|y|yes)$')
 }
 
+# Gerçek bir konsol mu (çift tıklanan pencere)? stdin tutamacında GetConsoleMode başarılı olmalı. Ölçüldü
+# (setup_credentials.py etkilesimli_mi, 2026-09-13): NUL aygıtı karakter aygıtıdır; Python tarafında dosya türüne bakan
+# denetim onu "yönlendirilmiş" saymaz. Birincil yol bu yüzden GetConsoleMode; Add-Type derlenemezse [Console] yedeği
+# (aşağıda, ölçüm notuyla). İkisi de ölçülemezse etkileşimsiz sayılır (soru sorulmaz). AXET_KUR_SORMA=1 soruları
+# kapatır; AXET_KUR_KONSOL=1 denetimi atlar (YALNIZ testler: yanıtlar boruyla verilir).
+function Konsol-Etkilesimli {
+    if ($env:AXET_KUR_SORMA -eq '1') { return $false }
+    if ($env:AXET_KUR_KONSOL -eq '1') { return $true }
+    try {
+        if ($env:AXET_KUR_KONSOL_YEDEK -eq '1') { throw 'test: Add-Type kolu atlandı' }
+        if (-not ('AxetKonsol' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class AxetKonsol {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+}
+'@
+        }
+        $mod = [uint32]0
+        return [AxetKonsol]::GetConsoleMode([AxetKonsol]::GetStdHandle(-10), [ref]$mod)
+    } catch {
+        # Add-Type derlenemezse (ör. uygulama denetimi csc.exe'yi ya da geçici klasörü engeller) kimlik sorusu sessizce
+        # düşmesin: saf .NET yedeği. Ölçüldü (2026-09-24, PS 5.1): [Console]::IsInputRedirected NUL ve boru girişinde
+        # True, gerçek konsolda False — .NET NUL gibi karakter aygıtında da konsol modunu kendisi sınar.
+        # AXET_KUR_KONSOL_YEDEK=1 yalnız testler içindir (Add-Type kolunu atlayıp bu yedeği sınar).
+        try { return ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) } catch { return $false }
+    }
+}
+
+# Serbest metin sorusu: $null = giriş kapalı / okunamadı.
+function Metin-Sor([string]$soru) {
+    try { $y = Read-Host $soru } catch { return $null }
+    if ($null -eq $y) { return $null }
+    return "$y".Trim()
+}
+
+# Basit e-posta biçimi: tek @, iki yanı boş değil, alan adında nokta, boşluk yok.
+function Eposta-Gecerli([string]$e) { return ("$e" -match '^[^@\s]+@[^@\s]+\.[^@\s]+$') }
+
+# git config --global okuma ($script:GIT ile): değer ya da '' (tanımsız).
+function GitKimlik-Oku([string]$anahtar) {
+    $v = @(Git-Oku @('config', '--global', '--get', $anahtar))
+    if ($script:GitKod -ne 0 -or $v.Count -eq 0) { return '' }
+    return "$($v[0])".Trim()
+}
+
+# ADIM 2: Git kimliği — işe başlamadan, tek blokta. Kurulumu DURDURMAZ: yazılamazsa uyarır, sürer. Neden: commit atan
+# araçlar (%guncelle motoru, proje kurulumu) kimliksiz makinede "Please tell me who you are" ile düşer.
+function Git-Kimligi-Adimi {
+    $ad = GitKimlik-Oku 'user.name'
+    $ep = GitKimlik-Oku 'user.email'
+    $envAd = "$env:AXET_KUR_GIT_AD".Trim()
+    $envEp = "$env:AXET_KUR_GIT_EPOSTA".Trim()
+    $yeniAd = $null; $yeniEp = $null
+    if ($envAd -and $envEp) {
+        if (-not (Eposta-Gecerli $envEp)) { Yaz '  UYARI: AXET_KUR_GIT_EPOSTA geçerli bir e-posta değil; Git kimliği yazılmadı.'; return }
+        $yeniAd = $envAd; $yeniEp = $envEp
+        Yaz '  Git kimliği ortam değişkeninden alındı (AXET_KUR_GIT_AD / AXET_KUR_GIT_EPOSTA).'
+    } else {
+        $konsol = Konsol-Etkilesimli
+        if ($ad -and $ep) {
+            Yaz "  Git kimliğin: $ad <$ep>"
+            if (-not $konsol) { Yaz '  (Pencere etkileşimsiz: "doğru mu?" sorulmadı, kimlik aynen kaldı.)'; return }
+            $y = Metin-Sor '  Doğru mu? [E/h]'
+            if ($null -eq $y -or $y -eq '' -or $y -match '^(e|evet|y|yes)$') { Yaz '  Tamam, aynen kaldı.'; return }
+        } else {
+            Yaz '  Git kimliğin tanımlı değil (aXet ve güncelleme aracı değişiklikleri bu adla kaydeder).'
+            if (-not $konsol) {
+                Yaz '  Pencere etkileşimsiz (otomasyon/test): Git kimliği SORULMADI, hiçbir şey yazılmadı.'
+                return
+            }
+        }
+        for ($i = 0; $i -lt 3 -and -not $yeniAd; $i++) {
+            $y = Metin-Sor "  Adın Soyadın$(if ($ad) { " [$ad]" })"
+            if ($null -eq $y) { Yaz '  (yanıt okunamadı: giriş kapalı) Git kimliği yazılmadı.'; return }
+            $yeniAd = if ($y) { $y } elseif ($ad) { $ad } else { $null }
+            if (-not $yeniAd) { Yaz '  Ad boş olamaz.' }
+        }
+        for ($i = 0; $i -lt 3 -and -not $yeniEp; $i++) {
+            $y = Metin-Sor "  İş e-postan$(if ($ep) { " [$ep]" })"
+            if ($null -eq $y) { Yaz '  (yanıt okunamadı: giriş kapalı) Git kimliği yazılmadı.'; return }
+            $aday = if ($y) { $y } else { $ep }
+            if (Eposta-Gecerli $aday) { $yeniEp = $aday } else { Yaz '  Bu bir e-posta adresine benzemiyor (örnek: ad.soyad@firma.com). Tekrar yaz.' }
+        }
+        if (-not $yeniAd -or -not $yeniEp) { Yaz '  Git kimliği yazılmadı (3 denemede geçerli yanıt gelmedi). Kurulum sürüyor.'; return }
+    }
+    if ($DenemeModu) { Yaz "  [deneme] Git kimliği yazılacaktı: $yeniAd <$yeniEp>"; return }
+    $k1 = Git-Calistir @('config', '--global', 'user.name', $yeniAd)
+    $k2 = Git-Calistir @('config', '--global', 'user.email', $yeniEp)
+    if ($k1 -ne 0 -or $k2 -ne 0) { Yaz "  UYARI: Git kimliği yazılamadı (git config çıkış kodu $k1/$k2). Kurulum sürüyor."; return }
+    Yaz "  Git kimliği kaydedildi: $(GitKimlik-Oku 'user.name') <$(GitKimlik-Oku 'user.email')>"
+}
+
 function Yol-Esit([string]$a, [string]$b) {
     try {
         $x = [IO.Path]::GetFullPath($a).TrimEnd('\', '/')
@@ -129,6 +234,28 @@ function Path-Yenile {
     $m = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $u = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = (@($m, $u) | Where-Object { $_ }) -join ';'
+}
+
+# Kurulumun BAŞINDA: pencere Explorer'dan açıldığında PATH'i o anki Explorer'ınkidir; portaldan az önce kurulan bir
+# program (Python/Git) kayıtta vardır ama bu süreçte yoktur. Kayıttaki makine + kullanıcı PATH girdilerinden bu süreçte
+# OLMAYANLAR sona eklenir: mevcut sıra değişmez (Path-Yenile'nin aksine hiçbir girdi silinmez). Kaynak KullaniciPath-Oku
+# (testte AXET_KUR_PATH_KAYDI sahte kaydı). Eklenen girdi sayısını döndürür; okunamazsa 0.
+function Path-Tazele {
+    try { $kayit = KullaniciPath-Oku } catch { return 0 }
+    $mevcut = @{}
+    foreach ($g in ("$env:Path" -split ';')) { if ($g.Trim()) { $mevcut[(PathGirdi-Anahtari $g)] = $true } }
+    $ek = @()
+    foreach ($kaynak in @($kayit.Makine, $kayit.Deger)) {
+        foreach ($g in ("$kaynak" -split ';')) {
+            if (-not $g.Trim()) { continue }
+            $a = PathGirdi-Anahtari $g
+            if ($mevcut.ContainsKey($a)) { continue }
+            $mevcut[$a] = $true
+            $ek += [Environment]::ExpandEnvironmentVariables($g.Trim().Trim('"'))
+        }
+    }
+    if ($ek.Count -gt 0) { $env:Path = (@("$env:Path".TrimEnd(';')) + $ek | Where-Object { $_ }) -join ';' }
+    return $ek.Count
 }
 
 # --- araç bulma --------------------------------------------------------------------------------------------------
@@ -162,7 +289,76 @@ function Python-Dene([string]$exe, [string[]]$onArg, [switch]$Sessiz) {
     return [pscustomobject]@{ Yol = $yol; Surum = $surum; Taban = $taban }
 }
 
-function Python-Bul([switch]$BilinenYerler) {
+# PEP 514 kayıt defteri adayları: HKCU + HKLM (64 ve 32 bit görünüm) Software\Python\PythonCore\<etiket>\InstallPath →
+# ExecutablePath, yoksa (varsayılan değer)\python.exe. Şirket portalı Python'u kurulum klasörü seçtirmeden kurar ve PATH'e
+# eklemeyebilir; python.org kurucusu bu kaydı her durumda yazar (ölçüldü bu makinede: HKCU\...\PythonCore\3.12).
+# Sürüme göre büyükten küçüğe. Test enjeksiyonu: AXET_KUR_PATH_KAYDI varsa kayıt defteri OKUNMAZ; adaylar o JSON'un
+# "python_kayit" dizisinden gelir (yoksa boş) — testler gerçek makinenin kaydına bağlanmasın.
+function Python-Kayit-Adaylari {
+    $sahte = $env:AXET_KUR_PATH_KAYDI
+    if ($sahte) {
+        $j = [IO.File]::ReadAllText($sahte) | ConvertFrom-Json
+        if ($null -ne $j -and $j.PSObject.Properties['python_kayit']) {
+            return @(@($j.python_kayit) | Where-Object { $_ } | ForEach-Object { "$_" })
+        }
+        return @()
+    }
+    $bulunan = @()
+    foreach ($kovan in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryHive]::LocalMachine)) {
+        foreach ($gorunum in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
+            try {
+                $kok = [Microsoft.Win32.RegistryKey]::OpenBaseKey($kovan, $gorunum)
+                $pc = $kok.OpenSubKey('Software\Python\PythonCore')
+                if (-not $pc) { continue }
+                try {
+                    foreach ($etiket in $pc.GetSubKeyNames()) {
+                        $ip = $pc.OpenSubKey("$etiket\InstallPath")
+                        if (-not $ip) { continue }
+                        try {
+                            $exe = "$($ip.GetValue('ExecutablePath'))"
+                            if (-not $exe) { $d = "$($ip.GetValue(''))"; if ($d) { $exe = Join-Path $d 'python.exe' } }
+                        } finally { $ip.Close() }
+                        $surum = [version]'0.0'
+                        if ($etiket -match '^(\d+)\.(\d+)') { $surum = [version]"$($Matches[1]).$($Matches[2])" }
+                        if ($exe) { $bulunan += [pscustomobject]@{ Surum = $surum; Yol = $exe } }
+                    }
+                } finally { $pc.Close() }
+            } catch { }
+        }
+    }
+    $gorulen = @{}
+    return @($bulunan | Sort-Object Surum -Descending | ForEach-Object {
+        $a = $_.Yol.ToLowerInvariant()
+        if (-not $gorulen.ContainsKey($a)) { $gorulen[$a] = $true; $_.Yol }
+    })
+}
+
+# Bilinen kurulum klasörleri (winget'e bağlı DEĞİL, her koşumda): python.org kurucusunun kullanıcı ve tüm-kullanıcı
+# varsayılanları + sürücü kökü (eski "C:\Python312" biçimi). Klasör adı Python3* olanlar, SÜRÜME göre büyükten küçüğe
+# (tüm kökler birlikte; eşit sürümde kök sırası korunur). Sürüm klasör adından okunur: Python313 → 3.13, Python39 → 3.9,
+# Python312-32 → 3.12. Ad sırası kullanılmaz: alfabetik azalan sırada "Python39" "Python313"ün önüne düşer ve eski
+# sürüm önce denenip gereksiz "3.9 bulundu ama 3.12 gerekli" satırı basılırdı. Adı ayrıştırılamayan klasör en sona.
+function Python-Bilinen-Adaylari {
+    $kokler = @((Join-Path "$env:LOCALAPPDATA" 'Programs\Python'), $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432,
+                $(if ($env:SystemDrive) { "$env:SystemDrive\" })) | Where-Object { $_ }
+    $adaylar = @()
+    $sira = 0
+    foreach ($k in @($kokler | Select-Object -Unique)) {
+        foreach ($d in @(Get-ChildItem -LiteralPath $k -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue)) {
+            $exe = Join-Path $d.FullName 'python.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
+            $surum = [version]'0.0'
+            if ($d.Name -match '^Python(\d)\.?(\d+)') { $surum = [version]"$($Matches[1]).$($Matches[2])" }
+            $adaylar += [pscustomobject]@{ Surum = $surum; Sira = $sira; Yol = $exe }
+            $sira++
+        }
+    }
+    # PS 5.1 Sort-Object kararlı değil: eşit sürümde kök sırası ikinci anahtarla korunur.
+    @($adaylar | Sort-Object @{ Expression = 'Surum'; Descending = $true }, @{ Expression = 'Sira'; Descending = $false }) |
+        ForEach-Object { $_.Yol }
+}
+
+function Python-Bul {
     foreach ($ad in 'python', 'python3') {
         foreach ($c in @(Get-Command $ad -CommandType Application -All -ErrorAction SilentlyContinue)) {
             # Boyuta bakılmaz: WindowsApps alias'ları 0 bayt görünür ama bir kısmı gerçek yorumlayıcıya çıkar (ölçüldü:
@@ -187,24 +383,27 @@ function Python-Bul([switch]$BilinenYerler) {
         $p = Python-Dene $py.Source @('-3')
         if ($p) { return $p }
     }
-    if ($BilinenYerler) {
-        $kokler = @((Join-Path "$env:LOCALAPPDATA" 'Programs\Python'), $env:ProgramFiles) | Where-Object { $_ }
-        foreach ($k in $kokler) {
-            foreach ($d in @(Get-ChildItem -LiteralPath $k -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue |
-                             Sort-Object Name -Descending)) {
-                $exe = Join-Path $d.FullName 'python.exe'
-                if (Test-Path -LiteralPath $exe) { $p = Python-Dene $exe @(); if ($p) { return $p } }
-            }
-        }
+    # PATH ve py launcher'da yoksa: bilinen klasörler, sonra kayıt defteri (PEP 514). Store yönlendirmesi ve eski
+    # sürüm Python-Dene'de elenir (bu adaylar gerçek dosya yoludur; WindowsApps'e çıkmaz).
+    foreach ($exe in @(@(Python-Bilinen-Adaylari) + @(Python-Kayit-Adaylari) | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
+        $p = Python-Dene $exe @()
+        if ($p) { return $p }
     }
     return $null
 }
 
-function Git-Bul([switch]$BilinenYerler) {
+# Git'in bilinen kurulum klasörleri (winget'e bağlı DEĞİL, her koşumda): Git for Windows tüm-kullanıcı ve kullanıcı
+# varsayılanları. cmd\git.exe seçilir: Git kurucusunun PATH'e koyduğu klasör de odur.
+function Git-Bilinen-Adaylari {
+    $kokler = @($env:ProgramFiles, $env:ProgramW6432, ${env:ProgramFiles(x86)}, $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs' })) |
+              Where-Object { $_ }
+    foreach ($k in @($kokler | Select-Object -Unique)) { Join-Path $k 'Git\cmd\git.exe' }
+}
+
+function Git-Bul {
     $adaylar = @(Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
-    if ($BilinenYerler) {
-        $adaylar += @((Join-Path "$env:ProgramFiles" 'Git\cmd\git.exe'), (Join-Path "$env:LOCALAPPDATA" 'Programs\Git\cmd\git.exe'))
-    }
+    $adaylar += @(Git-Bilinen-Adaylari)
     # Diskte olup `git --version` ile çalışmayan adaylar (yol, çıkış kodu, git'in mesajı): 2. adım bunu "bulunamadı"dan
     # ayırır. Ölçüldü (Git 2.55): XDG_CONFIG_HOME'da < ya da | varsa git config yolunu okuyamaz, rc 128 verir.
     $script:GitCalismayan = @()
@@ -266,6 +465,8 @@ function KullaniciPath-Yaz([string]$deger, [string]$tur) {
     if ($sahte) {
         $j = [IO.File]::ReadAllText($sahte) | ConvertFrom-Json
         $yeni = [ordered]@{ makine = "$($j.makine)"; kullanici = $deger; tur = $tur }
+        # Sahte kaydın ek alanı (Python-Kayit-Adaylari'nın kayıt defteri yerine okuduğu dizi) yazımda kaybolmasın.
+        if ($j.PSObject.Properties['python_kayit']) { $yeni['python_kayit'] = @($j.python_kayit) }
         [IO.File]::WriteAllText($sahte, (ConvertTo-Json -InputObject $yeni), (New-Object System.Text.UTF8Encoding $false))
         return
     }
@@ -470,6 +671,62 @@ function Python-Yolu-Adimi([string]$klon) {
     }
 }
 
+# `git` komutu verilen PATH ile ÇALIŞAN bir git'e çözülüyor mu: ilk çalışan adayın yolu, yoksa $null.
+function Git-Cozumu([string]$pathDegeri) {
+    $eski = $env:Path
+    try {
+        $env:Path = $pathDegeri
+        foreach ($c in @(Get-Command git -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            $global:LASTEXITCODE = $null
+            $out = @(& $c.Source --version 2>$null | ForEach-Object { "$_" })
+            if ((Son-Kod) -eq 0 -and @($out | Where-Object { $_ -match '^git version' }).Count -gt 0) { return $c.Source }
+        }
+        return $null
+    } finally {
+        $env:Path = $eski
+    }
+}
+
+# Z98'in Git kolu: portal Git'i PATH'e koymadıysa ya da git bilinen bir klasörde bulunduysa, skill'ler ve aXet'in
+# kendisi yeni pencerede `git` bulamaz. Bulunan git.exe'nin klasörü KULLANICI PATH'inin SONUNA eklenir (başa değil: git
+# için önde duran bir mağaza kısayolu sorunu yok; sona eklemek başka hiçbir komutun çözümünü değiştirmez). Kayıt ve
+# -Kaldir geri alması Python ile aynı dosyadadır ("eklenen").
+function Git-Yolunu-Ayarla([string]$klon) {
+    $kayit = KullaniciPath-Oku
+    $once = Git-Cozumu (Path-Birlesik $kayit)
+    if ($once) { Yaz "  OK 'git' komutu yeni terminallerde çalışıyor: $once"; return }
+    if (-not $script:GIT) { return }
+    $dizin = Split-Path -Parent $script:GIT
+    $anahtar = PathGirdi-Anahtari $dizin
+    $var = @($kayit.Deger -split ';' | Where-Object { $_.Trim() } | Where-Object { (PathGirdi-Anahtari $_) -eq $anahtar }).Count -gt 0
+    if ($var) {
+        Yaz "  UYARI: Git klasörü kullanıcı PATH'inde var ama yeni terminalde 'git' çalışmıyor: $dizin"
+        return
+    }
+    if ($DenemeModu) { Yaz "  [deneme] Git yolu kullanıcı PATH'ine eklenecekti: $dizin (sona; mevcut girdiler aynen kalır)"; return }
+    # Önce kayıt, sonra PATH (Python koluyla aynı sıra: yarıda kalırsa -Kaldir yalnız PATH'te bulduğunu siler).
+    $eski = PathKaydi-Oku $klon
+    PathKaydi-Yaz $klon (@($eski.Eklenen) + @($dizin)) @($eski.Tasinan)
+    $mevcut = "$($kayit.Deger)".TrimEnd(';')
+    KullaniciPath-Yaz $(if ($mevcut) { "$mevcut;$dizin" } else { $dizin }) $kayit.Tur
+    Yaz "  Git yolu kullanıcı PATH'ine eklendi: $dizin — yeni terminal / yeni aXet oturumu aç."
+    if (-not (Git-Cozumu (Path-Birlesik (KullaniciPath-Oku)))) {
+        Yaz "  UYARI: yeni terminalde 'git' hâlâ bulunamıyor. Kullanılacak Git: $($script:GIT)"
+    }
+}
+
+# Kurulumu durdurmaz: PATH ayarı yapılamazsa yalnız uyarı.
+function Git-Yolu-Adimi([string]$klon) {
+    Yaz ''
+    Yaz "-- 'git' komutu (yeni terminaller) --"
+    try {
+        Git-Yolunu-Ayarla $klon
+    } catch {
+        Yaz "  UYARI: 'git' komutu için kullanıcı PATH'i ayarlanamadı: $($_.Exception.Message)"
+        Yaz '         Kurulum sürüyor. aXet git bulamazsa bu ekranın görüntüsünü destek ekibine gönder.'
+    }
+}
+
 function Python-Yolunu-Kaldir([string]$klon) {
     $k = PathKaydi-Oku $klon
     if (-not $k.Var) { Yaz "  Kullanıcı PATH'i: kurulumun eklediği girdi yok, dokunulmadı."; return }
@@ -501,7 +758,7 @@ function Python-Yolunu-Kaldir([string]$klon) {
         Remove-Item -LiteralPath $d -Recurse -Force
     }
     if ($silinen.Count -gt 0) {
-        Yaz "  Kurulumun eklediği Python yolu kullanıcı PATH'inden çıkarıldı: $($silinen -join '; ')"
+        Yaz "  Kurulumun eklediği yol(lar) (Python/Git) kullanıcı PATH'inden çıkarıldı: $($silinen -join '; ')"
     } else {
         Yaz "  Kurulumun eklediği girdiler kullanıcı PATH'inde artık yoktu; PATH'e dokunulmadı."
     }
@@ -520,22 +777,13 @@ function Python-Yolu-Kaldir-Adimi([string]$klon) {
     }
 }
 
-# Eksik aracı bildirir; -Winget verildiyse winget ile kurmayı dener (sorarak). $true = winget başarıyla bitti (araç
-# yine de yeniden aranmalı). -Winget YOKSA (varsayılan) winget ne sorulur ne çağrılır: şirket makinesinde izinsiz
-# kopya kurar (Z80, ölçülmüş vaka 2026-09-23). $istegeBagli: rg gibi; kurulum onsuz sürer, mesaj buna göre yazılır.
+# YALNIZ -Winget ile çağrılır (kişisel makine): eksik aracı winget ile kurmayı dener (sorarak). $true = winget
+# başarıyla bitti (araç yine de yeniden aranmalı). -Winget YOKSA (varsayılan) winget ne sorulur ne çağrılır: şirket
+# makinesinde izinsiz kopya kurar (Z80, ölçülmüş vaka 2026-09-23); eksikler ana akışta TEK mesajda listelenir.
+# $istegeBagli: rg gibi; kurulum onsuz sürer, mesaj buna göre yazılır.
 function Winget-Kur([string]$ad, [string]$id, [string[]]$tarif, [bool]$istegeBagli = $false, [string]$durum = 'bulunamadı') {
     $tarifYaz = { foreach ($t in $tarif) { Yaz "  $t" } }
-    if (-not $Winget) {
-        if ($DenemeModu) { Yaz "  [deneme] $ad yok: winget kullanılmaz (varsayılan; winget için -Winget). Şu yazılacaktı:" }
-        if ($istegeBagli) {
-            Yaz "  $ad önerilir: şirketinin yazılım merkezinden (Software Center / Company Portal) kurabilir ya da BT'den isteyebilirsin. Kurulum onsuz devam eder."
-        } else {
-            Yaz "  $ad $durum. Şirketinin yazılım merkezinden (Software Center / Company Portal) kur ya da BT'den iste;"
-            Yaz '  kurduktan sonra YENİ bir PowerShell aç ve bu komutu tekrar çalıştır.'
-        }
-        & $tarifYaz
-        return $false
-    }
+    if (-not $Winget) { return $false }
     $w = $null
     if (-not $WingetKapali) { $w = Get-Command winget -ErrorAction SilentlyContinue }
     if ($DenemeModu) {
@@ -1037,6 +1285,9 @@ try {
     Yaz "  Klon   : $Hedef"
     if (-not $Kaldir) { Yaz "  Kaynak : $Kaynak" }
     Yaz "  Config : $(Config-Yolu)"
+    # Portaldan az önce kurulan programlar bu pencerede de görünsün (kayıttaki PATH; eksik girdiler sona).
+    $tazelenen = Path-Tazele
+    if ($tazelenen -gt 0) { Yaz "  PATH   : kayıttan tazelendi ($tazelenen yeni girdi; portaldan yeni kurulan program görünür)" }
 
     # --- KALDIR ----------------------------------------------------------------------------------------------------
     if ($Kaldir) {
@@ -1068,27 +1319,29 @@ try {
         Bitir 0
     }
 
-    # --- 1. aXet ---------------------------------------------------------------------------------------------------
-    Baslik '1/5 Ön koşul: aXet'
-    $axet = Axet-Bul
-    if (-not $axet) {
-        Yaz 'DURDU: aXet (axet-code) bulunamadı: PATH içinde yok ve %LOCALAPPDATA%\axet-code\bin\axet-code.exe yok.'
-        Yaz '  aXet şirket kanalından kurulur (bu betik aXet kurmaz). aXet''i kurup girişini yaptıktan sonra'
-        Yaz '  YENİ bir terminalde kur.cmd''yi tekrar çalıştır.'
-        Bitir 2
-    }
-    Yaz "  OK aXet: $($axet.Yol)"
-    if (-not $axet.PathDe) {
-        Yaz '  UYARI: axet-code PATH içinde değil (varsayılan yerde bulundu). Yeni terminal aç; hâlâ yoksa aXet kurulumunu'
-        Yaz '         kontrol et. install.py ve doctor.py bu yüzden axet-code için uyarı gösterebilir.'
-    }
-
-    # --- 2. Git ve Python ------------------------------------------------------------------------------------------
-    Baslik '2/5 Ön koşul: Git ve Python'
+    # --- 1. Ön koşullar: aXet + Git + Python BİRLİKTE -------------------------------------------------------------
+    # Üçüne birden bakılır ve eksiklerin HEPSİ tek mesajda söylenir: kullanıcı portaldan hepsini bir seferde kurar,
+    # sonra bu dosyaya bir kez daha çift tıklar (eskiden aXet yoksa Git/Python'a hiç bakılmadan çıkılıyordu).
+    Baslik '1/5 Ön koşullar: aXet, Git, Python'
+    $eksikKur = @()        # portaldan kurulacaklar (tek mesajda listelenir)
     $eksikArac = $false
     $yeniTerminal = $false
     $script:GIT = $null
     $script:PY = $null
+    $axet = Axet-Bul
+    if (-not $axet) {
+        Yaz '  EKSİK: aXet (axet-code) bulunamadı: PATH içinde yok ve %LOCALAPPDATA%\axet-code\bin\axet-code.exe yok.'
+        Yaz '         aXet şirket kanalından kurulur (bu betik aXet kurmaz); kurduktan sonra bir kez girişini yap.'
+        $eksikKur += 'aXet'
+        $eksikArac = $true
+    } else {
+        Yaz "  OK aXet: $($axet.Yol)"
+        if (-not $axet.PathDe) {
+            Yaz '  UYARI: axet-code PATH içinde değil (varsayılan yerde bulundu). install.py ve doctor.py bu yüzden axet-code için'
+            Yaz '         uyarı gösterebilir; aXet''i başlat menüsünden açman yeterli.'
+        }
+    }
+
     $g = Git-Bul
     if (-not $g -and @($script:GitCalismayan).Count -gt 0) {
         # XDG notu yalnız kanıt varsa: git'in mesajı config yolunu okuyamadığını söylüyor ya da değer geçersiz karakter taşıyor.
@@ -1105,20 +1358,22 @@ try {
         }
         if ($xdgIlgili) {
             Yaz "  Neden: git kendi config'ini XDG_CONFIG_HOME altında arar ve bu yolu okuyamıyor. Şu anki değer: $env:XDG_CONFIG_HOME"
-            Yaz '  Değeri düzelt (< > | " ? * gibi karakter olmamalı) ya da kaldır; YENİ bir terminalde tekrar çalıştır. Git''i yeniden kurmak bunu düzeltmez.'
+            Yaz '  Değeri düzelt (< > | " ? * gibi karakter olmamalı) ya da kaldır; sonra bu dosyaya tekrar çift tıkla. Git''i yeniden kurmak bunu düzeltmez.'
         } else {
-            Yaz '  Yukarıdaki git.exe''nin kendi terminalinde "git --version" ile çalıştığını kontrol et; çalışınca kur.cmd''yi tekrar çalıştır.'
+            Yaz '  Git kurulu ama çalışmıyor: bu ekranın görüntüsünü destek ekibine gönder.'
         }
         $eksikArac = $true
     } elseif (-not $g) {
         Yaz '  EKSİK: Git bulunamadı.'
-        $tarif = @('Kurulacak: Git for Windows (varsayılan seçenekler yeterli).', 'Resmi indirme: https://git-scm.com/download/win')
-        if ($Winget) { $tarif += 'winget ile: winget install --id Git.Git -e' }
-        if (Winget-Kur 'Git' 'Git.Git' $tarif) {
-            $g = Git-Bul -BilinenYerler
-            if (-not $g) { $yeniTerminal = $true }
+        if ($Winget) {
+            $tarif = @('Kurulacak: Git for Windows (varsayılan seçenekler yeterli).', 'Resmi indirme: https://git-scm.com/download/win',
+                       'winget ile: winget install --id Git.Git -e')
+            if (Winget-Kur 'Git' 'Git.Git' $tarif) {
+                $g = Git-Bul
+                if (-not $g) { $yeniTerminal = $true }
+            }
         }
-        if (-not $g) { $eksikArac = $true }
+        if (-not $g) { $eksikKur += 'Git (Git for Windows)'; $eksikArac = $true }
     }
     if ($g) { $script:GIT = $g.Yol; Yaz "  OK Git: $($g.Surum) ($($g.Yol))" }
 
@@ -1132,49 +1387,66 @@ try {
         } else {
             Yaz "  EKSİK: Python $script:PyAsgari ya da üstü bulunamadı."
         }
-        $tarif = @("Kurulacak: Python 3 ($script:PyAsgari ya da üstü; kurulumda ""Add python.exe to PATH"" işaretli olsun).",
-                   'Resmi indirme: https://www.python.org/downloads/windows/')
-        if ($Winget) { $tarif += 'winget ile: winget install --id Python.Python.3.12 -e' }
-        # OLCULEN SURUMU KUR (2026-09-20): CI artik yalniz 3.12 kosuyor. Kurucu 3.14
-        # kurarsa her yeni kullanici DOGRUDAN olculmemis kola duserdi — kapi (>=3.12)
-        # ust surumlere izin verir, ama VARSAYILAN olarak olculen surum kurulur.
-        if (Winget-Kur 'Python' 'Python.Python.3.12' $tarif $false $pyDurum) {
-            $python = Python-Bul -BilinenYerler
-            if (-not $python) { $yeniTerminal = $true }
+        if ($Winget) {
+            $tarif = @("Kurulacak: Python 3 ($script:PyAsgari ya da üstü; kurulumda ""Add python.exe to PATH"" işaretli olsun).",
+                       'Resmi indirme: https://www.python.org/downloads/windows/', 'winget ile: winget install --id Python.Python.3.12 -e')
+            # OLCULEN SURUMU KUR (2026-09-20): CI artik yalniz 3.12 kosuyor. Kurucu 3.14
+            # kurarsa her yeni kullanici DOGRUDAN olculmemis kola duserdi — kapi (>=3.12)
+            # ust surumlere izin verir, ama VARSAYILAN olarak olculen surum kurulur.
+            if (Winget-Kur 'Python' 'Python.Python.3.12' $tarif $false $pyDurum) {
+                $python = Python-Bul
+                if (-not $python) { $yeniTerminal = $true }
+            }
         }
-        if (-not $python) { $eksikArac = $true }
+        if (-not $python) {
+            $eksikKur += $(if ($script:PyEski) { "Python $script:PyAsgari ya da üstü (bulunan $script:PyEski, eski)" } else { "Python $script:PyAsgari ya da üstü" })
+            $eksikArac = $true
+        }
     }
     if ($python) { $script:PY = $python.Yol; Yaz "  OK Python: $($python.Surum) ($($python.Yol))" }
 
+    # rg (ripgrep) isteğe bağlıdır: yoksa kullanıcıdan kurmasını İSTEMEYİZ (kullanıcı ek uygulama kuramayabilir).
+    $rg = Get-Command rg -CommandType Application -ErrorAction SilentlyContinue
+    if ($rg) {
+        Yaz "  OK rg: $($rg.Source)"
+    } elseif ($Winget) {
+        $tarif = @('İsteğe bağlı: winget install --id BurntSushi.ripgrep.MSVC -e', 'Resmi indirme: https://github.com/BurntSushi/ripgrep/releases')
+        if (Winget-Kur 'rg (ripgrep)' 'BurntSushi.ripgrep.MSVC' $tarif $true) {
+            Yaz '  rg kuruldu; aXet''in görmesi için yeni aXet oturumu gerekir.'
+        }
+    } else {
+        Yaz '  rg yok (isteğe bağlı; atlandı).'
+    }
+
     if ($yeniTerminal) {
         Yaz ''
-        Yaz 'DURDU: Kurulum bitti ama araç bu terminalde hâlâ bulunamıyor. YENİ bir terminal aç ve kur.cmd''yi tekrar çalıştır.'
+        Yaz 'DURDU: Kurulum bitti ama program bu pencerede hâlâ görünmüyor.'
+        Yaz '  Bu pencereyi kapat ve bu dosyaya TEKRAR çift tıkla.'
         Bitir 3
     }
     if ($eksikArac) {
         Yaz ''
-        if ($DenemeModu) { Yaz '[deneme] Eksik ön koşul var; gerçek çalıştırmada burada durulurdu.'; Bitir 2 }
-        Yaz 'DURDU: Eksik ön koşul var (yukarıda). Kurduktan sonra YENİ bir terminalde kur.cmd''yi tekrar çalıştır.'
-        if (-not $Winget) { Yaz '  (Şirket dışı, kişisel bir makinedeysen: kur.cmd -Winget eksikleri winget ile kurmayı sorar.)' }
+        if ($Winget) {
+            # Kişisel makine yolu: tarif yukarıda (winget ya da resmi adres); portal dili burada yanıltıcı olurdu.
+            Yaz 'DURDU: Eksik ön koşul var (yukarıda). Kurduktan sonra bu dosyaya TEKRAR çift tıkla.'
+        } elseif ($eksikKur.Count -gt 0) {
+            Yaz 'DURDU: Önce şu programlar kurulmalı. Şirket portalından (Software Center / Company Portal) kur:'
+            foreach ($e in $eksikKur) { Yaz "    - $e" }
+            Yaz '  Portalda bulamazsan BT''den iste. Bitince bu pencereyi kapat ve bu dosyaya TEKRAR çift tıkla.'
+            Yaz '  (BT için resmi adresler: https://git-scm.com/download/win · https://www.python.org/downloads/windows/)'
+        } else {
+            Yaz 'DURDU: Ön koşul sorunu var (yukarıda). Giderildiğinde bu dosyaya TEKRAR çift tıkla.'
+        }
+        if ($DenemeModu) { Yaz '[deneme] Eksik ön koşul var; gerçek çalıştırmada burada durulurdu.' }
         Bitir 2
     }
 
-    # --- 3. rg (isteğe bağlı) --------------------------------------------------------------------------------------
-    Baslik '3/5 İsteğe bağlı: rg (ripgrep)'
-    $rg = Get-Command rg -CommandType Application -ErrorAction SilentlyContinue
-    if ($rg) {
-        Yaz "  OK rg: $($rg.Source)"
-    } else {
-        Yaz '  rg yok: aXet''in arama aracı yavaş çalışır (zorunlu değil).'
-        $tarif = @('Resmi indirme: https://github.com/BurntSushi/ripgrep/releases')
-        if ($Winget) { $tarif = @('İsteğe bağlı: winget install --id BurntSushi.ripgrep.MSVC -e') + $tarif }
-        if (Winget-Kur 'rg (ripgrep)' 'BurntSushi.ripgrep.MSVC' $tarif $true) {
-            Yaz '  rg kuruldu; aXet''in görmesi için yeni terminal ve yeni aXet oturumu gerekir.'
-        }
-    }
+    # --- 2. Git kimliği (İŞE BAŞLAMADAN) --------------------------------------------------------------------------
+    Baslik '2/5 Git kimliği'
+    Git-Kimligi-Adimi
 
-    # --- 4. Klon / güncelleme --------------------------------------------------------------------------------------
-    Baslik '4/5 Template klonu'
+    # --- 3. Klon / güncelleme --------------------------------------------------------------------------------------
+    Baslik '3/5 Template klonu'
     $yeniKlon = $false
     $klonla = $false
     if (-not (Test-Path -LiteralPath $Hedef)) {
@@ -1288,8 +1560,8 @@ try {
         }
     }
 
-    # --- 5. install.py --sap + doctor.py ---------------------------------------------------------------------------
-    Baslik '5/5 aXet config kurulumu ve doğrulama'
+    # --- 4. install.py --sap + doctor.py ---------------------------------------------------------------------------
+    Baslik '4/5 aXet config kurulumu ve doğrulama'
     $installPy = Join-Path $Hedef 'scripts\install.py'
     $doctorPy = Join-Path $Hedef 'scripts\doctor.py'
     $onceki = @(Config-Klonlari)
@@ -1357,7 +1629,9 @@ try {
             if ($kod -ne 0) { Yaz "DURDU: install.py --sap --dry-run $(if ($kod -eq -1) { 'çalıştırılamadı' } else { "çıkış kodu $kod" })."; Bitir 1 }
         }
         Yaz "  [deneme] çalıştırılacaktı: python $doctorPy"
+        Baslik '5/5 Yeni pencereler için PATH (python, git)'
         Python-Yolu-Adimi $Hedef
+        Git-Yolu-Adimi $Hedef
         Yaz ''
         Yaz 'DENEME MODU bitti: hiçbir dosya, klon ya da config yazılmadı.'
         Bitir 0
@@ -1377,15 +1651,19 @@ try {
     } finally {
         Pop-Location
     }
+    Baslik '5/5 Yeni pencereler için PATH (python, git)'
     Python-Yolu-Adimi $Hedef
+    Git-Yolu-Adimi $Hedef
 
     Yaz ''
     Yaz '================================================================================'
     $doctorTamam = ($null -ne $doctorKod -and $doctorKod -eq 0)
     if (-not $doctorTamam) {
-        Yaz "Kurulum yazıldı ama doctor.py doğrulaması geçmedi ($(if ($doctorKod -eq -1 -or $null -eq $doctorKod) { 'çalıştırılamadı' } else { "çıkış kodu $doctorKod" })). Yukarıdaki [FAIL] satırlarına bak."
+        Yaz "Kurulum yapıldı ama son kontrol (doctor) sorun buldu ($(if ($doctorKod -eq -1 -or $null -eq $doctorKod) { 'çalıştırılamadı' } else { "çıkış kodu $doctorKod" }))."
+        Yaz '  Yapılacak: yukarıdaki [FAIL] satırlarının ekran görüntüsünü destek ekibine gönder.'
+        Yaz '  Sorun giderilince bu dosyaya TEKRAR çift tıkla (kurulum kaldığı yerden tamamlanır).'
     } else {
-        Yaz "Kurulum tamam$(if ($yeniKlon) { ' (yeni klon)' } else { '' }). Klon: $Hedef"
+        Yaz "Kurulum TAMAM — aXet'i aç.$(if ($yeniKlon) { ' (yeni klon)' } else { '' }) Klon: $Hedef"
     }
     if ($bayat.Count -gt 0) {
         Yaz ''
@@ -1427,11 +1705,10 @@ try {
         }
     }
     Yaz 'SONRAKİ ADIM:'
-    Yaz '  1. YENİ bir aXet oturumu aç (açık oturumlar yeni ayarı görmez).'
-    Yaz '     İlk yanıtın ilk satırında AXET-CORE görünmeli; görünmüyorsa kurulum çalışmıyordur.'
-    Yaz '  2. İlk proje için: aXet içinde %yeni-proje yaz'
-    Yaz "     ya da proje klasöründe: `"$(Join-Path $Hedef 'yeni-proje.cmd')`""
-    Yaz '  Güncellemek için bu komutu tekrar çalıştır; kaldırmak için: kur.cmd -Kaldir'
+    Yaz '  1. aXet''i aç (açık bir aXet penceresi varsa kapatıp YENİ bir aXet oturumu aç: açık oturum yeni ayarı görmez).'
+    Yaz '     İlk yanıtın ilk satırında AXET-CORE görünmeli; görünmüyorsa bu ekranın görüntüsünü destek ekibine gönder.'
+    Yaz '  2. Güncelleme için: aXet içinde %guncelle yaz.'
+    Yaz '  3. İlk proje için: aXet içinde %yeni-proje yaz; sonra proje klasöründeki KURULUMU-TAMAMLA''ya çift tıkla.'
     if (-not $doctorTamam) { Bitir 4 }
     Bitir 0
 } catch {

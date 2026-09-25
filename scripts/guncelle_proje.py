@@ -1020,6 +1020,13 @@ def komut_kapanis(b: Baglam, args) -> int:
     # komut verilir.
     manifest_komutu = (f"python \"{AXET_HOME / 'scripts' / 'behavior_manifest.py'}\" generate "
                        f"--project-dir \"{p.kok}\"")
+    # Kurulum sadeleştirme (2026-09-24): SAP projesinde KURULUMU-TAMAMLA.cmd aynı onayı gerçek konsolda sorar ⇒
+    # kullanıcıya önce çift tık yolu söylenir (komut yazdırılmaz); komut, kısayolu olmayan proje ve BT için kalır.
+    # Kısayol yalnız SAP projesinde yazılır ⇒ yeni_proje (geç içe aktarma, ≈0,4 sn) yalnız orada yüklenir.
+    kisayol_adi = _yp().KISAYOL if p.sap else None
+    kisayol = p.kok / kisayol_adi if kisayol_adi else None
+    cift_tik = (f"proje klasöründeki {kisayol_adi}'ye çift tıkla (onayı o pencere sorar: {kisayol}); "
+                "ya da kendi terminalinde:") if kisayol and kisayol.is_file() else ""
     yazilan = [d["yol"] for d in plan["dosyalar"]
                if durum["dosyalar"].get(d["yol"], {}).get("durum") == "dogrulandi"
                and durum["dosyalar"].get(d["yol"], {}).get("karar") != "yerel"]
@@ -1034,10 +1041,10 @@ def komut_kapanis(b: Baglam, args) -> int:
                   f"Davranış yüzeyi DEĞİŞTİ ({'; '.join(sebepler)}). `doctor` bunu onaysız "
                   "değişiklik olarak gösterecek. Onayı YALNIZ sen verirsin (aXet oturumu "
                   "`generate` koşmaz; bu değişiklikten sonra zaten onayladıysan tekrar gerekmez):",
-                  manifest_komutu]
+                  *([cift_tik] if cift_tik else []), manifest_komutu]
     else:
         rapor += ["", "## Kullanıcının kendi terminalinde",
-                  f"Davranış yüzeyi değiştiyse: {manifest_komutu}"]
+                  f"Davranış yüzeyi değiştiyse: {cift_tik + ' ' if cift_tik else ''}{manifest_komutu}"]
     if eksikler:
         rapor += ["", "## KAPANMADI — eksikler"] + [f"- {e}" for e in eksikler]
     if kabul:

@@ -21,17 +21,14 @@
 
 | Kategori | Yasak |
 |---|---|
-| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | Hiçbir şekilde yaratılmaz/değiştirilmez/silinmez: append yapı, alan ekleme, standart FM/BAdI/program ve mesaj sınıfı değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Append alanı / DTEL adını sen önermezsin — kullanıcı belirler.** |
+| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
 | **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
 
-**Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok.
+**Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok. A ve C'de işlemi kullanıcı kendisi yapar; "DEVAM", onun bildirdiği sonucu sistemden okuyup doğrulamak ve kendi işine dönmektir — yasak işlemi sen yapmazsın.
 
-(Alt ajan için: "KULLANICIDAN İSTE" adımını sen yapamazsın. Yasağa değen her durumda o kalemi durdur ve
-yanıtının ilk satırına `ENGEL:` yaz.)
-(A'daki "DTEL adı" = standart objeye eklenecek append alanının DTEL'i. Yeni Z DDIC objesi adı yasak değildir:
-S2'deki kurala göre ÖNERİ olarak döner.)
+**Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar. Kullanıcı "adları ben veririm" derse de yaratımı sen yapmazsın: append'i ve append alanının Z DTEL'ini kullanıcı yaratır, sonucu sana bildirir; sen sistemden okuyup doğrularsın.
 ```
 
 ### S2 — SAP'ye yazma yok: yalnız okuma sınıfı CLI araçları

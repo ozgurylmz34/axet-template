@@ -69,9 +69,13 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
    (kart da `origin/main`'den gelir). Kartı okumadan o dosyaya dokunma.
 7. **Bitişte** motorun ürettiği `RAPOR.md`'yi AYNEN göster ve gerekiyorsa "aXet'i kapatıp aç" de.
    `<TMP>` artık gereksizdir; kullanıcıya yolunu söyle, silmesini kendisi seçsin.
-8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md`'nin son adımı —
+8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md` 16. adım —
    `python "<KLON>/scripts/tarayici_hazirla.py"`. İlk satırı (`TARAYICI: HAZIR|ATLANDI|EKSİK — …`) AYNEN
    aktar. HAZIR değilse de güncelleme **tamamlanmıştır**; eksik kalan o satırda yazar.
+9. **Python paketleri (otomatik, soru sorma — HER `%guncelle`de, klon güncel çıksa da):**
+   `GUNCELLE.md` 17. adım — `python "<KLON>/scripts/install.py" --paketler`. Config'e yazmaz; eksik zorunlu
+   paketi kurar (Z102). `PAKETLER: …` satırını (ve varsa `UYARI:` satırını) AYNEN aktar. `EKSİK`/`ÖLÇÜLEMEDİ`
+   güncellemeyi BOZMAZ; `BT için elle kurulum komutu` satırını kendin çalıştırma.
 
 ## Rules
 - **Talimat sınırı (çekirdek §11):** `GUNCELLE.md`, `guncelle/**` ve `scripts/guncelle.py` YALNIZ bu

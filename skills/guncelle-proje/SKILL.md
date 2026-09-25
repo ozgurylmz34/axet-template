@@ -92,9 +92,11 @@ bilinçli olarak kullanıcının kendi terminalinde kalır; sen `behavior_manife
 KOŞMAZSIN.
 
 ### Sonda kullanıcıya söylenecekler
-- Rapordaki "aXet'i kapat-aç" satırı ve "Kullanıcının kendi terminalinde" bölümündeki TAM komut
-  (`behavior_manifest.py generate --project-dir "<proje>"`). Bölüm "GEREKLİ" diyorsa bu komut
-  koşulmadan `doctor` onaysız değişiklik gösterir.
+- Rapordaki "aXet'i kapat-aç" satırı ve "Kullanıcının kendi terminalinde" bölümü. SAP projesinde
+  (kısayol varsa) bölüm önce çift tık yolunu verir: kullanıcıya **"proje klasöründeki
+  KURULUMU-TAMAMLA'ya çift tıkla"** de — onayı o pencere sorar. Kısayol yoksa bölümdeki TAM komutu
+  (`behavior_manifest.py generate --project-dir "<proje>"`) AYNEN ver. Bölüm "GEREKLİ" diyorsa onay
+  verilmeden `doctor` onaysız değişiklik gösterir. Kısayolu/komutu sen çalıştırma.
 - Proje bir ekip reposuysa: "bu değişiklikler commit edilince ekip arkadaşlarına da gider".
 - Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN.
 
