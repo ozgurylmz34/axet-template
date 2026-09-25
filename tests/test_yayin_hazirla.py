@@ -5,7 +5,7 @@
 KOK'u kendi konumundan türettiği için her test betiği **sahte bir depoya** kopyalar → gerçek template
 klonuna hiç dokunulmaz ve çıkış kodu kablolaması da ölçülmüş olur.
 
-⚠ Sentetik sızıntı örnekleri PARÇALI yazılır (`"NT" + "T DA" + "TA"` gibi). Nedeni ölçüldü (2026-09-17):
+⚠ Sentetik sızıntı örnekleri PARÇALI yazılır (`"Orn" + "ekfirma"` gibi). Nedeni ölçüldü (2026-09-17):
 bu dosya da yayın paketine girer ve taramadan geçer; örnekler düz yazılsaydı tarayıcı kendi test
 fixture'larını gerçek sızıntı sanıp yayını BLOKLARDI (9 sahte BLOCKER). Parçalar test çalışırken
 birleşir — yani taranan metin gerçek sızıntının aynısıdır, yalnız kaynak dosyada yan yana durmaz.
@@ -30,14 +30,15 @@ BETIK = AXET_HOME / "maintenance" / "yayin_hazirla.py"
 ZORUNLU = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSES/Apache-2.0.txt",
            "README.md", "AGENTS.md", "kur.cmd", "kur.ps1", "yeni-proje.cmd", "aXet-Kur.cmd"]
 
+ORTAM = "AXET_SIZINTI_EK"
+UYDURMA = "Orn" + "ekfirma"  # uydurma müşteri adı (gerçek ad bu depoya yazılmaz)
+
 TB, IB = "\\", "/"  # ters/ileri bölü — `C:\Users\...` örneklerini kaynak dosyada yan yana getirmemek için
 
 # (sınıf adı, sentetik sızıntı satırı) — BLOCKER kalması gereken gerçek sızıntı sınıfları.
 SIZINTI_ORNEKLERI = [
-    ("şirket adı", "Bu dosya " + "NT" + "T DA" + "TA Business Solutions içindir."),
     ("iç kullanıcı/dizin", "Kullanıcı " + "tr1" + "1718 bu yolu kullanır."),
     ("iç repo adı", "DEV" + "_CORE junction bağlantısı buraya kurulur."),
-    ("müşteri izi", "Musteri: " + "Trak" + "ya projesi."),
     ("oturum bağlantısı", "Bkz. https://claude.ai/code/" + "session" + "_abc123"),
     ("gerçek alan adı örneği", "Sunucu: https://your-sap-" + "server.com:44300"),
 ]
@@ -54,6 +55,7 @@ class YayinHazirlaTest(GeciciTest):
             self.yaz(d / yol.replace("__", "/"), metin)
         self.yaz(d / "maintenance" / "yayin_hazirla.py", BETIK.read_text(encoding="utf-8"))
         self.git(d, "init", "-q", "-b", "main")
+        self.env.pop(ORTAM, None)   # makinedeki gerçek liste testi etkilemesin; her test kendi listesini kurar
         return d
 
     def tara(self, depo):
@@ -80,6 +82,20 @@ class YayinHazirlaTest(GeciciTest):
                 self.assertIn("BULGU: 1 (BLOCKER)", c)
                 # bulgu satırı biçimi: "<sınıf>: <yol>:<no>: <satır>" — KAPSAM listesindeki ada değil buna bakılır
                 self.assertIn(f"{sinif}: docs/ornek.md:1:", c)
+
+    # --- Z133: satır numarası git'in satırıdır (Unicode ayraçlar satır bölmez) -----------------------------
+    def test_unicode_ayrac_satir_numarasini_kaydirmaz(self):
+        sizinti = SIZINTI_ORNEKLERI[1][1]   # "iç repo adı"
+        for ad, ayrac in [("U+2028", " "), ("U+0085", "\x85"), ("form feed", "\x0c")]:
+            with self.subTest(ayrac=ad):
+                rc, c = self.tara(self.depo(**{"docs__a.md": f"bir{ayrac}iki\n{sizinti}\n"}))
+                self.assertEqual(rc, 1, c)
+                self.assertIn("iç repo adı: docs/a.md:2:", c)   # git'te 2. satır; splitlines 3 derdi
+
+    def test_KONTROL_ayracsiz_dosyada_satir_numarasi(self):
+        rc, c = self.tara(self.depo(**{"docs__a.md": f"bir\niki\n{SIZINTI_ORNEKLERI[1][1]}\n"}))
+        self.assertEqual(rc, 1, c)
+        self.assertIn("iç repo adı: docs/a.md:3:", c)
 
     # --- dışlanan dosyaya atıf: WARNING, çıkışı DEĞİŞTİRMEZ -----------------------------------------------
     def test_dislanan_dosyaya_markdown_atifi_warning(self):
@@ -148,6 +164,60 @@ class YayinHazirlaTest(GeciciTest):
         rc, c = self.tara(self.depo(**{"docs__a.md": "Sahip: " + "tr1" + "1718\n"}))
         self.assertEqual(rc, 1, c)
         self.assertIn("iç kullanıcı/dizin: docs/a.md:1:", c)
+
+    # --- yerel müşteri/kurum listesi (2026-09-25): ad KODDA durmaz, git-dışı dosyadan / ortamdan okunur -----
+    def test_yerel_liste_dosyasi_adi_blocker_yakalar(self):
+        d = self.depo(**{"docs__a.md": "Proje: " + UYDURMA + " teslimatı.\n"})
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", "# yorum satırı\n\n" + UYDURMA.lower() + "\n")
+        rc, c = self.tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("yerel liste (müşteri/kurum): docs/a.md:1:", c)
+        self.assertIn("KAPSAM — yerel liste (müşteri/kurum): 1 desen (dosya 1; içerik basılmaz)", c)
+        self.assertFalse((self.tmp / "cikti" / "maintenance").exists(), "liste public kopyaya girmemeli")
+
+    def test_ortam_degiskeni_listesi_yakalar(self):
+        d = self.depo(**{"docs__a.md": "Kurum: " + UYDURMA + "\n"})
+        self.env[ORTAM] = "baskaad;" + UYDURMA
+        rc, c = self.tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("yerel liste (müşteri/kurum): docs/a.md:1:", c)
+        self.assertIn("2 desen (ortam 2", c)
+
+    def test_KONTROL_liste_varken_temiz_metin_bulgu_degil(self):
+        d = self.depo(**{"docs__a.md": "Kurulum notu.\n"})
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", UYDURMA + "\n")
+        rc, c = self.tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("BULGU: 0", c)
+
+    def test_liste_yoksa_olculemedi_der(self):
+        rc, c = self.tara(self.depo(**{"docs__a.md": "Proje: " + UYDURMA + "\n"}))
+        self.assertEqual(rc, 0, c)   # tarama kipi: bulamaz ama SESSİZ değildir
+        self.assertIn("YÜKLENMEDİ", c)
+        self.assertIn("ÖLÇÜLEMEDİ", c)
+
+    def test_liste_yoksa_gercek_yayin_baslamaz(self):
+        d = self.depo()
+        r = self.calistir(d / "maintenance" / "yayin_hazirla.py", "--hedef", str(self.tmp / "yayin"), "--ilk", cwd=d)
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertIn("müşteri/kurum ad listesi yok", self.cikti(r))
+        self.assertFalse((self.tmp / "yayin").exists(), "listesiz yayında hedefe dokunulmamalı")
+
+    def test_liste_git_te_izleniyorsa_hata(self):
+        d = self.depo()
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", UYDURMA + "\n")
+        self.git(d, "add", "maintenance/sizinti-yerel.txt")
+        rc, c = self.tara(d)
+        self.assertNotEqual(rc, 0, c)
+        self.assertIn("git'te izleniyor", c)
+
+    def test_gecersiz_regex_hata_ve_desen_basilmaz(self):
+        d = self.depo()
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", "gizliad(\n")
+        rc, c = self.tara(d)
+        self.assertNotEqual(rc, 0, c)
+        self.assertIn("sizinti-yerel.txt:1 geçersiz regex", c)
+        self.assertNotIn("gizliad", c)
 
     # --- KAPSAM beyanı: şiddet ayrımı çıktıda görünür -----------------------------------------------------
     def test_kapsam_beyani_siddet_ayrimini_soyler(self):

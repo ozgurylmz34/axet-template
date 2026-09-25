@@ -34,6 +34,9 @@ description: >
    - Aktif maddeyi güncelle: `- <iş> — durum: <…> · sonraki adım: <…> · ayrıntı: <dosya>`.
    - Bugün kapanan maddeyi `## Arşiv`e tarihle taşı; `## Aktif işler`de bırakma.
    - Tetiğe bağlı ertelenen işi `## Ertelenmiş tetikler`e yaz: `- <tetik> → <iş> (kaynak, tarih)`.
+   - **Ertelenmiş tetikleri süpür:** bugün dokunulan paket/konunun `## Ertelenmiş tetikler` kalemlerini tara; bugün
+     kapanan, iptal kararı verilen ya da başka bir işe katılan kalemi kaynağıyla (commit/PR · karar cümlesi · katıldığı
+     iş) `## Arşiv`e taşı. Canlı bölümde yalnız açık kalem kalır; kapananı gövdesiyle bırakırsan liste şişer, taranamaz olur.
    - Aynı madde başka yerde açık kalmasın: `AGENTS.md` "Açık işler" yalnız bu dosyaya işaret eder.
 5. **Devir notu:** iş birden çok oturum sürecekse `%handoff` (aynı konuda not varsa güncelle). İş bittiyse notunu sil.
 6. **Ders:** gün içinde kalıcı bir ders, karar ya da kullanıcı düzeltmesi çıktıysa `%remember`.
@@ -52,7 +55,8 @@ description: >
      birleştirme onayı sayılmaz); kullanıcı isterse `%commit-pr` adım 9 (yerel birleştirme), ayrı açık onayla.
    - Template reposunda (ekip `memory/` dersleri) değişiklik varsa o **ayrı depodur**: onayı oraya taşıma, ayrıca sor.
 9. **Doğrula:** `git status` (temiz ya da bilinçli bırakılanlar listeli) · `git log -1 --oneline` · push çıktısı (remote yoksa "push yok") ·
-   `session_brief.py --no-fetch` son hâli.
+   `session_brief.py --no-fetch` son hâli. Bu koşu açılış brief'ini (`.axet-code/acilis-brief.md`) de yeniler: yarınki oturum
+   özeti çalıştırmasa bile bugünün son hâlini bağlamında görür. Çıktının son satırı "açılış brief'i yazıldı" değilse raporda yaz.
 10. **Rapor:** commit ve dal · push sonucu · güncellenen dosyalar · yarın ilk adım. "Yeni oturumda açılış özeti bunları
     gösterecek; 'devam' demen yeter." de.
 

@@ -42,7 +42,7 @@ DOĞRULANMADI: <şablonun canlı doğrulanmamış varsayımları; references/api
 1. Kayıt dosyasını `view` ile oku. İçinde kullanıcı adı, şifre, sistem ya da client değeri varsa kullanıcıya söyle,
    değeri sohbete alıntılama.
 2. Yasak kontrolü: kaydet/sil/release/kilit adımı ya da standart veri değişikliği varsa script YAZILMAZ; DUR, yasak
-   ve alternatif yol (BAPI → RFC FM → BDC → manuel) ile kullanıcıya dön.
+   ve alternatif yol (released API → BAPI → RFC FM → BDC → manuel; `%sap-dev` `write-api-selection.md`) ile kullanıcıya dön.
 3. Bağlantı açma ve giriş ekranı satırlarını sil; yerine şablonlardaki `Init` + `AttachSession` + `WriteHeader`
    bloklarını koy.
 4. Her `StartTransaction` / `SendCommand` / `SendVKey` / `Press` satırından sonra: `If Err.Number <> 0 Then Fail

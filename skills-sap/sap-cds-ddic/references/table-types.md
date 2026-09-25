@@ -161,6 +161,29 @@ Tablo tipinin kaynak ucu (`source/main`) **yoktur**; okuma obje XML'inden yapıl
 `RETURNING VALUE(r) TYPE tt_x` için `tt_x` anahtar ifadesiz (`TYPES tt_x TYPE STANDARD TABLE OF x.`) tanımlıysa aktivasyon "fully typed"
 reddi verir → `WITH DEFAULT KEY` ya da `WITH EMPTY KEY` yaz, ya da DDIC tablo tipi kullan.
 
+### 5.4 `TABLES` aktüeli YAZILABİLİR olmalı — salt-okunur aktüel çalışma zamanında düşer
+- FM'nin `TABLES` parametresi referansla çalışır ve içeriden **geri yazabilir**. En sık kaynak: metodun kendi
+  `IMPORTING` parametresini doğrudan `TABLES`'a geçirmek (ABAP'ta `IMPORTING` salt-okunurdur). Diğer
+  salt-okunur kaynaklar: literal, `VALUE #( )`, salt-okunur `FIELD-SYMBOLS`.
+- **Latent:** sözdizimi doğru, aktivasyon geçer, statik kontrol/ATC geçer; hata çalışma zamanında
+  `CX_SY_DYN_CALL_ILLEGAL_TYPE` ("actual parameter … is write-protected") ile düşer — genelde dış
+  `CX_SY_NO_HANDLER` sarmalıyla, gerçek sebep mesaj kesilirse görünmeyebilir.
+- Hata FM'in zincirdeki ilk `CHANGING`/`TABLES` **bağlamasında** doğar, içerikten değil: tablo **boş** olsa
+  ya da FM'in yazacağı alanı taşımasa da düşer. ⛔ "Boş geçiyoruz / o alan bizde yok ⇒ risk yok" çıkarımı
+  yanlıştır; kod o yola ilk girildiği anda düşer (gecikme yolun geç keşfedilmesindendir).
+- Önlem: sarmalayıcı metodun içinde yerel yazılabilir kopya al ve onu geç — imza değişmez:
+  ```abap
+  DATA(lt_itm) = it_itm.
+  CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+    TABLES order_items_in = lt_itm.
+  ```
+- Kopyalamadan önce ölç: çağıran o tabloyu çağrıdan SONRA okuyorsa kopya geri-yazılan veriyi sessizce düşürür
+  ⇒ o durumda `CHANGING`'e ihtiyaç var demektir.
+- Kardeş tarama: aynı BAPI ailesini çağıran her yer (bir sarmalayıcıda bulunduysa zincirin tamamı).
+- `EXPORTING` parametreler zaten yazılabilirdir, kopya gerekmez. Bu kural `TABLES` aktüeline özgüdür.
+- Denetim: `%sap-code-review` `checklist-abap.md` **BE-71** (statik gate yok, inceleme taraması: `TABLES`
+  bloğu → aktüel → çevreleyen imza).
+
 ## 6. DENENEN — BAŞARISIZ (tekrar deneme)
 | Deneme | Sonuç |
 |---|---|

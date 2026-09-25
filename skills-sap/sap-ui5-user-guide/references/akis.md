@@ -60,12 +60,16 @@ Ayrıntı `mock-ortam.md`'de. Kısa sıra:
    Windows Güvenlik Duvarı izin penceresi çıkarır; yönetici olmayan kullanıcı izin veremez, iş orada durur
    (ölçüldü: `python -m http.server <port>` bind'siz). Statik dosya sunarken `python -m http.server <port> --bind 127.0.0.1`.
    `ui5 serve`: UI5 CLI dokümanına göre varsayılan yalnız localhost bağlantısını kabul eder;
-   `--accept-remote-connections` **verilmez**. Bu varsayılanın gerçekten 127.0.0.1'e bağlanıp güvenlik duvarı penceresi
-   açmadığı ve `start-mock`'un çoğunlukla çağırdığı `fiori run`'ın host davranışı **DOĞRULANMADI** — pencere çıkarsa
-   DUR, kullanıcıya bildir (`tuzaklar.md` T5).
-5. Duman testi: `curl -s "http://127.0.0.1:<port>/<urlPath>/<EntitySet>?\$top=1"` → kayıt dönüyor mu
-   (Git Bash'te `/sap/...` argümanı için `MSYS_NO_PATHCONV=1`).
-- **Çıkış ölçütü:** ana entity set ve her F4 varlığı en az bir kayıt döndürüyor; log'da metadata/mockdata hatası yok.
+   `--accept-remote-connections` **verilmez**. `fiori run` (`@sap/ux-ui5-tooling` 1.32.0, `--port` ile, host bayraksız)
+   **127.0.0.1**'e bağlandı; canlı yenileme sunucusu da 127.0.0.1:35729+ (ölçüldü 2026-09-25, `netstat -ano`). Aynı
+   anda birden çok mock açılırsa canlı yenileme portu çakışabilir (`EADDRINUSE 35730`) — önce eskisini kapat. Güvenlik
+   duvarı ya da şirket güvenlik yazılımı penceresinin çıkmadığı **DOĞRULANMADI** — pencere çıkarsa DUR, kullanıcıya
+   bildir (`tuzaklar.md` T5).
+5. Duman testi (`mock-ortam.md` §6): `curl -s "http://127.0.0.1:<port>/<urlPath>/<EntitySet>?\$top=1"` → kayıt dönüyor
+   mu; bootstrap `sap-ui-core.js` ve `cldr/tr.json` **200** mü (Git Bash'te `/sap/...` argümanı için
+   `MSYS_NO_PATHCONV=1`).
+- **Çıkış ölçütü:** ana entity set ve her F4 varlığı en az bir kayıt döndürüyor; iki bootstrap dosyası 200; log'da
+  metadata/mockdata hatası yok.
 
 ## 3. Keşif (playwright-cli)
 Ayrıntı ve ölçülmüş komutlar `kesif-playwright-cli.md`'de.

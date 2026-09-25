@@ -2,7 +2,7 @@
 name: sap-ui5-fiori
 description: >
   Use for freestyle SAPUI5 / Fiori apps on OData V2 that consume RAP or SEGW services: app skeleton (npm
-  workspace, manifest, pinned bootstrap, proxy), save plumbing (sequential update, to_X navigation, JSON
+  workspace, manifest, bootstrap from the backend's own UI5, proxy), save plumbing (sequential update, to_X navigation, JSON
   edit buffer), value help, ALV-parity list screens with sap.ui.table grid, select-options filter screens,
   i18n, UI side of delete flows, local run, BSP deploy after user OK and runtime verification. Triggers:
   "UI5 ekranı", "Fiori uygulaması", "freestyle UI", "liste ekranı", "rapor filtre ekranı", "F4 value help",
@@ -44,7 +44,7 @@ description: >
 
 ### 1. Yeni uygulama iskeleti
 - **Önce oku:** `references/app-skeleton.md` (§13 kontrol listesi) · `references/checklists.md` Faz 1–2.
-- **Yap:** `ui/` workspace, minimal uygulama `package.json`, `ui5.yaml` (kanonik host), sabit sürümlü `index.html`,
+- **Yap:** `ui/` workspace, sade uygulama `package.json` (middleware paket adları dahil), `ui5.yaml` (kanonik host), backend UI5'inden yükleyen `index.html`,
   manifest, Component, `App.view`, `localService/metadata.xml`, i18n iki dosya.
 - **Karara bağla (kod yazmadan):** düzenlenebilir alt grid var mı (→ JSON edit-buffer), liste ekranı var mı (→ grid).
 - **Doğrula:** `check_i18n_keys.py`, `check_list_view_grid.py`, `deploy_ui.py prepare <app> --no-build`.
@@ -116,7 +116,7 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 ## Referanslar, şablonlar ve script'ler
 | Dosya | İçerik |
 |---|---|
-| `references/app-skeleton.md` | adlandırma (BSP ≤ 15), npm workspace, devDeps, scripts, `ui5.yaml`, kanonik host, `index.html` sürüm sabitleme, manifest şablonu + kuralları (`settings.data` tuzağı, annotation), Component, App.view, localService, CSS/kütüphaneler, iskelet kontrol listesi |
+| `references/app-skeleton.md` | adlandırma (BSP ≤ 15), npm workspace, devDeps, scripts, `ui5.yaml`, kanonik host, `index.html` bootstrap (backend UI5'i; mock modu), manifest şablonu + kuralları (`settings.data` tuzağı, annotation), Component, App.view, localService, CSS/kütüphaneler, iskelet kontrol listesi |
 | `references/freestyle-odata-v2.md` | PRE-FLIGHT, save deseni + `_runSeq` + S1–S12, JSON edit-buffer, `to_X`, `setData` şekli, master-detail, value-help C1–C8, T1–T7 tuzakları, OData tipleri, Edm payload tipleri, sayısal input, miktar formatter, sıfır dolgusu, `MessageBox.success`, çok satırlı `_parseError`, function import, canlı `$metadata` çapraz kontrolü, i18n, `$batch` |
 | `references/list-grid-alv.md` | grid kararı ve reddedilenler, grid beş parça, kişiselleştirme util sözleşmesi (kolonlar/varyant/Excel), grid seçimi ve dialog, SELECT-OPTIONS filtre ekranı + `_parseSearchTerm`, m.Table istisnası |
 | `references/delete-flow-ui.md` | seçim bayatlaması, pending guard = save payload'ı, sıralı `remove` + kapanış tuzağı, mesaj/i18n, minimum runtime testi |

@@ -114,7 +114,7 @@ Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki
 `struct_post_create` ve `sap_active_check` yazma sonrası kontrollerdir; hangi aracın çağırdığı bu dosyada ölçülmedi.
 
 ## 3. İnceleme satırlarının otomasyon durumu
-Toplam 81 satır (`checklist-*.md`).
+Toplam 89 satır (`checklist-*.md`).
 
 **Zincirdeki validator satırı tam karşılar (6):** BE-10a · BE-04 · BE-62 · BE-11 · BE-16 · BE-03.
 Önem farkı: BE-04 ve BE-11 zincirde WARNING, incelemede BLOCKER; BE-03 politikaya bağlı.
@@ -125,10 +125,11 @@ BE-15 (push içerik geri okuması + alan kaybı) · BE-01 (kapı kaynak taramas�
 **Kısmi — okuma aracı ya da script, zincirde değil (5):** SR-02 (CLI önceden çekim ister) · BE-12, BE-31, CC-01 (`adt_atc_check`) ·
 CC-03 (`released_successors.py status`).
 
-**Otomasyon YOK — elle yürünür (64):**
+**Otomasyon YOK — elle yürünür (73):**
 - ortak: SR-01 · SR-03 · BE-02 · BE-18 · BE-66 · BE-64 · BE-70 · BE-65
 - ABAP: BE-10b · BE-55 · BE-57 · BE-22 · BE-23 · BE-51 · BE-29 · BE-30 · BE-35 · BE-40 · BE-41 · BE-46 · BE-44 · BE-50 · BE-52 ·
-  BE-39 · BE-56 · BE-58 · BE-63 · BE-54 · BE-49 · BE-69 · BE-34 · BE-37
+  BE-39 · BE-56 · BE-58 · BE-63 · BE-54 · BE-49 · BE-69 · BE-34 · BE-37 · BE-71 · BE-72 · BE-73 · BE-74 · BE-75 ·
+  BE-76 · BE-77 · BE-78 · BE-79
 - CDS/DDIC: BE-27 · BE-32 · BE-33 · BE-38 · BE-45 · BE-59 · BE-61 · BE-05 · BE-07 · BE-13 · BE-43
 - RAP: BE-26 · BE-20 · BE-60 · BE-06 · BE-21 · BE-24 · BE-08 · BE-09 · BE-17 · BE-53 · BE-42
 - OData: BE-14 · OD-01 · OD-02 · OD-03 · OD-04 · OD-05

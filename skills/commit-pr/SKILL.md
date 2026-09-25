@@ -10,7 +10,7 @@ Yalnız kullanıcı commit / push / PR / dalı `main`'e birleştirme istediğind
 
 ## How to use this skill
 1. **Oku:** `git status`, `git diff` ve `git diff --staged`. Alakasız değişiklik varsa hangilerinin girmesi gerektiğini sor.
-2. **Kimlik bilgisi taraması:** eklenecek dosyalarda `password|passwd|secret|token|api[_-]?key|BEGIN .*PRIVATE KEY` desenlerini `grep` ile ara; `.conn*`, `*.env` gibi dosyalar eklenmesin. Şüphe varsa DUR ve kullanıcıya göster.
+2. **Kimlik bilgisi taraması:** eklenecek dosyalarda `password|passwd|secret|token|api[_-]?key|BEGIN .*PRIVATE KEY` desenlerini `rg` ile ara (aXet `bash` aracında `grep` yok); `.conn*`, `*.env` gibi dosyalar eklenmesin. Şüphe varsa DUR ve kullanıcıya göster.
 3. **Dal:** `main` üzerindeysen yeni dal aç ve başlangıç noktasını açık yaz. Remote var mı önce ölç: `git remote` — çıktı boşsa **yerel repo** (remote yok; push, PR ve CI yoktur).
    - remote varsa: `git fetch origin` → `git switch -c <dal> origin/main`
    - yerel repo: `git switch -c <dal> main`
@@ -32,4 +32,4 @@ Yalnız kullanıcı commit / push / PR / dalı `main`'e birleştirme istediğind
 - `--force`, `--no-verify`, `reset --hard`, `clean -f` kullanılmaz (izin kurallarıyla da engellenir).
 - Commit, push ve PR aynı komut zincirine konmaz; her adımın sonucu okunur.
 - **Hedef açık:** repoyu değiştiren `gh` komutlarında hedef daima yazılır — `pr`/`issue`/`release`/`label` → `--repo <org>/<repo>`; `repo create|edit|delete` → konumsal `<org>/<repo>`; `gh api` → yolun kendisi `repos/<org>/<repo>/…` (`{owner}`/`{repo}` yer tutucusu çalışma dizininden çözülür, kullanılmaz). Başka bir repoda `git` işi → `git -C <repo-kökü> …`. Yanlış repoya yayın geri alınamaz ve `gh` başarı döner.
-- **Merge:** yalnız kullanıcının açık onayıyla. Yerel repoda (remote yok) adım 9 uygulanır. PR'da önce CI durumunu oku (`gh pr checks <no> --repo <org>/<repo>`); kırmızı ya da bekleyen kontrolle merge yok. `--admin` yalnız "onaylayan yok" şartını aşmak içindir, CI'yi atlatmak için kullanılmaz.
+- **Merge:** yalnız kullanıcının açık onayıyla. Yerel repoda (remote yok) adım 9 uygulanır. PR'da önce CI durumunu oku (`gh pr checks <no> --repo <org>/<repo>`); kırmızı ya da bekleyen kontrolle merge yok. Hükmü `--watch` ekran çıktısından değil durum alanından oku (`gh pr checks <no> --repo <org>/<repo> --json name,state`); `checks --watch ; merge` gibi koşulsuz zincir CI kırmızı bitse de birleştirir. Kolaylık: `scripts/merge_pr.py` CI'yi kendisi okur, bekleyen/başarısız kontrolde durur. `--admin` yalnız "onaylayan yok" şartını aşmak içindir, CI'yi atlatmak için kullanılmaz.

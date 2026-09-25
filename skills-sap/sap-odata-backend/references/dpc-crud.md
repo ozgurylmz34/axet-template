@@ -76,7 +76,9 @@ ENDMETHOD.
 
 **Standart tabloya OData üzerinden doğrudan yazma yoktur** (SAP çekirdeği, kesin yasak B). DPC_EXT içinde
 `INSERT/UPDATE/MODIFY/DELETE` yalnız **projenin kendi Z tablosuna** yazılabilir; standart veri için sıra:
-BAPI → RFC FM → BDC → kullanıcıdan manuel. CLI yazma kapısı kaynakta standart tabloya DML görürse `ADR_0005_B`
+released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → BDC → kullanıcıdan manuel.
+DPC_EXT bağlamında (commit DPC'de) API seçimi ve TS gerekçe tablosu: `%sap-dev` → `write-api-selection.md`. Aynı sistemdeki
+released OData'yı DPC_EXT'ten çağırmak EML ya da released BAPI varken seçilmez (gereksiz HTTP katmanı). CLI yazma kapısı kaynakta standart tabloya DML görürse `ADR_0005_B`
 (çıkış 2) ile reddeder — komutu eğip bükme, DUR.
 
 ```abap

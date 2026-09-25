@@ -45,8 +45,8 @@ SAP teyit edebilir. Bu belge bir taraf seçmez; belirsizliği ve onunla nasıl y
 
 ## 4. Bu template'in yüzeyi (ölçüldü)
 
-`python skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py --list` → **37 araç: 24 okuma · 13 yazma**
-(ölçüm 2026-09-15).
+`python skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py --list` → **41 araç: 25 okuma · 16 yazma**
+(ölçüm 2026-09-25; `--list` çıktısındaki `counts` alanı).
 
 - **Kaynak kod ve tanım nesneleri** (sınıf, program, DDIC, CDS, RAP) — araçların çoğu burada. Bu,
   geliştirici aracı davranışıdır; iş verisi değildir.

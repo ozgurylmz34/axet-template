@@ -209,5 +209,94 @@ class LibRegresyon(unittest.TestCase):
                     (r, cagri), r is False and adimlar == ["lock", "delete", "unlock"] and cagri[-1][2] == "KILIT-1")
 
 
+    # ── Z132 (2026-09-25): get_object_revisions — ölçülen gövde biçimi + hatayı YUTMAMA ──
+    @staticmethod
+    def _surum_client(obje_durum=200, govde="", feed_durum=200):
+        """Obje isteği yalnız `Accept: */*` ile `obje_durum` döner (canlı ölçüm: objectstructure/xml → 406)."""
+        feed = ('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom" xmlns:adtcore="http://www.sap.com/adt/core">'
+                '<atom:entry><atom:title>s2</atom:title><atom:updated>2026-09-02T10:00:00Z</atom:updated>'
+                '<atom:author><atom:name>DEVUSER1</atom:name></atom:author>'
+                '<atom:link href="/y" adtcore:name="00002"/></atom:entry>'
+                '<atom:entry><atom:title>s1</atom:title><atom:updated>2026-09-01T10:00:00Z</atom:updated>'
+                '<atom:author><atom:name>DEVUSER2</atom:name></atom:author>'
+                '<atom:link href="/x" adtcore:name="00001"/></atom:entry></atom:feed>')
+        c = SAPADTClient.__new__(SAPADTClient)
+        c.url = "https://example.invalid:44300"
+        c.timeout_short = 1
+        c.debug_enabled = False
+        c._get_headers = lambda *a, **kw: {"Accept": "application/xml"}
+        cagri = []
+
+        class _Oturum:
+            def get(self, url, headers=None, params=None, timeout=None):
+                acc = (headers or {}).get("Accept", "")
+                cagri.append((url[len(c.url):], acc))
+                if "atom+xml" in acc:
+                    return _Yanit(feed_durum, feed if feed_durum == 200 else "hata")
+                return _Yanit(obje_durum if acc == "*/*" else 406, govde)
+        c.session = _Oturum()
+        return c, cagri
+
+    def test_rev_01_z132_sinif_atom_link_goreli(self):
+        rel = 'rel="http://www.sap.com/adt/relations/versions"'
+        govde = (f'<class:abapClass><atom:link href="includes/definitions/versions" {rel}/>'
+                 f'<atom:link href="includes/main/versions" {rel}/></class:abapClass>')
+        c, cagri = self._surum_client(govde=govde)
+        r = c.get_object_revisions("/sap/bc/adt/oo/classes/zcl_zsd001_rev")
+        ok = ([x["version"] for x in r] == ["00002", "00001"]
+              and cagri == [("/sap/bc/adt/oo/classes/zcl_zsd001_rev", "*/*"),
+                            ("/sap/bc/adt/oo/classes/zcl_zsd001_rev/includes/main/versions",
+                             "application/atom+xml;type=feed")])
+        self.kaydet("REV-1 Z132 lib: Accept */* · atom:link · göreli href · includes/main seçilir", "2 sürüm · doğru yol",
+                    cagri, ok)
+
+    def test_rev_02_z132_hata_yutulmaz(self):
+        from sap_adt_lib import SAPADTError, SAPObjectNotFoundError  # type: ignore
+        rel = 'rel="http://www.sap.com/adt/relations/versions"'
+        durum = {}
+        for ad, kw in (("obje406", {"obje_durum": 406}), ("obje404", {"obje_durum": 404}),
+                       ("feed500", {"govde": f'<atom:link href="source/main/versions" {rel}/>', "feed_durum": 500})):
+            c, _ = self._surum_client(**kw)
+            try:
+                durum[ad] = ("dondu", c.get_object_revisions("/sap/bc/adt/programs/includes/zsd001_i_rev"))
+            except SAPObjectNotFoundError as e:
+                durum[ad] = ("SAPObjectNotFoundError", e.status_code)
+            except SAPADTError as e:
+                durum[ad] = ("SAPADTError", e.status_code)
+        c, _ = self._surum_client(govde="<x/>")
+        durum["baglantisiz"] = ("dondu", c.get_object_revisions("/sap/bc/adt/programs/includes/zsd001_i_rev"))
+        ok = durum == {"obje406": ("SAPADTError", 406), "obje404": ("SAPObjectNotFoundError", 404),
+                       "feed500": ("SAPADTError", 500), "baglantisiz": ("dondu", [])}
+        self.kaydet("REV-2 Z132 lib: 406/404/feed 500 istisna (sessiz [] YOK) · bağlantı yoksa []", "3 istisna · []",
+                    durum, ok)
+
+    def test_rev_03_z132_baglanti_yardimcilari(self):
+        from sap_adt_lib import resolve_adt_href, select_versions_link, versions_links  # type: ignore
+        rel = "http://www.sap.com/adt/relations/versions"
+        govde = (f'<link href="/sap/bc/adt/a/versions" rel="{rel}"/>'
+                 f"<atom:link rel='{rel}' href='includes/main/versions?x=1&amp;y=2'/>"
+                 '<atom:link href="includes/x" rel="http://www.sap.com/adt/relations/source"/>')
+        durum = {
+            "bul": versions_links(govde) == ["/sap/bc/adt/a/versions", "includes/main/versions?x=1&y=2"],
+            "sec_main": select_versions_link(["includes/definitions/versions", "includes/main/versions"])
+            == "includes/main/versions",
+            "sec_ilk": select_versions_link(["includes/definitions/versions", "includes/macros/versions"])
+            == "includes/definitions/versions",
+            "sec_bos": select_versions_link([]) is None,
+            "sec_sinir": select_versions_link(["includes/definitions/versions", "/sap/bc/adt/x/zdomain/versions"])
+            == "includes/definitions/versions",
+            "sec_mutlak_main": select_versions_link(["includes/definitions/versions", "/sap/bc/adt/x/main/versions"])
+            == "/sap/bc/adt/x/main/versions",
+            "coz_goreli": resolve_adt_href("/sap/bc/adt/oo/classes/zcl_x", "includes/main/versions")
+            == "/sap/bc/adt/oo/classes/zcl_x/includes/main/versions",
+            "coz_nokta": resolve_adt_href("/sap/bc/adt/oo/classes/zcl_x/", "./source/main/versions")
+            == "/sap/bc/adt/oo/classes/zcl_x/source/main/versions",
+            "coz_mutlak": resolve_adt_href("/o", "/sap/bc/adt/v") == "/sap/bc/adt/v"
+            and resolve_adt_href("/o", "https://h/v") == "https://h/v",
+        }
+        self.kaydet("REV-3 Z132 yardımcılar: link/atom:link · öznitelik sırası · tırnak · seçim · göreli çözüm",
+                    "hepsi True", durum, all(durum.values()))
+
+
 if __name__ == "__main__":
     unittest.main()

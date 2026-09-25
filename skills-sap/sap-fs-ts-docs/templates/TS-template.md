@@ -155,6 +155,17 @@ flowchart LR
 ### 6.3 Performans
 - <WHERE'siz okuma yok · döngü içinde okuma yok · büyük veride paketleme>
 
+### 6.4 API seçimi (standart nesneye yazan her geliştirmede ZORUNLU; yazma yoksa "Uygulanmaz — standart veriye yazma yok")
+Karar ağacı ve canlı teyitler: `%sap-dev` → `references/write-api-selection.md`. Reddedilen alternatif ve nedeni yazılmadan seçim tamamlanmış sayılmaz.
+
+| Yöntem | Sistemde? (canlı) | Released? | Commit (ADIM 0 bağlamında) | Hata yönetimi | Karar |
+|---|---|---|---|---|---|
+| EML `I_<…>TP` | <1a-1d teyit sonucu> | <…> | <…> | <REPORTED/FAILED iki aşamalı> | <★ seçilen / reddedildi: neden> |
+| BAPI `BAPI_<…>` | <…> | <ATC "Usage of APIs"> | <…> | <RETURN tüm E/A/X> | <…> |
+| OData `API_<…>_SRV` / FM / BDC | <…> | <…> | <…> | <…> | <…> |
+
+Clean core seviyesi: <A/B/C/D>
+
 ## 7. İyileştirmeler
 | Tip | Ad (BAdI / spot / exit) | Implementasyon adı (kullanıcı onaylı) | Sözde kod |
 |---|---|---|---|

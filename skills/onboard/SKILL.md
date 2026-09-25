@@ -2,7 +2,7 @@
 name: onboard
 description: >
   Use when a new developer is setting up aXet.code with this template or asks what to do first:
-  walks through machine prerequisites, the kur.cmd installer (clone, install, doctor), first-session
+  walks through machine prerequisites, the aXet-Kur.cmd installer (clone, install, doctor), first-session
   verification (load canary, doctor), the first project via %yeni-proje, SAP credential setup done in
   the developer's own terminal, the first package, and daily use. Checks each step on the machine,
   reports the result and only then moves on. Triggers: "onboard", "yeni başladım", "kurulum nasıl",

@@ -570,6 +570,11 @@ BAGLAM_WARN = 200 * 1024
 BAGLAM_FAIL = 1024 * 1024
 BAGLAM_OTOMATIK = ("AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md")
 BAGLAM_ETIKETI = "bağlam boyutu"
+# Z105 açılış brief'i: session_brief.py yazar (ad orada da BRIEF_DOSYASI). Proje config'inde listelenip diskte YOKSA
+# ÖLÇÜLEMEDİ sayılmaz: boyutu bilinir (0) ve aXet eksik context_paths dosyasını atlar, oturum açılır (ölçüldü aXet 1.3.0,
+# 2026-09-25: eksik brief + ikinci bağlam dosyası → ikinci dosyanın işareti döndü, rc=0). İstisna YALNIZ bu tam yol
+# ve YALNIZ "dosya yok" durumu içindir; okunamayan ya da dizin olan brief yine ÖLÇÜLEMEDİ.
+BRIEF_DOSYASI = ".axet-code/acilis-brief.md"
 # Bir dizin girdisinde yürünen en çok dosya; aşılırsa yürüme kesilir ve ÖLÇÜLEMEDİ yazılır (bug gate LOW-3 ölçümü:
 # 20 000 dosyalı dizin ≈ 35 sn). Sınır dizin girdisi başınadır.
 BAGLAM_DOSYA_SINIRI = 5000
@@ -627,6 +632,9 @@ def baglam_olcumu(cwd: Path | None, cfg_file: Path) -> dict:
             return
         else:
             yol = kok / p
+        if kaynak == "proje-config" and p == BRIEF_DOSYASI and not os.path.lexists(yol):
+            taranan.append(f"açılış brief'i {p} henüz yok (0 bayt; aXet eksik dosyayı atlar — session_brief.py yazar)")
+            return
         if yol.is_dir():
             dizin(yol, kaynak)
         else:
@@ -1114,6 +1122,15 @@ def check_project(cwd: Path, sap_global: bool = False) -> None:
             ctx = opts.get("context_paths") or []
             ctx = ctx if isinstance(ctx, list) else []
             add("PASS" if ".axet-code/memory/MEMORY.md" in ctx else "WARN", "proje config'i proje hafızasını yüklüyor")
+            # Z105: brief bağlamda değilse, model özeti atladığında (ör. oturum `%skill` ile açıldı) hiçbir özet görmez.
+            if BRIEF_DOSYASI in ctx:
+                add("PASS", "proje config'i açılış brief'ini yüklüyor")
+            else:
+                # Özelleştirilmiş config %guncelle-proje'de V4c+ESIK'e düşer (5 satırlık dosyada yerel fark eşiği kolay
+                # aşılır — bug gate MEDIUM-2, ölçüldü) ⇒ elle yol da yazılır, yoksa öneri kısır döngü olur.
+                add("WARN", f"proje config'i açılış brief'ini yüklemiyor ({BRIEF_DOSYASI} context_paths'te yok) "
+                            f"→ %guncelle-proje; config'i özelleştirdiysen .axet-code.json context_paths'e "
+                            f"\"{BRIEF_DOSYASI}\" girdisini elle ekle")
             # Ölçüldü (aXet 1.3.0): aynı desen projede farklı kararla yazılırsa global kuralı ezer.
             perms = data.get("permissions")
             rules = perms.get("rules") if isinstance(perms, dict) else None
@@ -1341,6 +1358,109 @@ def check_git_kimlik(cwd: Path | None = None) -> None:
         add("PASS", "git kimliği tanımlı (user.name + user.email; değer basılmaz) (KAPSAM: " + GIT_KIMLIK_KAPSAM + ")")
 
 
+# --- PowerShell yürütme politikası × npm `.ps1` shim'i (YALNIZ Windows) ----------------------------------------------
+# NEDEN: npm ile kurulan CLI'lar (npm, npx, ui5, fiori …) Windows'ta `<ad>.cmd` + `<ad>.ps1` shim çiftiyle gelir.
+# `shutil.which` `.cmd`'yi bulur ve "var" der; PowerShell ise çıplak `<ad>`'ı `.ps1`'e çözer ve politika
+# `Restricted`/`AllSigned` iken onu BLOKLAR (UnauthorizedAccess). Araç kurulu ama kullanıcının PowerShell'inde
+# çağrılamıyor — varlık kontrolü bunu söylemez (ölçüldü 2026-09-18: dört CLI "var" dendi, PowerShell'de düştü).
+# ⛔ ALT SÜREÇ AÇILMAZ (`powershell Get-ExecutionPolicy` YOK): alt süreç çağıranın SÜREÇ kapsamlı politikasını
+# (ortam değişkeni PSExecutionPolicyPreference; araçların açtığı `Bypass` gibi) devralır ve kullanıcının etkin
+# politikası yerine onu raporlar ⇒ yanlış PASS. Politika kayıt defterinden okunur; öncelik PowerShell'in kendi
+# sırasıdır, SÜREÇ kapsamı HARİÇ: MachinePolicy (GPO, HKLM) > UserPolicy (GPO, HKCU) > CurrentUser (HKCU) >
+# LocalMachine (HKLM); hiçbiri yoksa Windows istemci varsayılanı `Restricted`.
+# FAIL ÜRETMEZ (kullanıcı cmd ya da Git Bash ile çalışabilir); doctor politikayı DEĞİŞTİRMEZ, yalnız önerir.
+PS_ETIKETI = "PowerShell yürütme politikası"
+PS_CLI_ADAYLARI = ("npm", "npx", "ui5", "fiori", "abaplint", "playwright-cli", "mmdc", "marp")
+PS_GPO = r"SOFTWARE\Policies\Microsoft\Windows\PowerShell"
+PS_SHELLID = r"SOFTWARE\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell"
+PS_ENGELLEYEN = ("restricted", "allsigned")
+PS_DUZELTME = "Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
+PS_KAPSAM = ("KAPSAM: Windows PowerShell 5.1 kayıt defteri okunur; bakılan CLI'lar: " + ", ".join(PS_CLI_ADAYLARI)
+             + " (yalnız PATH'te bulunup yanında .ps1 shim'i olanlar) — bakılmayan: pwsh 7 politikası "
+               "(powershell.config.json) · süreç kapsamı (PSExecutionPolicyPreference) · Windows Server varsayılanı "
+               "(RemoteSigned) ayırt edilmez · CLI'ın PowerShell'de fiilen çalıştırılması (komut koşulmaz)")
+
+
+def _ps_kayit_oku(kok: str, yol: str, ad: str):
+    """Kayıt defteri değeri; anahtar ya da değer YOKSA None. Başka her hata yukarı çıkar (çağıran ÖLÇÜLEMEDİ yazar).
+    64-bit görünüm: 32-bit Python'da HKLM\\SOFTWARE WOW6432Node'a yönlenir, PowerShell ise 64-bit görünümü okur."""
+    import winreg  # yalnız Windows; çağrı windows kontrolüyle korunur
+    hive = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}[kok]
+    try:
+        with winreg.OpenKey(hive, yol, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as k:
+            return winreg.QueryValueEx(k, ad)[0]
+    except FileNotFoundError:
+        return None
+
+
+def _ps_tanimli(deger) -> bool:
+    return deger is not None and str(deger).strip() not in ("", "Undefined")
+
+
+def ps_etkin_politika(okuyucu=None) -> tuple[str, str]:
+    """(etkin politika, kaynak). `okuyucu(kok, yol, ad)` enjekte edilebilir (testler); okuma hatası yukarı çıkar."""
+    oku = okuyucu or _ps_kayit_oku
+    for kok, kaynak in (("HKLM", "GPO/MachinePolicy"), ("HKCU", "GPO/UserPolicy")):
+        etkin = oku(kok, PS_GPO, "EnableScripts")
+        if etkin is not None and str(etkin).strip() == "0":
+            return "Restricted", f"{kaynak} — {kok}\\{PS_GPO} EnableScripts=0"
+        pol = oku(kok, PS_GPO, "ExecutionPolicy")
+        if _ps_tanimli(pol):
+            return str(pol).strip(), f"{kaynak} — {kok}\\{PS_GPO}"
+    for kok, kaynak in (("HKCU", "CurrentUser"), ("HKLM", "LocalMachine")):
+        pol = oku(kok, PS_SHELLID, "ExecutionPolicy")
+        if _ps_tanimli(pol):
+            return str(pol).strip(), f"{kaynak} — {kok}\\{PS_SHELLID}"
+    return "Restricted", "varsayılan — hiçbir kapsamda kayıt yok (Windows istemci varsayılanı)"
+
+
+def ps_shimleri(which=None) -> list[str]:
+    """PATH'te bulunan ve yanında `<ad>.ps1` shim'i olan aday CLI'lar (sıralı). `which` enjekte edilebilir."""
+    bul = which or shutil.which
+    out = []
+    for ad in PS_CLI_ADAYLARI:
+        yol = bul(ad)
+        if yol and Path(yol).with_suffix(".ps1").is_file():
+            out.append(ad)
+    return sorted(out)
+
+
+def check_ps_politika(windows: bool | None = None, okuyucu=None, which=None) -> None:
+    """Tek satır + sessiz atlama yok: Windows dışı INFO "uygulanmaz" · okunamazsa INFO ÖLÇÜLEMEDİ (temiz denmez,
+    uyarı da uydurulmaz) · Restricted/AllSigned + .ps1 shim'li CLI → WARN (düzeltme önerisi, kullanıcı kararı) ·
+    diğer hâller PASS. FAIL yok."""
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows:
+        add("INFO", f"{PS_ETIKETI}: uygulanmaz (Windows değil; .ps1 shim'i ve yürütme politikası yalnız Windows "
+                    "PowerShell'inde vardır)")
+        return
+    try:
+        shimler = ps_shimleri(which)
+        pol, kaynak = ps_etkin_politika(okuyucu)
+    except Exception as exc:  # noqa: BLE001 — ölçüm hatası FAIL/WARN değil, ÖLÇÜLEMEDİ
+        add("INFO", f"{PS_ETIKETI} ÖLÇÜLEMEDİ ({type(exc).__name__}: {exc}) — npm CLI'larının PowerShell'de "
+                    f"çalışıp çalışmadığı BİLİNMİYOR (temiz sayılmadı) ({PS_KAPSAM})")
+        return
+    if pol.lower() in PS_ENGELLEYEN and shimler:
+        adlar = ", ".join(shimler)
+        if kaynak.startswith("GPO"):
+            care = (f"politika grup ilkesinden (GPO) geliyor, `{PS_DUZELTME}` onu EZEMEZ → bu CLI'ları cmd ya da Git "
+                    "Bash'te çalıştır ya da PowerShell'de `<ad>.cmd` yaz (kalıcı çözüm BT'de)")
+        else:
+            care = (f"bu CLI'ları cmd ya da Git Bash'te çalıştır ya da PowerShell'de `<ad>.cmd` yaz; kalıcı çözüm "
+                    f"`{PS_DUZELTME}` (güvenlik ayarıdır, KARAR SENİN; doctor değiştirmez)")
+        add("WARN", f"{PS_ETIKETI} {pol} ({kaynak}) — PATH'te bulunan {adlar} PowerShell'de `.ps1` shim'ine çözülür "
+                    f"ve BLOKLANIR (\"running scripts is disabled\"; PATH'te olmak çalışmak demek değil) → {care} "
+                    f"({PS_KAPSAM})")
+    elif pol.lower() in PS_ENGELLEYEN:
+        add("PASS", f"{PS_ETIKETI} {pol} ({kaynak}) — PATH'te .ps1 shim'li npm CLI'ı yok, bugün etkisi yok; ileride "
+                    f"npm ile CLI kurulursa PowerShell'de bloklanır ({PS_KAPSAM})")
+    else:
+        add("PASS", f"{PS_ETIKETI} {pol} ({kaynak}) — .ps1 shim'li CLI'lar ({len(shimler)}"
+                    + (f": {', '.join(shimler)}" if shimler else "") + f") PowerShell'de çalışır ({PS_KAPSAM})")
+
+
 def check_live(sap: bool, cwd: Path) -> None:
     exe = shutil.which("axet-code")
     if not exe:
@@ -1407,6 +1527,7 @@ def main() -> int:
         check_baglam_boyutu(cwd)
         for name, info, ok in inst.check_env():
             add("INFO" if ok is None else ("PASS" if ok else "WARN"), f"{name}: {info}")  # None = isteğe bağlı araç yok
+        check_ps_politika()
         check_git_kimlik(cwd)
         check_paketler(sap or (cwd / "sap-project.json").exists())
         check_tarayici()
@@ -1426,6 +1547,8 @@ def main() -> int:
               "SAP Python paketleri yalnız ZORUNLU liste (install.ZORUNLU_PAKETLER) için ve yalnız bu yorumlayıcıda "
               "import edilerek ölçülür — sürüm alt sınırı ve isteğe bağlı skill paketleri (python-docx/pptx, openpyxl, "
               "markdown, Pillow) denetlenmez · "
+              "PowerShell yürütme politikası yalnız Windows PowerShell 5.1 kayıt defterinden okunur (pwsh 7 ve süreç "
+              "kapsamı ölçülmez) ve CLI PowerShell'de fiilen çalıştırılmaz (yalnız .ps1 shim'inin varlığı) · "
               "AGENTS.md SAP satırında yalnız anahtar taşıyan `- SAP` satırlarının profil/master_language'i (FAIL) ile "
               "yazılmışsa sürüm/cleancore_policy'si (WARN; ilk yazan satırdan) karşılaştırılır — anahtar biçimi (`:`/`=`) "
               "ya da geçerli değer taşımayan `- SAP…` maddeleri (serbest metin) atlanır; aktif paket, transport ve `- SAP` ile başlamayan satırlardaki SAP ifadeleri bakılmaz · "

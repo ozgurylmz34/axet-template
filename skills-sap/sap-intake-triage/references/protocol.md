@@ -85,6 +85,13 @@ Dönen "yok / yapılamaz / blocker"ı kanıtsız kabul etme; kanıtlardan en az 
 ## 5. Kanıtlı değerlendir
 Domain + canlı sistem + prior-art birlikte → aksiyon: reuse mı yeni mi · mevcutla tutarlılık · uygulanacak geçmiş ders ·
 blast-radius / risk. Kanıtsız ilerleme yok.
+- **Eski sistem (ECC/legacy) referansı iş anlayışı içindir, mimari şablon değildir (ekip dersi).** Eski koddan ve örnek
+  veriden ALINAN: iş kuralları, takip edilen büyüklükler (hangi alan, hangi granülerlik), istisna/hata senaryoları, hacim,
+  kullanıcı alışkanlıkları. ALINMAYAN: Z tablo/alan tasarımı, alan reuse hileleri, arayüz/mesaj tipi seçimi, program/FM
+  zinciri, ekran yapısı, log/mail mekanizması — bunlar o günün kısıtlarının ürünüdür. Her tasarım kararında sırayla sor:
+  ① S/4 standardı ne öneriyor ② bu ihtiyaç için genel pratik ne ③ eskisinden farklıysa neden — "eskide böyleydi" tek başına
+  gerekçe değildir (kullanıcı açıkça isterse başka). Belgede "eski sistemle aynı" ifadesi bir sinyaldir: iş kuralı mı
+  (kalır), teknik seçim mi (yeniden değerlendirilir).
 
 ## 6. Kapsamla orantılı soru + aksiyon
 - **S0:** soru yok. Makul varsayılanla yap; tek satır "şöyle anladım, yapıyorum". SAP yazmasında `--scope S0 --reason "…"`.

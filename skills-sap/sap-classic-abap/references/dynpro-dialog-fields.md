@@ -75,6 +75,7 @@ define structure zsd001_s_dlg {
 |---|---|
 | "Aynı yapıda iki `lgort_d` var ⇒ bağlama yolu kapalı" | bağlama yapı **bileşenine** yapılır; iki bileşen aynı SHLP'ye bağlanabilir (ölçüm: 7 alanın tümü `MATCHCODE` boş + `FROM_DICT`, ikisi `H_T001L`'e bağlı) |
 | "DDIC'e bağlı alanda F4 parametre karışması olmaz" | **ölçüm çürüttü**: eşleme kurulmazsa F4 seçilen satırın yanlış alanını (ör. üretim yeri) yazar; `FROM_DICT` eşlemeyi kendiliğinden kurmaz → `where` açıkça yazılır |
+| "Çok parametreli arama yardımında seçilen satırın İLK parametresi devralınır" | **ölçüm + kullanıcı testi çürüttü** (ekip dersi): dönüş hedefi AD-bazlıdır — `where <param> = <yapı>.<alan>` bloğu `DD36S` (`SHTABLE`/`SHFIELD`) içinde isimle kaydedilir; SHLP'nin kendi parametre sırası (`DD32S-FLPOSITION`) belirlemez. F4 yanlış değer yazıyorsa sırayı değil eşlemeyi ölç |
 - ⚠ Ekrandaki elle `MATCHCODE` DDIC bağlamasının **önüne geçer** → ekran tarafı `MATCHCODE` boş.
 - ⚠ **Obje aktif ≠ tüketici güncel:** klasik Dynpro DDIC bilgisini (arama yardımı dahil) **üretildiği anda gömer**. Yapıya
   bağlama eklemek ekrana kendiliğinden inmez → ekranın yeniden üretilmesi (regen) **baştan plana** konur.

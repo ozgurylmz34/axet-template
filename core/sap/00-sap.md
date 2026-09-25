@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.5.1
+SAP-CORE-ID: AXET-SAP-0.5.2
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -8,7 +8,7 @@ SAP-CORE-ID: AXET-SAP-0.5.1
 | Kategori | Yasak |
 |---|---|
 | **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
-| **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. |
+| **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. Hangi yol, hangi canlı teyitle: `%sap-dev` → `references/write-api-selection.md`. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
 

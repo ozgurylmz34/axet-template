@@ -5,14 +5,17 @@
   adt_system_info       ADT discovery servis kataloğu (bağlantı kimliği ÇIKTIYA KONMAZ)
   adt_object_structure  obje yapısı (objectstructure bileşenleri)
   sap_doctor            tek komutluk yerel + canlı bağlantı tanısı (PASS/WARN/FAIL + kapsam beyanı)
+  adt_pretty_print      SAP Pretty Printer ile biçimlenmiş kaynak → yanıt / YEREL dosya; SAP'de değişiklik YOK (Z128)
 
 KANIT (kaynak çekirdek salt-okur; aXet kütüphane kopyası `sapadt/lib/`):
-  · sürümler: `lib/sap_adt_lib.py:1821-1919 get_object_revisions` — obje GET Accept
-    `application/vnd.sap.adt.objectstructure+xml` → `rel="http://www.sap.com/adt/relations/versions"` linki →
-    feed GET Accept `application/atom+xml;type=feed` → `<atom:entry>` ayrıştırma. Kaynak script
+  · sürümler: `lib/sap_adt_lib.py get_object_revisions` — obje GET → `rel="http://www.sap.com/adt/relations/versions"`
+    bağlantısı → feed GET Accept `application/atom+xml;type=feed` → `<atom:entry>` ayrıştırma. Kaynak script
     `scripts/list_revisions.py:83` bu metodu çağırır, varsayılan `--limit 20` (`:40`).
-    ⚠ Kütüphane metodu her hatayı YUTUP `[]` döndürür (`:1914-1918`) ⇒ "sürüm yok" ile "okunamadı" ayırt
-    edilemez. Bu araç AYNI iki GET'i (aynı uç, aynı Accept, aynı regex) kendisi yapar ve üç durumu ayırır.
+    ⛔ Z132 (2026-09-25, canlı ölçüm, DEV): obje GET'i `Accept: objectstructure+xml` ile sınıf/include/arayüzde 406
+    veriyordu (araç bu üç tipte sürüm OKUYAMIYORDU); bağlantı `<atom:link …>` ve href GÖRELİ; sınıfta ilk bağlantı
+    `includes/definitions`, ana kaynak `includes/main/versions`. Accept, bağlantı bulma/seçme/çözme artık
+    kütüphanedeki TEK kaynaktan gelir (`REVISIONS_OBJECT_ACCEPT`, `versions_links`, `select_versions_link`,
+    `resolve_adt_href`). Kütüphane metodu da artık hatayı yutmaz; araç iki GET'i kendisi yapıp durumları kodla ayırır.
   · yapı: `lib/sap_adt_lib.py:4366-4400 get_object_structure` (406/415'te sıradaki Accept) +
     bileşen ayrıştırma `lib/sap_client.py:3311-3326 get_structure` (kaynak script `get_object_structure.py:45`).
     `sap_client.get_structure` istisnayı yutup None döndürdüğü için doğrudan kütüphane metodu çağrılır.
@@ -27,14 +30,11 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from xml.sax.saxutils import unescape as _xml_unescape
 
 from sapadt._app import profil_tool
 
-_ACCEPT_YAPI = "application/vnd.sap.adt.objectstructure+xml"          # sap_adt_lib.py:1835
-_ACCEPT_FEED = "application/atom+xml;type=feed"                        # sap_adt_lib.py:1868
-_SURUM_LINK = (re.compile(r'<link[^>]*rel="http://www\.sap\.com/adt/relations/versions"[^>]*href="([^"]+)"'),
-               re.compile(r'<link[^>]*href="([^"]+)"[^>]*rel="http://www\.sap\.com/adt/relations/versions"'))
 _ENTRY = re.compile(r"<atom:entry>(.*?)</atom:entry>", re.DOTALL)       # sap_adt_lib.py:1881
 _E_URI = re.compile(r'<atom:content[^>]*src="([^"]+)"')
 _E_VER_TR = re.compile(r'<atom:link[^>]*type="application/vnd\.sap\.adt\.transportrequests\.v1\+xml"[^>]*adtcore:name="([^"]+)"')
@@ -88,8 +88,10 @@ def adt_revisions(name: str, object_type: str = "class", limit: int = 20,
         acknowledge_risk: DEV dışı tier'da sürüm yazarlarını (kullanıcı kimliği) açık gösterir.
 
     Returns:
-        {ok, name, type, object_url, versions_link_found, count, returned, revisions[{version, versionTitle,
-         author, date, uri}], author_masked, notice?}
+        {ok, name, type, object_url, versions_link_found, versions_link, versions_link_count, count, returned,
+         revisions[{version, versionTitle, author, date, uri}], author_masked, notice?}
+        `versions_link` = okunan akışın yolu (sınıfta ana kaynak `…/includes/main/versions`; yoksa ilk bağlantı).
+        Obje GET'i 200 dışı (ör. 406) → `revisions_unavailable` (ok:false) — "sürüm yok" diye BOŞ LİSTE DÖNMEZ.
         `versions_link_found:false` + `count:0` = uç bu obje için sürüm linki SUNMADI; "sürüm yok" KANITI DEĞİL.
     """
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
@@ -103,9 +105,11 @@ def adt_revisions(name: str, object_type: str = "class", limit: int = 20,
         client = _atom._get_client()
         adt = getattr(client, "adt_client", None) or client
         zaman = getattr(adt, "timeout_short", 30)
+        from sap_adt_lib import (REVISIONS_FEED_ACCEPT, REVISIONS_OBJECT_ACCEPT,  # type: ignore
+                                 resolve_adt_href, select_versions_link, versions_links)
         with _atom._capture_stdout():
             h = dict(adt._get_headers())
-            h["Accept"] = _ACCEPT_YAPI
+            h["Accept"] = REVISIONS_OBJECT_ACCEPT
             r = adt.session.get(adt.url + url, headers=h, timeout=zaman)
         durum = int(getattr(r, "status_code", 0) or 0)
         temel = {"name": name.strip().upper(), "type": object_type, "object_url": url}
@@ -117,17 +121,20 @@ def adt_revisions(name: str, object_type: str = "class", limit: int = 20,
                              "message": f"Obje yapısı okunamadı (HTTP {durum}) — sürüm geçmişi ÖLÇÜLEMEDİ.",
                              "sap_body": str(getattr(r, "text", "") or "")[:300]}, adt)
         metin = str(getattr(r, "text", "") or "")
-        m = _SURUM_LINK[0].search(metin) or _SURUM_LINK[1].search(metin)
-        if not m:
+        baglantilar = versions_links(metin)
+        secilen = select_versions_link(baglantilar)
+        if not secilen:
             return {"ok": True, **temel, "versions_link_found": False, "count": 0, "returned": 0, "revisions": [],
                     "author_masked": False,
                     "notice": "Obje yapısında sürüm (versions) linki YOK — bu tip/uç sürüm geçmişi sunmuyor olabilir. "
                               "count:0 'sürüm yok' KANITI DEĞİLDİR."}
-        feed = m.group(1)
+        feed = resolve_adt_href(url, secilen)
+        temel["versions_link"] = feed if feed.startswith("/") else None
+        temel["versions_link_count"] = len(baglantilar)
         feed_url = adt.url + feed if feed.startswith("/") else feed
         with _atom._capture_stdout():
             h = dict(adt._get_headers())
-            h["Accept"] = _ACCEPT_FEED
+            h["Accept"] = REVISIONS_FEED_ACCEPT
             fr = adt.session.get(feed_url, headers=h, timeout=zaman)
         fdurum = int(getattr(fr, "status_code", 0) or 0)
         if fdurum != 200:
@@ -155,7 +162,8 @@ def adt_revisions(name: str, object_type: str = "class", limit: int = 20,
            "returned": min(len(surumler), limit), "revisions": surumler[:limit], "author_masked": maske}
     if not surumler:
         out["notice"] = ("Sürüm feed'i okundu ama <atom:entry> yok. Ayrıştırma kütüphaneyle aynı desendir "
-                         "(`<atom:entry>` önekli); farklı biçimli feed'de 0 görünebilir — canlı DOĞRULANMADI.")
+                         "(`<atom:entry>` önekli; canlıda sınıf/include/arayüz feed'lerinde kayıt ayrıştı, 2026-09-25); "
+                         "başka obje tipinin farklı biçimli feed'inde 0 görünebilir — o tipler DOĞRULANMADI.")
     if maske:
         out["author_notice"] = "DEV dışı tier: yazarlar maskelendi (kullanıcı kimliği). Açık görmek: acknowledge_risk=true."
     return _temizle(out, adt)
@@ -446,3 +454,158 @@ def sap_doctor(live: bool = True) -> dict:
         out.update(error="doctor_fail",
                    message=f"{ozet['fail']} FAIL: " + ", ".join(k["id"] for k in kontroller if k["status"] == "FAIL"))
     return out
+
+
+# ═══════════════════════════════════════ adt_pretty_print ════════════════════════════════════════
+# Z128 (2026-09-25): classes.md §7.1 reçetesinin "birimi biçimle" adımı. Kanıt:
+#   · kaynak okuma: `lib/sap_adt_lib.py:2050 get_object_source` — `adt_get` ile AYNI çağrı (sürüm verilmez = son
+#     sürüm; `lib/sap_client.py:296-302 download_object`) ⇒ biçimlenen metin PULL-BEFORE-EDIT tabanıyla aynıdır.
+#     CRLF → LF normalize eder (`:2099`).
+#   · biçimleme: `lib/sap_adt_lib.py:7056 pretty_print` — `POST /sap/bc/adt/abapsource/prettyprinter`, gövde =
+#     kaynak, yanıt = biçimlenmiş metin. Durumsuzdur: lock / PUT / activate / transport YOK.
+#   · `lib/sap_client.py:3364 pretty_print` KULLANILMAZ: istisnayı yutup None döndürür ("obje yok" ile "biçimleyici
+#     hata verdi" ayırt edilemez) ve stdout'a basar (CLI stdout sözleşmesi tek JSON).
+# ⛔ SALT-OKUR: SAP'de hiçbir şey değiştirmez; `pull_state` YAZMAZ (tabanı yalnız `adt_get` yazar). Tek yerel yan
+#   etki `output_path` dosyasıdır ve yol proje kökü + `.abap` uzantısı + `.axet-code/` dışı ile SINIRLIDIR ⇒ bu araçla
+#   `.conn_adt`, `sap-project.json`, `.rules.md` ya da kapı kayıtları ezilemez.
+_PP_GENEL_TIPLER = frozenset({"class", "interface", "program", "include"})   # object_types.normalize_object_type çıktısı
+_PP_UZANTI = ".abap"
+_PP_DIFF_SINIR = 1500
+
+
+def _pp_hedef(name: str, object_type: str) -> tuple[str | None, str | None, dict | None]:
+    """(obje_url, kanonik_tip, hata). Desteklenmeyen tip → unsupported_type (çıkış 3), ağa gidilmez."""
+    if not (isinstance(name, str) and name.strip()):
+        return None, None, {"ok": False, "error": "invalid_argument", "message": "name boş olamaz."}
+    ad = name.strip()
+    try:
+        from object_types import (get_class_include_url, get_object_url, is_class_include,  # type: ignore
+                                  normalize_class_include, normalize_object_type)
+        if is_class_include(object_type):
+            return get_class_include_url(ad, object_type), normalize_class_include(object_type), None
+        kanonik = normalize_object_type(object_type)
+    except Exception as exc:  # noqa: BLE001 — bilinmeyen tip
+        kanonik, exc_metni = None, str(exc)
+    else:
+        exc_metni = ""
+    if kanonik not in _PP_GENEL_TIPLER:
+        return None, None, {"ok": False, "error": "unsupported_type",
+                            "message": (f"object_type={object_type!r} biçimlenemez: Pretty Printer yalnız ABAP kaynak "
+                                        "objelerinde desteklenir — class, interface, program, include ve sınıf "
+                                        "alt-include'ları ccimp/ccau/ccdef/ccmac (name = ANA SINIF). Fonksiyon modülü "
+                                        "(func) generic URL taşımaz; CDS/DDIC/BDEF ABAP kaynağı değildir."
+                                        + (f" ({exc_metni})" if exc_metni else ""))}
+    return get_object_url(ad, kanonik), kanonik, None
+
+
+def _pp_cikti_yolu(output_path) -> tuple[Path | None, dict | None]:
+    """`output_path` → mutlak yol. Proje kökü dışı, `.abap` dışı uzantı, `.axet-code/` altı → invalid_argument."""
+    from sapadt import project as _project
+    if not (isinstance(output_path, str) and output_path.strip()):
+        return None, {"ok": False, "error": "invalid_argument", "message": "output_path boş olamaz (ya da hiç verme)."}
+    kok = _project.project_dir()
+    ham = Path(output_path.strip())
+    yol = (ham if ham.is_absolute() else kok / ham).resolve()
+    try:
+        goreli = yol.relative_to(kok)
+    except ValueError:
+        return None, {"ok": False, "error": "invalid_argument",
+                      "message": "output_path proje kökünün İÇİNDE olmalı (göreli yol proje köküne göre çözülür)."}
+    if yol.suffix.lower() != _PP_UZANTI:
+        return None, {"ok": False, "error": "invalid_argument",
+                      "message": f"output_path uzantısı {_PP_UZANTI} olmalı (yapılandırma dosyaları bu araçla yazılamaz)."}
+    if goreli.parts and goreli.parts[0].lower() == ".axet-code":
+        return None, {"ok": False, "error": "invalid_argument",
+                      "message": "output_path .axet-code/ altında olamaz (kapı kayıtlarının dizini)."}
+    return yol, None
+
+
+@profil_tool()
+def adt_pretty_print(name: str, object_type: str = "class", output_path: str | None = None,
+                     overwrite: bool = False) -> dict:
+    """Format an ABAP object's source with the SAP Pretty Printer and return / save it LOCALLY. READ-ONLY (SAP is not modified).
+
+    Kaynağı `adt_get` ile aynı uçtan okur, `POST /sap/bc/adt/abapsource/prettyprinter` ile biçimletir. SAP'de
+    kaydetme / kilit / aktivasyon / transport YOKTUR; pull kaydı (`sap-pull-state.json`) YAZILMAZ. Biçimlenmiş
+    metni sisteme koymak AYRI bir adımdır: `adt_get` (taban) → dosyayı düzenle → `adt_push_source` (yazma kapısı).
+
+    Args:
+        name: Obje adı. Sınıf alt-include'unda ANA SINIF adı.
+        object_type: class · interface · program · include · ccimp/ccau/ccdef/ccmac (eşanlamlılar kabul).
+        output_path: Biçimlenmiş metnin yazılacağı yerel dosya — proje kökü içinde, `.abap` uzantılı, `.axet-code/`
+            dışında (göreli yol proje köküne göre). Verilmezse metin yanıtta `source` alanında döner.
+        overwrite: Var olan dosyanın üzerine yazılsın mı (varsayılan HAYIR → `output_exists`, çıkış 1).
+
+    Returns:
+        {ok, name, type, object_url, server_modified:false, changed, changed_line_count, line_count_before,
+         line_count_after, diff_preview, output_path, written, source?}
+        `changed:false` = SAP biçimleyicisi (oturum kullanıcısının biçim ayarıyla) fark üretmedi. ATC'nin
+        "Pretty Print" kontrolü ATC varyantının parametreleriyle biçimler — iki ayar farklıysa sonuç farklı olabilir.
+    """
+    import difflib
+    url, kanonik, hata = _pp_hedef(name, object_type)
+    if hata:
+        return hata
+    yol = None
+    if output_path is not None:
+        yol, hata = _pp_cikti_yolu(output_path)
+        if hata:
+            return hata
+        if yol.exists() and not overwrite:
+            return {"ok": False, "error": "output_exists",
+                    "message": "output_path zaten var; üzerine yazmak için overwrite=true ver ya da başka yol seç. "
+                               "SAP'ye gidilmedi."}
+    from sapadt import project as _project
+    from sapadt.tools import atom as _atom
+    temel = {"name": name.strip().upper(), "type": kanonik, "object_url": url, "server_modified": False}
+    adt = None
+    try:
+        client = _atom._get_client()
+        adt = getattr(client, "adt_client", None) or client
+        with _atom._capture_stdout():
+            kaynak = adt.get_object_source(url)
+    except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "status_code", None) == 404:
+            return _temizle({"ok": False, "error": "not_found", **temel,
+                             "message": f"[404] kaynak bulunamadı: {url} — hiçbir şey biçimlenmedi/yazılmadı."}, adt)
+        e = _atom._err_from_exc(exc)
+        return _temizle({**e, **temel}, adt) if adt is not None else {**e, **temel}
+    if not isinstance(kaynak, str) or not kaynak.strip():
+        return _temizle({"ok": False, "error": "source_empty", **temel,
+                         "message": "Obje kaynağı boş döndü — biçimlenecek metin yok, dosya yazılmadı."}, adt)
+    try:
+        with _atom._capture_stdout():
+            bicimli = adt.pretty_print(url, kaynak)
+    except Exception as exc:  # noqa: BLE001
+        durum = getattr(exc, "status_code", None)
+        return _temizle({"ok": False, "error": "pretty_print_failed", **temel, "http": durum,
+                         "message": f"SAP Pretty Printer hata verdi (HTTP {durum}) — dosya yazılmadı. {exc}"}, adt)
+    if not isinstance(bicimli, str) or not bicimli.strip():
+        return _temizle({"ok": False, "error": "pretty_print_empty", **temel,
+                         "message": "Pretty Printer boş metin döndü — boş kaynağın yerel kopyaya yazılması "
+                                    "ENGELLENDİ (push edilirse kaynağı silerdi)."}, adt)
+    bicimli = bicimli.replace("\r\r\n", "\n").replace("\r\n", "\n").replace("\r", "\n")  # get_object_source ile aynı
+    once, sonra = kaynak.splitlines(), bicimli.splitlines()
+    fark = list(difflib.unified_diff(once, sonra, fromfile="sap", tofile="pretty_print", lineterm="", n=0))
+    degisen = sum(1 for s in fark if s[:1] in "+-" and not s.startswith(("+++", "---")))
+    diff_metni = "\n".join(fark)
+    out = {"ok": True, **temel, "changed": kaynak != bicimli, "changed_line_count": degisen,
+           "line_count_before": len(once), "line_count_after": len(sonra),
+           "diff_preview": diff_metni[:_PP_DIFF_SINIR] + ("\n…(kırpıldı)" if len(diff_metni) > _PP_DIFF_SINIR else ""),
+           "output_path": None, "written": False}
+    if yol is None:
+        out["source"] = bicimli
+    else:
+        try:
+            yol.parent.mkdir(parents=True, exist_ok=True)
+            gecici = yol.with_name(yol.name + ".tmp")
+            gecici.write_bytes(bicimli.encode("utf-8"))
+            os.replace(gecici, yol)
+        except OSError as exc:
+            return _temizle({"ok": False, "error": "output_write_failed", **temel,
+                             "message": f"Yerel dosya yazılamadı ({type(exc).__name__}: {exc}). SAP değişmedi."}, adt)
+        out["output_path"] = yol.relative_to(_project.project_dir()).as_posix()
+        out["written"] = True
+    out["notice"] = ("SAP'de hiçbir şey değişmedi (kaydetme/kilit/aktivasyon/transport yok). Sisteme almak için: "
+                     "adt_get (taban) → biçimli metni uygula → adt_push_source → adt_activate.")
+    return _temizle(out, adt)

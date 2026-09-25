@@ -354,6 +354,9 @@ class ProjeTamamlaTest(ZProje):
         r = self.kos(str(d / yeni_proje.KISAYOL))
         self.assertEqual(r.returncode, 1, self.metin(r))
         self.assertIn("aXet klonu bulunamadi", self.metin(r))
+        # klon yoksa klonun icindeki kur.cmd de yoktur: ilk kurulum dosyasi gosterilir (2026-09-25)
+        self.assertIn("aXet-Kur.cmd ile kur", self.metin(r))
+        self.assertNotIn("kur.cmd ile kur,", self.metin(r).replace("aXet-Kur.cmd ile kur", ""))
 
     def test_gate_yolda_ampersand_ciktiyi_bozmaz_komut_calistirmaz(self):
         # v0.5.6 gate: tırnaksız `echo %PROJE%` yolun `&` sonrasını KOMUT olarak çalıştırıyordu (ölçüldü: başlık

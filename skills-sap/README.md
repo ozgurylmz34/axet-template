@@ -7,7 +7,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | Skill | Ne zaman |
 |---|---|
 | `sap-intake-triage` | Yeni geliştirme / revizyon talebi: kapsam sınıfı S0/S1/S2, S2 intake artefaktı |
-| `sap-dev` | Her SAP geliştirmesinin girişi: profil, paket, adlandırma (`references/naming.md`), ABAP desenleri (`references/coding-patterns.md`), ADT sırası |
+| `sap-dev` | Her SAP geliştirmesinin girişi: profil, paket, adlandırma (`references/naming.md`), ABAP desenleri (`references/coding-patterns.md`), standart veriye yazma API seçimi (`references/write-api-selection.md` — released RAP BO/EML → released BAPI → released OData → BAPI/RFC FM → BDC → manuel), ADT sırası |
 | `sistem` | Projede aktif SAP sistemini gör / değiştir (DEV, QA, PRD — "client switch", "QA'ya geç"): `conn/` sistemlerini listeler, seçileni `switch_tier.py` ile etkinleştirir; dosya içeriği okumaz |
 | `sap-adt-foundation` | SAP'de okuma, indirme, push, aktivasyon, silme, where-used, kilit, transport — tek CLI ve yazma kapısı |
 | `sap-cds-ddic` | CDS view, domain, data element, structure, table, table type, lock object, mesaj sınıfı |

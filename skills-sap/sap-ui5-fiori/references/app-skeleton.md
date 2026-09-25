@@ -3,7 +3,8 @@
 > Kapsam: yeni bir freestyle UI5 uygulamasının (OData V2) **kod yazmadan önceki** iskeleti. Save/binding/value-help
 > mekaniği `freestyle-odata-v2.md`, liste ekranı `list-grid-alv.md`, çalıştırma ve deploy `deploy-and-local-run.md`.
 > Örneklerdeki adlar demodur: servis `ZXX001_UI_ORDER_O2`, app ID `com.example.<alan>.<uygulama>`, sistem
-> `<SAP_HOST>:<PORT>`, client `<CLIENT>`, UI5 sürümü `<UI5_VERSION>` (kaynak projede `1.120.x` hattıydı).
+> `<SAP_HOST>:<PORT>`, client `<CLIENT>`, UI5 sürümü `<UI5_VERSION>` (= backend'in UI5 sürümü; kaynak projede `1.120.x`
+> hattıydı).
 
 ---
 
@@ -31,11 +32,23 @@ varsayılır; tek uygulamada maliyeti yoktur, ikinci uygulama gelince yeniden ya
 { "private": true, "workspaces": ["*"], "devDependencies": { /* §3 ortak set */ } }
 ```
 
-- Yeni uygulama `ui/<app>/` altına; uygulamanın `package.json`'u **minimal**: `name` + `scripts` (devDependencies yok,
-  kökten gelir).
+- Yeni uygulama `ui/<app>/` altına; uygulamanın `package.json`'u **sade**: `name` + `scripts` + `ui5*.yaml`'ların
+  kullandığı middleware paketlerinin **adları** `devDependencies`'te (sürümleri kökteki §3 setiyle aynı):
+  ```json
+  { "name": "<app>", "private": true, "scripts": { /* §4 */ },
+    "devDependencies": { "@sap/ux-ui5-tooling": "1", "@sap-ux/ui5-middleware-fe-mockserver": "2" } }
+  ```
+  Paketler yine yalnız kökte kurulur (hoist). **Neden adlar gerekli (ölçüldü, `@ui5/cli` 4.0.69 ·
+  `@sap/ux-ui5-tooling` 1.32.0):** UI5 CLI `customMiddleware`'i (`fiori-tools-proxy`, `sap-fe-mockserver` …) yalnız
+  **uygulamanın kendi** `package.json` bağımlılıklarından çözer; `devDependencies` boş uygulamada `start-noflp` ve
+  `start-mock` açılmaz: `Could not find custom middleware fiori-tools-proxy`. Adlar eklenince, uygulama klasöründe
+  kurulum yapılmadan sunucu açıldı (kontrol grubu). Aynı sonuç başka bir kurulumda `@ui5/cli` 4.0.57'de de görüldü.
+  **Sınır:** UI5 CLI 3.x · build/deploy script'leri · adları ekledikten sonra kökte yeniden `npm install` gerekip
+  gerekmediği **ÖLÇÜLMEDİ** — şüphede kurulumu kökte koş. Bin'in (`ui5`) bulunması middleware'in bulunması demek değildir.
+  `%sap-ui5-user-guide` `kd_ortam.py check` de mockserver adını uygulamanın `package.json`'unda arar.
 - **`npm install` yalnız `ui/` kökünde.** Uygulama klasöründe `npm install/ci/add` = gereksiz ikinci `node_modules`.
-  Uygulamayı çalıştırmak için uygulama klasöründe kurulum gerekmez: `npm run start-noflp` bin'i üst klasördeki
-  `ui/node_modules/.bin`'den çözer.
+  Uygulamaya yeni bir middleware eklenince adı uygulamanın `package.json`'una elle yazılır, kurulum kökte koşar.
+  `npm run start-noflp` bin'i üst klasördeki `ui/node_modules/.bin`'den çözer.
 - `node_modules` git'e girmez; **yalnız kök `ui/package-lock.json`** izlenir, uygulama başına lock dosyası olmaz.
 - ⚠ `npm install` global değil ama ağdan paket indirir: model bunu kullanıcıya söyleyip onayla koşar.
 
@@ -77,7 +90,7 @@ varsayılır; tek uygulamada maliyeti yoktur, ikinci uygulama gelince yeniden ya
 - `deploy`/`undeploy` script'leri iskelette durur ama **model bunları koşmaz** — deploy akışı ve kapısı
   `deploy-and-local-run.md` §3.
 - Backend'siz çalıştırmada `start-mock`'un `flp.html` yerine `index.html` açması önerilir (FLP ek flex çağrısı yapar;
-  bkz. `deploy-and-local-run.md` §1).
+  bkz. `deploy-and-local-run.md` §1). `start-mock`'un kullandığı `ui5-mock.yaml` backend'e bağlanmamalı (§7 notu).
 
 ## 5. `ui5.yaml` — proxy
 
@@ -108,6 +121,9 @@ server:
       configuration:
         flp: { theme: sap_horizon }
 ```
+- `ui5:` bloğu yalnız göreli `/resources` · `/test-resources` isteklerini CDN'e yönlendirir (bu yollardan
+  yükleyen lokal sayfalar için). Uygulamanın `index.html` bootstrap'ı `/sap/public/bc/ui5_ui5/…` yolundan yüklenir ve `backend: /sap`
+  proxy'sinden geçer (§7) — bu blok bootstrap'ın sürümünü belirlemez.
 
 ## 6. Kanonik host — tüm `ui5*.yaml` dosyalarında aynı
 
@@ -131,7 +147,7 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
     <style>html, body, body > div, #container, #container-uiarea { height: 100%; }</style>
     <script
         id="sap-ui-bootstrap"
-        src="https://ui5.sap.com/<UI5_VERSION>/resources/sap-ui-core.js"
+        src="/sap/public/bc/ui5_ui5/resources/sap-ui-core.js"
         data-sap-ui-theme="sap_horizon"
         data-sap-ui-language="tr"
         data-sap-ui-resource-roots='{ "com.example.<alan>.<uygulama>": "./" }'
@@ -154,7 +170,8 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 
 | Kural | Neden |
 |---|---|
-| UI5 sürümü **sabit** (`.../<UI5_VERSION>/resources/...`), `manifest.json` `minUI5Version` ile aynı | Sürümsüz CDN (latest) core ↔ locale-data uyumsuzluğu: `tr` dilinde `this.oLocaleData.getDatePlaceholder is not a function` → `DateRangeSelection` çöker, beyaz ekran. Sürüm sabitlenince çözüldü |
+| UI5 **backend'in kendi kopyasından**, kök-göreli yolla (`/sap/public/bc/ui5_ui5/resources/sap-ui-core.js`); `manifest.json` `minUI5Version` = backend UI5 sürümü | Sürüm tanım gereği backend (ve FLP) ile aynıdır; dış CDN'in yaşam döngüsüne bağlı kalınmaz. İki ölçülmüş vaka: ① sürümsüz CDN (latest) core ↔ locale-data uyumsuzluğu — `tr` dilinde `this.oLocaleData.getDatePlaceholder is not a function` → `DateRangeSelection` çöker, beyaz ekran ② CDN'de **sabitlenmiş patch** bakım dışı kalınca silindi, silme yarımdı: `sap-ui-core.js` 200 ama `cldr/tr.json` 404 → UI5 hata vermeden `en`'e düştü, tarihler İngilizce basıldı ("Sep 21, 2026"). FLP backend'in UI5'ini kullandığı için canlı kullanıcı görmedi; yalnız doğrudan BSP adresi ve lokal testte çıktı ⇒ **CDN pin'i sabit değildir** |
+| YASAK: `src="https://ui5.sap.com/<sürüm>/resources/…"` ve göreli `src="resources/sap-ui-core.js"` | CDN: patch'ler takvimle silinir (yukarıda ②). Göreli: deploy edilmiş BSP altında çözülmez |
 | `data-sap-ui-language="tr"` | TR uygulama; i18n iki dosya kuralı (`freestyle-odata-v2.md` §9) buna bağlı |
 | `data-sap-ui-libs` **yok** | Kütüphaneler manifest'te |
 | `data-sap-ui-on-init` camelCase | `data-sap-ui-oninit` değil |
@@ -162,8 +179,21 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 | `data-handle-validation="true"` | Validation framework |
 | `data-sap-ui-flexibility-services="[]"` | Lokal çalıştırmada `lrep`/flex çağrısını kapatır (401 popup döngüsünün bir kaynağı). Canlı FLP'de key-user adaptation isteniyorsa bu satırın kaldırılması **proje kararıdır** — DOĞRULANMADI: canlı FLP'deki etkisi kaynakta ölçülmedi |
 
-> Not: iskelet üreticinin yazdığı yerel `src="resources/sap-ui-core.js"` biçimi proxy üzerinden sürümsüz yükler; sabit
-> sürüm kuralı gereği CDN adresi + sürüm yazılır.
+> Not: iskelet üreticinin yazdığı göreli `src="resources/sap-ui-core.js"` biçimi `/sap/public/bc/ui5_ui5/…` ile
+> değiştirilir.
+> - **Deploy edilmiş BSP:** `/sap/public/bc/ui5_ui5/…` aynı host'ta çözülür (FLP'nin kullandığı UI5).
+> - **Lokal çalıştırma (backend'li):** `ui5.yaml`'daki `backend: - path: /sap` proxy'si (§5) bu yolu backend'e taşır;
+>   ek ayar gerekmez. `/test-resources` backend'de yoktur (404); yalnız lokal test/sandbox sayfaları CDN'de kalabilir
+>   (canlıya gitmez).
+> - **Mock çalıştırma (backend'siz — `start-mock`, KD ekran görüntüleri):** üretici `ui5-mock.yaml`'ı `ui5.yaml`'dan
+>   KOPYALAR, `backend: /sap` bloğu da gelir ⇒ bootstrap mock'ta da SAP'ye gider: backend yoksa `sap-ui-core.js` **500**
+>   ve sayfa boş kalır, varsa mock SAP'ye bağlanır (ölçüldü). `ui5-mock.yaml`'da `backend` bloğu silinir ve bootstrap
+>   yolu CDN'e eşlenir — biçim ve ölçüm: `%sap-ui5-user-guide` → `references/mock-ortam.md` §2. `index.html` iki modda
+>   da AYNI kalır.
+> - **Doğrulama (runtime):** konsolda `sap.ui.version` = backend sürümü · ağda `…/resources/sap/ui/core/cldr/tr.json`
+>   **200** · bir tarih alanında ay adı Türkçe (ör. "23 Eyl 2026").
+> - ⚠ `ui5.yaml` `ui5:` proxy ayarını değiştirmek CDN bootstrap'ını düzeltmez: mutlak CDN adresi proxy'ye hiç uğramaz
+>   ("proxy doğru dosyayı veriyor" ≠ "uygulama proxy'den yüklüyor").
 
 ## 8. `manifest.json` — şablon
 
@@ -219,7 +249,7 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 | `_version` ≥ `1.60.0` | 1.59 ve altı kullanılmaz |
 | `resources: "resources.json"` | BSP deploy için |
 | `flexEnabled: true` | UI adaptation; lokal 401 popup'ını tek başına **durdurmaz** (bkz. `deploy-and-local-run.md` §1) |
-| `minUI5Version` = `index.html` sürümü | §7 |
+| `minUI5Version` = backend UI5 sürümü (`index.html` onu yükler) | §7 |
 | `supportedLocales ["", "tr"]` + `fallbackLocale ""` | Boş string = varsayılan `i18n.properties`. `fallbackLocale` başka bir değer olunca dil yüklemesi bozuldu |
 | `useBatch: false` | Kaynak ekibin V2 servislerinde üretim standardı; `$batch` yalnız bilinçli istisna (`freestyle-odata-v2.md` §10) |
 | `controlId: "app"` | `App.view.xml` `<App id="app"/>` ile aynı (`appContainer` değil) |
@@ -320,12 +350,13 @@ webapp/localService/mainService/<ANNO_MDL>.xml    ← yalnız annotation kullan�
 ## 13. Yeni uygulama kontrol listesi (iskelet)
 
 - [ ] App ID biçimi; BSP adı `Z…` ≤ 15
-- [ ] `ui/` workspace kökü; uygulama `package.json` minimal; kurulum yalnız kökte
+- [ ] `ui/` workspace kökü; uygulama `package.json` sade + middleware paket adları `devDependencies`'te; kurulum yalnız kökte
+- [ ] `ui5-mock.yaml`'da `backend:` bloğu YOK + bootstrap yolu CDN'e eşli (`%sap-ui5-user-guide` → `references/mock-ortam.md` §2)
 - [ ] `sapuxLayer: CUSTOMER_BASE`, standart scripts, `fiori-tools-proxy`
 - [ ] Tüm `ui5*.yaml` aynı kanonik host
 - [ ] `ui5-deploy.yaml` `deploy-to-abap` görevi + BSP adı/paket/transport (`deploy-and-local-run.md` §2) — `python scripts/deploy_ui.py prepare <app> --no-build`
-- [ ] `index.html` sabit UI5 sürümü + `language=tr` + `sapUiSizeCompact` + `data-sap-ui-libs` yok + `data-handle-validation`
-- [ ] `manifest.json`: `_version ≥ 1.60.0`, `resources.json`, `flexEnabled`, `minUI5Version` = index, i18n locales, `useBatch:false`, `controlId:"app"`, routing `type:"View"` + target `id`
+- [ ] `index.html` bootstrap backend UI5'i (`/sap/public/bc/ui5_ui5/resources/…`; CDN/göreli değil) + `language=tr` + `sapUiSizeCompact` + `data-sap-ui-libs` yok + `data-handle-validation`
+- [ ] `manifest.json`: `_version ≥ 1.60.0`, `resources.json`, `flexEnabled`, `minUI5Version` = backend UI5 sürümü, i18n locales, `useBatch:false`, `controlId:"app"`, routing `type:"View"` + target `id`
 - [ ] İsimli JSONModel'de `settings.data` çift sarmalama yok
 - [ ] Annotation dataSource ya yok ya katalog servisi üzerinden ve 200 ölçülmüş
 - [ ] `Component.js` `IAsyncContentCreation`; tüm sınıflar define bağımlılığı
@@ -345,4 +376,11 @@ webapp/localService/mainService/<ANNO_MDL>.xml    ← yalnız annotation kullan�
 - Kaynak manifestte isimli model `settings: { data: {} }` biçimindeydi; aynı kaynağın hata kontrol listesi bu biçimi
   sessiz binding hatası olarak işaretliyor → şablon düz `settings` biçimine çevrildi.
 - `index.html` şablonuna `data-sap-ui-flexibility-services="[]"` eklendi (kaynakta ayrı bir lokal çalıştırma dersiydi).
+- Bootstrap kaynağı CDN sürüm pin'inden backend'in kendi UI5'ine (`/sap/public/bc/ui5_ui5/…`) çevrildi: kaynak standart
+  güncellendi (sabitlenen CDN patch'i silinip `tr` locale verisi 404 verince UI5 sessizce İngilizceye düştü, §7).
+  Kaynağın kapsamadığı backend'siz mock modu aXet'te ölçülerek eklendi (§7 notu; `mock-ortam.md` §2).
+- Kaynak "uygulama `package.json`'unda devDependencies yok" diyordu; aXet'te ölçüldü: UI5 CLI 4.0.69 middleware'i
+  uygulamanın kendi bağımlılıklarından çözdüğü için bu biçimde sunucu açılmadı → adlar eklendi (§2). Kaynak da sonradan
+  aynı ölçümle (UI5 CLI 4.0.57 ve 4.0.69) bu kurala hizalandı; önceki "8 uygulamalı workspace'te çalıştı" kaydının
+  neden farklı olduğu (UI5 CLI sürümü mü, uygulamaların gerçekte ad taşıması mı) DOĞRULANMADI.
 - Uygulama klasöründe `npm install`'ı engelleyen otomatik kapı aXet'te yok; kural metin olarak kaldı.

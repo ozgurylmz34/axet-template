@@ -40,6 +40,8 @@
 | CDS-CURRCONV | `currency_conversion` DDIC-based view'da: `amount` kolon, kur tipi literal/parametre | BLOCKER | `cds.md` §4 T14 |
 | CDS-CAPA | Kullanılan CDS fonksiyonunun desteği çalışan bir örnekle ya da canlı aktivasyonla kanıtlı (sürüm çıkarımı değil) | BLOCKER | `cds.md` §4 T9 |
 | CDS-VERIFY | Yazma sonrası plan: `adt_get` içerik kıyası + `adt_inactive_objects` + (classic) satır sayımı | BLOCKER | `cds.md` §1.5 |
+| CDS-DESC | `@EndUserText.label` değiştiyse İKİ yüzey ayrı doğrulandı: kaynak annotation (`adt_get` `include_source`) ve obje açıklaması (`adtcore:description`). Obje açıklaması yalnız ilk yaratılışta annotation'dan alınır; sonraki push + aktivasyonda ESKİ kalır (ekip dersi, ölçüldü) → düzelmesi isteniyorsa ayrı iş: `adt_set_description`. Raporda hangi yüzeyin ölçüldüğü yazılı | WARNING | `%sap-adt-foundation` `tool-catalog.md` `adt_set_description` |
+| CDS-DUP | Satır çoğaltma/tekillik ölçümünde şüphelenilen HER association'dan en az bir alan seçildi (hiç alan seçilmeyen to-one join HANA'da budanır, çoğaltma ölçümde görünmez — ekip dersi: 38/38 tekil sanılan view bir alan eklenince 39 satır verdi); `[0..1]` ilan edilen association hedefin key'i/`GROUP BY`'ıyla doğrulandı; bulgu SELECT alan listesiyle yazıldı | WARNING | `%sap-adt-foundation` `foundation-query.md` §1 |
 
 Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A) · çok dilli etiket tutarlılığı · analitik view'larda `@VDM` eksikleri.
 
@@ -158,3 +160,4 @@ Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponla
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
 - Validator/script adları, reviewer çıktı YAML şablonu, zincir/wiring durumu notları → alınmadı (aXet'te karşılığı yok); "kapı PASS'i ≠ madde ölçüldü" dersi başlıkta kaldı.
 - Müşteri paketine özgü ad desenleri, teknik tasarım dokümanı araçları, ekran/kolon yerleşimi maddeleri (PACK-14) → genelleştirildi ya da çıkarıldı.
+- 2026-09-25 eşitleme (ekip dersleri): CDS-DESC ve CDS-DUP eklendi; kaynaktaki obje adları, belge numaraları ve sistem kimliği alınmadı.

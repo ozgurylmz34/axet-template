@@ -20,6 +20,7 @@
 | `SDDL_PARSER_MSG 013` (abstract entity, yaratma 201 dönmüştü) | Kaynak boş kaldı | Kaynağı ayrıca yaz, aktive et, içerik doğrula | layering §5 |
 | `BEHAVIOR cannot be implemented` / `… in class` | BDEF ve sınıf ayrı ayrı aktive edilmeye çalışıldı | `adt_activate` + `also` (BDEF + sınıf) | layering §7 |
 | `The operation "CREATE" is not activated for entity` (CCIMP satırını gösterir) | BDEF'te `early numbering` yok ya da döngüsel sıra | `early numbering` ekle; önce BDEF'ler, sonra sınıfla birlikte | layering §7 |
+| `The operation "UPDATE/CREATE" is not activated for entity "<I_…TP>"` (released BO'ya EML; aktivasyonda çıkar) | Operasyon o sistemde released BO'da kapalı — BDEF'teki `use update` satırı yetmez | EML'i zorlama: released BAPI → yoksa released OData (`%sap-dev` `write-api-selection.md` ADIM 1b → 2 → 3) | `%sap-code-review` BE-24 |
 | `"behavior" is not expected here` + `"define|foreign|scalar" was expected` | Child `define behavior` parent bloğunun içinde | Kapanıştan sonra kardeş blok | layering §6 |
 | `The trigger update is only allowed in combination with create here` | `on save { update; }` | `{ create; update; }` | layering §6 |
 | `every entity must be lock master/dependent` | Façade'da `strict ( 2 )` | `strict`'i kaldır | layering §6.3 |
@@ -68,6 +69,8 @@
 | `403 /IWFND/MED/170 service 'sap' not found` | SM59 Path Prefix dolu | Prefix boş, kod tam yol | behavior-impl §11 |
 | `Client connection to http://…:443xx broken` / sonra 401 | SSL kapalı / logon kimliksiz | Kullanıcı SM59'u düzeltir | behavior-impl §11 |
 | Liste yavaş | Eager join, gereksiz expose | Association (join-on-demand); expose'u daralt | layering §3 |
+| "Geliştiricide (debugger'la) çalışıyor, kullanıcıda boş/çalışmıyor" | Çoğunlukla debugger değil KULLANICI/yetki farkı: CDS DCL reddi sessiz 0 satır üretir, hata vermez (ekip dersi: iki düzeltme turu "Heisenbug" varsayımıyla yandı) | Önce kimin koştuğunu belgedeki kalıcı kullanıcı izinden ölç; kontrol grubunu AYNI kullanıcıyla kur (aynı kişi debugger'lı ve debugger'sız); breakpoint yerine girişimsiz gözlem (ST05, WHERE metnini oku) | `%sap-cds-ddic` cds.md CDS-DCL-01/03 |
+| Runtime SQL hatası (dump) elle SQL'de literal filtreyle tekrarlanmıyor | HANA sabit filtreyi view'ın içine iter (pushdown), bozuk satırı hiç değerlendirmez; `READ ENTITIES … BY \_assoc` iç tablo JOIN'i kurar → pushdown olmaz, tüm view değerlendirilir | Filtreyi runtime'a benzet (alt sorgu / iç tablo JOIN'i) ya da filtresiz koş; literal filtreyle alınan başarıyı "kayıt sağlam" diye yazma; bozuk satırı kapsayan ve dışlayan iki sorguyu birlikte koş (ekip dersi) | §5 · `%sap-adt-foundation` foundation-query §1 |
 
 ## 3. Servis ve `$metadata`
 

@@ -43,6 +43,20 @@ YAPI_BILESEN = ('<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes
                 'adtcore:name="GV_SAYAC" adtcore:type="CLAS/OA"/></class:abapClass>')
 
 
+# Z132 (2026-09-25) — canlı ölçülen biçim: `atom:` önekli bağlantı, GÖRELİ href; sınıfta ilk bağlantı `includes/definitions`,
+# ana kaynak `includes/main/versions`. Bağlantı dışındaki gövde jeneriktir (ölçüm kaydı yalnız bağlantıyı yazıyor).
+_REL = 'rel="http://www.sap.com/adt/relations/versions"'
+Z132_SINIF = ('<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:atom="http://www.w3.org/2005/Atom" '
+              'xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZCL_ZSD001_REV">'
+              f'<class:include><atom:link href="includes/definitions/versions" {_REL} type="application/atom+xml;type=feed"/></class:include>'
+              f'<class:include><atom:link href="includes/implementations/versions" {_REL}/></class:include>'
+              f'<class:include><atom:link href="includes/main/versions" {_REL}/></class:include></class:abapClass>')
+Z132_KAYNAK = ('<abapsource:x xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom">'
+               f'<atom:link href="source/main/versions" {_REL}/></abapsource:x>')
+Z132_TEK_DEF = ('<class:abapClass xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:atom="http://www.w3.org/2005/Atom">'
+                f'<atom:link {_REL} href="includes/definitions/versions"/></class:abapClass>')
+
+
 class SahteTani:
     url = f"http://{SAHTE_HOST}:8000"
     client = "100"
@@ -134,13 +148,15 @@ class TaniAraclari(unittest.TestCase):
 
     @staticmethod
     def rev_yonlendir(yapi_durum=200, yapi=YAPI_LINKLI, feed_durum=200, feed=FEED):
+        """Z132 canlı ölçümünü taklit eder: obje isteği yalnız `Accept: */*` ile 200 döner, objectstructure/xml → 406;
+        akış yalnız `atom+xml` Accept ile döner."""
         def yon(c):
             acc = c["headers"].get("Accept", "")
-            if "objectstructure" in acc:
-                return Yanit(yapi_durum, yapi)
             if "atom+xml" in acc:
                 return Yanit(feed_durum, feed)
-            return Yanit(599, "beklenmeyen")
+            if acc == "*/*":
+                return Yanit(yapi_durum, yapi)
+            return Yanit(406, "not acceptable")
         return yon
 
     # ── adt_revisions ────────────────────────────────────────────────────────────────────
@@ -294,6 +310,46 @@ class TaniAraclari(unittest.TestCase):
         ok = (d1["logon"] == "SKIP" and r["ok"] is True and d2["env_override"] == "FAIL" and d2["logon"] == "SKIP")
         self.kaydet("13 doctor: live=false SKIP · env ADT_SAP_CLIENT ezmesi FAIL → canlı SKIP", "SKIP · FAIL",
                     f"{d1['logon']} {d2['env_override']} {d2['logon']}", ok)
+
+
+    # ── Z132 (2026-09-25): canlı ölçülen gövde biçimleri — `atom:link`, GÖRELİ href, sınıfta çoklu bağlantı ──
+    def test_14_revisions_z132_sinif_atom_link_goreli_ana_kaynak(self):
+        adt = self.kur(self.rev_yonlendir(yapi=Z132_SINIF))
+        r = self.diag.adt_revisions("ZCL_ZSD001_REV", "class")
+        g = [c for c in adt.cagri if c["method"] == "GET"]
+        ok = (r.get("ok") is True and r["versions_link_found"] is True and r["count"] == 2
+              and r["versions_link"] == "/sap/bc/adt/oo/classes/zcl_zsd001_rev/includes/main/versions"
+              and r["versions_link_count"] == 3 and len(g) == 2
+              and g[0]["path"] == "/sap/bc/adt/oo/classes/zcl_zsd001_rev" and g[0]["headers"]["Accept"] == "*/*"
+              and g[1]["path"] == "/sap/bc/adt/oo/classes/zcl_zsd001_rev/includes/main/versions"
+              and g[1]["headers"]["Accept"] == "application/atom+xml;type=feed")
+        self.kaydet("14 Z132 sınıf: Accept */* · atom:link · göreli href · ilk değil includes/main seçilir",
+                    "ok · 2 · includes/main", [(c["path"], c["headers"].get("Accept")) for c in g], ok)
+
+    def test_15_revisions_z132_include_ve_arayuz_source_main(self):
+        sonuc = {}
+        for tip, ad, kok in (("include", "ZSD001_I_REV", "/sap/bc/adt/programs/includes/zsd001_i_rev"),
+                             ("interface", "ZIF_ZSD001_REV", "/sap/bc/adt/oo/interfaces/zif_zsd001_rev")):
+            adt = self.kur(self.rev_yonlendir(yapi=Z132_KAYNAK))
+            r = self.diag.adt_revisions(ad, tip)
+            g = [c["path"] for c in adt.cagri if c["method"] == "GET"]
+            sonuc[tip] = (r.get("ok"), r.get("count"), g == [kok, kok + "/source/main/versions"])
+        ok = sonuc == {"include": (True, 2, True), "interface": (True, 2, True)}
+        self.kaydet("15 Z132 include + arayüz: href source/main/versions obje URL'ine göre çözülür", "ok · 2 · yol doğru",
+                    sonuc, ok)
+
+    def test_16_revisions_z132_406_acik_hata_ve_tek_baglanti(self):
+        adt = self.kur(self.rev_yonlendir(yapi_durum=406, yapi="not acceptable"))
+        r406 = self.diag.adt_revisions("ZCL_ZSD001_REV")
+        feed_yok = [c for c in adt.cagri if "atom+xml" in c["headers"].get("Accept", "")] == []
+        self.kur(self.rev_yonlendir(yapi=Z132_TEK_DEF))
+        tek = self.diag.adt_revisions("ZCL_ZSD001_REV")
+        ok = (r406.get("ok") is False and r406["error"] == "revisions_unavailable" and r406["http"]["structure"] == 406
+              and "revisions" not in r406 and feed_yok
+              and tek.get("ok") is True
+              and tek["versions_link"] == "/sap/bc/adt/oo/classes/zcl_zsd001_rev/includes/definitions/versions")
+        self.kaydet("16 Z132 obje 406 → revisions_unavailable (boş liste DEĞİL) · main yoksa ilk bağlantı",
+                    "unavailable · definitions", (r406.get("error"), tek.get("versions_link")), ok)
 
 
 if __name__ == "__main__":

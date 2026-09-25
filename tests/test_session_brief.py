@@ -86,6 +86,132 @@ class SessionBriefTest(GeciciTest):
         self.assertIn("aktif paket ZSD999", self.brief(d))
 
 
+class AcilisBriefTest(GeciciTest):
+    """Z105: session_brief özeti `.axet-code/acilis-brief.md`'ye de yazar; proje config'i onu her oturumda yükler."""
+
+    def brief(self, proje):
+        r = self.calistir("session_brief.py", "--no-fetch", "--project-dir", str(proje))
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        return r.stdout
+
+    def test_brief_yazilir_ve_ozetle_ayni(self):
+        d = self.proje()
+        out = self.brief(d)
+        self.assertEqual(out.rstrip().splitlines()[-1][:len("açılış brief'i yazıldı: .axet-code/acilis-brief.md (")],
+                         "açılış brief'i yazıldı: .axet-code/acilis-brief.md (")
+        metin = (d / ".axet-code" / "acilis-brief.md").read_text(encoding="utf-8")
+        ilk = metin.splitlines()[0]
+        self.assertRegex(ilk, r"^# AÇILIŞ BRIEF'İ — aXet · üretim: \d{4}-\d\d-\d\d \d\d:\d\d$")
+        zaman = ilk.split("üretim: ")[1]
+        self.assertIn(f"[OTURUM ÖZETİ — session_brief.py · {zaman} ·", out)  # stdout ile aynı an
+        self.assertIn(f"`Açılış brief'i: {zaman}`", metin)
+        for parca in ("`%skill`", "`— BAYAT`", "`[ÇEKİRDEK YOK]`", "kimlik", "DURUM ÇAPASI (git):", "SAĞLIK:",
+                      "İŞ LİSTESİ:", "HATIRLATMALAR:", "KAPSAM —"):
+            self.assertIn(parca, metin)
+        self.assertNotIn("\n\n\n", metin)
+        # git'e girmez: proje .axet-code/.gitignore'u onu dışlar
+        r = self.git(d, "check-ignore", ".axet-code/acilis-brief.md", kontrol=False)
+        self.assertEqual(r.returncode, 0, "brief git'e kapalı değil")
+
+    def test_sablon_config_brief_yolunu_yukler(self):
+        import json
+        import doctor
+        import session_brief
+        cfg = json.loads((AXET_HOME / "templates" / "project" / ".axet-code.json").read_text(encoding="utf-8"))
+        self.assertIn(session_brief.BRIEF_DOSYASI.as_posix(), cfg["options"]["context_paths"])
+        self.assertEqual(session_brief.BRIEF_DOSYASI.as_posix(), doctor.BRIEF_DOSYASI)
+
+    def test_kimlik_kaynagi_degil(self):
+        """Brief kanaryayı ve doctor --live'ı yanıltmamalı: çekirdek kimliği ve kimlik etiketleri dosyada olmaz."""
+        import session_brief
+        from datetime import datetime
+        govde = ["SESSION_NOTES son kayıt:", "  CORE-ID: AXET-CORE-9.9.9 · SAP-CORE-ID : X · PROJECT-MEMORY-ID: Y",
+                 "  MEMORY-ID: Z · PROJECT-ID: P · SAP-STAMP-ID: S"]
+        # bug gate MEDIUM-1 (ölçülen kaçaklar): markdown, küçük harf, tam genişlikli iki nokta, kanarya kopyası
+        govde += ["  **CORE-ID**: AXET-CORE-0.8.0", "  core-id: axet-core-0.8.0", "  CORE-ID：AXET-CORE-0.8.0",
+                  "  [AXET-CORE-0.8.0 · SAP: AXET-SAP-0.5.1 · proje: P1]", "  MEMORY-ID AXET-TEAM-MEMORY"]
+        metin = session_brief.brief_metni(datetime(2026, 1, 2, 3, 4), govde)
+        self.assertNotRegex(metin, r"(?i)\b(?:SAP-CORE|SAP-STAMP|PROJECT-MEMORY|PROJECT|MEMORY|CORE)-ID\W{0,3}[:：]")
+        self.assertNotRegex(metin, r"(?i)AXET-(?:CORE|SAP|TEAM)-")
+        self.assertIn("CORE-ID (etiket) AXET·CORE-9.9.9", metin)  # içerik okunur kalır, yalnız eşleşme bozulur
+        self.assertIn("PROJECT-ID (etiket) P", metin)
+        # kontrol grubu: yönerge başlığı çekirdek kimliğini/kanarya biçimini taşımaz
+        self.assertNotIn("AXET-CORE", session_brief.brief_metni(datetime(2026, 1, 2, 3, 4), []))
+        self.assertNotRegex(session_brief.brief_metni(datetime(2026, 1, 2, 3, 4), []), r"-ID\s*:")
+
+    def test_boyut_siniri(self):
+        import session_brief
+        from datetime import datetime
+        govde = [f"  satır {i} " + "ç" * 200 for i in range(200)]
+        metin = session_brief.brief_metni(datetime(2026, 1, 2, 3, 4), govde)
+        self.assertLessEqual(len(metin.encode("utf-8")), session_brief.BRIEF_AZAMI_BAYT + 300)
+        self.assertIn("… KESİLDİ:", metin)
+        self.assertTrue(metin.startswith("# AÇILIŞ BRIEF'İ"))
+        kisa = session_brief.brief_metni(datetime(2026, 1, 2, 3, 4), govde[:3])  # kontrol grubu
+        self.assertNotIn("KESİLDİ", kisa)
+
+    def test_axet_code_klasoru_yoksa_yazilmaz(self):
+        d = self.tmp / "bos"
+        d.mkdir()
+        out = self.brief(d)
+        self.assertIn("açılış brief'i YAZILMADI: .axet-code/ yok", out)
+        self.assertFalse((d / ".axet-code").exists())
+
+    def test_template_icinde_yazilmaz(self):
+        hedef = AXET_HOME / ".axet-code" / "acilis-brief.md"
+        once = hedef.stat().st_mtime_ns if hedef.exists() else None
+        out = self.brief(AXET_HOME)
+        self.assertNotIn("açılış brief'i", out)
+        self.assertEqual(once, hedef.stat().st_mtime_ns if hedef.exists() else None)
+
+    def test_yazim_hatasi_eski_brief_korunur(self):
+        import session_brief
+        d = self.proje()
+        hedef = d / ".axet-code" / "acilis-brief.md"
+        hedef.write_text("ESKİ BRIEF\n", encoding="utf-8")
+        from unittest import mock
+        gercek_replace = session_brief.os.replace
+        kaynaklar = []
+        with mock.patch.object(session_brief.os, "replace",
+                               side_effect=lambda a, b: (kaynaklar.append(str(a)), gercek_replace(a, b))[1]):
+            self.assertIn("yazıldı", session_brief.brief_yaz(d, "YENİ\n"))  # kontrol grubu
+        self.assertEqual(hedef.read_text(encoding="utf-8"), "YENİ\n")
+        # bug gate LOW-1: geçici ad süreçe özgü (eşzamanlı iki süreç birbirinin geçici dosyasını taşımasın)
+        self.assertEqual(len(kaynaklar), 1)
+        self.assertIn(f".{session_brief.os.getpid()}.yaziliyor", kaynaklar[0])
+        hedef.write_text("ESKİ BRIEF\n", encoding="utf-8")
+        from unittest import mock
+        with mock.patch.object(session_brief.os, "replace", side_effect=PermissionError(13, "kilitli")):
+            sonuc = session_brief.brief_yaz(d, "YENİ\n")
+        self.assertIn("açılış brief'i YAZILAMADI (PermissionError", sonuc)
+        self.assertIn("ESKİ kalır", sonuc)
+        self.assertEqual(hedef.read_text(encoding="utf-8"), "ESKİ BRIEF\n")
+        self.assertEqual([p.name for p in hedef.parent.iterdir() if p.name.endswith(".yaziliyor")], [])
+
+    def test_sap_profili_ve_yasaklar(self):
+        import json
+        import session_brief
+        d = self.proje(sap=True)
+        f = d / "sap-project.json"
+        veri = json.loads(f.read_text(encoding="utf-8"))
+        f.write_text(json.dumps(dict(veri, master_language="<ör. TR>", release="")), encoding="utf-8")
+        satirlar = session_brief.sap_profili(d)  # doldurulmamış: yer tutucu + boş
+        self.assertIn("master_language: YOK", satirlar[0])
+        self.assertIn("/YOK ·", satirlar[0])
+        self.assertIn("⛔ SAP KESİN YASAKLAR", satirlar[1])
+        self.assertTrue(any(s.startswith("⚠ master_language doldurulmamış") for s in satirlar), satirlar)
+        veri.update(sap_profile="s4_private", release="2025", master_language="TR", cleancore_policy="balanced")
+        f.write_text(json.dumps(veri), encoding="utf-8")
+        satirlar = session_brief.sap_profili(d)
+        self.assertEqual(satirlar[0], "profil: s4_private/2025 · cleancore: balanced · master_language: TR")
+        self.assertIn("master_language (TR)", satirlar[1])
+        self.assertEqual(len(satirlar), 2)
+        f.write_text("{bozuk", encoding="utf-8")
+        self.assertIn("ÖLÇÜLEMEDİ", session_brief.sap_profili(d)[0])
+        self.assertEqual(session_brief.sap_profili(self.proje("sapsiz")), [])  # SAP dışı projede bölüm yok
+        self.assertIn("SAP:", self.brief(d))
+
+
 class DurumCapasiGitTest(GeciciTest):
     """rc taraması 2026-09-18 (Z15): durum çapası `git status` çıktısını yanlış okuyordu.
     ① `_git` çıktının tamamını baştan kırpıyordu ⇒ ilk porcelain satırının (" M a.txt") dosya

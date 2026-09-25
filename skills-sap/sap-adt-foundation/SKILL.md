@@ -40,7 +40,7 @@ python <TEMPLATE>/skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py <tool> --
 - Çıkış kodu: `0` başarı · `2` guard/kapı reddi (SAP'ye gidilmedi) · `1` araç/bağlantı hatası · `3` kullanım hatası.
 - Kaynak kodu gibi uzun ya da tırnaklı argümanlarda `--args-json` yerine `--args-file <json dosyası>` kullan
   (PowerShell gömülü çift tırnak dersi: ekip hafızası "PowerShell BOM ve tırnak"). Geçici JSON dosyası `.tmp/`'ye.
-- Araç kataloğu (37 giriş, argümanlar, uyarılar): `references/tool-catalog.md`.
+- Araç kataloğu (41 giriş, argümanlar, uyarılar): `references/tool-catalog.md`.
 - Yazma sınıfı yanıtlarında engellemeyen `checklist_hint` (bu iş türünün kontrol listesi) ve hatada `known_errors_hint` (bilinen hata maddesi)
   gelebilir → önce onları oku; karar ve çıkış kodu değişmez.
 
@@ -124,7 +124,7 @@ ağ çağrısından **önce** çalışır. CLI'nin yazma kapısı sırası ve re
 | `intake_missing` · `intake_invalid` | S2 artefaktı yok/yanlış yerde/eksik/işaretsiz → `%sap-intake-triage` |
 | `ADR_0005_A` · `ADR_0005_C` | Z/Y dışı ad (`name` yanında `adt_screen_generate` `fm_name`/`program`, `adt_post_shell(func)` `extra.function_group`; eksikse de red) ya da standart obje silme · paket tipi ya da transport eksik (`adt_screen_generate`'de mode WRITE/DELETE; `deploy_ui.py deploy`'da — çıkış 3 — `ui5-deploy.yaml` `app.package` boş/yer tutucu ya da paket `$TMP` değilken `app.transport` boş ya da yer tutucu) |
 | `ADR_0005_A` (genişletme) · `std_ext_scan_unavailable` | Z adlı objenin kaynağı standart objeyi genişletiyor: `extend type <std>` (append), `extend view [entity] <std>`, `extend custom\|abstract entity <std>`, `annotate view\|entity <std>`, BDEF `extension` (genişletilen BDEF kaynakta yazmaz → `using interface <Z…>` yoksa red). Yazma anahtarı açık + DEV olsa da red. Standart objeler yalnız okunur → DUR, append/extend'i kullanıcı yaratır, sonucu sana bildirir, sen okuyup doğrularsın; ad önerme. Kaynak taranamadıysa yazma yok |
-| `ADR_0005_B` · `std_dml_scan_unavailable` | kaynakta standart tabloya doğrudan INSERT/UPDATE/DELETE/MODIFY (mesaj satır no + hedef tabloyu gösterir) → BAPI → RFC FM → BDC → kullanıcıdan manuel; kaynak taranamadıysa yazma yok. Bilinen sınır: `/Z…/`, `/Y…/` dışındaki müşteri namespace'i de yasaklı sayılır — kendi namespace'i olan proje yapılandırma değişikliği ister, bugün desteklenmiyor |
+| `ADR_0005_B` · `std_dml_scan_unavailable` | kaynakta standart tabloya doğrudan INSERT/UPDATE/DELETE/MODIFY (mesaj satır no + hedef tabloyu gösterir) → released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → BDC → kullanıcıdan manuel (hangi API: `%sap-dev` → `write-api-selection.md`); kaynak taranamadıysa yazma yok. Bilinen sınır: `/Z…/`, `/Y…/` dışındaki müşteri namespace'i de yasaklı sayılır — kendi namespace'i olan proje yapılandırma değişikliği ister, bugün desteklenmiyor |
 | `language_mismatch` | bağlantı dili ≠ `master_language` → kullanıcı `.conn_adt`'yi düzeltir (dil sessizce eşitlenmez) |
 | `reviewer_bypass_forbidden` | `skip_reviewer` ya da `ack_drop` verildi → aXet'te kabul edilmez, argümanı kaldır |
 | `write_log_unavailable` | yazma logu yazılamıyor → iz bırakmadan yazma yok |
@@ -191,7 +191,7 @@ kullanıcıya aktar, ne gerektiğini söyle.
 ## Referanslar
 | Dosya | İçerik |
 |---|---|
-| `references/tool-catalog.md` | 37 araç: sınıf, amaç, argüman, uyarı |
+| `references/tool-catalog.md` | 41 araç: sınıf, amaç, argüman, uyarı |
 | `references/profiles.md` | SAP profil yetenek matrisi (rehber, canlı test gerekir) + CLI profil etiketleri |
 | `references/foundation-ops.md` | Okuma/indirme, yaratma, push, aktivasyon, include+program akışı, FM/CDS/class protokol notları, kilit, transport, paket, arama |
 | `references/foundation-query.md` | SQL ve tablo okuma, where-used/blast-radius (`CROSS`), ATC, OData `$metadata` doğrulama |

@@ -98,7 +98,8 @@ satırlarını çıkarır, şablonlardaki "mevcut oturuma bağlan" bloğunu koya
 geçişinden sonra hata kontrolü ekler, `MOD: akis` ve `GERI-ALINAMAZ:` satırlarını doldurur. Adımlar:
 `references/handoff.md` §3.
 Kayıttaki akış standart veriyi değiştiriyorsa (kaydet, sil, yeni belge) script YAZILMAZ; yasak B sırası geçerlidir:
-BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. `akis` modu yalnız kullanıcının açıkça onayladığı Z işlem
+released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan
+manuel (`%sap-dev` → `references/write-api-selection.md`). `akis` modu yalnız kullanıcının açıkça onayladığı Z işlem
 akışı içindir.
 
 ### 5. Çevrimdışı denetim (teslimden önce zorunlu)

@@ -43,7 +43,8 @@ ENDMETHOD.
   olarak okuyordu. Deep insert için başlık + kalem tablosunu içeren **yerel bir tip** (MPC_EXT'te ya da DPC_EXT'te)
   tanımlamak gerekir; bu tipin kesin biçimi kaynakta ölçülmedi → **DOĞRULANMADI**, mevcut çalışan bir deep insert'ten
   ya da `/IWBEP/IF_MGW_APPL_SRV_RUNTIME` imzasından (`adt_get`) doğrula.
-- Standart belgeye yazma BAPI iledir (kesin yasak B). BAPI adını ve imzasını sistemde doğrula.
+- Standart belgeye yazma API iledir (kesin yasak B; sıra: released API → BAPI → RFC FM → BDC → manuel,
+  `%sap-dev` → `write-api-selection.md`). API adını ve imzasını sistemde doğrula.
 - Test: deep POST veri yazar → model çalıştırmaz (`SKILL.md` §6.3).
 
 ---

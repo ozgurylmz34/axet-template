@@ -178,7 +178,8 @@ CLI `test_cli_gate.py::test_10`, §14.9).
 ## 12. Kesin Yasak B tarayıcısı (`sapadt/std_dml_scan.py`)
 
 Amaç: `adt_push_source` ile gönderilen ABAP kaynağında standart (Z/Y dışı) tabloya **doğrudan** veritabanı yazımı varsa
-yazmayı reddetmek (kullanıcı kararı 2026-09-13: doğrudan BLOCKER). Doğru yol BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel.
+yazmayı reddetmek (kullanıcı kararı 2026-09-13: doğrudan BLOCKER). Doğru yol released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) →
+kullanıcıdan manuel (`skills-sap/sap-dev/references/write-api-selection.md`).
 
 ### 12.1 Nerede koşar
 - **Kapı** (`gate.check_std_dml`, `check_write` içinde isim kontrolünden hemen sonra, transport/dil/reviewer'dan önce): bulgu → exit 2 `ADR_0005_B`,
@@ -561,7 +562,8 @@ docstring'lerindedir (kaynak çekirdek dosyaları salt-okur okundu, repoya kopya
 ### 16.1 Yeni okuma araçları (`sapadt/tools/diag.py`)
 | Araç | Sınıf · profil | Ne yapar | Bilinçli fark |
 |---|---|---|---|
-| `adt_revisions` | okuma · all | yapı GET → versions linki → feed GET → sürümler | kütüphane `get_object_revisions` hataları `[]` ile yutuyordu; araç aynı iki GET'i yapar ve `not_found` / `revisions_unavailable` / `revisions_feed_failed` / link yok (ok, kanıt değil) ayırır. DEV dışında yazar maskelenir (ret değil; kapı moratoryumu) |
+| `adt_revisions` | okuma · all | yapı GET → versions linki → feed GET → sürümler | Z132 (2026-09-25): obje GET `Accept: */*` (objectstructure → 406, canlı ölçüldü); bağlantı `atom:link` + göreli href, seçim/çözüm kütüphanedeki `versions_links`/`select_versions_link`/`resolve_adt_href` (tek kaynak); kütüphane artık hatayı yutmaz (`SAPADTError`). Araç `not_found` / `revisions_unavailable` / `revisions_feed_failed` / link yok (ok, kanıt değil) ayırır. DEV dışında yazar maskelenir (ret değil; kapı moratoryumu) |
+| `adt_pretty_print` | okuma · all | kaynağı `adt_get` ile aynı uçtan/sürümden okur → `POST /sap/bc/adt/abapsource/prettyprinter` → biçimli metin yanıtta ya da yerel dosyada | Z128 (2026-09-25): `sap_client.pretty_print` istisnayı yutup `None` döndürdüğü ve stdout'a bastığı için kütüphane doğrudan çağrılır; kilit/push/pull kaydı yok (`server_modified:false`, testte HTTP yöntem/yol allowlist'i); `output_path` proje kökü içinde, `.abap` uzantılı, `.axet-code/` dışında, var olan dosya `overwrite=true` olmadan ezilmez; okuma sınıfı için `gate.py` READ_TOOLS'a eklendi (kullanıcı onayı). Canlı: sınıfta öncesi/sonrası kaynak ve sürüm geçmişi aynı |
 | `adt_object_structure` | okuma · all | `get_object_structure` + `sap_client.get_structure` ile aynı bileşen ayrıştırma | `sap_client` sarmalayıcısı istisnayı yutuyordu → doğrudan kütüphane; 404 → `exists:false` |
 | `adt_system_info` | okuma · all | discovery servis kataloğu | kütüphane URL/client/kullanıcı/SID toplar → çıktı **allowlist** (`withheld_fields`) |
 | `sap_doctor` | okuma · all | yerel 9 katman + canlı logon/CSRF, PASS/WARN/FAIL/SKIP + `not_checked` | URL/client/kullanıcı basılmaz; probe objesi katmanı yok |
@@ -644,8 +646,9 @@ Tarama başka bir skill'in `ssl.create_default_context()` çağrısını `create
   M22 CLI `checklist_hint` eklenmiyor → CLI 12d.
 
 ### 16.11 DOĞRULANMADI (canlı SAP yok)
-- `adt_revisions`: kütüphanenin `<link … rel=".../versions">` deseni gerçek objectstructure yanıtında eşleşiyor mu (yanıt `atom:link` önekli dönerse
-  `versions_link_found:false` görünür — araç bunu "kanıt değil" diye işaretler ama sürümleri göstermez); feed `<atom:entry>` önekli mi.
+- ~~`adt_revisions`~~ → ÖLÇÜLDÜ 2026-09-25 (Z132): yanıt `atom:link` önekli, href göreli, obje isteği objectstructure Accept ile 406 döndü;
+  düzeltildi ve düzeltme canlı yeniden ölçüldü (aXet CLI, DEV, salt-okur): sınıf 2 kayıt (`includes/main/versions`), include 2, arayüz 1
+  (`source/main/versions`), var olmayan ad `not_found`. Sınıfın tanım/implementasyon include'larının geçmişi okunmaz (belgelendi).
 - `adt_object_structure`: bileşen öznitelikleri `adtcore:` ad alanında mı; `version=inactive` parametresinin uçta kabulü.
 - `adt_system_info`: discovery `collection` öğeleri; `language` alanı dolu mu.
 - `sap_doctor`: `check_logon` 200 + HTML ayrımı gerçek SSO sayfasında; `fetch_csrf_token(force_refresh=True)` gerçek oturumda.

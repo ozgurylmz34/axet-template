@@ -8,8 +8,8 @@ description: >
   stays revertible. Triggers: "guncelle", "template guncelle", "yeni surum var mi",
   "aXet'i guncelle", "klonu guncelle", "update the template", "is there a new version".
   Do not use to update a PROJECT created from the template (use guncelle-proje), to install the
-  template for the first time (kur.cmd), or to reset the clone back to the template
-  (kur.cmd -Sifirla).
+  template for the first time (aXet-Kur.cmd, double-click), or to reset the clone back to the
+  template (kur.cmd -Sifirla, the local repair path inside the clone).
 ---
 
 # `%guncelle` — merkezi klonu yeni template yayınına taşı
@@ -20,7 +20,7 @@ description: >
 ## When to use this skill
 - Kullanıcı klonunu yeni yayına taşımak istiyor ya da "yeni sürüm var mı" diye soruyor.
 - **Kullanma:** template'ten üretilmiş bir PROJEYİ güncelleme → `%guncelle-proje` · ilk kurulum →
-  `kur.cmd` · klonu template'e sıfırlama (yerel değişiklikleri atarak) → `kur.cmd -Sifirla`.
+  `aXet-Kur.cmd` (çift tık) · klonu template'e sıfırlama (yerel değişiklikleri atarak) → `kur.cmd -Sifirla`.
 
 ## Neden yerel kopyadan çalıştırmıyoruz (K4)
 Güncellenecek olan şey motorun kendisidir. Klondaki `scripts/guncelle.py` ve `guncelle/**` **eski

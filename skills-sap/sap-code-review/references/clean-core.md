@@ -38,7 +38,8 @@ Not: CLI `cleancore_policy`'yi yalnız metin olarak doğrular (`sap-adt-foundati
 İnceleme raporunda yeni objenin seviyesi A değilse gerekçesiyle yazılır. D daima BLOCKER'dır (kesin yasak A).
 
 ## 3. Karar akışı — standart obje okunacaksa
-1. **Yazma mı?** Clean core sorusu değildir: kesin yasak B (BAPI → RFC FM → BDC → kullanıcıdan manuel).
+1. **Yazma mı?** Bu okuma akışı değil: kesin yasak B — released API (released RAP BO/EML · released BAPI · released OData) →
+   BAPI → RFC FM → BDC → kullanıcıdan manuel; hangi yol ve hangi canlı teyitle: `%sap-dev` → `write-api-selection.md` (BE-79).
 2. **Halef var mı?** `released_successors.py lookup <OBJE>`. "Haritada yok" released demek değildir (§4).
 3. **Halef adını ve alanlarını tahmin etme:** `adt_search_objects` ile bul, `adt_get` ile oku; kullanılan her alan adını
    halef kaynağında doğrula (BE-25).

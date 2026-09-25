@@ -40,6 +40,7 @@
 | CLC-SEL | Seçim ekranı adları ≤ 8, radyo grubu ≤ 4; `TEXT-xxx = …` yok | BLOCKER | `programs-includes.md` §2 |
 | CLC-005 | Standart tabloya doğrudan DML yok (BAPI/RFC); standart program/exit/ekran değişmez; transport kullanıcının | BLOCKER | SAP çekirdeği A/B/C |
 | CLC-ATC | ATC: öncelik politikası (proje `AGENTS.md`; yoksa öncelik 1 zorunlu, 2/3 açık onayla) | BLOCKER | `alv-report.md` §8 |
+| CLC-ATC2 | ATC önce/sonra bulgu sayısı `SELECT`'i barındıran sınıf/programda ölçüldü: "nested DB read" ailesi bulguyu döngüyü yazana değil `SELECT`'i içeren metodun sınıfına yazar (döngüyü taşımak bulguyu taşımaz; çağrılan metot yeni bir döngüden çağrılınca bulgu ORADA artabilir — ekip dersi) | WARNING | `alv-report.md` §8 |
 
 ## Faz 5 — Datafield diyalog ekranı (yalnız tek kayıtlık modal form)
 | ID | Kontrol | Önem | Ref |

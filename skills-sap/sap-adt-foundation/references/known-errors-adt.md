@@ -36,6 +36,7 @@
 | inaktif listede silinmiş obje | K-25 |
 | sözdizimi kontrolü hata dedi, aktivasyon geçti | K-26 |
 | "araç bozuk" hissi · aynı hata tekrar tekrar | G-1 … G-6 |
+| "obje ne zaman değişti" — `E070-AS4DATE` her objede aynı tarih · sürüm geçmişi ucu `406` | K-27 |
 
 ---
 
@@ -257,6 +258,12 @@
 - Ağ/DNS kesintisi → `client_log`'da bağlantı hatası; varlık kanıtı değil, tekrar ölç.
 - `object_type="func"` → grup çözümlemesi yok; `adt_search_objects` kullan.
 - Tablo ↔ yapı karışıklığı → kardeş uç denemesi (`sibling_probe`); yaratma/silme kararında `adt_search_objects` ile çapraz kontrol.
+- **Include objesi `prog` tipiyle sorgulandı → 404 / `exists:false` (sahte negatif, ekip dersi).** Obje canlıdaydı
+  (`TRDIR` `SUBC='I'`); aynı obje `object_type:"include"` ile okundu. aXet'te kardeş uç denemesi yalnız tablo ↔ yapı için
+  vardır, `prog` → `include` için yoktur. Include'u `include` tipiyle sor; "yok" demeden önce
+  `SELECT name, subc FROM trdir WHERE name = '<AD>'` (ya da `TADIR`) ile çapraz kontrol et. Yanlış tiple alınan 404 objenin
+  durumu hakkında hiçbir şey söylemez; üstüne yeniden yaratma/"push edilmemiş" kararı kurulmaz. `adt_lock_check`'in
+  include için `locked:null` dönmesi "kilitsiz" değil ölçülemedi demektir (K-08).
 
 ## K-24 · Kimlik bilgisi değişti, hâlâ `401`
 - Uzun ömürlü bir araç süreci bağlantı dosyasını başlangıçta okuyup tutuyorsa dosya düzeltmesi yetmez, süreç yeniden başlatılmalı.
@@ -276,6 +283,31 @@
   bunu `ok:false, error:"sozdizimi_belirsiz"` + `valid_reason` ile verir, `SAPClient.syntax_check`
   `[UNVERIFIED] Syntax NOT measured (OLCULEMEDI): <sebep>` basar. İkincisi "kod hatalı" demek değildir, "geçerli" de değildir;
   sebebi oku. Push'un aktivasyon öncesi ön-kontrolü ölçülemezse push durmaz ama `syntax_precheck:"olculemedi"` taşır.
+
+## K-27 · "Obje ne zaman değişti" — `E070-AS4DATE` objenin değil isteğin tarihidir
+- **Belirti:** bir objenin değişim tarihi `E071 × E070` join'iyle ölçüldü; aynı transporttaki tüm objeler aynı tarihi
+  gösteriyor ya da tarih hiçbir değişiklikle örtüşmüyor.
+- **Kök sebep:** `E070-AS4DATE` İSTEĞİN tarihidir. Aylarca açık kalan bir istekte bağlı tüm objeler aynı tarihi taşır.
+  `E070`/`E071` yalnız "bu obje hangi transportta" sorusunu cevaplar (K-02, K-22).
+- **ÇALIŞAN YÖNTEM:** ADT sürüm geçmişi — `adt_revisions` (her sürümde tarih, yazar, transport). Ekip dersinde ham uç
+  (ör. sınıf implementasyon include'unun `…/versions` ucu) gerçek değişim damgası + satır sayısı + transport döndürdü.
+- ⚠ **`Accept` başlığı (canlı ölçüldü 2026-09-25, DEV, salt-okur GET; sınıf · program include'u · arayüz):** obje
+  isteği `Accept: */*` ile 200, `application/vnd.sap.adt.objectstructure+xml` ve `application/xml` ile **406**. Sürüm
+  akışı (`…/versions`) `application/atom+xml;type=feed` ve `*/*` ile 200, `application/xml` ve
+  `application/vnd.sap…versions.v1+xml` ile **406**. Z132 öncesi `adt_revisions` obje isteğinde objectstructure
+  gönderdiği için bu üç tipte 406 → `revisions_unavailable` dönüyordu (kütüphanedeki `get_object_revisions` aynı hatayı
+  sessizce boş listeye çeviriyordu). Düzeltildi: obje isteği `*/*`, akış isteği değişmedi (`atom+xml;type=feed`);
+  kütüphane artık hatayı istisna olarak fırlatır. Düzeltme aXet CLI ile DEV'de canlı yeniden ölçüldü (2026-09-25): sınıf 2 kayıt, include 2, arayüz 1; var olmayan ad `not_found`
+  (birim testleri ölçülen gövde biçimiyle taklitli).
+- ⚠ **Bağlantı biçimi (aynı ölçüm):** sürüm bağlantısı `<atom:link href="…" rel="http://www.sap.com/adt/relations/versions" …/>`
+  biçimindedir ve href GÖRELİDİR (obje URL'inin altına eklenir). Sınıfta birden çok bağlantı vardır, ilki
+  `includes/definitions/versions`; ana kaynağın akışı `includes/main/versions` (sınıfta `source/main/versions` → 404).
+  Include ve arayüzde `source/main/versions`. Araç ana kaynağın akışını seçer (yoksa ilk bağlantıyı) ve hangisini
+  okuduğunu `versions_link` alanında yazar; sınıfın tanım/implementasyon include'larının geçmişi ayrı akıştır, araç
+  bugün onları okumaz. `revisions_unavailable` ya da `revisions_feed_failed` "sürüm yok" demek DEĞİLDİR.
+- Vakadaki kazanç: dump'ı doğuran ifade iki sürümde de birebir aynı çıktı ⇒ kırılma kod değil VERİ regresyonuydu;
+  düzeltmenin yeri tamamen değişti.
+- Bir tarih ölçtüysen raporda **objeye mi isteğe mi ait** olduğunu yaz; aksi hâlde ölçüm doğru, hüküm yanlış olur.
 
 ---
 
@@ -335,3 +367,6 @@ araçlarına özgü; genel olanları ekip hafızasında zaten var: git diff, Pow
 tuzağı ve #8 klasik program include bölme (obje-tipi/kodlama standardı partisi) · #17 çapraz-kesen envanter (ekip hafızasında var) ·
 #21 S/4 classic view + replacement tablo, #32 standart CDS DCL sessiz 0 satır → `%sap-cds-ddic` `references/cds.md` (CDS-NSDM-01,
 CDS-DCL-01/02) · #22, #23 klasik Dynpro üretimi → `%sap-classic-abap` `references/dynpro-gui-status.md`.
+
+**2026-09-25 eşitlemesinde eklenen (ekip dersi):** K-23'e include `prog` tipiyle 404 sahte negatifi; K-27 (`E070-AS4DATE` ≠ obje değişim tarihi, sürüm geçmişi ucu ve
+`Accept` başlığı). Kaynaktaki transport/obje adları ve ham GET kod deseni alınmadı.

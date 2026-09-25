@@ -216,7 +216,13 @@ class SkillStructureTest(unittest.TestCase):
         forbidden = ["C:" + "\\" + "IX", "C:/" + "IX", "DEV" + "_CORE", "mcp" + "__", "." + "claude",
                      "CLAUDE" + ".md", "ZSD" + "0", "FIT" + "_SE", "ZSD" + "_ONAY", "ADR " + "00", "Claude" + " Code",
                      "PRO" + "VA", "AppData" + "\\" + "Local" + "\\" + "Temp"]
-        url = re.compile(r"https?://(?!localhost[:/]|127\.0\.0\.1[:/]|example\.invalid[/\"])")
+        # ui5.sap.com: SAP'nin herkese açık UI5 CDN'i — mock yaml bootstrap'ı oraya eşler (mock-ortam.md §2); iz değil.
+        url = re.compile(r"https?://(?!localhost[:/]|127\.0\.0\.1[:/]|example\.invalid[/\"]|ui5\.sap\.com(?![\w.-]))")
+        # Kalibrasyon: istisna yalnız host'un kendisi; ona benzeyen alt/eş adlar iz sayılır.
+        for iz in ("https://ui5.sap.com.corp.local/x", "https://ui5.sap.com-mirror.corp.local/", "https://sap.example/"):
+            self.assertIsNotNone(url.search(iz), iz)
+        for temiz in ("url: https://ui5.sap.com", "https://ui5.sap.com/resources/x.js", "http://127.0.0.1:8080/"):
+            self.assertIsNone(url.search(temiz), temiz)
         email = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}\b")
         hits = []
         for path in _text_files():

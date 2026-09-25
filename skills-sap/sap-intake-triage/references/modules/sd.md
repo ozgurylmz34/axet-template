@@ -21,9 +21,9 @@
 |---|---|---|
 | SD-K1 | **Standart objeleri where-used + CANLI oku, VARSAYMA** — VBAK/VBAP (sipariş), VBEP (termin), VBFA (belge akışı), LIKP/LIPS (teslimat), VBRK/VBRP (fatura), KONV/PRCD_ELEMENTS (fiyatlandırma), VTTK/VTTS (nakliye), VFKP (navlun) | TAHMİN YASAK (hafıza = hipotez, canlı = otorite; pull-before-edit) |
 | SD-K2 | **Akış eksenini belirle** — sipariş → teslimat → fatura, hangisinde? (kopyalama kontrolü / belge akışı etkisi) | model bütünlüğü |
-| SD-K3 | **Standart belgeye YAZMA yok** — LIKP/VTTK/VBRK/VBAK'a doğrudan yazım YASAK → released API → BAPI → BDC sırası (BAPI_OUTB_DELIVERY_CREATE_SLS, BAPI_SHIPMENT_CREATE, SD_SCDS_CREATE). Z katman işlem belgesi yazmaz, **doğru belirleyicilerle besler** | ⛔ Yasak A/B (SAP çekirdeği) |
+| SD-K3 | **Standart belgeye YAZMA yok** — LIKP/VTTK/VBRK/VBAK'a doğrudan yazım YASAK → released API → BAPI → RFC FM → BDC sırası — genel karar ağacı `%sap-dev` → `references/write-api-selection.md`; SD örnekleri: BAPI_OUTB_DELIVERY_CREATE_SLS, BAPI_SHIPMENT_CREATE (BAPI) · SD_SCDS_CREATE (resmi FM, RFC-enabled DEĞİL → ağacın ADIM 4'ü; RAP handler'dan Z RFC sarmalayıcıyla). Z katman işlem belgesi yazmaz, **doğru belirleyicilerle besler** | ⛔ Yasak A/B (SAP çekirdeği) |
 | SD-K4 | **Müşteri/BP verisi released CDS'ten** — ham KNA1/KNVV/BUT000 yerine I_Customer / I_CustomerSalesArea / I_BusinessPartner / I_Supplier | ⛔ clean core · ⚠ released halefin `authorizationCheck`'ini canlı oku (DCL sessiz 0 satır riski) |
-| SD-K5 | **Commit'li BAPI ayrı LUW** — SD belgesi yaratan commit'li FM (BAPI_SHIPMENT_CREATE, SD_SCDS_CREATE `i_opt_commit`) RAP handler'dan DOĞRUDAN çağrılamaz → RFC-FM ile ayrı LUW | checklist BE-26 (ileride eşlenecek) |
+| SD-K5 | **Commit'li BAPI ayrı LUW** — SD belgesi yaratan commit'li FM (BAPI_SHIPMENT_CREATE, SD_SCDS_CREATE `i_opt_commit`) RAP handler'dan DOĞRUDAN çağrılamaz → RFC-FM ile ayrı LUW | `%sap-code-review` checklist-rap BE-26 |
 
 ---
 
@@ -114,4 +114,4 @@
 ## ÇIKARILAN DERSLER (SD'ye özgü)
 Yukarıdaki tetiklere gömülü tuzaklar + kod inceleme checklist'inin SD domain maddeleri: BE-04, BE-19, BE-26, BE-29, BE-32, BE-43,
 BE-44, BE-45, BE-46 ve FE-27, FE-28, FE-35 (hepsi **ileride eşlenecek**; şimdilik `%code-review`). Yeni SD dersi öğrenilince buraya
-satır ekle. Standart belge yazımı daima released API → BAPI → BDC; RAP handler'da commit'li BAPI ayrı LUW (BE-26).
+satır ekle. Standart belge yazımı daima released API → BAPI → RFC FM → BDC → manuel (`%sap-dev` → `references/write-api-selection.md`); RAP handler'da commit'li BAPI ayrı LUW (BE-26).

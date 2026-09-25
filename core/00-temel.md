@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.7.0
+CORE-ID: AXET-CORE-0.8.0
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -8,11 +8,13 @@ CORE-ID: AXET-CORE-0.7.0
 ## 0. Oturum açılışı
 - İlk yanıttan ÖNCE bir kez oturum özetini çalıştır: proje `AGENTS.md` "Oturum" bölümündeki `session_brief.py` komutu
   (bölüm yoksa bu çekirdeğin bulunduğu template klonunun `scripts/session_brief.py`'si). Çalıştıramazsan nedenini yaz; özeti tahminle üretme.
-  Bu adım ilk mesajın türünden bağımsızdır: mesaj tek bir komut ya da dosya yolu olsa da ilk yanıttan önce koşulur.
+  Bu adım ilk mesajın türünden bağımsızdır: mesaj bir komut, dosya yolu ya da `%skill` olsa da ilk yanıttan önce koşulur.
+- Bağlamındaki "AÇILIŞ BRIEF'İ" bloğu (proje `.axet-code/acilis-brief.md`) son özetin kopyasıdır ve her oturumda yüklenir. Özeti bu
+  oturumda çalıştıramadıysan onu üretim saatiyle aktar; üretim tarihi bugün değilse `— BAYAT` yaz ve yenilemeyi öner.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.7.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.8.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
-- Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
+- Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, SAP profili, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
 
 ## 1. Kanıtlı çalış — TAHMİN YASAK

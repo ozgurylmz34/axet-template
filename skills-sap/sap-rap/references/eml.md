@@ -4,8 +4,9 @@
 > `editableFieldFor` bölümleri, RAP standardı ve ekip hafıza dersleri; aXet'e uyarlandı.
 > Profil: `s4_private` ve `s4_public` (released BO); ölçümler `s4_private`'ta. `SAVE_TEXT` ve klasik FM'ler `s4_public`/
 > `btp_abap`'ta released değildir → orada alternatif **DOĞRULANMADI**.
-> Yasak B: standart tabloya doğrudan yazma yok. Released BO'ya EML, BAPI sırasındaki released API yoludur; released olmayan
-> BO/tabloya EML ya da SQL ile yazılmaz.
+> Yasak B: standart tabloya doğrudan yazma yok. Released BO'ya EML, sıranın ilk adımıdır (released API → BAPI → RFC FM → BDC →
+> manuel); released olmayan BO/tabloya EML ya da SQL ile yazılmaz. EML'i seçmeden önceki 4 canlı teyit (BDEF · operasyon açık ·
+> alan yazılabilir · metin/numara/muhatap boşlukları) ve tutmazsa inilecek adım: `%sap-dev` → `write-api-selection.md`.
 
 ## 0. Özet kurallar (önce bunlar)
 

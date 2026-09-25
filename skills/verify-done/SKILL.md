@@ -12,7 +12,7 @@ Bir işi bitirdiğini söylemeden, başarı raporlamadan ya da commit önermeden
 1. **İstek listesini çıkar.** Kullanıcının ilk mesajı + sonradan eklenen/değişen istekler. Her madde için "karşılandı mı, kanıtı ne?" sorusunu cevapla.
 2. **Değişen dosyaları gör.** `git status` ve `git diff` (repo yoksa değiştirdiğin dosyaları listele). Beklenmeyen değişiklik, geçici dosya, kimlik bilgisi var mı?
 3. **Çalıştır ve çıktıyı oku.** Projenin test / derleme / lint / doğrulama komutları (`AGENTS.md` → Komutlar). Çıktıdaki hata ve uyarı sayısını yaz. Komut yoksa en küçük gerçekçi çalıştırmayı yap.
-4. **Gerçek giriş noktasından doğrula.** Fonksiyonu elle çağırmak, kablolamayı kanıtlamaz: kullanıcının kullanacağı yol (komut, ekran, API, script) üzerinden dene.
+4. **Gerçek giriş noktasından doğrula.** Fonksiyonu elle çağırmak, kablolamayı kanıtlamaz: kullanıcının kullanacağı yol (komut, ekran, API, script) üzerinden dene. Aynı şekilde "N dosya var, içerik doğru" yüklenebilirlik demek değildir: dosyayı okuyan araç (skill yükleyici, ayrıştırıcı, derleyici) biçimi kabul ediyor mu, onunla sına (ör. `---` ile başlamayan frontmatter hiç yüklenmez).
 5. **En az bir olumsuz durum dene.** Hatalı girdi, boş değer, yetkisiz durum — sessizce yanlış sonuç vermiyor mu?
 6. **Aracın kapsamını yaz.** "0 hata" yalnız aracın baktığı yüzey içindir; neye bakılmadığını belirt.
 7. **Ertelenenleri açıkça yaz.** Yapılamayan ya da sonraya bırakılan her alt madde raporda görünür olmalı.

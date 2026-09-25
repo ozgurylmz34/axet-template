@@ -206,6 +206,10 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/verify_ui_static_assets.py <a
   (`sap-client`, `sap-ui-fesr`, `sap.whitelistService`). Ham kıyas kaynakta **12/12 uygulamayı bayat** gösterdi, ayıklanınca
   **0/12**. Script bunu ve CRLF'yi ayıklar; `.properties` için build'in `\uXXXX` dönüşümünü hesaba katar.
   📌 Dokunulmamış bir uygulama da kırmızıysa kusur ölçümdedir, deploy'da değil.
+- **Kıyas tabanını build kirletmesin (ekip dersi):** `verify` ve bu script salt okurdur, build koşmaz; `prepare` (varsayılan)
+  ve `deploy` ise `npm run build` koşar ve `dist/`'i yeniden yazar. "Canlıya giden dist bayat mıydı" sorusunu ölçeceksen
+  ölçümü build'den ÖNCE al ve çalışma ağacını önce commit et; aksi hâlde taban silinir (vakada build koşan bir doğrulama
+  komutu tabanı yeniden yazdı ve "şu tarihten beri ne değişti" sorusu cevapsız kaldı).
 
 ## 6. Önerilen izin kuralları (proje/kurulum yöneticisi için)
 Model tarafında sessiz deploy yolu kalmasın diye (ayrıntı skill raporunda):
@@ -238,3 +242,6 @@ Model tarafında sessiz deploy yolu kalmasın diye (ayrıntı skill raporunda):
   okunmaz). `\r` temizliği script'e taşındı.
 - Stray dosya örneği kaynakta belirli bir araç klasörüydü; genel "gizli stray dosya" kuralına çevrildi.
 - Sistem adı, kullanıcı adı, müşteri uygulama adları ve port numaraları çıkarıldı.
+- 2026-09-25 eşitleme (ekip dersi): §5'e "kıyas tabanını build kirletmesin" eklendi; kaynak ders `--verify-only`'nin build
+  koştuğunu ölçmüştü — aXet'te `verify` build koşmaz, aynı risk `prepare`/`deploy` için yazıldı. Dersin 1. ve 2. maddesi
+  (preload dışı dosyalar, enjekte meta) §5'te zaten vardı.

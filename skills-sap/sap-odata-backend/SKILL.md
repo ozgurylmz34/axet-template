@@ -52,7 +52,7 @@ Karar belirsizse DUR, kullanıcıya sor. Ayrıntı: `references/segw-service.md`
 
 ### 3. Servis ve entity tasarımında kullanıcıyla mutabık kal
 Kod yazmadan önce tek mesajda göster ve onay al: entity/entity set/property adları ve tipleri, anahtar alanlar,
-navigation'lar, function import adı ve **tüm** parametreleri, hangi işlemin hangi BAPI/RFC FM ile yazılacağı,
+navigation'lar, function import adı ve **tüm** parametreleri, hangi işlemin hangi API ile yazılacağı (`%sap-dev` → `write-api-selection.md`),
 yetki nesnesi, kilit nesnesi, ETag alanı. Belirsiz bir nokta varsa hepsini tek seferde sor; yapım ortasında soru
 açma. Yeni DDIC/DTEL gerekiyorsa ad ve metinler kullanıcıdan (`%sap-dev`).
 
@@ -66,8 +66,9 @@ Reçete: `references/segw-service.md`.
 readback + `adt_inactive_objects` (`%sap-adt-foundation` §5-7; sınıf push ayrıntısı `%sap-classic-abap`).
 SEGW'nin ürettiği temel `MPC`/`DPC` sınıflarına yazılmaz; iş mantığı yalnız `_EXT`'tedir.
 - Standart tabloya OData üzerinden yazma ihtiyacı = **kesin yasak B**: DPC içinde doğrudan
-  `INSERT/UPDATE/MODIFY/DELETE` yok; BAPI → RFC FM → BDC → kullanıcıdan manuel (`references/dpc-crud.md` §3).
-- Push `ADR_0005_B` ile reddedilirse komutu değiştirme; DUR, BAPI yolunu kullanıcıyla konuş.
+  `INSERT/UPDATE/MODIFY/DELETE` yok; released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM →
+  BDC → kullanıcıdan manuel (`references/dpc-crud.md` §3). Hangi API, hangi canlı teyitle: `%sap-dev` → `write-api-selection.md`.
+- Push `ADR_0005_B` ile reddedilirse komutu değiştirme; DUR, API seçimini (`%sap-dev` → `write-api-selection.md`) kullanıcıyla konuş.
 
 ### 6. Doğrula
 1. `$metadata`: CLI'de araç yok → kullanıcı tarayıcıda açar, ilgili `EntityType` / `FunctionImport` bloğunu
@@ -93,7 +94,8 @@ SEGW'nin ürettiği temel `MPC`/`DPC` sınıflarına yazılmaz; iş mantığı y
 ## Rules
 - Tahmin yok: property adı, tip, FI parametresi, BAPI imzası ve standart API alanı çalışan artefakttan ya da
   sistemden (`adt_get`, kullanıcının paylaştığı `$metadata`) doğrulanır.
-- Standart tabloya yazma yalnız BAPI/RFC FM ile (kesin yasak B). Klasik DPC'de BAPI sonrası
+- Standart tabloya yazma yalnız API ile (kesin yasak B): released API (released RAP BO/EML · released BAPI · released OData)
+  → BAPI → RFC FM → BDC → manuel; seçim `%sap-dev` → `write-api-selection.md`. Klasik DPC'de BAPI sonrası
   `BAPI_TRANSACTION_COMMIT` yapılır; **RAP handler'da ve ondan çağrılan sınıfta yapılmaz** (`references/dpc-crud.md` §4).
 - Kimlik bilgisi (kullanıcı, şifre, token) ABAP kaynağına, script'e, loga yazılmaz; `authenticate( password = … )`
   kopyalanmaz (`references/outbound-api-call.md` §5).

@@ -122,7 +122,65 @@ ekler, sonra CLI ile okunur.
   `dynpro-gui-status.md` §1.
 
 ## 7. Sunucu tarafı biçimlendirme (Pretty Printer)
-Kaynak araç setindeki script SAP'nin biçimlendirme ucuna metni gönderip **biçimlenmiş metni döndürüyordu; sistemde
-kaydetmiyordu** (kaydetmek ayrı bir push adımıdır; kaynak playbook'taki "kaynağı değiştirir" notu bununla çelişir).
-aXet CLI'de biçimlendirme aracı yok; zorunlu adım değildir. Gerekiyorsa kullanıcı ADT/SE80'de uygular, ardından kaynak
-`adt_get` ile yeniden çekilir (yerel kopya bayatlar).
+SAP'nin biçimlendirme ucu metni biçimleyip **döndürür; sistemde kaydetmez** (kaydetmek ayrı bir push adımıdır; kaynak
+playbook'taki "kaynağı değiştirir" notu bununla çelişir). aXet aracı: **`adt_pretty_print`** (okuma sınıfı, `--sap-write`
+istemez). Kaynağı `adt_get` ile aynı uçtan okur, biçimletir, sonucu yanıtta ya da `output_path` ile **yerel** `.abap`
+dosyasında verir. SAP'de kaydetme, kilit, aktivasyon, transport yok; pull kaydı da yazmaz. Zorunlu adım değildir.
+Biçimli metni sisteme almak ayrı adımdır: `adt_get` (taban) → yerel dosyada düzenle → `adt_push_source` (yazma kapısı)
+→ `adt_activate`. Tipler: `class` (ana kaynak), `interface`, `program`, `include`, `ccimp`/`ccau`/`ccdef`/`ccmac`
+(`name` = ANA SINIF). Argüman ve hata kodları: `sap-adt-foundation` → `references/tool-catalog.md` → `adt_pretty_print`.
+
+### 7.1 ATC "Incorrect Pretty Print state" — mekanizma ve kapatma reçetesi
+
+> Kanıt (ekip dersi; aXet'te canlı ölçülmedi): standart ATC check `CL_CI_TEST_PRETTY_PRINT` (check tipi
+> `CI_PRETTY_PRINT`) kaynağından okundu.
+
+**Mekanizma:**
+1. Taranan obje **program-seviyelerine** (birim) bölünür: sınıfta her metot kendi include'u ⇒ metot başına
+   bir birim; `ccau`/`ccimp`/`ccdef`/`ccmac` ⇒ include'un tamamı tek birim. Fonksiyon grubunda `TOP` ve main
+   include ayrı birimdir.
+2. Seviye adı sonu `CP`/`CU`/`CO`/`CI`/`IP`/`IU` olanlar **dışlanır** ⇒ sınıfın public/protected/private
+   section **tanımları kontrol EDİLMEZ** (`METHODS` parametre hizası orada bulgu üretmez).
+3. Her birim biçimlenip satır satır karşılaştırılır; **ilk farklı satırda TEK bulgu** üretilir, döngü orada
+   biter ⇒ birimdeki DİĞER farklar raporlanmaz.
+4. Biçim ayarı (büyük/küçük harf, girinti) kullanıcı tercihi DEĞİL, **ATC varyantının check parametreleridir**.
+
+**Sonuç:** bulgunun gösterdiği satırı düzeltmek bulguyu kapatmaz — sıradaki ATC koşusu aynı birimin bir
+sonraki farkını raporlar. **Birim bütünüyle** biçimlenmelidir.
+
+**Reçete:**
+1. Paketteki tüm sınıflarda ATC koş, `Incorrect Pretty Print state` konumlarını topla; taban çıktıyı sakla.
+2. **Taban (PULL-BEFORE-EDIT):** dokunulacak her obje/include için önce `adt_inactive_objects` ile bekleyen
+   inaktif sürüm olmadığını gör, sonra `adt_get` ile çek. Bu çekme pull kaydını yazar ve yerel taban dosyası =
+   canlı aktif kaynak olur. `adt_pretty_print` aynı ucu (son sürüm) okur: inaktif sürüm yoksa son sürüm aktif
+   sürümdür, yani biçimlenen metin tabanla aynı metindir.
+3. **Birimi biçimle (`adt_pretty_print`):**
+   1. **Ayar eşleşmesi (ön koşul):** biçimleyicinin büyük/küçük harf ve girinti ayarı, ATC varyantının Pretty
+      Print check parametreleriyle AYNI olmalı (mekanizma md. 4). Farklıysa araç ATC'nin beklemediği bir biçim
+      üretir ve bulgu kapanmaz. Araç servise ayar göndermez; servisin hangi ayarla biçimlediği (oturum
+      kullanıcısının ADT Pretty Printer ayarı olduğu varsayılıyor) canlı **ÖLÇÜLMEDİ**. Varyant parametrelerini
+      ve kullanıcının ADT ayarını kullanıcıdan teyit et; teyit yoksa devam etme.
+   2. `adt_pretty_print` ile yerel biçimli dosya üret: `{"name":"ZCL_ZSD001_X","object_type":"class",
+      "output_path":".tmp/pp/zcl_zsd001_x.clas.abap"}` (test include'u için `object_type:"ccau"`). SAP değişmez;
+      `changed:false` ise servis bu ayarla fark üretmemiştir.
+   3. Taban (adım 2) ile biçimli dosyanın farkını birimlere grupla: sınıf ana kaynağında her `METHOD … ENDMETHOD`
+      bloğu bir birim, alt-include'un tamamı tek birim (mekanizma md. 1-2).
+   4. **Yalnız ATC'nin işaretlediği birimlerin** biçimli hâlini al; işaretsiz birimler (tanım bölümü hizası dahil)
+      tabandaki canlı hâliyle kalır. Sonuç: birleşik dosya = taban + seçilen birimler.
+4. Davranış eşdeğerliğini mekanik kanıtla (birleşik dosya ↔ taban): kod token'ları küçük harfte eşit;
+   string/template metni, yorum ve sözde-yorum bayt bayt aynı; bir negatif test (bilerek bozuk kopya kırmızı
+   vermeli).
+5. Birleşik dosyayı mevcut yazma yoluyla yaz: `adt_push_source` (yazma kapısı; taban adım 2'deki çekmedir, arada
+   canlı kaynak değiştiyse push reddeder → adım 2'den yeniden) → `adt_activate` → readback →
+   `adt_inactive_objects` → unit test → ATC yeniden: Pretty Print bulgusu 0, taban↔sonra küme farkında YENİ bulgu 0.
+
+**Tipik kök nedenler:** Open SQL'de karışık harfli CDS alan/görünüm adı; yerel tanımlayıcı harf farkı;
+imza/yapı `TYPE` hizası; `CALL FUNCTION … EXPORTING p = x` parametresinin anahtar kelimeyle aynı satırda
+olması (biçimleyici satıra böler ⇒ diff'teki `dosya:satır` atıfları kayar — bkz. `feedback_bayat-sayi-referans.md`).
+
+**Sınır — ÖLÇÜLMEDİ:** uzak/merkezi ATC dalının (`RS_ABAP_PRETTY_PRINT_E` RFC'si) birim başına birden çok
+bulgu üretip üretmediği; "yalnız ilk satırı düzelt → yeniden koş" davranışı canlı denenmedi (kaynak koddan
+çıkarım). Fonksiyon grubu `TOP`/main'deki bulgular SAP'nin ürettiği iskelettir, bizim kodumuz değildir.
+`adt_pretty_print` (Z128): biçimleme servisi canlı ölçüldü (2026-09-25, bir sınıf): biçimli metin döndü ve objenin
+kaynağı, sürüm sayısı ve değişim zamanı öncesi/sonrası aynı kaldı. Aracın kendi kablolaması HTTP taklitli birim
+testleriyle doğrulandı. Servisin kullandığı biçim ayarı ÖLÇÜLMEDİ.

@@ -115,8 +115,9 @@ class StdDmlTarama(unittest.TestCase):
         self.assertIn("satır 5:", m)
         self.assertNotIn("satır 6:", m)
         self.assertIn("+2 bulgu daha", m)
-        self.assertIn("BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel", m)
-        H.kaydet("B mesaj: ilk 5 bulgu + satır no + yönlendirme", "5 satır + '+2' + BAPI→RFC→BDC",
+        self.assertIn("released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel", m)
+        self.assertIn("write-api-selection.md", m)
+        H.kaydet("B mesaj: ilk 5 bulgu + satır no + yönlendirme", "5 satır + '+2' + released API→BAPI→RFC→BDC + karar ağacı",
                  "uyuşuyor", True)
 
 

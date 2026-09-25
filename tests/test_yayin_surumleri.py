@@ -80,6 +80,9 @@ class YayinTemeli(GeciciTest):
     def setUp(self) -> None:
         super().setUp()
         self.env = dict(self.env, GIT_AUTHOR_EMAIL=self.NOREPLY, GIT_COMMITTER_EMAIL=self.NOREPLY)
+        # Gerçek yayın müşteri/kurum ad listesi olmadan başlamaz (Z134) → akış testleri uydurma bir liste verir;
+        # makinedeki gerçek liste teste karışmaz. Listenin kendi davranışı test_yayin_hazirla.py'de.
+        self.env["AXET_SIZINTI_EK"] = "Orn" + "ekfirma"
 
     def depo(self, yayinlar_verisi: dict | None = None, motor: bool = False, **dosyalar: str) -> Path:
         """Sahte template deposu: zorunlu dosyalar + yayın aracı (+ istenirse güncelleme motoru)."""

@@ -3,8 +3,13 @@
 
 Basar: git durum çapası (dal, son commit, değişen dosyalar, upstream ileri/geri) · template klonu güncel mi ·
 hızlı sağlık (doctor statik kontrollerinin FAIL/WARN satırları) · aktif paket ve SESSION_NOTES son kaydı ·
-proje iş listesi (aktif işler + ertelenmiş tetikler) · devir notları · AGENTS.md "Açık işler".
-Proje dosyalarına yazmaz; model çağrısı yapmaz. Template için saatte en fazla bir `git fetch` yapar
+proje iş listesi (aktif işler + ertelenmiş tetikler) · devir notları · AGENTS.md "Açık işler" · SAP profili ve
+kesin yasaklar özeti · hatırlatmalar.
+Aynı özeti AÇILIŞ BRIEF'İ olarak `.axet-code/acilis-brief.md`'ye de yazar (Z105): proje `.axet-code.json`
+`context_paths` bu dosyayı her oturumda bağlama koyar ⇒ model özeti çalıştırmasa da (ör. oturum `%skill` ile açıldı)
+son özet üretim saatiyle bağlamdadır. Ölçüldü (aXet 1.3.0): bağlamdaki brief ilk mesajdan bağımsız aktarıldı (3/3,
+kontrol 0/3); dosya yoksa aXet girdiyi atlar, oturum açılır. Dosya git'e girmez (`.axet-code/.gitignore` `*`).
+Başka proje dosyasına yazmaz; model çağrısı yapmaz. Template için saatte en fazla bir `git fetch` yapar
 (önbellek: ~/.axet-template-cache/last_fetch) — `--no-fetch` ile kapatılır.
 
 Kullanım:
@@ -15,6 +20,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import os
 import re
 import subprocess
@@ -33,6 +39,17 @@ FETCH_CACHE = Path.home() / ".axet-template-cache" / "last_fetch"
 FETCH_EVERY_SEC = 3600
 IS_LISTESI = Path(".axet-code") / "memory" / "project_is-listesi.md"
 AZAMI_MADDE = 8
+# Açılış brief'i (Z105). Ad `templates/project/.axet-code.json` context_paths'iyle ve doctor.py BRIEF_DOSYASI ile AYNI.
+BRIEF_DOSYASI = Path(".axet-code") / "acilis-brief.md"
+# Brief her oturumun bağlam bütçesinden yer: bu sınır aşılırsa dosya kesilir ve kesildiği yazılır.
+BRIEF_AZAMI_BAYT = 16 * 1024
+# Kimlik satırı etiketleri (doctor.py check_live'ın aradığı adlar) ve template kimlik DEĞERLERİ. Brief kimlik kaynağı
+# DEĞİLDİR: özetin içinden (ör. SESSION_NOTES) gelen bir `CORE-ID: AXET-CORE-…` satırı ya da kanarya kopyası, çekirdek
+# yüklenmemişken kanaryayı ve `doctor --live`'ı (alt-dize karşılaştırır) yanıltmasın diye ikisi de bozulur.
+# Bug gate MEDIUM-1 (ölçüldü): büyük/küçük harf, markdown (`**CORE-ID**:`), tam genişlikli `：` ve kanarya biçimi
+# ilk sürümden geçiyordu. KAPSAM: proje kimliklerinin DEĞERİ proje adıdır, özette meşru geçer — bozulmaz.
+_KIMLIK_ETIKETI = re.compile(r"\b((?:SAP-CORE|SAP-STAMP|PROJECT-MEMORY|PROJECT|MEMORY|CORE)-ID)\W{0,3}?[:：]\s*", re.I)
+_KIMLIK_DEGERI = re.compile(r"\bAXET-(CORE|SAP|TEAM)-", re.I)
 
 
 def _git(cwd: Path, *args: str, timeout: int = 5) -> tuple[int, str]:
@@ -333,8 +350,104 @@ def agents_acik_isler(proj: Path) -> list[str]:
     return _maddeler(_yorumsuz(f.read_text(encoding="utf-8", errors="replace")), "Açık işler")
 
 
+def _sap_degeri(veri: dict, anahtar: str) -> str:
+    v = veri.get(anahtar)
+    return v.strip() if isinstance(v, str) and v.strip() and not v.strip().startswith("<") else "YOK"
+
+
+def sap_profili(proj: Path) -> list[str]:
+    """SAP bölümü — Claude Code açılışındaki "yasaklar aktif + profil" satırlarının karşılığı (Z105 katman 3).
+    Yasakların TAM metni burada DEĞİLDİR (tek kaynak: AGENTS.md damgası + global core/sap); bu yalnız hatırlatmadır."""
+    f = proj / "sap-project.json"
+    if not f.is_file():
+        return []
+    try:
+        veri = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"sap-project.json okunamadı ({type(exc).__name__}) → profil ve master_language ÖLÇÜLEMEDİ"]
+    if not isinstance(veri, dict):
+        return [f"sap-project.json kökü nesne değil ({type(veri).__name__}) → profil ve master_language ÖLÇÜLEMEDİ"]
+    ml = _sap_degeri(veri, "master_language")
+    out = [f"profil: {_sap_degeri(veri, 'sap_profile')}/{_sap_degeri(veri, 'release')} · "
+           f"cleancore: {_sap_degeri(veri, 'cleancore_policy')} · master_language: {ml}",
+           "⛔ SAP KESİN YASAKLAR geçerli: A standart obje yaratma/değiştirme/silme yok (append/DTEL adını önermezsin) · "
+           "B standart tablo verisine doğrudan yazma yok (released API/EML → BAPI → RFC → BDC → manuel) · C transport/paket yaratma, "
+           f"release, kilit silme yok · D Z obje: dil = master_language ({ml}), 4 etiket tam, aktivasyon öncesi "
+           "sistemden oku. Tam metin: AGENTS.md damgası."]
+    if ml == "YOK":
+        out.append("⚠ master_language doldurulmamış → Z obje yazma (yasak D); sap-project.json'ı kullanıcıyla doldur")
+    return out
+
+
+def hatirlatmalar() -> list[str]:
+    """Claude Code açılışındaki kalıcı hatırlatmaların aXet karşılığı (Z105 katman 3). Kurallar çekirdektedir;
+    bunlar yalnız işaret eder (çekirdek yüklenmemişse bile görünsün diye)."""
+    return ["alt ajan (`agent`) bu dosyayı, çekirdeği ve AGENTS.md'yi GÖRMEZ → brifing tek başına yetmeli (çekirdek §7)",
+            "geri alınamaz ya da dışa dönük iş (silme, push, merge, SAP yazma) → önce açık onay (çekirdek §3)",
+            "çok adımlı işe başlarken `%recall` · kalıcı ders `%remember` · gün sonu `%gun-sonu` (bu brief'i de yeniler)"]
+
+
+def brief_metni(zaman: datetime, govde: list[str]) -> str:
+    """`.axet-code/acilis-brief.md` içeriği: yönerge başlığı + özet gövdesi (Z105).
+
+    Kanarya biçimi (ve içindeki çekirdek kimliği) BİLEREK yazılmaz: kimlik bu dosyadan okunursa kanarya çekirdeğin
+    yüklenmediğini artık gösteremez. Gövdedeki kimlik etiketleri ve template kimlik değerleri de bozulur
+    (`_KIMLIK_ETIKETI`, `_KIMLIK_DEGERI`)."""
+    damga = f"{zaman:%Y-%m-%d %H:%M}"
+    ust = [
+        f"# AÇILIŞ BRIEF'İ — aXet · üretim: {damga}",
+        "",
+        "> `session_brief.py` üretti; proje `.axet-code.json` bu dosyayı HER oturumda bağlama koyar (git'e girmez).",
+        "> Kullanıcının ilk mesajı ne olursa olsun (soru, emir, dosya yolu ya da `%skill`) İLK yanıtın şöyle başlar:",
+        "> 1. Çekirdek §0'daki kanarya satırı. Kimlikleri yalnız bağlamındaki kimlik satırlarından doldur; bu dosya kimlik",
+        ">    kaynağı DEĞİLDİR. Çekirdeği bağlamında göremiyorsan `[ÇEKİRDEK YOK]` yaz.",
+        f"> 2. `Açılış brief'i: {damga}` ve özetten en fazla 5 satır (önce ⚠/FAIL/WARN, sonra aktif iş). Bu oturumda",
+        ">    `session_brief.py`'yi çalıştırdıysan bu 5 satırı onun taze çıktısından al (bu dosya da yenilenir); ayrıca",
+        ">    aşağıdakini tekrar aktarma. Çalıştırmadıysan aşağıdan al; üretim tarihi bugünün tarihi değilse satırın",
+        ">    sonuna `— BAYAT` ekle ve yenilemeyi öner.",
+        "> Sonra kullanıcının isteğine geç (`%skill` ise o skill'e).",
+        "",
+    ]
+    govde = [_KIMLIK_DEGERI.sub(r"AXET·\1-", _KIMLIK_ETIKETI.sub(r"\1 (etiket) ", s)) for s in govde]
+    while govde and not govde[0].strip():
+        govde = govde[1:]
+    metin = "\n".join(ust + govde) + "\n"
+    ham = metin.encode("utf-8")
+    if len(ham) > BRIEF_AZAMI_BAYT:
+        kesik = ham[:BRIEF_AZAMI_BAYT].decode("utf-8", errors="ignore").rsplit("\n", 1)[0]
+        metin = (kesik + f"\n\n… KESİLDİ: brief {len(ham)} bayt > {BRIEF_AZAMI_BAYT} bayt sınırı — tamamı için "
+                 "`session_brief.py`'yi çalıştır.\n")
+    return metin
+
+
+def brief_yaz(proj: Path, metin: str) -> str:
+    """Brief'i atomik yazar (geçici dosya + replace: yarıda kalan yazım eski brief'i bozmaz). Sonucu tek satırla döner.
+    `.axet-code/` yoksa YAZMAZ: klasörü kurmak new_project'in işidir (rastgele dizinde iz bırakılmasın)."""
+    hedef = proj / BRIEF_DOSYASI
+    if not hedef.parent.is_dir():
+        return f"açılış brief'i YAZILMADI: {BRIEF_DOSYASI.parent.as_posix()}/ yok (proje new_project.py ile kurulmamış)"
+    # Geçici ad SÜREÇE ÖZGÜ (bug gate LOW-1, ölçüldü: sabit adla iki eşzamanlı süreç birbirinin geçici dosyasını
+    # taşıyıp "yazıldı" dediği hâlde brief'i yok edebiliyordu). Aynı dizinde kalır ki replace atomik olsun.
+    gecici = hedef.with_name(f"{hedef.name}.{os.getpid()}.yaziliyor")
+    try:
+        gecici.write_text(metin, encoding="utf-8", newline="\n")
+        os.replace(gecici, hedef)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            gecici.unlink()
+        return (f"açılış brief'i YAZILAMADI ({type(exc).__name__}: {exc}) → bağlamdaki brief ESKİ kalır; "
+                "üretim saatine bak")
+    return f"açılış brief'i yazıldı: {BRIEF_DOSYASI.as_posix()} ({len(metin.encode('utf-8'))} bayt)"
+
+
+KAPSAM = ("KAPSAM — bakılmayanlar: SAP bağlantısı · bağlamın fiilen yüklendiği (doctor.py --live) · "
+          "uzak depodaki değişiklikler (fetch yapılmadıysa) · iş listesi maddelerinin güncelliği · "
+          "brief dosyasının bu oturumun bağlamına girdiği (yalnız bir SONRAKİ oturumda bağlamdadır; "
+          "config'te olup olmadığını doctor.py ölçer)")
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="aXet oturum açılış özeti (salt-okur)")
+    ap = argparse.ArgumentParser(description="aXet oturum açılış özeti (yalnız .axet-code/acilis-brief.md yazar)")
     ap.add_argument("--project-dir", default=".", help="proje kökü (varsayılan: bulunulan dizin)")
     ap.add_argument("--no-fetch", action="store_true", help="template için git fetch yapma")
     args = ap.parse_args()
@@ -345,25 +458,31 @@ def main() -> int:
                 ("TEMPLATE", lambda: template_bolumu(not args.no_fetch)),
                 ("SAĞLIK", lambda: saglik(proj))]
     if not template_ici:
-        bolumler += [("PAKET", lambda: aktif_paket(proj)),
+        bolumler += [("SAP", lambda: sap_profili(proj)),
+                     ("PAKET", lambda: aktif_paket(proj)),
                      ("İŞ LİSTESİ", lambda: is_listesi(proj)),
                      ("DEVİR NOTLARI", lambda: devir_notlari(proj)),
                      ("AGENTS.md AÇIK İŞLER", lambda: agents_acik_isler(proj))]
         # P5 tetiği (TASARIM §9) — ayrı bölüm, ayrı fonksiyon (paylaşılan dosya: satır serpiştirme yok)
         bolumler.append(("PROJE ŞABLONU", lambda: sablon_surumu(proj)))
+        bolumler.append(("HATIRLATMALAR", hatirlatmalar))
 
-    print(f"[OTURUM ÖZETİ — session_brief.py · {datetime.now():%Y-%m-%d %H:%M} · {proj}]")
+    zaman = datetime.now()
+    govde: list[str] = []
     for ad, fn in bolumler:
         try:
             satirlar = fn()
         except Exception as exc:  # noqa: BLE001 — bir bölüm düşerse diğerleri yine basılır
             satirlar = [f"ÖLÇÜLEMEDİ ({type(exc).__name__}: {exc})"]
         if satirlar:
-            print(f"\n{ad}:")
-            for s in satirlar:
-                print(f"  {s}")
-    print("\nKAPSAM — bakılmayanlar: SAP bağlantısı · bağlamın fiilen yüklendiği (doctor.py --live) · "
-          "uzak depodaki değişiklikler (fetch yapılmadıysa) · iş listesi maddelerinin güncelliği")
+            govde += ["", f"{ad}:"] + [f"  {s}" for s in satirlar]
+    govde += ["", KAPSAM]
+
+    print(f"[OTURUM ÖZETİ — session_brief.py · {zaman:%Y-%m-%d %H:%M} · {proj}]")
+    for s in govde:
+        print(s)
+    if not template_ici:
+        print("\n" + brief_yaz(proj, brief_metni(zaman, govde)))
     return 0
 
 

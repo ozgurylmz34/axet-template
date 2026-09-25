@@ -114,15 +114,29 @@ kullanıcı serbesttir.
 ## 6. Ön yüzün uyması gereken sözleşme (ayrıntı UI skill'inde)
 
 Açarken önce salt-okunur, `AcquireLock` başarılıysa düzenlenebilir; başarısızsa salt-okunur + `locked_by` uyarısı · kaydet ve
-geri dönüşte `ReleaseLock` · sayfa kapanışında senkron `ReleaseLock` · heartbeat aralığı kilit zaman aşımından kısa (kaynakta
-2 dk / 5 dk) · listeden silmeden önce `AcquireLock`.
+geri dönüşte `ReleaseLock` · sayfadan ayrılırken (`beforeunload`) `ReleaseLock` **`fetch` + `keepalive` + CSRF + ana modelin
+`sap-client`'ı** ile — senkron XHR DEĞİL · bırakılan her çıkış yolunda (geri/kayıt/silme) kilit bayrağı sıfırlanır, unload
+dinleyicisi bayrağa bakar · heartbeat aralığı kilit zaman aşımından kısa (kaynakta 2 dk / 5 dk) · listeden silmeden önce
+`AcquireLock`.
+
+> ⚠ **Bırakmanın taşıma biçimi (kararın kendisi — uygulama kilidi, heartbeat, zaman aşımı — değişmedi).** Bu sözleşmenin
+> önceki hâli "sayfa kapanışında senkron `ReleaseLock`" diyordu. Chromium sayfadan ayrılırken senkron XHR'ı sunucuya
+> **göndermiyor** (ölçüldü: navigasyonla ayrılışta `beforeunload`/`pagehide`/`unload` 0/3; `fetch`+`keepalive` 3/3 CSRF
+> başlığıyla); hata `try/catch`'te yutulduğu için **sessizdir** ve kilit yalnız zaman aşımıyla düşer. `sendBeacon` CSRF başlığı
+> taşıyamaz. **Sınır:** sekme kapatma ayırt edilemedi; Firefox / Safari / FLP ölçülmedi.
+> **İkinci ayak:** bırakma artık gerçekten ulaştığı için bayrak sıfırlanmazsa, kullanıcı listedeyken sayfadan ayrılınca
+> (yenileme / başka adrese gitme) aynı belgeye yeniden bırakma gider; `release` yalnız `locked_by = sy-uname` kaydını
+> sildiği için kullanıcının **başka sekmede** (S2) tuttuğu kilit düşer. Bayrağı `_releaseLock` içinde sıfırlamak tüm
+> çağıranları kapsar. Bırakma URL'i `sServiceUrl + "/ReleaseLock?…"` — `sServiceUrl` sondaki `/`'ı ve `sap-client`'ı
+> taşımaz (eksik `/` ölçülen vakada 307 → 403; eksik `sap-client` iki client açık tarayıcıda bırakmayı öbür client'a
+> gönderir). UI reçetesi: `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.4–7.5, kontrol FE-48 / FE-49 / UI-SAVE-06.
 
 | # | Senaryo | Sonuç |
 |---|---|---|
 | S1 | kullanıcı-1 içeride, kullanıcı-2 giriyor | kullanıcı-2 salt-okunur + uyarı; heartbeat kullanıcı-1'i korur |
 | S2 | aynı kullanıcı başka tarayıcıda | izin (ETag/BAPI korur) |
-| S3 | kapatıp tekrar giriyor | kapanışta bırakıldı; bırakılmadıysa `sahibi = sen` → girer |
-| S4 | kapattı, başkası giriyor | kapanışta anında; çökmede zaman aşımı sonrası |
+| S3 | kapatıp tekrar giriyor | çıkışta bırakıldı; bırakılmadıysa `sahibi = sen` → girer |
+| S4 | kapattı, başkası giriyor | çıkışta keepalive `fetch` ile bırakılır (sayfadan ayrılışta ölçüldü, sekme kapatmada ayırt edilemedi; senkron XHR ile bırakma gitmiyordu); bırakma gitmezse / çökmede zaman aşımı sonrası |
 
 ## 7. Tuzaklar
 

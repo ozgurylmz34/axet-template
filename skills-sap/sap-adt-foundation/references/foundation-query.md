@@ -47,7 +47,13 @@ aşağıdaki ölçülmüş biçimlerle **tek değişken** değiştirerek daralt:
 | 5 | `WHERE vrkme <> meins` → 400 ("must be escaped using @") | çıplak kolon adı host değişkeni sanılıyor | `WHERE vrkme <> lips~meins` → 200 |
 | 6 | Tek seferlik 500 (HTML "Application Server Error"), hemen ardından 400 "Session Timed Out" | sorguya ait değil | aynı sorguyu BİR kez tekrarla |
 | 7 | `FROM "/SCWM/AQUA"` → 400 | namespace'li ad tırnaklı | tırnaksız yaz: `FROM /scwm/aqua` |
+| 8 | `WHERE <kolon> LIKE '%x%'` (sol-joker) → 400; aynı tabloda sağ-joker `LIKE 'S%'` ve eşitlik çalıştı | joker konumu (tek terimde bile) | sağ-jokere çevir ya da kesin değerle daralt |
+| 9 | `WHERE datum < '19000101'` → 400 "A Boolean expression was expected" | sorgu mantığı değil; kaynak ders araç katmanında `<`/`>` kaçışını gösterdi (mekanizma DOĞRULANMADI — satır 5'te `<>` 200 döndü) | `BETWEEN` / `NOT BETWEEN` |
+| 10 | `DATS` kolonda `LIKE` (`WHERE datum LIKE '%.%'`) → tip uyumsuzluğu | `LIKE` DATS'e uygulanamaz | bozuk tarih araması: `NOT BETWEEN '19000101' AND '99991231'` |
+| 11 | Art arda `SELECT *` sonrası 500; `adt_dump_list` → `GENERATE_SUBPOOL_DIR_FULL` (dump, veri önizleme işleyicisinin adına) | aracın geçici subroutine havuzu tükendi; sorgu/view bozuk DEĞİL | açık kolon listesi ver; kolon keşfi için bir kez küçük `SELECT *`; 500'de önce `adt_dump_list` — dump aracın adınaysa biçim değiştirmek işe yaramaz, bekle/seyrelt |
 
+- Çalışan ama "desteklenmiyor" sanılabilen biçim (ölçüldü): `NOT EXISTS ( SELECT * FROM <t2> AS v WHERE v~k = m~k … )`
+  alt sorgusu 400 vermez → "X'te olup Y'de olmayan" sorusu iki liste çekip elde fark almadan tek sorguda cevaplanır.
 - Bir kez ölçülüp sonraki ölçümde tekrarlanamayanlar (kural DEĞİL): `COUNT(*) AS CNT` → 500 · belirli alanda `<>` → 400 ·
   `SELECT * FROM T320` → 400 · "terim bütçesi" (7 alan + WHERE → 400). Bunların madde 6 kaynaklı olup olmadığı DOĞRULANMADI.
 - Genel ders: ADT 400'lerinde sebep gövdededir; "araç bu tipi vermiyor" sonucuna ham sebebi görmeden varma
@@ -87,6 +93,19 @@ tutmazsa §1.2'nin daraltma yöntemiyle ölç ve bu tabloyu düzelt (tuttuğunu 
 
 Zaten §1 başındaki kuralda olanlar (tekrar yazılmasın diye burada değil): `INTO` ve `UP TO`
 **yazılmaz** — SAP kendi ekler; satır sınırı `row_limit` argümanıyla verilir (`LIMIT`/`TOP` değil).
+
+### 1.5 Ham `COUNT(*)` ≠ iş nesnesi sayısı
+Aynı fiziksel tablo teknik/temsilî kayıtlar da taşıyabilir (gösterge satırı, bir belgenin iki kategoride iki satırı).
+Ayırt edici tip/gösterge kolonu filtrelenmezse sayı katlarca şişer ve rapora "ölçüldü" diye girer.
+- **Ölçülmüş vakalar (ekip dersi):** bir depo birimi başlık tablosunda ham 5108 satırın ≈266'sı gerçek birimdi
+  (gösterge kolonu `'A'` = temsilî satır → 19× şişme); bir referans belge tablosunda her belge iki kategoride iki satır
+  taşıyordu (1886 → 994, 2×).
+- `COUNT(*)`'dan ÖNCE küçük `row_limit` ile 3-5 satır oku ve sor: bu satırların hepsi gerçekten aynı tip nesnem mi?
+  Tip/gösterge/kategori kolonu ara.
+- Sayıyı filtresiyle raporla: "5108 (ham) / 266 (`<gösterge> = 'A'` hariç)". Çıplak sayı niteleyiciyi düşürür.
+- Gösterge kolonunda `<>` reddedilirse (§1.2) `=` ile ölçüp toplamdan çıkar; sonucu "aritmetik fark" diye nitele.
+- Aynı anahtar üçlüsü tekrar ediyorsa kopya sanma: görünmeyen bir anahtar boyutu (parti, UUID) olabilir; `SUM`'dan
+  önce onu bul, yoksa aşırı toplama olur.
 
 ## 2. Tablo okuma (`adt_table_read`)
 ```
@@ -204,3 +223,5 @@ cli adt_atc_check '{"name":"ZCL_DEMO_CLASS","object_type":"class"}'
 - `run_sql_query.py` / `run_data_preview.py` / `where_used.py` / `run_atc_check.py` → CLI araçları.
 - Python `urllib` ile kimlik bilgili `$metadata` okuma şablonu çıkarıldı (düz metin şifre içeriyordu; aXet'te kimlik bilgili script yazılmaz).
 - Proje-lokal JSON türevleri, ekip içi validator/checklist kimlikleri, ajan-takımı dili çıkarıldı.
+- 2026-09-25 eşitleme (ekip dersleri): §1.2 satır 8-11, `NOT EXISTS` notu ve §1.5 eklendi; kaynaktaki sistem/paket
+  adları ile "WHERE terim bütçesi" ve "paralel gönderim" ölçümleri alınmadı (kaynakta çelişen ya da sebebi DOĞRULANMADI).

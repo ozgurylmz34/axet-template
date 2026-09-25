@@ -279,6 +279,60 @@ def parse_sap_error(response):
 # Utility Functions
 # =============================================================================
 
+# ── Sürüm (versions) bağlantısı — TEK KAYNAK (Z132, 2026-09-25) ───────────────────────────────────────
+# Canlı ölçüm (DEV, salt-okur GET; sınıf · program include'u · arayüz):
+#   · obje URL'i `Accept: application/vnd.sap.adt.objectstructure+xml` ve `application/xml` ile **406**, `*/*` ile 200.
+#   · 200 gövdesinde bağlantı `<atom:link href="…" rel="http://www.sap.com/adt/relations/versions" …/>` biçimindedir
+#     (`atom:` önekli) ve href GÖRELİDİR: sınıfta `includes/definitions/versions`, `includes/main/versions` …
+#     (ilk bağlantı `includes/definitions`); include/arayüzde `source/main/versions`.
+#   · sınıfta `source/main/versions` → 404; ana kaynağın akışı `includes/main/versions` (200).
+#   · akış isteği `Accept: application/atom+xml;type=feed` → 200 (sorunsuz; değiştirilmedi).
+# `diag.adt_revisions` de bu yardımcıları kullanır — ikinci regex kopyası AÇILMAZ.
+VERSIONS_REL = "http://www.sap.com/adt/relations/versions"
+REVISIONS_OBJECT_ACCEPT = "*/*"
+REVISIONS_FEED_ACCEPT = "application/atom+xml;type=feed"
+_LINK_ETIKETI = re.compile(r"<(?:[A-Za-z][\w.-]*:)?link\b[^>]*>")
+_ETIKET_OZNITELIK = re.compile(r"""([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+
+
+def versions_links(body):
+    """Gövdedeki `rel=".../relations/versions"` bağlantılarının href'leri, belge sırasıyla.
+
+    `<link …>` ve önekli `<atom:link …>` ikisi de; öznitelik sırası ve tırnak türü serbest; href XML-unescape edilir.
+    """
+    hrefs = []
+    for etiket in _LINK_ETIKETI.findall(body or ""):
+        oz = {m.group(1): (m.group(2) if m.group(2) is not None else m.group(3))
+              for m in _ETIKET_OZNITELIK.finditer(etiket)}
+        if oz.get("rel") == VERSIONS_REL and oz.get("href"):
+            hrefs.append(html.unescape(oz["href"]))
+    return hrefs
+
+
+def select_versions_link(hrefs):
+    """Ana kaynağın sürüm akışını seç: son iki yol parçası `main`/`versions` olan ilk bağlantı (sınıfta
+    `includes/main/versions`, include/arayüzde `source/main/versions`; `…/zdomain/versions` gibi sonek benzerliği
+    sayılmaz); yoksa İLK bağlantı; liste boşsa None."""
+    if not hrefs:
+        return None
+    for h in hrefs:
+        if h.split("?", 1)[0].rstrip("/").split("/")[-2:] == ["main", "versions"]:
+            return h
+    return hrefs[0]
+
+
+def resolve_adt_href(object_url, href):
+    """ADT bağlantı href'ini isteğe hazır biçime çevir: `http(s)://…` aynen, `/…` aynen (sunucu köküne göre),
+    göreli href ise OBJE URL'inin ALTINA eklenir (`<object_url>/<href>`; baştaki `./` atılır)."""
+    if not href:
+        return href
+    if href.startswith(("http://", "https://", "/")):
+        return href
+    while href.startswith("./"):
+        href = href[2:]
+    return f"{str(object_url).rstrip('/')}/{href}"
+
+
 def retry_on_failure(max_retries=3, delay=1, backoff=2, exceptions=(Exception,)):
     """
     Decorator to retry a function on failure.
@@ -2130,94 +2184,89 @@ class SAPADTClient:
 
         Returns:
             List of revision dicts with keys: uri, date, author, version, versionTitle
-        """
-        # First, get object structure to find revisions link
-        try:
-            headers = self._get_headers()
-            headers['Accept'] = 'application/vnd.sap.adt.objectstructure+xml'
 
+        ⛔ Z132 (2026-09-25, canlı ölçüm): obje isteği `Accept: */*` ile yapılır (objectstructure → 406); bağlantı
+        `atom:link` + GÖRELİ href olabilir; sınıfta ana kaynağın akışı seçilir (`select_versions_link`). HTTP hatası
+        ya da istisna artık SESSİZCE `[]` DÖNMEZ: 404 → SAPObjectNotFoundError, diğer durum → SAPADTError (status_code
+        taşır), zaman aşımı → SAPConnectionError. `[]` yalnız iki durumda döner: gövdede sürüm bağlantısı YOK ya da
+        akış okundu ama kayıt yok — ikisi de "sürüm yok" KANITI DEĞİLDİR.
+        """
+        headers = self._get_headers()
+        headers['Accept'] = REVISIONS_OBJECT_ACCEPT
+        try:
             response = self.session.get(
                 f"{self.url}{object_url}",
                 headers=headers,
                 timeout=self.timeout_short
             )
+        except requests.exceptions.Timeout:
+            raise SAPConnectionError(f"Timeout reading object for revisions: {object_url}", url=object_url)
 
-            if response.status_code == 404:
-                raise SAPObjectNotFoundError(
-                    f"Object not found: {object_url}",
-                    status_code=404,
-                    endpoint=object_url
-                )
-
-            # Parse object structure to find revisions link
-            # The revisions link has rel="http://www.sap.com/adt/relations/versions"
-    
-            revisions_link_match = re.search(
-                r'<link[^>]*rel="http://www\.sap\.com/adt/relations/versions"[^>]*href="([^"]+)"',
-                response.text
+        if response.status_code == 404:
+            raise SAPObjectNotFoundError(
+                f"Object not found: {object_url}",
+                status_code=404,
+                endpoint=object_url
+            )
+        if response.status_code != 200:
+            raise SAPADTError(
+                f"Object read for revisions failed (HTTP {response.status_code}) — revision history NOT measured",
+                status_code=response.status_code,
+                response_text=(response.text or "")[:500],
+                endpoint=object_url
             )
 
-            if not revisions_link_match:
-                # Try alternate format
-                revisions_link_match = re.search(
-                    r'<link[^>]*href="([^"]+)"[^>]*rel="http://www\.sap\.com/adt/relations/versions"',
-                    response.text
-                )
+        secilen = select_versions_link(versions_links(response.text))
+        if not secilen:
+            return []
 
-            if not revisions_link_match:
-                return []
+        revisions_url = resolve_adt_href(object_url, secilen)
+        if revisions_url.startswith('/'):
+            revisions_url = f"{self.url}{revisions_url}"
 
-            revisions_url = revisions_link_match.group(1)
-            # Make it absolute if relative
-            if revisions_url.startswith('/'):
-                revisions_url = f"{self.url}{revisions_url}"
-
-            # Get revisions feed
-            headers = self._get_headers()
-            headers['Accept'] = 'application/atom+xml;type=feed'
-
+        headers = self._get_headers()
+        headers['Accept'] = REVISIONS_FEED_ACCEPT
+        try:
             response = self.session.get(
                 revisions_url,
                 headers=headers,
                 timeout=self.timeout_short
             )
+        except requests.exceptions.Timeout:
+            raise SAPConnectionError(f"Timeout reading revisions feed: {revisions_url}", url=revisions_url)
 
-            if response.status_code != 200:
-                if self.debug_enabled:
-                    self._debug(f"[DEBUG] get_object_revisions - failed with status {response.status_code}")
-                return []
+        if response.status_code != 200:
+            raise SAPADTError(
+                f"Revisions feed read failed (HTTP {response.status_code}) — revision history NOT measured",
+                status_code=response.status_code,
+                response_text=(response.text or "")[:500],
+                endpoint=revisions_url
+            )
 
-            # Parse Atom feed for revisions
-            revisions = []
-            entries = re.findall(r'<atom:entry>(.*?)</atom:entry>', response.text, re.DOTALL)
+        # Parse Atom feed for revisions
+        revisions = []
+        entries = re.findall(r'<atom:entry>(.*?)</atom:entry>', response.text, re.DOTALL)
 
-            for entry in entries:
-                # Extract revision information from each entry
-                uri_match = re.search(r'<atom:content[^>]*src="([^"]+)"', entry)
-                version_match = re.search(r'<atom:link[^>]*type="application/vnd\.sap\.adt\.transportrequests\.v1\+xml"[^>]*adtcore:name="([^"]+)"', entry)
-                if not version_match:
-                    version_match = re.search(r'<atom:link[^>]*adtcore:name="([^"]+)"', entry)
-                title_match = re.search(r'<atom:title>([^<]+)</atom:title>', entry)
-                date_match = re.search(r'<atom:updated>([^<]+)</atom:updated>', entry)
-                author_match = re.search(r'<atom:name>([^<]+)</atom:name>', entry)
+        for entry in entries:
+            # Extract revision information from each entry
+            uri_match = re.search(r'<atom:content[^>]*src="([^"]+)"', entry)
+            version_match = re.search(r'<atom:link[^>]*type="application/vnd\.sap\.adt\.transportrequests\.v1\+xml"[^>]*adtcore:name="([^"]+)"', entry)
+            if not version_match:
+                version_match = re.search(r'<atom:link[^>]*adtcore:name="([^"]+)"', entry)
+            title_match = re.search(r'<atom:title>([^<]+)</atom:title>', entry)
+            date_match = re.search(r'<atom:updated>([^<]+)</atom:updated>', entry)
+            author_match = re.search(r'<atom:name>([^<]+)</atom:name>', entry)
 
-                revision = {
-                    'uri': uri_match.group(1) if uri_match else '',
-                    'version': version_match.group(1) if version_match else '',
-                    'versionTitle': title_match.group(1) if title_match else '',
-                    'date': date_match.group(1) if date_match else '',
-                    'author': author_match.group(1) if author_match else 'Unknown'
-                }
-                revisions.append(revision)
+            revision = {
+                'uri': uri_match.group(1) if uri_match else '',
+                'version': version_match.group(1) if version_match else '',
+                'versionTitle': title_match.group(1) if title_match else '',
+                'date': date_match.group(1) if date_match else '',
+                'author': author_match.group(1) if author_match else 'Unknown'
+            }
+            revisions.append(revision)
 
-            return revisions
-
-        except SAPObjectNotFoundError:
-            raise
-        except Exception as e:
-            if self.debug_enabled:
-                self._debug(f"[DEBUG] get_object_revisions - exception: {str(e)[:100]}")
-            return []
+        return revisions
 
     def fetch_source_etag(self, object_url):
         """`source/main` ETag'ini döndür — **LOCK'TAN ÖNCE çağrılmak üzere**.

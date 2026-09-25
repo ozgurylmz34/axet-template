@@ -29,6 +29,23 @@ MEMORY-ID: AXET-TEAM-MEMORY
 - [UI5 i18n iki dosya](feedback_ui5-i18n-iki-dosya.md) — TR uygulamada metin/anahtar i18n + i18n_tr ikisinde, sonra Ctrl+F5
 - [UI5 runtime sayıyla doğrula](feedback_ui5-runtime-sayiyla-dogrula.md) — click() değil firePress/model API; dolgu farkını runtime'da yan yana oku
 - [UI5 lokal popup ↔ hesap kilidi](feedback_ui5-lokal-popup-hesap-kilidi.md) — lrep/varyant 401 teknik; ısrarlı $metadata 401 = kilit, deneme yapma
+- [UI5 elle kurulan istek sap-client taşımaz](feedback_ui5-elle-kurulan-istek-sap-client.md) — ikinci model/ham istek ana modelin `aUrlParams`'ını devralır; iki client + ayırıcı veriyle ölç
+- [UI5 sayfadan ayrılırken senkron XHR gitmez](feedback_ui5-sayfadan-ayrilirken-senkron-xhr.md) — kilit bırakma `fetch`+`keepalive`+CSRF; bırakınca bayrağı sıfırla (navigasyonda ölçüldü)
+- [Kanıtın kapsamı ve zamanı korunur](feedback_kanit-kapsam-ve-zaman-korunur.md) — aktarırken niteleyici/birim düşmez; önce/sonra kıyasında zaman damgası; ölçüm artefaktın kendi join/filtresiyle; üreticinin girdisi
+- [Sıfır sonuçtan önce kontrol grubu](feedback_sifir-sonuc-kanitla-once-kontrol-grubu.md) — "0 eşleşme" ≠ "yok": TR karakter varyantı, ASCII kaynak, CRLF'li liste, hiç koşmamış komut; bilinen-pozitifle sına
+- [Yeşil sinyalin kapsamını sor](feedback_yesil-sinyal-kapsamini-sor.md) — exit 0/OK/0 bulgu ≠ kanıt, kanıt çıktıdır; ters yönü koş; öneri ve onay da iddiadır
+- [Kullanıcının bildiğini ölçme, sor](feedback_kullanicinin-bildigini-olcme-sor.md) — deneme sonucu/iş gerçeği → sor; teknik değer → ölç; beyanı kaynağıyla yaz
+- [Performans önerisi de iddiadır](feedback_performans-onerisi-de-iddiadir.md) — önce maliyet dağılımını ölç, sonra kaldıraç öner; çürürse geri çek
+- [Uyarlama verisi açık kalem değil](feedback_uyarlama-verisi-acik-kalem-degil.md) — tablo DEĞERİ iş listesine/hafızaya yazılmaz; o anda söyle, kayda geçirme
+- [Ölçüm önkoşullu risk notu](feedback_olcum-onkosullu-risk-notu.md) — "ölçülmeli" şerhi yazınca aynı turda iş listesine kalem; düzeltmeden önce şerhi ara
+- [Karar sormadan önce erişilebilirlik](feedback_karar-sormadan-once-erisilebilirlik-olc.md) — ulaşılamaz daldaki bulgu karar sorusu değil; ulaşılamazlığı guard adıyla yaz
+- [Kendi işini yeniden sınıflandırma](feedback_kendi-isini-yeniden-siniflandirip-kural-disina-cikma.md) — "küçük / build değil / araç" etiketiyle incelemeyi atlama; etiketi olgu koyar; baskıda tur sayısını kes, incelemeyi değil
+- [Muafiyet gerekçesinden geniş olmasın](feedback_muafiyet-gerekcesinden-genis-olmasin.md) — gerekçe alt küme için, muafiyet dosyanın tamamı için → kör nokta; satır/token bazlı daralt, pozitif kontrol koy
+- [Sızıntı taramasının uzayı git farkıdır](feedback_sizinti-taramasi-arama-uzayi-git-deltasidir.md) — uzay = `origin/main...HEAD` + `git status`, dosya sayısını yaz; kirli çıktının üreticisini de düzelt
+- [Yerel takım CI'nin ikizi değil](feedback_yerel-suit-ci-ikizi-degil.md) — aynı commit Windows'ta yeşil, Linux CI'da kırmızı olabilir; kanıt CI; takımı ritüelle değil diff'e göre koş
+- [Paylaşılan modülün desenini yeniden türetme](feedback_paylasilan-modulun-desenini-yeniden-turetme.md) — tek seferlik script'te paylaşılan modülü kullan/yorumunu oku; aynı girdide kör iki katman redundans değil
+- [Kabuk heredoc Türkçe/kaçış bozulması](feedback_bash-heredoc-turkce-kacis.md) — heredoc/`python -c` Türkçe ve `\` kaçışını bozabilir; `write` ile yaz, dosyayı yeniden okuyarak doğrula (aXet bash'inde ölçülmedi)
+- [Asılı CI koşusu: PR kapat/aç](feedback_github-actions-asili-kosu-pr-kapat-ac.md) — queued + 0 job saatlerce → `run_attempt`/`updated_at` ölç, PR'ı kapatıp hemen aç
 
 ## Referanslar (reference)
 

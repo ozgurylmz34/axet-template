@@ -5,10 +5,12 @@ description: >
   package rules, naming, coding patterns, ADT operations) and in which order to proceed. Use when
   creating or changing Z objects (CDS, RAP, domain, data element, structure, table, class, program,
   include, function module, OData service, message class), writing ABAP code, naming an object or
-  package, or starting work in an SAP package. Triggers: "CDS yarat", "RAP", "tablo yarat",
+  package, or starting work in an SAP package. Also use when code must create/change STANDARD SAP data
+  (sales order, delivery, business partner …) to pick the write API in order: released RAP BO (EML),
+  released BAPI, released OData, then BAPI/RFC FM, BDC, manual. Triggers: "CDS yarat", "RAP", "tablo yarat",
   "program yaz", "sınıf ekle", "ABAP kodu", "obje adı ne olmalı", "paket aç", "pakette çalış",
-  "SAP geliştirmesi". Do not use for triaging a NEW request (use sap-intake-triage first) or for
-  non-SAP code.
+  "SAP geliştirmesi", "BAPI mi EML mi", "standart belge yarat", "siparişi güncelle". Do not use for triaging a NEW request (use
+  sap-intake-triage first) or for non-SAP code.
 ---
 
 # SAP geliştirme — giriş ve yönlendirme
@@ -56,7 +58,7 @@ Her şeyi değil, ilgili olanı oku.
 | "Standart tablo yerine ne kullanılır" (clean core) | `references/coding-patterns.md` §7 + ATC (`%sap-adt-foundation` → `foundation-query.md`) |
 | Liste / rapor ekranı | SAP çekirdeği ALV paritesi kuralı; UI5 mekaniği → `%sap-ui5-fiori` (`list-grid-alv.md`) |
 | UI5 freestyle / Fiori ekranı, filtre ekranı, value-help, lokal çalıştırma, BSP deploy | `%sap-ui5-fiori` |
-| Standart tabloya veri yazma ihtiyacı | Kesin yasak B: BAPI → RFC FM → BDC → kullanıcıdan manuel |
+| Standart veriye yazma ihtiyacı (belge/ana veri create, update, delete, action; EML mi BAPI mi OData mı) | **Kod yazmadan önce** `references/write-api-selection.md` — bağlam/commit (ADIM 0) → released RAP BO/EML (4 canlı teyit) → released BAPI → released OData → BAPI/RFC FM → BDC → manuel (kesin yasak B); seçim ve reddedilenler TS §6.4'e ya da kullanıcıya |
 | CDS view, domain, data element, structure, table, table type, lock object, mesaj sınıfı | `%sap-cds-ddic` |
 | RAP (view entity katmanları, BDEF, behavior sınıfı, SRVD/SRVB, EML, draft/kilit, value-help) | `%sap-rap` |
 | Klasik sınıf, program + include, fonksiyon grubu, rapor/ALV, Dynpro, e-posta, form | `%sap-classic-abap` |

@@ -64,6 +64,10 @@ BİTTİ SAYILIR: yapıştırılan kontrol listelerindeki HER satır için tek sa
   Çürüttüğünü at; çürütemediğini raporla.
 - Araç çıktısı okuma: gate PASS, abaplint temiz, aktivasyon başarılı doğruluk kanıtı DEĞİLDİR. SKIP, `measured=false`,
   `zincir_bos: true`, "ÖLÇÜLMEDİ" = ölçülmedi; "temiz" diye yazma.
+- Statik PASS "aktive edilmeye hazır" demek değildir: ABAP'ta otorite SAP sözdizimi kontrolü ve aktivasyondur (abaplint
+  ad/tip çözmez — ör. PRIVATE tipin PROTECTED imzada kullanımı, formal parametreye uymayan literal geçer); UI5'te otorite
+  tarayıcıdır (yanlış namespace/aggregation geçerli XML üretir, ekran boş açılır). Bunları ölçemiyorsan "ana oturum
+  doğrulamalı" NOT'u yaz.
 - Stil, zevk ya da dolgu niteliğinde bulgu yazma. Uydurma bulgu raporun tamamının güvenini düşürür.
 
 ## ROL: SAP KOD İNCELEYİCİ

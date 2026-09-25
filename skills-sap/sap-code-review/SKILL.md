@@ -97,7 +97,7 @@ Ayrıntı: `references/validator-map.md` (satır ↔ validator, kapsam) · `refe
 Listede olmayan ve tekrar edebilecek bir tuzak bulunduysa ders yalnız nota ya da hafızaya yazılmaz:
 1. Düzelt (ana oturum).
 2. Çalışan deseni ilgili obje tipi skill'inin referansına yaz.
-3. İlgili `references/checklist-*.md`'ye satır **öner**: sıradaki boş kimlik (backend `BE-71`, OData `OD-06`, clean core `CC-04`,
+3. İlgili `references/checklist-*.md`'ye satır **öner**: sıradaki boş kimlik (backend `BE-80`, OData `OD-06`, clean core `CC-04`,
    ortak `SR-04`'ten başlar), altı sütun dolu: ne · nasıl · önem · otomasyon · kaynak ders (tarih + kanıt).
    Otomasyon sütununa yalnız gerçekten var olan validator yazılır (`tests/test_checklists.py` zorlar); yoksa `YOK`.
 4. Deterministik yakalanabiliyorsa validator adayı olarak açık kalem yaz. Yazma kapısına validator eklemek araç

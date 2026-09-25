@@ -11,7 +11,7 @@
 | Kapsam sınıfı (S0/S1/S2) yazılı; S2'de intake artefaktı mutabakatlı (`%sap-intake-triage`) | BLOCKER | SAP çekirdeği |
 | Profil `ecc` değil; `s4_public`/`btp_abap`'ta klasik yol kullanılmıyor | BLOCKER | SKILL.md Profil |
 | Paket ve transport kullanıcıdan; yeni transport/paket yok | BLOCKER | yasak C |
-| Şekil seçimi gerekçeli: managed (yalnız Z tablo) / unmanaged (standart belge → released BO EML ya da BAPI) / davranışsız query | BLOCKER | layering §1 |
+| Şekil seçimi gerekçeli: managed (yalnız Z tablo) / unmanaged (standart belge → `%sap-dev` `write-api-selection.md` sırası: released BO EML canlı teyitli → released BAPI → released OData → BAPI/RFC FM → BDC) / davranışsız query; API seçimi ve reddedilenler TS §6.4'te ya da kullanıcıya sunuldu | BLOCKER | layering §1 |
 | Adlar: `_I_`/`_C_`/`_R_`/`_E_`; BDEF adı = root view adı; sınıf `ZCL_<gövde>_…`; SRVD `UI`/`API`; SRVB `_O2`/`_O4`; ≤ 30 karakter | BLOCKER | `%sap-dev` naming §4.2/§4.3 |
 | Tüm `@EndUserText` / açıklamalar `master_language`'de, tam, spesifikasyondan | BLOCKER | yasak D |
 | Tablo alan adları sistemden okundu (tahmin yok) | BLOCKER | layering §8 |

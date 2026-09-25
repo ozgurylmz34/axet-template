@@ -90,6 +90,11 @@ new TablePersonalizer({ table: oTable, persoKey: "zxx001.orderList",
 | **Kolon filtresi** | Native filtre olayında `preventDefault` + string kolonda düz `Contains` (**`caseSensitive` yok**) + wildcard (§6.2) |
 | **i18n** | `btn.cols`, `btn.excel`, `var.*`, `flt.*`, `exp.*`, `op.*` anahtarları **iki dosyada** (`freestyle-odata-v2.md` §9) |
 
+- ⚠ **Kopyalamadan önce:** util'in varyant modeli (`new ODataModel(<varyant servisi>)`) ana modelin `sap-client`'ını
+  taşımalı — eski kopyalar taşımıyordu ve iki client aynı tarayıcıda açıkken öbür client'ın varyantlarını okudu
+  (`freestyle-odata-v2.md` §7.4, FE-48). Kopyaladığın sürümde §7.4'teki `_mainClientParams` karşılığı yoksa ekle; ana
+  modeli util'e verilen kontrolün sahip bileşeninden al — `Component.getOwnerComponentFor(<kontrol>).getModel()`
+  (onInit'te tablonun modeli henüz `undefined`). Aynı util birden çok uygulamada kopyaysa hepsini tara.
 - Grid seçimi indeks bazlıdır; native menüden sıralama/filtre binding'i uygulama kodundan geçmeden yeniden kurabilir →
   seçim temizliği `delete-flow-ui.md` §1'e göre değerlendirilir.
 - **Alternatif (DOĞRULANMADI):** yeni UI5 sürümlerinde `sap.m.p13n.Engine` standart kişiselleştirme sağlar; kaynak

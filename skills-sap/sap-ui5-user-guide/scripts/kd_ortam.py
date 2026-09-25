@@ -4,7 +4,10 @@
 Alt komutlar:
     python kd_ortam.py check  --proje <uygulama_dizini>
         Bağımlılık tablosunu basar (node · Chrome · yerel playwright-cli · playwright-core yolu · python
-        `markdown` · uygulamada @sap-ux/ui5-middleware-fe-mockserver devDependency'si + `start-mock` script'i).
+        `markdown` · uygulamada @sap-ux/ui5-middleware-fe-mockserver devDependency'si + `start-mock` script'i ·
+        start-mock'un `--config` yaml'ında `backend:` satırı olmaması, webapp/index.html'in mutlak bootstrap
+        yolunun yaml'ın `ui5:` path'lerinde eşli olması, yaml'daki bilinen custom middleware'lerin paket adlarının
+        uygulama devDependencies'inde bulunması).
         Eksik olan için kurulum KOMUTUNU yazar, KENDİSİ KURMAZ. start-mock komutundaki host/bind bayraklarını
         raporlar (değiştirmez). Yerel sunucular 127.0.0.1'e bağlanmalı: 0.0.0.0'ı dinleyen süreç şirket
         makinesinde güvenlik duvarı izni ister.
@@ -37,6 +40,7 @@ Kontrol: kanal `msedge` yapılınca brands "Microsoft Edge" döndü (dosya gerç
 """
 import argparse
 import errno
+import fnmatch
 import importlib.util
 import json
 import os
@@ -69,6 +73,12 @@ def hedef_config(kanal=KANAL, no_sandbox=False):
 HEDEF_CONFIG = hedef_config()
 CONFIG_GORELI = os.path.join(".playwright", "cli.config.json")
 MOCKSERVER_PAKET = "@sap-ux/ui5-middleware-fe-mockserver"
+# Mock yaml'daki custom middleware adı → paketi. UI5 CLI (4.0.69) custom middleware'i yalnız UYGULAMANIN kendi
+# package.json bağımlılıklarından çözer: ad yokken `start-mock` "Could not find custom middleware fiori-tools-proxy"
+# ile açılmadı, adlar devDependencies'e eklenince açıldı (ölçüldü 2026-09-25, npm workspace). Tabloda olmayan
+# middleware adı denetlenmez (KAPSAM'da yazılı). Sürümler app-skeleton.md §2 örneğiyle aynı.
+MIDDLEWARE_PAKETI = {"fiori-tools-proxy": "@sap/ux-ui5-tooling", "sap-fe-mockserver": MOCKSERVER_PAKET}
+PAKET_SURUMU = {"@sap/ux-ui5-tooling": "1", MOCKSERVER_PAKET: "2"}
 NODE_ASGARI = 18  # @playwright/cli package.json engines: node >=18
 
 # Config dosyasından SONRA birleştirilen ve kanalı ezebilen ortam değişkenleri (coreBundle.js configFromEnv).
@@ -78,12 +88,16 @@ EZEN_ORTAM = ("PLAYWRIGHT_MCP_BROWSER", "PLAYWRIGHT_MCP_EXECUTABLE_PATH", "PLAYW
 KAPSAM_CHECK = ("KAPSAM (SCOPE): kd_ortam check — bakılanlar: node sürümü, Chrome yürütülebilir dosyası, uygulamada "
                 "yerel ya da merkezi (<klon>/.araclar/playwright-cli) @playwright/cli ve playwright-core, python markdown, package.json'da %s devDependency'si ve "
                 "start-mock script'i, start-mock komut metnindeki host/bind bayrakları (yalnız metin), "
+                "start-mock'un --config yaml'ı (yoksa ui5.yaml): `backend:` satırı, webapp/index.html'deki mutlak "
+                "bootstrap yolunun `ui5:` bloğunda path + `pathReplace: /resources` ile eşlenmesi, fiori-tools-proxy adının paketi "
+                "devDependencies'te (yaml METİN olarak taranır, YAML ayrıştırılmaz; start-mock'ta --config/-c yoksa yalnız o eksik yazılır), "
                 "<proje>/.playwright/cli.config.json'un chrome ya da msedge kanalına sabit olup olmadığı ve "
                 "launchOptions.args'ta --no-sandbox bulunup bulunmadığı, ~/.playwright/cli.config.json'un aynı iki "
                 "özelliği. "
                 "Bakılmayanlar: Chrome'un gerçekten açılabildiği (config sonrası "
-                "`playwright-cli open` ile ölçülür), mock sunucunun ayağa kalktığı, ui5-mock.yaml içeriği, mock veri "
-                "dosyaları, npm ağ/proxy erişimi, global config'in diğer anahtarlarının etkisi (yalnız uyarılır)."
+                "`playwright-cli open` ile ölçülür), mock sunucunun ayağa kalktığı ve bootstrap yolunun gerçekten 200 "
+                "döndüğü (mock-ortam.md §6 curl), yaml'ın geçerli YAML olduğu, eşlemedeki `url`'nin doğru CDN olduğu, blok metin (`|`) içindeki `backend:` satırının yanlış alarm vermesi, workspace glob'larının `!` dışlamaları, tablodaki iki ad dışındaki custom "
+                "middleware'ler, index.html dışındaki HTML'ler, mock veri dosyaları, npm ağ/proxy erişimi, global config'in diğer anahtarlarının etkisi (yalnız uyarılır)."
                 % MOCKSERVER_PAKET)
 KAPSAM_CONFIG = ("KAPSAM (SCOPE): kd_ortam config — yalnız <proje>/.playwright/cli.config.json dosyasının browser "
                  "anahtarlarına bakar. Bakılmayanlar: `playwright-cli open --browser <x>` bayrağı kanalı EZER "
@@ -255,6 +269,173 @@ def start_mock_host_tespiti(script):
     return "bulunan: " + ", ".join(bulunan) + (" → UZAKTAN ERİŞİME AÇIK: güvenlik duvarı izni istenebilir" if acik else ""), acik
 
 
+def workspace_koku(proje, derinlik=3):
+    """Uygulamayı `workspaces` desenleriyle GERÇEKTEN kapsayan ilk üst dizin (en çok `derinlik` seviye) ya da None.
+    Üyelik denetlenir: kapsamayan bir kökte kurulum uygulamayı okumaz (ör. ev dizinindeki ilgisiz package.json)."""
+    uyg = os.path.abspath(proje)
+    d = uyg
+    for _ in range(derinlik):
+        ust = os.path.dirname(d)
+        if ust == d:
+            break
+        d = ust
+        pj, _ = package_json_oku(d)
+        ws = pj.get("workspaces") if isinstance(pj, dict) else None
+        if isinstance(ws, dict):  # yarn biçimi: {"packages": [...]}
+            ws = ws.get("packages")
+        if isinstance(ws, list) and ws:
+            goreli = os.path.relpath(uyg, d).replace(os.sep, "/")
+            if any(isinstance(w, str) and fnmatch.fnmatchcase(goreli, w.strip("./").rstrip("/")) for w in ws):
+                return d
+    return None
+
+
+def paket_kurulum_onerisi(proje, paket):
+    """npm workspace'te uygulamaya ayrı kurulum yapılmaz (uygulama başına lock/node_modules oluşur — app-skeleton.md
+    §2): ad uygulamanın devDependencies'ine yazılır, kurulum workspace kökünde koşar. Workspace yoksa eski komut."""
+    kok = workspace_koku(proje)
+    if kok:
+        return ('uygulama package.json → devDependencies\'e "%s": "%s" adını ekle, sonra workspace kökünde '
+                '`npm install --prefix "%s"` (uygulamaya ayrı kurulum YOK — app-skeleton.md §2)'
+                % (paket, PAKET_SURUMU.get(paket, "<sürüm>"), kok))
+    return 'npm install --prefix "%s" --save-dev %s' % (proje, paket)
+
+
+# `fiori run` yalnız `--config <yol>` ve `-c <yol>` biçimini okur, yoksa `ui5.yaml` (ölçüldü: @sap/ux-ui5-tooling
+# dist/cli getYamlFile — `FileName.Ui5Yaml`); `ui5` CLI'de `-c` `--config`'in kısaltması (@ui5/cli lib/cli/base.js).
+_CONFIG_BAYRAK = re.compile(r"""(?<!\S)(?:--config|-c)(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\S+))""")
+_SUNUCU_KOMUTU = re.compile(r"\b(?:fiori\s+run|ui5\s+serve)\b")
+_BOOTSTRAP = re.compile(r"""<script\b[^>]*\bid\s*=\s*["']sap-ui-bootstrap["'][^>]*>""", re.I | re.S)
+_SRC = re.compile(r"""\bsrc\s*=\s*["']([^"']+)["']""", re.I)
+_BACKEND_ANAHTARI = re.compile(r"""(?:^\s*-?\s*|[{,]\s*)["']?backend["']?\s*:""")
+
+
+def mock_yaml_yolu(proje, script):
+    """start-mock'un sunucuyu başlatan parçasındaki (`fiori run`/`ui5 serve`; `&&` zincirinde) `--config`/`-c` değeri:
+    (yol ya da None, bayrak_var_mi). Bayrak yoksa sunucu canlı `ui5.yaml`'la açılır — yol None döner."""
+    parcalar = [s for s in re.split(r"&&|\|\||;|\|", script or "") if s.strip()]
+    sunucu = [s for s in parcalar if _SUNUCU_KOMUTU.search(s)] or parcalar
+    m = _CONFIG_BAYRAK.search(sunucu[-1]) if sunucu else None
+    if not m:
+        return None, False
+    goreli = next(g for g in m.groups() if g)
+    return os.path.normpath(os.path.join(proje, goreli)), True
+
+
+def yaml_tara(metin):
+    """YAML METİN taraması (ayrıştırıcı yok, stdlib): (backend satır no'ları, `ui5:` bloğundaki (path, pathReplace)
+    çiftleri, `name:` değerleri). Yorumlar (#) atılır; `ui5:` bloğu girintiyle izlenir; `pathReplace` en son görülen
+    `path` öğesine bağlanır. Akış biçimi (`{backend: …}`) ve tırnaklı anahtar da backend sayılır."""
+    backend, yollar, adlar, ui5_girinti = [], [], [], None
+    for no, satir in enumerate(metin.splitlines(), 1):
+        kod = satir.split("#", 1)[0].rstrip()
+        if not kod.strip():
+            continue
+        girinti = len(kod) - len(kod.lstrip())
+        if ui5_girinti is not None and girinti <= ui5_girinti:
+            ui5_girinti = None
+        if _BACKEND_ANAHTARI.search(kod):
+            backend.append(no)
+        m = re.match(r"""\s*-?\s*name\s*:\s*["']?([^"'\s]+)""", kod)
+        if m:
+            adlar.append(m.group(1))
+        if re.match(r"""\s*["']?ui5["']?\s*:\s*$""", kod):
+            ui5_girinti = girinti
+            continue
+        if ui5_girinti is None:
+            continue
+        m = re.match(r"\s*-?\s*path\s*:\s*(.+)$", kod)
+        if m:
+            deger = m.group(1).strip()
+            parcalar = deger[1:-1].split(",") if deger.startswith("[") and deger.endswith("]") else [deger]
+            yollar.extend([p.strip().strip("\"'").rstrip("/"), None] for p in parcalar if p.strip())
+            continue
+        m = re.match(r"""\s*-?\s*pathReplace\s*:\s*["']?([^"'\s]+)""", kod)
+        if m and yollar:
+            yollar[-1][1] = m.group(1).rstrip("/")
+    return backend, [tuple(y) for y in yollar], adlar
+
+
+def bootstrap_eslesmesi(dizin, yollar):
+    """Bootstrap dizinini CDN'e doğru taşıyan `ui5:` öğesi: ya dizinin KENDİSİ + `pathReplace: /resources`
+    (mock-ortam.md §2 biçimi), ya da dizin zaten `/resources…` ise onu önekle kapsayan pathReplace'siz öğe.
+    Başka biçim (ör. `/sap` öneki, pathReplace'siz `/sap/public/…`) CDN'de 404 verir → eşleme sayılmaz."""
+    for p, repl in yollar:
+        if p == dizin and repl == "/resources":
+            return p, repl
+        if repl is None and dizin.startswith("/resources") and (dizin == p or dizin.startswith(p + "/")):
+            return p, repl
+    return None
+
+
+def bootstrap_src(proje):
+    """webapp/index.html'deki sap-ui-bootstrap src'si: (src ya da None, hata metni ya da None)."""
+    try:
+        with open(os.path.join(proje, "webapp", "index.html"), encoding="utf-8-sig", errors="replace") as fh:
+            html = fh.read()
+    except OSError:
+        return None, "webapp/index.html yok"
+    m = _BOOTSTRAP.search(html)
+    s = _SRC.search(m.group(0)) if m else None
+    return (s.group(1), None) if s else (None, "index.html'de sap-ui-bootstrap src'si bulunamadı")
+
+
+def mock_yaml_denetle(proje, pj):
+    """start-mock yaml'ının satırları (denetle() biçimi) + BİLGİ metinleri. Kök neden (ölçüldü 2026-09-25):
+    mockserver-config-writer ui5-mock.yaml'ı ui5.yaml'dan kopyalar, `backend:` bloğu da gelir → mock SAP'ye bağlanmaya
+    çalışır ve /sap/public/... bootstrap'ı 500 döner; `ui5:` path'lerinde eşlemesi olmayan mutlak bootstrap yolu da
+    backend'siz mock'ta yüklenmez."""
+    script = ((pj or {}).get("scripts") or {}).get("start-mock")
+    if not script:
+        return [], []
+    yol, bayrak = mock_yaml_yolu(proje, script)
+    if not bayrak:
+        # Bayrak yoksa `fiori run` canlı ui5.yaml'la açılır (backend'li) — onu "mock yaml" sanıp backend'ini
+        # kaldırmayı önermek canlı `start`/`start-noflp`'u bozar (bug gate 2026-09-25).
+        return [("mock yaml", False, "start-mock'ta --config YOK → sunucu canlı ui5.yaml'la (backend'li) açılır",
+                 "start-mock'a `--config ./ui5-mock.yaml` ekle (app-skeleton.md §4)")], []
+    try:
+        etiket = os.path.relpath(yol, proje)
+    except ValueError:  # farklı sürücü (Windows)
+        etiket = yol
+    try:
+        with open(yol, encoding="utf-8-sig", errors="replace") as fh:
+            metin = fh.read()
+    except OSError:
+        return [("mock yaml", False, "YOK: %s" % etiket,
+                 "start-mock'un --config ile gösterdiği yaml'ı oluştur (mock-ortam.md §2)")], []
+    backend, yollar, adlar = yaml_tara(metin)
+    satirlar = [("mock yaml backend'siz", not backend,
+                 ("%s: `backend:` YOK" % etiket) if not backend else
+                 "%s satır %s: `backend:` VAR → mock SAP'ye bağlanır (bootstrap 500)"
+                 % (etiket, ", ".join(map(str, backend))),
+                 None if not backend else "%s'dan fiori-tools-proxy `backend:` bloğunu kaldır (mock-ortam.md §2)"
+                 % etiket)]
+    bilgi = []
+    src, hata = bootstrap_src(proje)
+    if src is None:
+        bilgi.append("bootstrap eşlemesi ÖLÇÜLEMEDİ: %s" % hata)
+    elif not src.startswith("/") or src.startswith("//"):
+        bilgi.append("bootstrap göreli ya da CDN (%s) → yaml eşlemesi denetlenmedi" % src)
+    else:
+        dizin = src.split("?", 1)[0].rsplit("/", 1)[0]
+        eslesen = bootstrap_eslesmesi(dizin, yollar)
+        satirlar.append(("mock yaml bootstrap yolu", bool(eslesen),
+                         ("%s → ui5 path %s%s" % (dizin, eslesen[0], " + pathReplace %s" % eslesen[1] if eslesen[1]
+                                                   else "")) if eslesen else
+                         "%s için `ui5:` bloğunda doğru eşleme YOK (path + pathReplace: /resources)" % dizin,
+                         None if eslesen else "%s → fiori-tools-proxy ui5.paths'e `- path: %s` + `url: "
+                         "https://ui5.sap.com` + `pathReplace: /resources` ekle (mock-ortam.md §2)" % (etiket, dizin)))
+    dev = (pj or {}).get("devDependencies") or {}
+    for ad in sorted(set(adlar) & set(MIDDLEWARE_PAKETI)):
+        paket = MIDDLEWARE_PAKETI[ad]
+        if paket == MOCKSERVER_PAKET:
+            continue  # "mockserver devDependency" satırı zaten denetliyor
+        satirlar.append(("middleware paketi: %s" % ad, paket in dev, dev.get(paket, "YOK (%s)" % paket),
+                         None if paket in dev else paket_kurulum_onerisi(proje, paket)))
+    return satirlar, bilgi
+
+
 def denetle(proje, env=None):
     """Satır listesi döner: (ad, tamam: bool, değer, kurulum_komutu)."""
     satirlar = []
@@ -294,11 +475,12 @@ def denetle(proje, env=None):
         dev = pj.get("devDependencies") or {}
         var = MOCKSERVER_PAKET in dev
         satirlar.append(("mockserver devDependency", var, dev.get(MOCKSERVER_PAKET, "YOK"),
-                         None if var else 'npm install --prefix "%s" --save-dev %s' % (proje, MOCKSERVER_PAKET)))
+                         None if var else paket_kurulum_onerisi(proje, MOCKSERVER_PAKET)))
         scr = (pj.get("scripts") or {}).get("start-mock")
         satirlar.append(("start-mock script'i", bool(scr), scr or "YOK",
                          None if scr else "package.json → scripts.start-mock ekle (mockserver'lı yapılandırmayla "
                                           "`fiori run --config <mock-yaml>` çalıştıran script)"))
+        satirlar.extend(mock_yaml_denetle(proje, pj)[0])
     return satirlar
 
 
@@ -329,6 +511,8 @@ def cmd_check(proje, env=None):
     pj, _ = package_json_oku(proje)
     host_ozet, uzak = start_mock_host_tespiti(((pj or {}).get("scripts") or {}).get("start-mock"))
     _cikti("  %-5s %-26s %s" % ("UYARI" if uzak else "BİLGİ", "start-mock host/bind", host_ozet))
+    for b in mock_yaml_denetle(proje, pj)[1]:
+        _cikti("  %-5s %-26s %s" % ("BİLGİ", "mock yaml", b))
     for u in filter(None, [global_config_uyarisi(env)] + ortam_uyarilari(env)):
         _cikti("  UYARI " + u)
     _cikti(BIND_NOTU)

@@ -725,7 +725,7 @@ def kisayol_metni(axet_home: Path | None = None) -> str:
                 f"{TAMAMLA_CMD} dosyasinda.",
                 # `exit /b` kodsuz → `cmd /c` altında 0 döner (ölçüldü); `call exit /b %%errorlevel%%` çağrı SONRASI kodu taşır
                 f'if exist "{k}" call "{k}" "%~dp0." & call exit /b %%errorlevel%%',
-                f"echo HATA: aXet klonu bulunamadi: \"{k}\" - aXet'i kur.cmd ile kur, sonra bu dosyaya tekrar cift tikla."
+                f"echo HATA: aXet klonu bulunamadi: \"{k}\" - aXet'i aXet-Kur.cmd ile kur (cift tik), sonra bu dosyaya tekrar cift tikla."
                 " & pause & exit /b 1"]
     return "\r\n".join(satirlar) + "\r\n"
 

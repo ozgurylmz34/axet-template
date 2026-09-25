@@ -21,6 +21,8 @@ Klasik program (rapor, module pool, Dynpro) tüm kodu tek `REPORT` gövdesinde t
 | `_I01` (I01) | PAI modülleri (`MODULE … INPUT`: kullanıcı komutu) |
 
 - Büyük include → `02`, `03`. Include'lar **PROG/I** objesidir (tek başına program değil).
+- Include'u okurken/sorgularken tip `include`'dur, `prog` değil: `prog` ile sorulan include 404 / `exists:false` döner ve
+  bu sahte negatiftir → `%sap-adt-foundation` `known-errors-adt.md` K-23 (TRDIR `SUBC='I'` ile çapraz kontrol).
 - İş mantığı tercihen OO: `lcl_data` (okuma/hesap) · `lcl_alv` (grid kurulumu) · `lcl_event` (ALV olayları) ·
   gerekirse `lcl_app` (akış). ALV kurulumu template-first → `alv-report.md`.
 - `templates/` altındaki şablonlar **bilerek tek gövdedir** (yalnız deseni gösterir); gerçek programda yukarıdaki gibi bölünür.

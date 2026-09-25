@@ -11,6 +11,7 @@
 /.axet-kurulum/
 # Deneme alanı
 /_lab/
+/maintenance/sizinti-yerel.txt
 # Merkezi araç kurulumu (scripts/tarayici_hazirla.py: @playwright/cli + node_modules) — repoya girmez. Betik dizine
 # ayrıca `*` içeren kendi .gitignore'unu koyar: bu satır eski bir klonda yoksa da git durumu temiz kalır.
 /.araclar/

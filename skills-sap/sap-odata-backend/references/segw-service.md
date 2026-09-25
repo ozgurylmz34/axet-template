@@ -21,7 +21,7 @@ Profil matrisi rehberdir, kanıt değildir: yetenek şüphesinde canlı sistemde
 | Öncelik | Senaryo | Teknoloji |
 |---|---|---|
 | 1 | Okuma ağırlıklı liste, rapor, value help | CDS view → OData V2 (salt-okur ise `@OData.publish`, §6) |
-| 2 | İşlem (create/update/delete) | DPC_EXT içinde BAPI / RFC FM |
+| 2 | İşlem (create/update/delete) | DPC_EXT içinde BAPI / RFC FM — standart nesnede API seçimi: `%sap-dev` → `write-api-selection.md` |
 | 3 | Join/aggregation'lı karmaşık sorgu | CDS (HANA'ya özgü mantık gerekirse AMDP) |
 | 4 | Karma (CDS ile oku, RFC ile yaz) | MPC'de CDS entity + DPC_EXT'te RFC çağrısı |
 | 5 | CDS mümkün olmayan eski entegrasyon | RFC → SEGW function import |
@@ -154,6 +154,22 @@ olduğu `/$metadata` yanıtıyla anlaşılır: **200** ↔ **403/404**. Ölçül
 - Ölçüm bağlamı: SADL/RAP yayınında görüldü; SEGW'de CDS'e referans veren entity için aynı davranış **DOĞRULANMADI**.
 - Anahtar dolgusu (exit'in çıktıyı sıfırsız vermesi) için: `references/serialization.md` §3.
 
+### 5.1 "In the context of Data Services an unknown internal server error occurred" — tip dönüşümünde bozuk VERİ
+- **Belirti:** ekran/entity set hiç açılmaz, yalnız bu jenerik metin; **ST22'de dump yok** → kod ve CDS saatlerce boşuna okunur.
+- **Mekanizma (ekip dersi, ölçüldü):** SADL, DDIC tipini OData tipine çevirirken (`DATS` → `Edm.DateTime`) istisna alır ve
+  yutar. Kök neden koddaki değil veridedir: 8 karakterlik tarih-olmayan bir değer (ör. `'07.09.26'`) `DATS` alanına fiziksel
+  olarak sığar; DDIC reddetmez, eski bir yükleyici ya da tablo bakım ekranı yazabilir. Hata yalnız OData'ya çıkarken doğar.
+- **TEK satır bütün entity set'i öldürür** (vakada 4 satırın 3'ü sağlamdı; ekran yine de hiç açılmadı). Fiori Elements çoğu
+  zaman `$top` göndermediği için tüm küme çekilir.
+- **Teşhis reçetesi (OData ucundan):** ① `$top=1&$skip=0,1,2…` ile ikili arama → hangi SATIR ② o satırda alan alan `$select`
+  → hangi ALAN (sağlam alan 200, bozuk alan 500) ③ alanı ham tabloda açık kolon listesiyle oku (`adt_sql_query`) ve DDIC
+  tipiyle kıyasla. `$orderby`'i suçlamadan önce çıkarıp dene.
+- Kural "çöp veri patlatır" değil, **"çöp veri TİPİ DÖNÜŞTÜRÜLEN alandaysa patlatır"**: aynı tabloda `CHAR` alandaki çöp
+  zararsızdı. Tarama yaparken `DATS`/`TIMS`/`DEC`/`QUAN` alanlarına bak (`DATS`'ta `LIKE` çalışmaz → `%sap-adt-foundation`
+  `foundation-query.md` §1.2 satır 10).
+- Düzeltme veridir ve kullanıcının işidir: Z tabloda bakım ekranından düzeltilir; standart tabloda doğrudan DML yasak (B) →
+  BAPI/işlem. Alanı CDS'te `CHAR`'a çevirip UI'da tolere etmek ayrı bir tasarım kararıdır; kendiliğinden yapılmaz.
+
 ---
 
 ## 6. CDS `@OData.publish: true` sınırı
@@ -168,3 +184,5 @@ olduğu `/$metadata` yanıtıyla anlaşılır: **200** ↔ **403/404**. Ölçül
 - Kaynaktaki proje-özel servis/host/istemci adları → yer tutucu (`<SERVİS_ADI>`, `ZSD001_ODS_ORDER`).
 - Fiori Launchpad katalog/tile/target mapping/PFCG adımları alınmadı: UI/launchpad yapılandırmasıdır (UI5 skill'i).
 - "Response structure" ve rol metni (15+ yıl mimar) alınmadı; aXet çekirdeği §3-§4 ile karşılanıyor.
+- 2026-09-25 eşitleme (ekip dersi): §5.1 SADL tip dönüşümü teşhis reçetesi eklendi; kaynaktaki sistem/paket/tablo adları
+  ve buton adı alınmadı.

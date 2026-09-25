@@ -43,7 +43,8 @@ Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya s
 | 4 | Otomatik vakalar (V1/V2/V5/V6) | `… uygula --otomatik` | 0 | 1 → `durum` göster, DUR |
 | 5 | Yargı vakaları (V4t/V4c/V4B/V7/VTB) | `… oneri <yol>` → sor → `… isaretle <yol> --karar …` | her biri 0 | aşağıdaki karar tablosu |
 | 6 | Kapanış | `… kapanis` | 0 | 1 → raporu göster, seçenek sun |
-| 7 | Son | `RAPOR.md`'yi aynen göster | — | — |
+| 7 | Açılış brief'i | kapanış 0 ise proje `AGENTS.md` "Oturum" bölümündeki `session_brief.py` komutu — `.axet-code/acilis-brief.md`'yi güncel şablonla yeniler (git'e girmez). Bulunulan dizin `--proje` dizini değilse komuta `--project-dir "<dizin>"` ekle (izin sorulur) | 0 | son satır "açılış brief'i yazıldı" değilse o satırı ya da yokluğunu aynen bildir |
+| 8 | Son | `RAPOR.md`'yi aynen göster | — | — |
 
 **Adım 3 neden 2. adımdan sonra:** plan görülmeden onay istemek, kullanıcıya ne onayladığını
 söylemeden onay istemektir. Önce planı göster, sonra onayı iste.
@@ -53,7 +54,7 @@ söylemeden onay istemektir. Önce planı göster, sonra onayı iste.
 |---|---|---|
 | `V4t` | İki taraf da değişmiş, git temiz birleştirdi | İki farkı AYRI AYRI tek cümleyle özetle → "birleşik / yereli koru / yeniyi al" sor → `isaretle --karar birlesik\|yerel\|yeni` |
 | `V4c` | Çakışma var | Her çakışma bloğu için T/L/Y'yi göster, kendi önerini ve GEREKÇENİ yaz, onay al, öneri dosyasını işaretsiz bırak, sonra `isaretle --karar birlesik` |
-| `V4c+ESIK` | Ayrışma eşiği aşıldı (>3 blok ya da yerel fark >%50) | Birleştirme DENEME. `.axet-code/.guncelle-proje/elle/` altındaki iki farkı göster, "elle karşılaştırman gerekiyor" de, `isaretle --karar ertelendi --gerekce …` |
+| `V4c+ESIK` | Ayrışma eşiği aşıldı (>3 blok ya da yerel fark >%50) | Birleştirme DENEME. `.axet-code/.guncelle-proje/elle/` altındaki iki farkı göster, "elle karşılaştırman gerekiyor" de, `isaretle --karar ertelendi --gerekce …`. **`.axet-code.json`** küçük dosya olduğu için özelleştirilince hep buraya düşer: "yereli koru, yeni `context_paths` girdisini (ör. `.axet-code/acilis-brief.md`) elle ekle" öner; kullanıcı onaylarsa yalnız o girdiyi ekle, sonra `isaretle --karar yerel` |
 | `V4B` | İkili dosya | Birleştirme yok: "yereli koru / yeniyi al" sor |
 | `V7` | Kullanıcının kendi dosyası, şablonun yeni dosyasıyla aynı yolda | "seninkini `<ad>.yerel` yap ve şablonunkini al (önerilen) / seninkini koru" → `isaretle --karar yeniden-adlandir\|yerel` |
 | `VTB` | Taban bilinmiyor | Otomatik birleştirme YASAK. Farkı göster, `isaretle --karar yeni\|yerel\|ertelendi` |

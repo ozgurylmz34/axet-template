@@ -1,0 +1,121 @@
+name: aXet hata / öneri bildirimi
+description: aXet'te gördüğün bir hatayı, eksik ya da yanlış bir kuralı veya bir öneriyi bildir
+title: "[bildirim]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⛔ **BU DEPO HERKESE AÇIK (PUBLIC).** Buraya yazdığın her şeyi herkes okur ve yayın geri alınamaz.
+        Müşteri/şirket adı, SAP sistem kimliği (SID, host, URL, istemci no), kullanıcı adı, kişi adı,
+        e-posta, gerçek belge numarası, müşteriye ait paket/obje adı, müşteri kaynak kodu ve ekran
+        görüntüsü **yazma**. Yerine yer tutucu kullan: `<SYS>`, `<SAP_USER>`, `<MUSTERI>`, `<BELGE_NO>`,
+        paket için `ZSD001`, yol için `<PROJE-KOKU>`. Şifre ve token hiçbir biçimde yazılmaz.
+        Kimlik taşıyan bildirim **düzenlenmez: kapatılır** ve temiz hâli yeniden istenir.
+
+        💡 aXet içinde **`%hata-bildir`** yazarsan model bildirimi seninle birlikte hazırlar, kimlik
+        taşıyan veriyi temizler ve projende `.axet-code/bildirimler/` altına kaydeder. O dosyadaki
+        bölümleri aşağıdaki aynı adlı alanlara yapıştırman yeterli.
+        GitHub hesabın yoksa bu formu kullanman gerekmez: dosyayı aXet'i sana kuran kişiye ya da
+        ekibinin aXet sorumlusuna ilet; Issue'yu o açar.
+
+        🔎 Göndermeden önce aynı konunun açık bir Issue'su var mı bak (Issues sekmesinde arama). Varsa yeni
+        Issue açma, ek kanıtını o Issue'ya yorum olarak yaz. Bakımcı her iddiayı güncel aXet'te kendisi
+        yeniden ölçer: yeniden üretim ve kanıt alanları eksikse bildirim çoğu zaman "üretilemedi" ile kapanır.
+  - type: dropdown
+    id: tur
+    attributes:
+      label: Tür
+      options:
+        - Hata
+        - Öneri
+        - Belge eksik ya da yanlış
+    validations: {required: true}
+  - type: textarea
+    id: ozet
+    attributes:
+      label: Özet
+      description: Tek cümle — hangi skill/kural/komut, hangi koşulda, ne yanlış yapıyor (ya da ne eksik).
+      placeholder: "`%guncelle-proje` şu durumda proje AGENTS.md'sini güncellemiyor, oysa güncellemesi bekleniyor."
+    validations: {required: true}
+  - type: textarea
+    id: surum
+    attributes:
+      label: aXet sürümü
+      description: "`%hata-bildir` bunu kendisi ölçer. Elle dolduruyorsan README'deki `Sürüm:` satırını yaz; bilmediğin satırı \"ölçülemedi\" diye bırak."
+      value: |
+        - README sürüm satırı:
+        - Son %guncelle:
+        - İçerilen son yayın etiketi:
+        - Klon commit:
+        - doctor: PASS=  WARN=  FAIL=
+        - aXet uygulama sürümü:
+        - İşletim sistemi:
+    validations: {required: true}
+  - type: textarea
+    id: guncellik
+    attributes:
+      label: Güncellik
+      description: "Klonun güncel sürümden geride mi, konu yayın kataloğunda (`guncelle/yayinlar.json`) düzeltilmiş görünüyor mu, aynı konuda Issue var mı? `%hata-bildir` bunu ölçer; bilmediğin satırı \"ölçülemedi\" diye bırak."
+      value: |
+        - Güncel sürümden geride:
+        - Yayın kataloğunda konu:
+        - Aynı konuda Issue:
+    validations: {required: true}
+  - type: textarea
+    id: ne_yapiyordun
+    attributes:
+      label: Ne yapıyordun
+      description: Amacın neydi? Tek paragraf yeterli.
+    validations: {required: true}
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Yeniden üretim
+      description: Başkasının kopyalayıp çalıştırabileceği EN KISA adım dizisi (numaralı; aXet'te yazılan `%…` komutu, çalıştırılan komut).
+      placeholder: |
+        1. aXet'te `%…` yazdım
+        2. …
+    validations: {required: true}
+  - type: textarea
+    id: beklenen_olan
+    attributes:
+      label: Beklenen / Olan
+      description: Beklentini neye dayandırdığını da yaz (skill adı, kural, README ya da belge cümlesi, dosya:satır).
+      value: |
+        - Beklenen:
+        - Olan:
+    validations: {required: true}
+  - type: textarea
+    id: cikti
+    attributes:
+      label: Kanıt
+      description: Komutun ya da aracın çıktısının kendisi (anlatım değil) ve ilgili dosya:satır. Kırptıysan nerede kırptığını yaz. Kimlik taşıyan satırları temizle.
+      render: text
+    validations: {required: true}
+  - type: textarea
+    id: kontrol_grubu
+    attributes:
+      label: Kontrol grubu
+      description: Aynı şeyin ÇALIŞTIĞI bilinen bir vaka (başka proje, başka obje, önceki sürüm) — yoksa "bulunamadı, çünkü …".
+    validations: {required: false}
+  - type: textarea
+    id: kapsam
+    attributes:
+      label: Kapsam beyanı
+      description: Neye BAKMADIN? Hangi proje/obje tipi/profil denenmedi, ne ölçülemedi? "Ölçülemedi" ≠ "sorun yok".
+    validations: {required: true}
+  - type: textarea
+    id: oneri
+    attributes:
+      label: Öneri (isteğe bağlı)
+      description: Düzeltme ya da iyileştirme fikrin; denenip çalışmayan yollar ve nedeni.
+    validations: {required: false}
+  - type: checkboxes
+    id: beyan
+    attributes:
+      label: Beyan
+      options:
+        - label: Bu bildirimde müşteri, sistem ya da kişi kimliği taşıyan hiçbir veri YOK (şifre ve token dahil).
+          required: true
+        - label: Yazdığım çıktılar gerçek bir koşumdan alındı; ölçemediğim şeyi "ölçülemedi" diye belirttim.
+          required: true

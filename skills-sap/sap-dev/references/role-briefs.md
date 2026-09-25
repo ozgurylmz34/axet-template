@@ -22,7 +22,7 @@
 | Kategori | Yasak |
 |---|---|
 | **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
-| **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. |
+| **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. Hangi yol, hangi canlı teyitle: `%sap-dev` → `references/write-api-selection.md`. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
 
@@ -131,7 +131,7 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
   · paketin `.rules.md` + `SESSION_NOTES.md` son kaydı + `SPEC.md` açık kararlar
 - Desen: paketteki ya da sistemdeki ÇALIŞAN benzer objeden doğrula ve onun yolunu izle; sıfırdan icat etme.
   İş içeriği (alanlar, kurallar, akış) spesifikasyondan gelir.
-- Standart tabloya veri yazan kod YAZMA (yasak B): BAPI → RFC FM → BDC → kullanıcıdan manuel; bulamazsan ENGEL.
+- Standart tabloya veri yazan kod YAZMA (yasak B): released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → BDC → kullanıcıdan manuel (`%sap-dev` → `references/write-api-selection.md`); bulamazsan ENGEL.
 - Yeni DDIC tablo: yaratmazsın; alan + veri elemanı + anahtar tasarımını ÖNERİ olarak döndürürsün. Yeni Z DTEL/domain/tablo
   adını ÖNERİ olarak verebilirsin (canlıda kontrol edilmiş, "ONAY BEKLİYOR"); standart objeye append alanı adını önermezsin
   (yer tutucu bırak, açık kalem yaz). İstemci alanı `mandt : mandt`; yönetim alanları tasarımda listelenir.
@@ -149,8 +149,10 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
 ```
 
 ## (c) Ön yüz (UI5) geliştirme alt görevi — yerel kaynak hazırlama
-UI5'e özgü skill henüz template'te yok (sonraki partide gelecek). O gelene kadar bu ek, yöntemi **varsaymadan**
-projedeki çalışan uygulamadan doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel klasörü. S1-S4 + aşağısı:
+UI5 yöntemi `%sap-ui5-fiori` skill'indedir. Alt ajan yalnız brifingi görür (ölçüldü, bakımcı ölçüm kaydı;
+skill'i kendisinin yükleyip yükleyemediği ölçülmedi) → ana oturum işe uyan referans bölümünü (ör. `freestyle-odata-v2.md`
+save/§7, `checklists.md` FE satırları) brifinge metin olarak ekler. Bu ek, yöntemi **varsaymadan** projedeki çalışan
+uygulamadan da doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel klasörü. S1-S4 + aşağısı:
 
 ```text
 ## ROL: UI5 ALT GÖREVİ (YEREL KAYNAK; SAP'YE YAZMA VE DEPLOY YOK)
@@ -169,6 +171,11 @@ projedeki çalışan uygulamadan doğrulatır. Genel şablon §3 YAZMA ALANI = u
   operatörlü filtre, kolon göster/gizle, varyant ve Excel'e aktarma (ekrandaki sayfa değil, filtreye uyan tüm
   satırlar) sunar. UI5'te `sap.ui.table.Table` (grid) kullanılır; `sap.m.Table` yalnız mobil öncelikli istisnadır."
 - Düzenlenebilir sayısal alan: `type="Number"` input kullanma; metin input + girişte sayısal filtre.
+- Manifest dışı istek `sap-client` taşır: `new ODataModel(...)`, ham `fetch`/XHR ve `sServiceUrl +` ile kurulan URL
+  ana modelin istemci parametrelerini (`aUrlParams`) AÇIKÇA devralır — otomatik gelmez. Yazdığın/kopyaladığın her
+  yardımcıda aynı deseni tüm uygulamalarda tara. Sayfadan ayrılırken gönderilen istek `fetch` + `keepalive`'dır,
+  senkron XHR değil (Chromium, navigasyonda ölçüldü). İkisi de hata vermez: biri yanlış veriyle, öbürü bırakılmayan
+  kilitle bozulur.
 - "Bitti / doğrulandı" demeden çalışma zamanını düşün: sözdizimi/XML geçerliliği çalışma zamanı hatasını yakalamaz.
   Uygulamayı çalıştırıp ana akışı deneyemediysen çalışma zamanı sonucunu DOĞRULANMADI yaz.
 - ÇIKTI (genel §8'e ek): değişen dosyalar · binding/handler/navigasyon etkisi · ALV paritesi maddeleri tek tek
@@ -200,5 +207,5 @@ gönderemez ve konuşmayı görmez → koordinasyon **devredilemez**; ayrı bir 
 | Yerel ABAP lint komutunun çıkış şartı | aXet'te lint yalnız CLI'nin gömülü incelemesinde (yazma yolu) belgeli; ayrı tüketici komutu yok → açık kalem |
 | Metodoloji junction'ı arama talimatı | aXet'te junction yok |
 | Seans işaretli çekme script'i ve düzenleme öncesi engelleyici kanca | Hook yok; karşılığı `adt_get` çekme kaydı + `adt_push_source` kıyası (ana oturumda) |
-| UI5 MCP araçları (API referansı, linter, manifest doğrulama) ve tarayıcı otomasyonu ile doğrulama seviyeleri | aXet yerel MCP'yi yok sayar (ölçüldü); UI5 skill'i sonraki partide |
+| UI5 MCP araçları (API referansı, linter, manifest doğrulama) ve tarayıcı otomasyonu ile doğrulama seviyeleri | aXet yerel MCP'yi yok sayar (ölçüldü); UI5 yöntemi ve script'li kontroller `%sap-ui5-fiori`'de |
 | Boşta ajan tutma / ayakta kalan (standing) roller | aXet `agent` aracında karşılığı yok; her devir tek seferlik |

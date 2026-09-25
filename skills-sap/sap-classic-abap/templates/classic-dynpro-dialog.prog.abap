@@ -202,7 +202,7 @@ FORM dlg_validate_and_save CHANGING cv_ok TYPE abap_bool.
 * ② Kilit (programa özgü lock object / ENQUEUE_*).
 * ③ DB'ye bağlı kontrol (iş kuralı sınıfta kalır; ekran modülü yalnız çağırır).
 * ④ Yaz: BAPI ya da iş mantığı sınıfının metodu. Standart tabloya doğrudan
-*    INSERT/UPDATE/DELETE/MODIFY YASAK (kesin yasak B: BAPI → RFC FM → BDC → manuel).
+*    INSERT/UPDATE/DELETE/MODIFY YASAK (kesin yasak B: released API → BAPI → RFC FM → BDC → manuel).
 * ⑤ COMMIT / unlock — TRY/CATCH ile; unlock her koşulda (CATCH içinde de).
 
   cv_ok = abap_true.

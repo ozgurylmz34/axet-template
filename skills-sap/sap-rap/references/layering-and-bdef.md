@@ -10,7 +10,7 @@
 | Senaryo | Şekil |
 |---|---|
 | Yeni Z transactional belge (Z tablo; standart belge ya da BAPI sarmıyor) | **managed BO** |
-| Standart belge (satış siparişi, teslimat …) üzerinde create/update | **unmanaged façade** — yazma released BO EML'e ya da released BAPI/RFC'ye gider; standart tabloya doğrudan yazma kesin yasak B |
+| Standart belge (satış siparişi, teslimat …) üzerinde create/update | **unmanaged façade** — yazma released API'ye (released BO EML · released BAPI · released OData) ya da, o yoksa, BAPI/RFC FM'e gider; standart tabloya doğrudan yazma kesin yasak B. **Hangi API, hangi canlı teyitle:** `%sap-dev` → `write-api-selection.md` |
 | Salt-okunur liste / worklist / value help | **davranışsız query CDS** (servisinde behavior'suz expose) |
 | Klasik dialog/rapor ya da mevcut SEGW servisi | klasik track — dokunma, RAP'a zorla taşıma yok |
 
@@ -111,7 +111,7 @@ view'da `where username = $session.user`. Servis ve publish: `service-publish.md
 
 | Konu | Kural |
 |---|---|
-| Implementation type | Z tablo → `managed`. Standart belge → `unmanaged` (released BAPI/EML). |
+| Implementation type | Z tablo → `managed`. Standart belge → `unmanaged` (released BAPI/EML; hangi API: `%sap-dev` → `write-api-selection.md`). |
 | Kilit + ETag (**BLOCKER**) | Yazma operasyonlu managed root: `lock master` + `etag master <LastChangedAt alanı>`. ETag alanı root view'da `@Semantics.systemDateTime.lastChangedAt: true` (+ created/lastChangedBy admin alanları). Child: `lock dependent by _Order` + `etag dependent by _Order`. Eksikse eşzamanlılık çalışmaz; yazma kapısının BDEF incelemesi BLOCKER verebilir. |
 | Yetki | `authorization master ( global )` varsa CCIMP'te boş gövdeli `get_global_authorizations` **zorunlu** (yoksa uyarı hataya döner; façade'da `not an entity with authorization check`). Child: `authorization dependent by _Order`. |
 | Duruma bağlı kural (**BLOCKER**) | "Onaylanınca değiştirilemez / silinemez / kalem eklenemez", "aksiyon yalnız şu durumda" → `update/delete ( features : instance )`, `action ( features : instance )`, `field ( features : instance )`, `association _Item { create ( features : instance ); }` + `get_instance_features` (`feature-control.md`). Yetkiyle (`auth-unauthorized`) kurma; yalnız UI'da gizleme. |
@@ -210,6 +210,6 @@ Veri standart objelerde, yazma released BO'ya gider; kendi persistence, kilit, n
 | Yasak | RAP'taki karşılığı |
 |---|---|
 | **A** Standart obje | Interface/projection view yalnız Z tablo/Z CDS kaynaklı. Standart CDS/BO append/extend edilmez; standart behavior'a `extension` yazılmaz. (Salt-okunur query ve façade'da standart tabloyu/released CDS'i **okumak** yasak değildir; released CDS tercih edilir — `value-help.md` §3.) |
-| **B** Standart tablo verisi | Managed behavior EML'i yalnız Z tabloya yazar. Standart belge gerekiyorsa unmanaged + released BAPI/RFC (sıra: BAPI → RFC FM → BDC → manuel) ya da released BO EML. Standart tabloya `MODIFY ENTITIES` / SQL yazma yok. |
+| **B** Standart tablo verisi | Managed behavior EML'i yalnız Z tabloya yazar. Standart belge gerekiyorsa unmanaged + sıra: released API (released BO EML · released BAPI · released OData) → BAPI → RFC FM → BDC → manuel (`%sap-dev` → `write-api-selection.md`). Standart tabloya `MODIFY ENTITIES` / SQL yazma yok. |
 | **C** Sistem durumu | Transport/paket yaratılmaz; BDEF/CDS/SRVD/SRVB kullanıcının verdiği transporta. Publish mevcut transportu kullanır. NR objesi ve SM59 destination AI tarafından yaratılmaz. |
 | **D** Z obje metni | CDS `@EndUserText.label`, BDEF `@EndUserText`, SRVD başlığı `master_language`'de, tam, spesifikasyondan; aktivasyon readback'inde doğrulanır. Tablo alan adları sistemden okunur. |

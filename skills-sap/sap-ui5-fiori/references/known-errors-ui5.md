@@ -9,7 +9,9 @@
 
 | Belirti | Sebep | Git |
 |---|---|---|
-| Beyaz ekran, `this.oLocaleData.getDatePlaceholder is not a function` | UI5 sürümü sabit değil (CDN latest) + `tr` | `app-skeleton.md` §7 |
+| Beyaz ekran, `this.oLocaleData.getDatePlaceholder is not a function` | UI5 bootstrap sürümsüz CDN'den (latest) + `tr`: core ↔ locale-data uyumsuz | `app-skeleton.md` §7 |
+| Tarih/ay adları İngilizce ("Sep 21, 2026"), konsolda anlamlı hata yok; aynı uygulama FLP'den açılınca doğru | `index.html` UI5'i dış CDN'de sabitlenmiş bir patch'ten yüklüyor; patch bakım dışı kalınca silinmiş, silme yarım: `sap-ui-core.js` 200 ama `cldr/<dil>.json` 404 → UI5 sessizce `en`'e düşer. Bölge ayarı / tarayıcı önbelleği / `ui5.yaml` proxy'si değil (mutlak CDN adresi proxy'ye uğramaz). Kanıt: kaynak dosyaları tek tek HTTP ile yokla (CDN'de `cldr/<dil>.json` 404 ↔ backend'de 200) | `app-skeleton.md` §7 · `checklists.md` FE-43 |
+| Sayfa boş, konsolda `sap-ui-core.js` **500** (ya da zaman aşımı); `start-mock` ya da VPN kapalıyken `start-noflp` | `index.html` UI5'i backend'in kendi yolundan (`/sap/public/bc/ui5_ui5/…`) yükler; bu yol `ui5*.yaml`'daki `backend: /sap` proxy'siyle SAP'ye gider — backend'e ulaşılamıyorsa UI5 hiç yüklenmez. Mock'ta: üretici `ui5-mock.yaml`'ı `ui5.yaml`'dan kopyaladığı için `backend` bloğu da gelmiştir (ölçüldü). Kanıt: `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:<port>/sap/public/bc/ui5_ui5/resources/sap-ui-core.js` | mock: `%sap-ui5-user-guide` → `mock-ortam.md` §2 (`backend` yok + CDN eşlemesi) · canlı: VPN/backend erişimi · `app-skeleton.md` §7 |
 | `Component yüklenemedi: failed to resolve 'com/.../model/models'` | Namespace'in eğik çizgi biçimi değişmemiş | `app-skeleton.md` §1 |
 | Model `undefined`, binding çalışmıyor | Manifest modeli eksik / Component bağımlılığı eksik | `app-skeleton.md` §8–9 |
 | `{ui>/busy}`, `{ui>/filter}` ölü; busy dönmüyor, filtre tutmuyor | Manifest JSONModel `settings.data` çift sarmalama | `app-skeleton.md` §8 |
@@ -31,6 +33,7 @@
 | Parse hatası (`CX_SXML_PARSE_ERROR`) sayı/tarih alanında | OData tipi yok | `freestyle-odata-v2.md` §5.1 |
 | Miktar "14.000 ADT" | Formatter yok | `freestyle-odata-v2.md` §5.5 |
 | Detay paneli seçim yapılmadan açık / seçince dolmuyor | `setData` eksik şekil | `freestyle-odata-v2.md` §2.2 |
+| Toplu (script/regex) düzenlemeden sonra view/fragment render'da bozuk, git diff küçük görünüyor | "Etiket sonuna kadar" deseni binding'deki `>`'de (`{model>/yol}`) erken kapandı; yeni attribute değerin ortasına yazıldı | `runtime-verification.md` §2 |
 
 ## Save / OData
 
@@ -56,6 +59,8 @@
 | Birden çok yeni kalem aynı anahtarla | Thunk kapanış tuzağı | §1 S11 · `delete-flow-ui.md` §3 |
 | Toast görünmüyor ("mesaj gelmedi") | `MessageToast` + hemen `navTo` | §6.1 |
 | İki koleksiyon birleşince tüm alanlar boş, hata yok | Sıfır dolgusu ("10" ↔ "000010") | §5.6 |
+| İki client aynı tarayıcıda açıkken bir sekmede yanlış veri (varyant listesi, yükleme, kaydet öbür client'a gidiyor); tek sekmede sorun yok; hata yok | Elle kurulan model/istek `sap-client` taşımıyor, tarayıcının tek `sap-usercontext` çerezine göre yönleniyor. Kanıt: iki client + ayırıcı veri + ağ izinde `sap-client` | §7.4 · `checklists.md` FE-48 |
+| Belge kilidi sayfadan ayrılınca bırakılmıyor, başkası zaman aşımına kadar bekliyor; konsolda hata yok | Bırakma unload'da senkron XHR ile gidiyor (Chromium göndermez, `try/catch` yutar) ya da URL'de `/` eksik (307 → 403) | §7.5 · FE-49 |
 
 ## Value-help / filtre / liste
 
@@ -99,3 +104,4 @@
   fallback) ve playbook semptom tabloları tek indekste birleştirildi; kaynaktaki "syntax check yanlış hata raporu" maddesi
   ADT konusudur, alınmadı.
 - Her satır bu skill'in referanslarına işaret eder; dış bağlantı yok.
+- 2026-09-25 eşitleme (ekip dersi): Render tablosuna toplu XML düzenleme satırı eklendi; kaynaktaki dosya/ekran adları alınmadı.

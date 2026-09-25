@@ -41,7 +41,8 @@ description: >
 ### 1. Şekli seç (kod yazmadan)
 Z tablo üzerinde yeni transactional belge → **managed**; standart belge (satış siparişi vb.) → **unmanaged façade** +
 released BO EML / BAPI; liste/rapor/VH → **davranışsız query CDS**. Ayrıntı ve örnek BDEF'ler:
-`references/layering-and-bdef.md`. Karar gerekçesini (clean core seviyesi) yaz.
+`references/layering-and-bdef.md`. Karar gerekçesini (clean core seviyesi) yaz. Standart veriye **hangi API** ile
+yazılacağı (EML'in 4 canlı teyidi, released BAPI, released OData, commit bağlamı): `%sap-dev` → `references/write-api-selection.md`.
 
 ### 2. Yazmadan önce
 `references/checklists.md` §A'yı yürü. En az şunlar cevaplı olmalı:
@@ -139,7 +140,8 @@ etme/atma — raporla.
   Yeni Z DDIC objesi (domain, DTEL, tablo …) ve NR objesi için **ad önerebilirsin**: adlandırma standardına uygun, canlıda
   kontrol edilmiş (varsa başka ad), tablo hâlinde sunulmuş ve kullanıcı açıkça onaylamış olmalı (`%sap-dev` §6). Standart
   objeye append alanının adını önermezsin (kesin yasak A).
-- Standart tabloya `MODIFY ENTITIES`/SQL yazma yok; standart belge released BO EML ya da BAPI ile. Standart objeye
+- Standart tabloya `MODIFY ENTITIES`/SQL yazma yok; standart belge `%sap-dev` `write-api-selection.md` sırasıyla (released BO EML
+  canlı teyitli → released BAPI → released OData → BAPI/RFC FM → BDC → manuel). Standart objeye
   `extension`/append yok.
 - Behavior handler içinde `COMMIT ENTITIES`, `COMMIT WORK`, `ROLLBACK WORK`, `BAPI_TRANSACTION_COMMIT` ve `MESSAGE` yok
   (handler'ın çağırdığı yardımcı sınıf dahil). Statik kontroller bunu görmez; ilk runtime testinde dump olur.

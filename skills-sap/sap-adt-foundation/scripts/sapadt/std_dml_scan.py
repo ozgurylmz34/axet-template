@@ -35,8 +35,9 @@ from dataclasses import asdict, dataclass
 
 __all__ = ["Bulgu", "tara", "abap_kaynagi_mi", "mesaj", "YONLENDIRME"]
 
-YONLENDIRME = ("Standart tablo verisi yalnız şu sırayla değiştirilir: BAPI → RFC FM → işlem kodu (BDC) "
-               "→ kullanıcıdan manuel. Doğrudan INSERT/UPDATE/DELETE/MODIFY Z'li program içinde de yasaktır.")
+YONLENDIRME = ("Standart tablo verisi yalnız şu sırayla değiştirilir: released API (released RAP BO/EML · released BAPI · "
+               "released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel (karar ağacı: %sap-dev "
+               "references/write-api-selection.md). Doğrudan INSERT/UPDATE/DELETE/MODIFY Z'li program içinde de yasaktır.")
 
 
 @dataclass(frozen=True)

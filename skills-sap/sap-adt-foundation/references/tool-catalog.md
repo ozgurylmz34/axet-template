@@ -7,6 +7,7 @@
 
 **Sınıf özeti (`--list` ile ölçüldü, 2026-09-13):** okuma 24 (`ping` + `sap_doctor` + 22 `adt_*`, `adt_unit_run` dahil) · yazma 13 · toplam 37.
 **2026-09-21 eki (DDIC şeridi, Z38/Z39/Z40):** yazma +3 (`adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`) → yazma 16 · toplam 40 (`--list`, çevrimdışı ölçüldü).
+**2026-09-25 eki (Z128):** okuma +1 (`adt_pretty_print`) → okuma 25 · yazma 16 · toplam 41 (`--list`, çevrimdışı ölçüldü).
 Profil etiketlerinin tamamı ve yetenek matrisi: `references/profiles.md` (rehber; etiket tablosu kodla test edilir).
 `adt_set_description` yalnız `s4_private`'ta açıktır ve transport ister.
 `adt_unit_run` `allow_risky_tests=true` verilirse yazma sınıfına geçer (`--list`: `write_when`).
@@ -227,11 +228,14 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 ### `adt_revisions`
 - **Amaç:** obje sürüm geçmişi (versions feed).
 - **Argümanlar:** `name` · `object_type="class"` (`object_types` tipi; FM generic URL taşımaz → `unsupported_type`) · `limit=20` (1-200) · `acknowledge_risk=false`.
-- **Dönüş:** `{ok, name, type, object_url, versions_link_found, count, returned, revisions[{version, versionTitle, author, date, uri}], author_masked}`.
-- **Uyarılar:** `versions_link_found:false` + `count:0` = uç sürüm linki sunmadı; "sürüm yok" kanıtı DEĞİL · yapı okunamazsa `revisions_unavailable`,
-  feed okunamazsa `revisions_feed_failed` (kütüphane metodu bu durumları `[]` ile yutuyordu; araç ayırır) · DEV dışı tier'da yazarlar (kullanıcı kimliği)
-  `***` maskelenir, `acknowledge_risk=true` açar (engellemez) · link deseni kütüphanedeki `<link … rel=".../versions">` desenidir; SAP'nin bu biçimi
-  döndürdüğü canlı **DOĞRULANMADI**.
+- **Dönüş:** `{ok, name, type, object_url, versions_link_found, versions_link, versions_link_count, count, returned, revisions[{version, versionTitle, author, date, uri}], author_masked}`.
+- **Uyarılar:** `versions_link_found:false` + `count:0` = uç sürüm linki sunmadı; "sürüm yok" kanıtı DEĞİL · obje okunamazsa (ör. 406) `revisions_unavailable`,
+  feed okunamazsa `revisions_feed_failed` — ikisi de ok:false, boş liste dönmez · DEV dışı tier'da yazarlar (kullanıcı kimliği)
+  `***` maskelenir, `acknowledge_risk=true` açar (engellemez).
+- **Z132 (2026-09-25, canlı ölçüm DEV; sınıf · include · arayüz):** obje isteği `Accept: */*` (objectstructure → 406 idi, araç bu üç tipte sürüm
+  okuyamıyordu); bağlantı `<atom:link …>` ve href GÖRELİ (obje URL'inin altına eklenir); sınıfta ilk bağlantı `includes/definitions`, araç ana kaynağın
+  akışını (`includes/main/versions`; include/arayüzde `source/main/versions`) seçer, yoksa ilk bağlantıyı; okunan akış `versions_link`'te. Tanım/implementasyon
+  include'larının geçmişi okunmaz. Düzeltme aXet CLI ile DEV'de canlı yeniden ölçüldü (2026-09-25): sınıf 2 kayıt, include 2, arayüz 1; var olmayan ad `not_found`. Ayrıntı: `known-errors-adt.md` K-27.
 
 ### `adt_object_structure`
 - **Amaç:** obje yapısı (metot, attribute, include … bileşenleri).
@@ -243,6 +247,27 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 - **Amaç:** bağlı sistemin ADT discovery servis kataloğu.
 - **Dönüş:** `{ok, service_count, available_services[{title,href}], logon_language, tier, profile, withheld_fields}`. Bağlantı URL'si, client, kullanıcı
   ve sistem kimliği bilinçli olarak **çıktıya konmaz** (`withheld_fields`). Discovery okunamazsa `discovery_unavailable` → `sap_doctor`.
+
+### `adt_pretty_print`
+- **Amaç:** obje kaynağını SAP Pretty Printer'dan geçirip biçimlenmiş metni döndürür ya da **yerel dosyaya** yazar. **SAP'de hiçbir şey
+  değişmez:** kaydetme, kilit, aktivasyon, transport yok; yanıtta `server_modified:false`. Biçimli metni sisteme almak ayrı adımdır:
+  `adt_get` (taban) → dosyayı düzenle → `adt_push_source` (yazma kapısı) → `adt_activate`.
+- **Argümanlar:** `name` (sınıf alt-include'unda ANA SINIF) · `object_type="class"` — `class`, `interface`, `program`, `include`,
+  `ccimp`/`ccau`/`ccdef`/`ccmac` (eşanlamlılar kabul) · `output_path=null` · `overwrite=false`.
+- **Dönüş:** `{ok, name, type, object_url, server_modified:false, changed, changed_line_count, line_count_before, line_count_after,
+  diff_preview, output_path, written, notice}`; `output_path` verilmezse biçimli metin `source` alanında döner.
+- **Çağrı:** SAP'ye iki istek gider — `GET <kaynak ucu>` (`adt_get` ile aynı uç, sürüm verilmez = son sürüm) ve
+  `POST /sap/bc/adt/abapsource/prettyprinter` (gövde = kaynak, parametre yok). Satır sonları LF'e çevrilir.
+- **Yerel dosya kuralları:** `output_path` proje kökü içinde (göreli yol köke göre), `.abap` uzantılı ve `.axet-code/` dışında olmalı; aksi
+  `invalid_argument` (çıkış 3). Böylece `.conn_adt`, `sap-project.json`, `.rules.md` ya da kapı kayıtları bu araçla ezilemez. Var olan dosya
+  `overwrite=false` iken `output_exists` (çıkış 1). Yol ve tip denetimleri SAP'ye gitmeden yapılır.
+- **Uyarılar:** pull kaydı (`sap-pull-state.json`) YAZMAZ, push'tan önce taban için `adt_get` şart · hata kodları ayrı: `not_found` (404),
+  `sap_error` (kaynak okunamadı), `pretty_print_failed` (biçimleyici HTTP hatası), `pretty_print_empty` (boş metin — dosya yazılmaz, push
+  edilseydi kaynağı silerdi), `source_empty` · desteklenmeyen tip (`func`, CDS/DDIC/BDEF …) `unsupported_type`, çıkış 3 · `changed:false`
+  yalnız "bu servis, bu ayarlarla fark üretmedi" demektir. Servis çağrısı biçim ayarı (büyük/küçük harf, girinti) göndermez; hangi ayarla
+  biçimlediği (oturum kullanıcısının ADT biçim ayarı olduğu varsayılıyor) canlı **ÖLÇÜLMEDİ**. ATC'nin Pretty Print kontrolü ATC varyantının
+  parametreleriyle biçimler: iki ayar farklıysa sonuç ATC'ninkiyle uyuşmayabilir. Sınıf `class` tipinde yalnız ana kaynak
+  (`/source/main`) biçimlenir, alt-include'lar ayrı çağrılır. Kullanım: `sap-classic-abap` → `references/classes.md` §7.1.
 
 ## Yazma sınıfı
 Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--sap-write` · kapsam beyanı. Guard'lar ağdan önce.

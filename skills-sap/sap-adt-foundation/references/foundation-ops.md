@@ -58,6 +58,14 @@ cli adt_get '{"name":"ZCL_DEMO_CLASS","object_type":"class","include_source":fal
   404 → `exists:false` · diğer kod/istisna → `ok:false` (ÖLÇÜLEMEDİ, "yok" değil). Salt GET; kilit açmaz, enqueue kilidi silmez.
 - Dönen kaynağı dosyaya **sen** yazarsın. Klasör kuralı: paket adıyla eşleşen klasör, altında tipe göre
   `classes/`, `cds/`, `functions/`, `programs/`, `ddic/`.
+- ⚠ **Repo canlıdan İLERİ olabilir (ekip dersi):** SAP'ye henüz push edilmemiş yerel iş (commit'li ya da değil) varken
+  "canlı daima güncel" varsayımı yanlıştır; `adt_get` çıktısını izlenen yerel dosyanın ÜZERİNE yazmak o işi siler (vakada
+  tek oturumda 3 kez oldu; iş commit'li olduğu için git'ten geri alındı — commit'siz olsaydı kayıp kalıcıydı). Üzerine
+  yazmadan önce bir **çapa** ölç: yerelde olup canlıda olmaması gereken bir sembol seç, `adt_get` çıktısında say
+  (canlıda 0 ↔ yerelde N ⇒ repo ileri). Repo ileriyse canlıyı AYRI bir dosyaya yaz, `git diff --no-index <yerel> <canlı>`
+  ile kıyasla ve yerel işi canlı tabanın üzerine yeniden uygula (taban daima canlıdır — SKILL §2). Beklenmedik bir
+  değişiklik gördüysen önce `git diff`'e bak; "araç çekti, demek ki canlı doğru" deme. Bir objede sapma bulursan aynı
+  commit'teki diğer objeleri de tara (push yarım kalmış olabilir).
 - **DENENEN — BAŞARISIZ:** eski `download_object.py --type` seçenekleri `ddls`/`cds` içermiyordu; dokümandaki
   `--object-type DDLS` örneği iki kez yanlıştı (bayrak adı da tip de yoktu). Ders: var olmayan bir
   yeteneği vaat eden doküman eksik dokümandan beterdir → argümanı `--list`'ten doğrula.
@@ -174,6 +182,18 @@ cli adt_activate    '{"name":"ZDEMO_C_SO_ITEM","object_type":"ddls"}' --sap-writ
   `adt_inactive_objects` ile doğrula, gerekiyorsa `adt_activate` çağır.)
 - Doğru sıra: **push → (hata varsa dur, düzelt) → `adt_activate` → readback**. Araya elle
   `adt_syntax_check` turu koyma: gereksizdir ve yan etkilidir (bekleyen temiz sürümü aktive eder).
+- **"activated" ≠ içerik canlıya indi (ekip dersi).** Push'un başarılı dönmesi, sözdizimi kontrolü ve incelemenin PASS
+  vermesi kaynağın canlıya indiğini kanıtlamaz: bir CDS'teki ABAP tarzı `"` yorumu SAP tarafından sessizce reddedildi, beş
+  kontrol yeşildi, canlı hiç değişmedi. Tek kanıt readback içerik eşitliğidir (`readback_verified:true`, ya da `adt_get`
+  ile geri okuyup kıyasla). Fark varsa biçim mi içerik mi ayır: SAP bazı tiplerde pretty-print eder; tüm boşluklar
+  atıldığında hâlâ farklıysa içerik uyuşmazlığıdır ve push başarısızdır (araçta `readback_verified:false`, `ok:false`).
+  Katman yorum sözdizimi: CDS `//` ve `/* */` (`"` değil) · SRVD'de yorum kaydedilirken silinir · ABAP `"` ve `*`
+  (`sap-code-review` BE-61).
+- **Readback'i ELLE kıyaslıyorsan** (yerel dosya hash'i ↔ `adt_get` çıktısı): ADT'nin döndürdüğü kaynak dosyanın kapanış
+  `\n`'ini taşımaz → ham hash farkı "bayat" değil "kıyas tanımı yanlış" olabilir. Önce CRLF→LF, sonra disk metnine
+  `rstrip("\n")`, SONRA hash'le (ekip dersi: 7 readback hash'inin 7'si bu kuralla tuttu, ham hash ile 0/7). Tutmuyorsa
+  önce kıyas tanımını sorgula, dosyayı değil. Aracın kendi readback kıyası satır sonunu ve baştaki/sondaki boşluğu zaten
+  yok sayar; bu kural elle yapılan kıyas içindir.
 - Çoklu bağımlı obje (interface CDS + BDEF + behavior class): `adt_activate` `also` ile **tek istekte**:
   `{"name":"ZDEMO_I_X","object_type":"ddls","also":[{"name":"ZDEMO_I_X","object_type":"bdef"}]}`.
 - `adt_activate` tek-obje yolunda `activation_verified`: `true` doğrulandı · `false` sahte-OK (obje hâlâ
@@ -345,6 +365,14 @@ cli adt_package_contents '{"package":"ZDEMO_PKG"}'
   `TRSTATUS`, `AS4USER`, `TRFUNCTION`, `STRKORR`. `E070×E071` JOIN + `E07T` tek sorguda 400 → iki sorguya böl;
   `IN ('a','b')` 400 verebilir → `OR` zinciri.
 - Obje hangi transportta: `SELECT trkorr, pgmid, object, obj_name FROM e071 WHERE obj_name = '<OBJE>'`.
+- **Araca İSTEK (`TRFUNCTION='K'`) numarası verilir, GÖREV (`'S'`) değil (ekip dersi, aynı hata 3 kez).** Objenin hangi
+  göreve düşeceği SAP'nin işidir; sen kabı söylersin. Görev verirsen kilit `409` + CORRNR uyuşmazlığı doğar; push aracı
+  aynı kullanıcıda SAP'nin atadığı isteğe geçip `[WARN] İSTENEN TRANSPORT KABUL EDİLMEDİ` basar — bu bir kurtarmadır,
+  girdinin doğru olduğunun kanıtı değildir. Emin değilsen tek sorgu:
+  `SELECT trkorr, trfunction, strkorr FROM e070 WHERE trkorr = '<N>'` → `S` ise `STRKORR`'daki isteği kullan.
+- Numaranın otorite sırası: paketin `.rules.md` transport kaydı → canlı `E070` ölçümü → (ikisi de yoksa) devir notu /
+  oturum notu. Notlar çalışma anının numarasını yazar (çoğu zaman görevi); araca verilecek olan istektir.
+  ⛔ `409` görünce yeni istek/görev AÇMA (Yasak C) — numarayı düzelt ya da kullanıcıya sor.
 
 ## 8. Obje arama
 ```
@@ -421,6 +449,11 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
 - aXet CLI her çağrıda yeni süreçtir → geçişten sonra yeniden başlatma adımı yok; sonraki çağrı yeni `.conn_adt`'yi okur.
 - Ortamda `ADT_SAP_URL`/`ADT_SAP_CLIENT` varsa `.conn_adt`'yi ezer → yazma `conn_env_mismatch`, `sap_doctor` `env_override` FAIL.
 - `setup_credentials.py` Windows'ta gerçek konsol ister (PowerShell/cmd); Git Bash/mintty borusu konsol değildir → `winpty python …` ya da PowerShell.
+- Git Bash (MSYS), `.exe`'ye komut satırı argümanı olarak verilen ve `/` ile başlayan değeri Windows yoluna çevirir:
+  `/sap/bc/adt/...` betiğe `C:/Program Files/Git/sap/bc/adt/...` olarak ulaşır ve `InvalidURL` / "obje yok" gibi okunur
+  (ekip dersi; SAP'ye istek gitmez). Git Bash'te ADT URI'sini argüman veren komutun başına `MSYS_NO_PATHCONV=1` koy ya da
+  URI'yi betiğin içinde sabit ver. aXet'in kendi `bash` aracı Go tabanlıdır (çekirdek §4 "Kabuk ortamı"); orada bu
+  dönüşüm ÖLÇÜLMEDİ.
 
 ---
 
@@ -432,3 +465,5 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
   (aXet'te ham REST yazma yolu yok).
 - Kişisel/sistem izleri (kullanıcı adı, host, client, gerçek obje/paket adları, düz metin şifre) nötr yer tutuculara çevrildi.
 - `--cwd` backslash tuzağı, `TempScripts` klasörü, MCP/gateway/ajan-takımı dili, SE80 dışı iç araç adları çıkarıldı.
+- 2026-09-25 eşitleme (ekip dersleri): §2 "repo ileri" çapası, §4.1 readback içerik eşitliği + elle hash kıyası, §7 istek/görev
+  ayrımı eklendi; kaynaktaki obje/sistem adları, gate adları ve ajan-brif dili alınmadı.

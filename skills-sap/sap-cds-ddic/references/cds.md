@@ -87,6 +87,11 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
                  ON hdr~packinginstruction = comp~packinginstruction
   " YANLIŞ: FROM i_packinginstructioncomponent AS comp WITH PRIVILEGED ACCESS  → parser_error / 400
   ```
+- **`WITH PRIVILEGED ACCESS` SELECT'i strict mode'a sokar (ekip dersi):** `INTO`/`INTO TABLE`/`APPENDING` klozu SELECT'in
+  EN SONUNDA olmalı — sıra: alanlar → `FROM … WITH PRIVILEGED ACCESS` → `WHERE` → `INTO`. Ham tablo SELECT'inde serbest olan
+  "`INTO` `WHERE`'den önce" alışkanlığı burada "The INTO/APPENDING clause must be at the end of the SELECT" sözdizimi
+  hatası verir (vakada ham tablodan released CDS'e geçişte 3 kez). Kloz eklenen/geçirilen her SELECT'te push öncesi `INTO`'nun
+  konumuna bak; statik inceleme bunu görmez, ilk otorite SAP sözdizimi kontrolüdür.
 - **Uygulanamadığı yerler (ölçüldü):** `READ ENTITIES` → böyle bir kloz yok · `@ObjectModel.virtualElement` alanları →
   privileged okuma BOŞ getirir (değer SQL'den değil hesaplama çıkışından gelir). Doğru yol: DCL taşımayan kaynak
   (DDIC tabloları DCL taşımaz; metin için `STXH`/`STXL` + `READ_TEXT`).
@@ -101,6 +106,13 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
   `#CHECK` taşıyordu (canlı okundu) → geçilseydi dar yetkili kullanıcıda bloklu partnere teslimat oluşurdu.
 - **Sıra:** ① halefin `authorizationCheck` değerini canlı oku ② veri karar mı besliyor, görüntü mü ③ 0 satırda davranış
   fail-open mı fail-closed mı. `#CHECK` + guard ⇒ **geçme**, gerekçeyi koda yaz. `#NOT_REQUIRED` ise geçiş güvenli ve tercih edilir.
+- **`#CHECK` yönü belirlemez (ekip dersi):** yalnız "DCL VARSA uygula" demektir. Yönü iki AYRI ölçüm verir:
+  (a) DCL gerçekten var mı ve neyi kısıtlıyor — annotation'a bakmak yetmez, DCL'in kendisini oku (`adt_get` `dcls`); vakada
+  koşulun alan listesi boş ve `=` (değil `?=`) çıktı ⇒ yetkisiz kullanıcıda her satır elenir; (b) tüketici 0 satırı nasıl
+  okuyor — varlık kapısı olan tüketici (0 satır → hata) fail-closed, değeri kolon olarak yayan projeksiyon 0 satırı "bloke
+  değil" okur ⇒ fail-open. Aynı halef iki tüketicide iki farklı yön verebilir; iki ölçümü tek cümleye sıkıştırıp
+  niteleyicilerini düşürme. Geçişten sonra veri yokluğu ile yetki yokluğu ayırt edilemez hale gelebilir: iş/arka plan
+  kullanıcısının yetkisi ayrı önkoşuldur ve geniş yetkili geliştirici kullanıcısıyla ölçülemez.
 - Released disiplini **proaktiftir** (yazılan koda uygulanır); mevcut koddaki ham tablo kullanımı otomatik iş kalemi değildir —
   migrasyon proje politikası kararıdır.
 
@@ -334,3 +346,6 @@ Parameter 1 not supported`. Bu alanlar referanstır → aggregate etme, `group b
 - Tarihli vaka anlatıları, önceki ajan ortamının rol ve iterasyon dili, gerçek müşteri obje ve süreç adları → çıkarıldı ya da nötr demoya çevrildi.
 - Kimlik bilgili `curl` ile OData/dump okuma → kullanıcıya tarayıcıda açtırma + `adt_dump_list`.
 - Kontrol listesindeki CDS maddeleri → `checklists.md` §1.
+- 2026-09-25 eşitleme (ekip dersleri): CDS-DCL-01'e `WITH PRIVILEGED ACCESS` strict-mode `INTO` sırası, CDS-DCL-02'ye
+  "`#CHECK` yönü belirlemez" eklendi (kaynak dersler kodlama desenleri ve RAP EML dosyalarını öneriyordu; konu burada
+  yaşadığı için buraya kondu). Kaynaktaki paket/sınıf adları ve yetki nesnesi ayrıntıları alınmadı.

@@ -85,9 +85,11 @@ DATA(lv_sap_msg)  = VALUE string( lt_hdr[ name = 'sap-message' ]-value OPTIONAL 
   **ama token yine gelir** → token GET'inde durum koduna değil başlığa bak.
 
 ### 2.4 Released BO EML kapalıysa
-Released BO'da `UPDATE/CREATE` EML operasyonu sistemde kapalıysa standart OData API'sine MERGE/PATCH bu proxy ile
-yapılır; ilgili özel alanların (custom field) servise açılmış ve yayınlanmış olması gerekir. Önce operasyonun kapalı
-olduğunu canlı ölç (`references/deep-insert-function-import.md` §4).
+Released BO'da `UPDATE/CREATE` EML operasyonu sistemde kapalıysa önce released değişiklik-BAPI aranır; yoksa standart OData
+API'sine MERGE/PATCH bu proxy ile yapılır (sıra: `%sap-dev` → `write-api-selection.md` ADIM 2 → 3); ilgili özel alanların
+(custom field) servise açılmış ve yayınlanmış olması gerekir. Önce operasyonun kapalı olduğunu canlı ölç
+(`references/deep-insert-function-import.md` §4). OData'nın kendisi de teyit ister: `$metadata`'da EntitySet üzerinde
+`sap:creatable="false"` / `sap:updatable="false"` yoksa operasyon açıktır (CLI'de `$metadata` aracı yok → kullanıcıdan).
 
 ---
 
@@ -117,6 +119,18 @@ Tek bir S/4HANA sisteminde ölçüldü; sürüm/yapılandırmaya göre değişeb
   sayaç 0) **otomatik** yaratır;
   aynı muhatap fonksiyonunu tekrar eklemeye çalışma.
 - Test verisi (ödeme koşulu, mutabakat hesabı, org birimleri) sistemden okunur (`T052U`, `SKB1` …); hatırdan yazılmaz.
+
+### 3.3 Alanı BOŞ göndermek ≠ HİÇ göndermemek (API ve BAPI, ekip dersi)
+- Boş gönderilen alan hedef belgeye **boş yazılır** (aktif bir "boşalt" emri); hiç gönderilmeyen alanı SAP **kaynak
+  belgeden türetir** (ör. teslimat Incoterms'i siparişten alır). Fark hata vermez, yalnız bir alanın içeriği yanlış çıkar →
+  testte kolay kaçar.
+- Bir alanı çağrıdan kaldırırken payload'da boş bırakma, satırı tamamen çıkar; BAPI'de X-yapısı/alan maskesi varsa orada da
+  işaretleme.
+- Payload'ın nasıl kurulduğunu ölç: alan alan elle mi, `MOVE-CORRESPONDING`/`CORRESPONDING #( )` ile toplu mu? Toplu
+  kopyada istenmeyen alan sessizce sızar; kaldırmak için `CLEAR` değil açık dışlama gerekir.
+- "Bizim kodumuz göndermiyor" ile "hedef belge o alanı taşımıyor" ayrı iddialardır; ikincisini hedef belgede ölç.
+  Türetmeye güveniyorsan bunu koda yorum olarak yaz (sonraki tur "alan eksik" sanıp doldurmasın). Kısıt eklemeden önce
+  standardın zaten türetme/ayrıştırma yapıp yapmadığını sor.
 
 ---
 
@@ -181,3 +195,5 @@ Bağlantıyı handler'a gömmeden önce `IF_OO_ADT_CLASSRUN` uygulayan geçici b
 - `create_by_url` + `authenticate( password )` çalışan-yöntem örneği **alınmadı**: kodda kimlik bilgisi taşıyordu;
   yerine §1 kanonik yol.
 - Güncelleme işleminde UI'da yapılan birim eşleme tablosu (müşteriye özgü) alınmadı.
+- 2026-09-25 eşitleme (ekip dersi): §3.3 "boş gönder ≠ hiç gönderme" eklendi (kaynak taslak `backend-coding.md`'yi
+  öneriyordu; payload dersleri bölümü burası olduğu için buraya kondu). Kaynaktaki paket/sınıf adı ve satır referansı alınmadı.

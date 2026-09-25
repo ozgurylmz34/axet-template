@@ -118,6 +118,12 @@ kurdur; projede farklıysa spesifikasyondan al.
 - Klasik program tek gövde yazılmaz: ana program yalnız `INCLUDE` satırları ve olay blokları; kod include'lara
   (`references/naming.md` §4.1).
 - Metot silinince önündeki ABAP Doc yorumunu da sil: sahipsiz yorum sınıf push'unda 400 döndürebilir.
+- `TYPES … WITH EMPTY KEY` tanımlı iç tabloda ölçütsüz `SORT itab.` ve `DELETE ADJACENT DUPLICATES FROM itab.`
+  birincil anahtara dayanır — ve o anahtar boştur; ATC "check the semantics of the statement" der. Etki bağlama göre
+  değişir (sıralama bir doğruluk kuralıysa, ör. kilitleri artan sırada alma, kural sessizce delinmiş olabilir; yalnız
+  `FOR ALL ENTRIES` girdisi hazırlıyorsa etki verimliliktir), ama düzeltme her durumda aynı ve güvenlidir:
+  `SORT itab BY table_line ASCENDING.` · `DELETE ADJACENT DUPLICATES FROM itab COMPARING table_line.` "Bugün no-op
+  muydu" sorusunu ölçmeden koda yazma. Yerel kontrol bunu görmez; ATC koşunca görünür (ekip dersi).
 
 **Ekip kodlama kuralları:**
 - `CHECK sy-subrc = 0.` yazma; `IF sy-subrc = 0. … ENDIF.` kullan (akış görünür kalır).
@@ -152,20 +158,32 @@ kurdur; projede farklıysa spesifikasyondan al.
   aktive etmeyi ya da tampon sıfırlamayı (`/$ABAP_BUFFER_RESET`, çok sunuculu sistemde her sunucuda) kullanıcıya
   öner; kendin yapma.
 - Silme onaysız yapılmaz; where-used temiz olmadan silinmez.
+- **İki Z sınıfı karşılıklı referans (A→B sabit okur, B→A metot çağırır) aktivasyonu kilitlemeyebilir.** Önce statik
+  çağrıyı yaz, yalnız DEĞİŞEN sınıfı push + aktive et (öteki zaten aktif olsun), readback ve `adt_inactive_objects` ile
+  doğrula; ancak başarısızsa dinamik `CALL METHOD`'a geç — dinamik çağrı where-used zincirini koparır, ad/imza hatasını
+  çalışma zamanına iter. Kanıtın sınırı (ekip dersi): tek taraf değişikliği ölçüldü; iki sınıfın aynı anda yeni
+  yaratılıp birlikte aktive edilmesi ve boş hedef sisteme ilk taşıma ÖLÇÜLMEDİ — taşımada ikisi aynı transportta gitsin.
+- **ST05 SQL izi iki sessiz tuzak taşır (ekip dersi).** ① Tamponlu tablo izde hiç görünmez: yokluk "okunmadı" demek
+  değildir — sonuç çıkarmadan önce tampon durumunu `DD09L-PUFFERUNG` ile ölç (tamponsuz tablonun yokluğu anlamlıdır).
+  ② Varlık da kanıt değildir: o tabloyu standart akış da okuyor olabilir. Yalnız size özel okumaları ayırt edici say;
+  izi `PROGRAM` kolonuyla kendi sınıf/programına filtrele, ham `STATEMENT_WITH_VALUES` + `USER_NAME` kolonlarını oku
+  (vakada kanıt, WHERE'e enjekte edilmiş CDS yetki reddi koşuluydu). Kullanıcıya özgü farklarda kontrol grubu için
+  `%sap-cds-ddic` `references/cds.md` CDS-DCL-03.
 - Yerel yardımcı Python script'i yazıyorsan Windows konsolu (`cp1252`) Unicode basamayabilir:
   `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` ya da ASCII çıktı. Geçici script `.tmp/`'ye.
 
 ## 7. Clean core — standart obje yerine ne kullanılır
-Standart tabloyu okumak yasak değildir; yeni okuma modelinde released CDS/API tercih edilir. Yazma her durumda
-BAPI / RFC FM / BDC ile yapılır (kesin yasak B).
+Standart tabloyu okumak yasak değildir; yeni okuma modelinde released CDS/API tercih edilir. Yazma hiçbir durumda
+doğrudan SQL değildir (kesin yasak B); hangi yol (released RAP BO/EML → released BAPI → released OData → BAPI/RFC FM → BDC →
+manuel) ve hangi canlı teyitle: `write-api-selection.md`.
 
 | Standart obje | Yerine (released) |
 |---|---|
 | `MARA` | `I_Product` |
 | `TCURR` | `I_ExchangeRate` |
 | `BSEG` | doğrudan eşdeğer yok — released API / CDS araştır |
-| `VBAK` / `VBAP` | released satış belgesi CDS (okuma); yazma BAPI |
-| `LIKP` / `LIPS` | released teslimat CDS (okuma); yazma BAPI |
+| `VBAK` / `VBAP` | released satış belgesi CDS (okuma); yazma `write-api-selection.md` (ölçülmüş: `I_SalesOrderTP` EML) |
+| `LIKP` / `LIPS` | released teslimat CDS (okuma); yazma `write-api-selection.md` (released BO kapsamı ölçülmedi) |
 | `T001` | released organizasyon CDS |
 | `CL_GUI_ALV_GRID` | `CL_SALV_TABLE` (klasik) / UI5 grid (RAP) |
 | `CL_GUI_ALV_TREE` | `CL_SALV_TREE` |
@@ -173,3 +191,43 @@ BAPI / RFC FM / BDC ile yapılır (kesin yasak B).
 Released CDS adını tahmin etme: sistemde `adt_search_objects` ile ara, `adt_get` ile oku. Emin olunamayan
 durumda ATC "Usage of APIs" kontrolü (`%sap-adt-foundation` → `foundation-query.md`). Released alternatifi
 kullanılmayacaksa gerekçeyi kullanıcıya bildir; uyarıyı sessiz geçme.
+
+## 8. Kanıt ve tasarım tuzakları (ekip dersleri)
+
+**Uyarlama/kontrol tablosu alan anlamını kısaltmadan tahmin etme.** İkili alanlarda (ör. satış belge türü tablosunda
+"siparişe bağlı" ↔ "teslimata bağlı" fatura türü) data element etiketini oku (`adt_get` `dtel` ya da DDIC etiketi) ve
+rapora/koda ikisini de etiketiyle yaz; mümkünse aynı türden gerçek bir belge zinciriyle çapraz kontrol et. Vakada yön ters
+yazıldı ve FS üç sürüm boyunca yanlış fatura türünü taşıdı; yanlış yön fiyatlandırma, hesap tayini ve çıktı uyarlamasını da
+bozar.
+
+**Yoruma sayılmış küme yazma, kümeyi üreten kuralı yaz.** "Şu 7 malzeme" gibi bir liste metni canlı verinin fonksiyonu
+yapar ve sessizce bayatlar (vakada aynı gün yeni bir malzeme doğdu, listenin kapsamı değişti). Yerine ölçütü yaz ("bölüm X
+dışındaki her malzeme, adı ne olursa olsun, kapsam dışıdır"). Sayı kalacaksa yalnız büyüklük mertebesi olarak kalsın,
+gerekçe ona dayanmasın; bir sayıyı tazelerken sınıflandırmanın hâlâ geçerli olduğunu ayrıca ölç.
+
+**DEV'de ölçülen YAPI geçerlidir, DAĞILIM/HACİM değildir.** Alan var mı, anahtarda mı, domain sabit değerleri, sorgu
+400 mü veriyor gibi yapı ölçümleri üretime taşınır. Yüzde, oran, p95, "kaç kayıt açık" gibi dağılım ölçümleri yalnız
+DEV'in o anki hâlidir: tasarım eşiği, tavan, varsayılan ya da kapasite kararı bunlardan TÜRETİLEMEZ. Dağılıma bağlı eşik
+gerekiyorsa kullanıcıya sor ya da tasarımı dağılımdan bağımsız kur ("sabit N, yetmezse genişle"). Raporda dağılım
+sayısının yanına "DEV verisi — üretimi temsil etmez" yaz.
+
+**"Yanlış olursa gürültülü düşer" ölçülmemiş bir olgu iddiasıdır.** Bu cümle bir izleme kararını belirler: yanlışsa
+kimse bakmaz. SAP'de domain sabit değer listesinde BOŞ değer çoğu zaman meşru bir değerdir; "geçersiz değer reddedilir"
+demeden önce `DD07L`/`DD07T` ile ve değeri okuyan kontrolün kendisiyle ölç (vakada boş değer listede olduğu için geçti ve
+satır sessizce yanlış işlendi). Ölçemiyorsan `[DOĞRULANMADI]` yaz ve kararı ona dayandırma. Güvenliği metne değil kapıya
+bağla (kapsanmayan girdi gelirse üretim dursun) ve kapıyı negatif testle doğrula.
+
+**Senkron çağrı ardıl belgeyi senkron yapmaz.** "Bu FM senkrondur, dönüşten sonra bekleme ekleme" kapsamı gizler:
+senkron olan çağrının KENDİ çıktısıdır (ör. teslimatın dağıtım statüsü alanı), ardıl sistemde doğan belge değil (vakada
+ardıl belge 8 sn sonra doğdu; tek vaka, DEV — eşiğe çevrilemez). Senkronluk iddiasını hangi ALANIN güncel olduğuyla yaz.
+Ardıl belgeyi okuyacaksan sabit bekleme değil bütçeli poll yaz (aralık + tur sayısı kullanıcı kararı, bulunca derhal
+çık); bütçe dolunca bekleme mesajı hata mesajından farklı olsun. Poll'ü ters yönde test et: kaldırınca hata geri geliyor
+mu. Aynı akışta kendi yarattığın belgeyi commit sonrası okurken: `%sap-code-review` `checklist-abap.md` BE-73.
+
+**Çok adımlı zincirde ön kontrolün kapsamını ÇAĞIRAN verir.** Sipariş → teslimat → mal çıkışı → fatura zincirinde ön
+kontrol koşulsuz ve tam kümeyle, zincir durumu okunmadan koşarsa, tamamlanmış adımların tükettiği kaynak (stok, kredi,
+miktar) yeniden denemede hata olarak döner: başarılı zincir kendi yeniden denemesini kalıcı olarak düşürür (vakada dört
+belgenin dördü canlıdaydı, kayıt "stok yetersiz" hatasındaydı). "Hangi kontrol düşsün" diye sorma; önce her kontrol
+grubunun hangi adımdan sonra anlamsızlaştığını `dosya:satır` ile çıkar, kapsam tablosunu kullanıcıya sun. Kapsam çağırandan
+OPTIONAL parametreyle gelir; boş ya da okunamayan durum ve `WHEN OTHERS` = tam küme (fail-closed). Aynı belgeyi iki düğme
+kontrol ediyorsa ikisi de daralsın; daraltma bir kod şerhini yalanlıyorsa şerhi sessizce silme, düzeltmeyi görünür yaz.

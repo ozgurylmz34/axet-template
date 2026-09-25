@@ -32,6 +32,11 @@ python $S/deploy_ui.py prepare <app> --no-build               # deploy öncesi y
 - UI5 linter (`@ui5/linter`) proje devDependency'si olarak kuruluysa `npx --no-install ui5lint` ek katmandır (deprecated
   API, eksik bağımlılık). Bu template'te kurulu değildir ve çıktısı DOĞRULANMADI; kurulum projede kullanıcı kararıdır.
 - Kontrol API'si / property / aggregation adı şüphesinde tahmin edilmez: UI5 API referansı (proje sürümü) okunur.
+- **Toplu XML/HTML düzenlemesinden (script/regex) sonra her dosyayı ayrıştır** (`xml.etree.ElementTree.parse`; JSON'da
+  `json.load`). "Etiket sonuna kadar" desenleri (`[^>]*`) attribute değerindeki `>`'de erken kapanır ve UI5 binding'i
+  (`{model>/yol}`) bir `>` içerir: vakada yeni attribute değerin ortasına yazıldı, 5 dosyanın 4'ü bozuldu, hata yalnız
+  render'da çıktı (ekip dersi). Tırnak duyarlı desen (tırnak dışı `>` olmayan karakter ya da tırnaklı dizge tekrarı) ya da
+  parser kullan; N dosyaya uygulamadan önce 1 dosyada koş ve çıktıya bak. Exit 0 değil, ayrıştırma başarısı kanıttır.
 
 ## 3. Done kriteri
 
@@ -39,6 +44,8 @@ python $S/deploy_ui.py prepare <app> --no-build               # deploy öncesi y
 2. **Runtime smoke** geçti: uygulama açılır, **sıfır gerçek konsol hatası** (render crash yok), `$metadata` 200, ana akış
    (liste yükle → filtrele → detay → kaydet/aksiyon) en az bir kez. Dialog/view'ı **açarak** (Form içi container gibi
    hatalar yalnız render'da çıkar).
+   **Her route** (ve her dialog/fragment) en az bir kez açılır: statik PASS ve geçerli XML "hazır" demek değildir — yanlış
+   namespace ya da aggregation eşleşmesi geçerli XML üretir ama ekran boş açılır; otorite tarayıcıdır (ekip dersi).
 3. **Tam kapsam:** çıktı istenen işin her maddesine karşı tek tek doğrulandı. Spesifikasyondaki bir kural (gating,
    cascade, zorunlu alan) **UI'da gerçekten kodlandı mı** — bir analiz/recon belgesi implementasyon değildir. Bilinçli
    ertelenen parça açıkça yazılır.
@@ -229,3 +236,5 @@ Yalnız gerçek `Error` / kırmızı stack incelenir. Smoke spec'indeki IGNORE l
 - Kaynaktaki özel bir akış spec'i (müşteri sevkiyat ekranı) ve yardımcı self-test'i alınmadı.
 - Lider/alt ajan rol ayrımı (UI'ı kim sürer) aXet'te yok; kural "kanıtsız done kabul edilmez" olarak kaldı.
 - UI5 linter'ın kaynaktaki araç entegrasyonu alınmadı; proje devDependency'si olarak opsiyonel bırakıldı.
+- 2026-09-25 eşitleme (ekip dersleri): §2'ye toplu XML düzenleme sonrası ayrıştırma, §3 madde 2'ye "her route açılır"
+  eklendi; kaynaktaki dosya/ekran adları alınmadı.

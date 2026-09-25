@@ -4,7 +4,7 @@ aXet.code'un Claude Code'a olabildiğince yakın çalışması için ortak kural
 kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullanıcının global aXet config'ini
 bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 
-> Sürüm: v0.5.9 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.10 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -75,7 +75,7 @@ Parola dosyada düz metindir; `conn/` git'e girmez ve aXet ajanına kapalıdır.
 `KURULUMU-TAMAMLA`'ya çift tıkla (ayar onayını o sorar).
 
 SAP projesinde `AGENTS.md` içindeki kesin yasak bloğunu elle değiştirme: template güncellenince
-`new_project.py --sap` bloğu yeniler, `doctor.py` eski ya da değiştirilmiş damgayı FAIL olarak gösterir.
+`%guncelle-proje` (terminalde `new_project.py --sap`) bloğu yeniler, `doctor.py` eski ya da değiştirilmiş damgayı FAIL olarak gösterir.
 Terminal yolu, elle kurulum ve bağlantı teşhisi: [`docs/onboarding.md`](docs/onboarding.md) §3.
 
 ## Yeni paket (SAP projesi)
@@ -103,6 +103,26 @@ aXet marketplace'inden skill kurulabilir. Template skill'leriyle çakışmaması
 ## Sorun giderme
 Belirti → çözüm tablosu: [`docs/onboarding.md` → Sorun giderme](docs/onboarding.md#5-sorun-giderme).
 
+## Hata / öneri bildirme
+aXet'te bir hata, eksik ya da yanlış bir kural görürsen veya bir önerin varsa aXet içinde **`%hata-bildir`** yaz.
+Model bildirimi seninle birlikte hazırlar: aXet sürümü, `doctor` özeti, klonun güncel olup olmadığı, yeniden üretim
+adımları, beklenen/olan, kanıt (çıktı ve dosya:satır), çalıştığı bilinen bir karşılaştırma vakası ve neye
+bakılmadığı. Müşteri, sistem ve kişi kimliği taşıyan her şeyi yer tutucuyla değiştirir, son metni sana onaylatır ve
+projende `.axet-code/bildirimler/` altına kaydeder (bu klasör git'e girmez). Bildirimi model göndermez; sen gönderirsin:
+
+- **GitHub hesabın varsa:** önce bu deponun **Issues** sekmesinde aynı konu açılmış mı ara (varsa ek kanıtını o
+  Issue'ya yorum olarak yaz). Yoksa **New issue** → **"aXet hata / öneri bildirimi"** formu; dosyadaki bölümleri aynı
+  adlı alanlara yapıştır. Depo herkese açıktır: formdaki uyarıyı oku.
+- **GitHub hesabın yoksa:** dosyayı aXet'i sana kuran kişiye ya da ekibinin aXet sorumlusuna şirket içi kanalınla
+  ilet; Issue'yu o açar ve adresini sana bildirir. Hesap açman gerekmez; bildirim bu hâliyle eksiksizdir. Hesapsız
+  formu açmayı denersen form yerine GitHub giriş sayfası gelir ve hiçbir şey gönderilmez; dosyan projende durur.
+
+Bakımcı her iddiayı güncel aXet'te kendisi yeniden ölçer. Issue yedi bölümlü bir kapanış yorumuyla kapanır: sonuç ·
+yapılan · yapılmayan ve nedeni · senin yapacağın adımlar · dikkat · doğrulama · yeniden açma koşulu. "Senin
+yapacağın adımlar"ı uygula (çoğunlukla `%guncelle`; SAP projelerinde ayrıca `%guncelle-proje` — güncelleme
+yerel ayarlarını değiştirmez), sonra "doğrulama" komutuyla kendi makinende ölç: yayında olması sende düzeldiği
+anlamına gelmez. Ayrıntı: `%hata-bildir` → "Gönderdikten sonra".
+
 ## Güncelleme
 aXet içinde **`%guncelle`** yaz. Klonu yeni yayına seçmeli olarak taşır (senin değişikliklerin korunur), SAP Python
 paketlerini denetleyip eksikse kurar ve tarayıcı testini hazırlar. Yeni kurallar ve skill'ler bir sonraki aXet
@@ -110,7 +130,10 @@ oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
 
 ## Günlük kullanım
 - Oturum açılışı: model ilk yanıttan önce `scripts/session_brief.py`'yi çalıştırır (proje `AGENTS.md` "Oturum" bölümü) —
-  dal ve değişiklikler, template güncelliği, doctor uyarıları, aktif paketin son kaydı, iş listesi, devir notları
+  dal ve değişiklikler, template güncelliği, doctor uyarıları, SAP profili, aktif paketin son kaydı, iş listesi, devir notları.
+  Özet `.axet-code/acilis-brief.md`'ye de yazılır (git'e girmez) ve proje `.axet-code.json` bu dosyayı her oturumda
+  bağlama koyar: model özeti çalıştırmasa da (ör. oturum `%skill` ile açıldı) son özeti üretim saatiyle görür;
+  tarihi bugün değilse "BAYAT" der ve yenilemeyi önerir. Brief'i her özet koşusu, `%gun-sonu` ve `%guncelle-proje` yeniler
 - `%yeni-proje` — yeni projeyi sorarak kur
 - `%gun-sonu` — kaldığın yeri yaz (SESSION_NOTES, iş listesi, devir notu), çalışma dalını commit + push et
   (projenin uzak deposu yoksa push yapılmaz)
@@ -130,6 +153,7 @@ oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
 - `%guncelle-proje` — açık projenin template kaynaklı dosyalarını (AGENTS.md, denylist, .githooks,
   sap-project.json …) klondaki şablona getir; doctor ya da oturum özeti "proje şablonu eski" dediğinde
 - `%research` — web/doküman araştırması (kaynaklı, aXet'in web araçlarıyla)
+- `%hata-bildir` — aXet hatası ya da önerisi için kimlik taşımayan bildirim hazırla (GitHub hesabı gerekmez)
 - `%office-excel` · `%office-docs` · `%office-slides` — Excel, Word/PDF, sunum üretimi ve okuma
 - `%sistem` — projenin `conn/` altında tanımlı SAP sistemlerini listele, aktif olanı değiştir ("QA'ya geç")
 - SAP işi: giriş `%sap-dev` (yeni talepte önce `%sap-intake-triage`); SAP skill listesi [`skills-sap/README.md`](skills-sap/README.md)
@@ -182,7 +206,7 @@ scripts/         install.py · doctor.py · session_brief.py · guncelle.py · g
                  project_precommit.py · check_package_naming.py · behavior_manifest.py · merge_pr.py
 tests/           template script'lerinin testleri: python tests\run_tests.py (skill testleri skill klasöründe)
 docs/            onboarding.md (kurulum ve sorun giderme) · izin-kurallari.md · sap-api-policy.md
-.github/         CI iş akışı
+.github/         CI iş akışı + hata/öneri bildirim formu
 LICENSE · NOTICE · THIRD_PARTY_NOTICES.md · LICENSES/
 ```
 

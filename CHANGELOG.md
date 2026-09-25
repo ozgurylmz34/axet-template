@@ -6,6 +6,141 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.10 — 2026-09-25
+
+### 0.5.10-01 · Açılış özeti her oturumda bağlamda: ilk mesaj ne olursa olsun görünür (AXET-CORE-0.8.0) (yetenek)
+
+- **neden:** aXet'te oturum açılışında otomatik çalışan bir adım olmadığı için model açılış özetini bazen atlıyordu (özellikle oturum `%skill` ile açılınca). Artık `session_brief.py` özeti `.axet-code/acilis-brief.md`'ye de yazar ve proje `.axet-code.json` bu dosyayı her oturumda bağlama koyar: model özeti çalıştırmasa da son özeti üretim saatiyle görür, tarihi bugün değilse "BAYAT" der ve yenilemeyi önerir. Özette kalıcı hatırlatmalar, SAP projelerinde ayrıca SAP profili ve kesin yasakların özeti var. Dosya git'e girmez; her özet koşusu, `%gun-sonu` ve `%guncelle-proje` onu yeniler. `doctor.py` proje config'i brief'i yüklemiyorsa uyarır. Çekirdek kimliği `AXET-CORE-0.8.0`: her projede `%guncelle-proje` çalıştır (config'e brief satırı eklenir; `.axet-code.json`'ı kendin değiştirdiysen otomatik eklenmez, `%guncelle-proje` satırı elle eklemeyi önerir), sonra yeni aXet oturumu aç.
+- **dosyalar:** `README.md`, `core/00-temel.md`, `scripts/doctor.py`, `scripts/session_brief.py`, `skills/gun-sonu/SKILL.md`, `skills/guncelle-proje/SKILL.md`, `templates/project/.axet-code.json`, `tests/test_doctor.py`, `tests/test_session_brief.py`
+- **test:** `python tests/run_tests.py -k session_brief`, `python tests/run_tests.py -k acilis_brief`, `python tests/run_tests.py -k cekirdek_satir_siniri`
+- **gerektirir:** —
+
+### 0.5.10-02 · Kullanım kılavuzu ekran görüntüleri: mock ortam SAP'siz açılır, `kd_ortam.py check` yaml'ı denetler (düzeltme)
+
+- **neden:** Yeni bootstrap yolu (UI5 kalemi 0.5.10-03) mock'ta da SAP'ye gider: mock yapılandırma üreticisi `ui5-mock.yaml`'ı canlı `ui5.yaml`'dan kopyaladığı için SAP bağlantısı mock'a taşınır; backend yokken `sap-ui-core.js` 500 döner ve sayfa boş kalır. Belgedeki mock yaml artık backend'siz; UI5 yolu CDN'e eşleniyor (tarayıcıda ölçüldü: UI5 yüklendi, dışarıya SAP isteği yok). `kd_ortam.py check` mock yaml'da backend satırını, UI5 yolu eşlemesini ve middleware paketini denetler; `--config` verilmemişse yalnız eklemesini söyler, canlı `ui5.yaml`'a dokunmayı önermez. Workspace üyesi uygulama için kurulum önerisi kökte yapılır. Mock sunucuyu kapattıktan sonra portun boşaldığını `netstat -ano` ile doğrula: arka plan görevini durdurmak `node` sürecini kapatmayabilir.
+- **dosyalar:** `skills-sap/sap-ui5-user-guide/references/akis.md`, `skills-sap/sap-ui5-user-guide/references/mock-ortam.md`, `skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_skill_structure.py`
+- **test:** `python skills-sap/sap-ui5-user-guide/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.10-03 · UI5 uygulaması UI5'i kendi SAP sisteminden yükler; workspace'te middleware paket adları uygulamada; tarih ve function import için iki yeni inceleme maddesi (düzeltme)
+
+- **neden:** Yeni UI5 uygulaması iskeletinde `index.html` UI5'i sabit sürümlü CDN'den değil, uygulamanın çalıştığı SAP sisteminin kendi UI5'inden (`/sap/public/bc/ui5_ui5/resources/sap-ui-core.js`) yükler; yerel önizlemede aynı yol proxy üzerinden gelir. Neden: CDN'de sabitlenen patch bakım dışı kalınca siliniyor, `cldr/tr.json` 404 verince UI5 hata vermeden İngilizceye düşüyordu. Kontrol listesi buna göre değişti: FE-43 / UI-BOOT-01 artık CDN adresini (sabit sürümlü olsa da) BLOCKER sayar — eski kurala göre kurulmuş uygulamalarda `index.html`'deki bootstrap satırını elle değiştir (`app-skeleton.md` §7). Mock (SAP'siz) çalıştırmada bu yol güncel UI5 CDN'ine eşlenir (0.5.10-02, bu kalemle birlikte seçilir). Workspace (tek `node_modules`) kullanan projelerde uygulamanın `package.json`'ı, `ui5*.yaml`'ın kullandığı middleware paketlerinin adlarını taşımalıdır; yoksa yerel sunucu açılmaz (UI5 CLI 4 ölçüldü). Kurulum yine workspace kökünde yapılır. Kontrol listesine iki yeni HIGH madde: FE-44 (tarih-yalnız alana yerel gece yarısı gidince gateway bir önceki günü alır) ve FE-45 (`callFunction` parametresinde `null` → 400). Ölçüm sınırı: adların uygulamada bulunması gerektiği ikinci bir UI5 CLI 4 sürümünde de görüldü; UI5 CLI 3, build/deploy yolu ve adlar eklendikten sonra yeniden kurulum gerekip gerekmediği ölçülmedi — şüphede kurulumu workspace kökünde yeniden koş.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-ui5-fiori/references/app-skeleton.md`, `skills-sap/sap-ui5-fiori/references/checklists.md`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`
+- **gerektirir:** `0.5.10-02`
+
+### 0.5.10-04 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) ve README'nin sürüm satırı — her yayında beyan edilir.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`
+- **gerektirir:** —
+
+### 0.5.10-05 · SAP backend inceleme ve kodlama dersleri: yeni ABAP kontrol maddeleri, TABLES/CHANGING tuzağı, CDS ve belge ekleri (kural)
+
+- **neden:** Ekip derslerinden aktarılan ölçülmüş tuzaklar SAP skill'lerine eklendi. ABAP kontrol listesine BE-71..BE-78 (sıradaki numara BE-79): ör. boş anahtarlı tabloyu tipli CHANGING parametresine vermek. `table-types.md` §5.4: TABLES/CHANGING tuzağında hata içerikten değil ilk bağlamadan gelir, boş tablo da dump eder. CDS'e yetki (DCL) ve açıklama maddeleri, klasik ABAP'a ATC ve dynpro/include notları, `sap-dev` kodlama desenleri, FS/TS belge kontrolü, intake protokolü, OData dış çağrı ve SEGW notları, RAP sorun giderme ekleri. Yeni kuralların hepsi inceleme listelerine yansıdı; mevcut kodu kendiliğinden değiştirmez.
+- **dosyalar:** `skills-sap/sap-cds-ddic/references/cds.md`, `skills-sap/sap-cds-ddic/references/checklists.md`, `skills-sap/sap-cds-ddic/references/table-types.md`, `skills-sap/sap-classic-abap/references/checklists.md`, `skills-sap/sap-classic-abap/references/dynpro-dialog-fields.md`, `skills-sap/sap-classic-abap/references/programs-includes.md`, `skills-sap/sap-code-review/SKILL.md`, `skills-sap/sap-code-review/references/checklist-abap.md`, `skills-sap/sap-code-review/references/reviewer-brief.md`, `skills-sap/sap-code-review/references/validator-map.md`, `skills-sap/sap-dev/references/coding-patterns.md`, `skills-sap/sap-fs-ts-docs/references/doc-checklist.md`, `skills-sap/sap-fs-ts-docs/references/ts-authoring.md`, `skills-sap/sap-intake-triage/references/protocol.md`, `skills-sap/sap-odata-backend/references/outbound-api-call.md`, `skills-sap/sap-odata-backend/references/segw-service.md`, `skills-sap/sap-rap/references/troubleshoot.md`
+- **test:** `python -m unittest discover -s skills-sap/sap-code-review/tests`, `python skills-sap/sap-fs-ts-docs/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.10-06 · UI5: büyük istekte HTTP 414 (FE-46), metadataUrlParams devri (FE-47), dosya yükleme sınırı ve çalışma zamanı doğrulama ekleri (kural)
+
+- **neden:** FE-46: çok satırlı toplu isteğin adresi çok uzayınca gateway 414 döner (bir kurulumda, bir ekranda ölçüldü: satır başına ~437 bayt, ~20 satırda sınır; eşik sisteme göre değişir). FE-47: `metadataUrlParams` servis modeline devredilmezse parametre kaybolur. `freestyle-odata-v2.md` §7.3 ölçülmüş vaka ve çözümü; FileUploader `maximumFileSize` birimi MB'dir ve boş/0 değer sessizce atlanır. Bilinen hatalar, yerel çalıştırma ve çalışma zamanı doğrulama referanslarına ekler.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/checklists.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`, `skills-sap/sap-ui5-fiori/references/runtime-verification.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`
+- **gerektirir:** `0.5.10-03`
+
+### 0.5.10-07 · ADT: kaynağı SAP'ye dokunmadan biçimleme (`adt_pretty_print`), sürüm geçmişi okuma düzeltmesi (`adt_revisions`), ATC Pretty Print reçetesi (düzeltme)
+
+- **neden:** ATC 'Incorrect Pretty Print state' bulgusunu kapatmak için kaynağın SAP biçimleyicisinden geçmiş hâli gerekiyordu, ama bunu yalnız ADT editöründe elle yapabiliyordunuz. Yeni `adt_pretty_print` aracı biçimlenmiş metni sistemde hiçbir şeyi değiştirmeden yerel dosyaya alır; hangi bölümlerin sisteme gideceğine siz karar verirsiniz, kayıt her zamanki onaylı yazma adımıyla yapılır (`classes.md` §7.1 reçetesi). Ayrıca bir objenin sürüm geçmişi (ne zaman, kim, hangi transportla değişti) `adt_revisions` ile sınıf, include ve arayüzlerde hiç okunamıyordu: sistem aracın istek biçimini reddediyor, bağlantıyı da bulamıyordu. Artık geçmiş okunuyor; okunamadığında 'sürüm yok' diye boş liste yerine açık hata döner. İkisi de salt-okur araçtır ve canlı sistemde ölçüldü. `docs/sap-api-policy.md`'deki araç sayısı yeniden ölçüldü: 41 araç (25 okuma · 16 yazma; önceki belge 37 diyordu).
+- **dosyalar:** `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-adt-foundation/references/foundation-query.md`, `skills-sap/sap-adt-foundation/references/known-errors-adt.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/diag.py`, `skills-sap/sap-adt-foundation/tests/test_cli_gate.py`, `skills-sap/sap-adt-foundation/tests/test_diag_tools.py`, `skills-sap/sap-adt-foundation/tests/test_lib_regressions.py`, `skills-sap/sap-adt-foundation/tests/test_pretty_print.py`, `skills-sap/sap-classic-abap/references/classes.md`, `docs/sap-api-policy.md`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.10-08 · Çalışma dersleri: 15 yeni/güncel ders, gün sonu ertelenmiş iş süpürmesi, merge'de CI hükmü, 'tamam' demeden biçim kontrolü (kural)
+
+- **neden:** Ekip hafızasına ölçülmüş çalışma dersleri eklendi (ör. sıfır sonuçla 'yok' demeden önce kontrol grubu, yeşil sinyalin kapsamını sorma, performans önerisinin de bir iddia olması, yerel test takımının CI'ın ikizi olmaması, muafiyetin gerekçesinden geniş yazılmaması). `%gun-sonu` ertelenmiş iş listesindeki kapanan/vazgeçilen kalemleri kaynağıyla arşive taşır. `commit-pr`: merge kararı `--watch` ekranından değil kontrol durum alanından okunur; koşulsuz `checks --watch ; merge` zinciri CI kırmızı bitse de birleştirir. `verify-done`: 'N dosya var' yüklenebilirlik demek değildir, dosyayı okuyan araçla sına. Bakımcı kuralı (`AGENTS.md`): çekirdek kimliği değişince sürüm, README değişiklik notu yerine yayın kataloğunda beyan edilir. Hafıza dosyaları mevcut makinede ezilmez; yeni dersler eklenir. Template reposunun bakım talimatındaki (`AGENTS.md`) kök dosya listesi güncellendi: ilk kurulum `aXet-Kur.cmd`, `kur.cmd`'nin terminal/onarım yolu olduğu, `proje-tamamla.cmd`, `GUNCELLE.md` ve üretilen `CHANGELOG.md` artık listede.
+- **dosyalar:** `AGENTS.md`, `memory/MEMORY.md`, `memory/feedback_bash-heredoc-turkce-kacis.md`, `memory/feedback_github-actions-asili-kosu-pr-kapat-ac.md`, `memory/feedback_kanit-kapsam-ve-zaman-korunur.md`, `memory/feedback_karar-sormadan-once-erisilebilirlik-olc.md`, `memory/feedback_kendi-isini-yeniden-siniflandirip-kural-disina-cikma.md`, `memory/feedback_kullanicinin-bildigini-olcme-sor.md`, `memory/feedback_muafiyet-gerekcesinden-genis-olmasin.md`, `memory/feedback_olcum-onkosullu-risk-notu.md`, `memory/feedback_paylasilan-modulun-desenini-yeniden-turetme.md`, `memory/feedback_performans-onerisi-de-iddiadir.md`, `memory/feedback_sifir-sonuc-kanitla-once-kontrol-grubu.md`, `memory/feedback_sizinti-taramasi-arama-uzayi-git-deltasidir.md`, `memory/feedback_uyarlama-verisi-acik-kalem-degil.md`, `memory/feedback_yerel-suit-ci-ikizi-degil.md`, `memory/feedback_yesil-sinyal-kapsamini-sor.md`, `skills/commit-pr/SKILL.md`, `skills/gun-sonu/SKILL.md`, `skills/verify-done/SKILL.md`
+- **test:** `python tests/run_tests.py -k skill`, `python tests/run_tests.py -k recall`
+- **gerektirir:** —
+
+### 0.5.10-09 · doctor: PowerShell betik politikası npm komutlarını engelliyorsa önceden uyarır (yetenek)
+
+- **neden:** npm ile kurulan komutlar (npm, npx, ui5, fiori…) Windows'ta PATH'te görünse de PowerShell'in betik politikası `Restricted` ise PowerShell'de çalışmaz — 'running scripts is disabled' hatası verir. doctor artık bunu önceden söyler: hangi komutların etkilendiğini, cmd/Git Bash ile nasıl çalışacağını ve kalıcı çözüm olarak `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` ayarını gösterir; bu bir güvenlik ayarı olduğu için kararı sana bırakır, kendisi değiştirmez.
+- **dosyalar:** `scripts/doctor.py`, `tests/test_doctor.py`
+- **test:** `python tests/run_tests.py -k doctor`
+- **gerektirir:** —
+
+### 0.5.10-10 · Hata / öneri bildirimi: `%hata-bildir` kanıtlı ve kimliksiz bildirim hazırlar; GitHub hesabı gerekmez (yetenek)
+
+- **neden:** aXet'te bir hata ya da önerin olduğunda artık `%hata-bildir` yazman yeterli: model bildirimi seninle birlikte hazırlar — aXet sürümü, klonun güncel olup olmadığı ve konunun yeni bir yayında düzeltilip düzeltilmediği, yeniden üretim adımları, kanıt (çıktı ve dosya:satır), çalıştığı bilinen bir karşılaştırma vakası ve neye bakılmadığı. Müşteri, sistem ve kişi bilgilerini temizler, son metni sana onaylatır ve projene kaydeder. GitHub hesabın varsa hazır formu doldurursun (önce aynı konu açılmış mı bakarsın); hesabın yoksa dosyayı aXet'i sana kuran kişiye iletmen yeterli, Issue'yu o açar. Model hiçbir şeyi kendi başına göndermez.
+- **dosyalar:** `.github/ISSUE_TEMPLATE/config.yml`, `.github/ISSUE_TEMPLATE/hata-bildirimi.yml`, `README.md`, `docs/onboarding.md`, `skills/hata-bildir/SKILL.md`
+- **test:** `python tests/run_tests.py -k skill`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
+### 0.5.10-11 · Bakımcı yayın taraması: kurum ve müşteri ad listesi koddan çıktı, yerel listeden okunuyor (düzeltme)
+
+- **neden:** Yalnız bakımcıyı ilgilendirir; kullanıcı klonunda davranış değişmez. Yayın aracının sızıntı taraması, public depoya girmemesi gereken adları kendi kodunda yazılı tutuyordu — yani adı yakalayan desen adın kendisini yayınlıyordu. Artık bu adlar git'e girmeyen bir yerel listeden (ya da CI gizli değişkeninden) okunur. Liste yoksa tarama bunu açıkça "ölçülemedi" diye yazar ve gerçek yayın başlamaz; liste git'te izleniyorsa ya da geçersiz bir satır içeriyorsa araç durur ve deseni ekrana basmaz. Bu dosyadaki testler kullanıcı klonunda bakımcı klasörü olmadığı için atlanır. CI'daki aynı tarama listeyi depo gizli değişkeninden okur. Ayrıca tarama raporundaki satır numarası artık git'teki satırla aynı: bazı özel Unicode ayraçları içeren dosyalarda numara kayıyordu (tespit etkilenmiyordu).
+- **dosyalar:** `.gitignore`, `tests/test_yayin_hazirla.py`, `tests/test_yayin_surumleri.py`, `.github/workflows/testler.yml`
+- **test:** `python tests/run_tests.py -k yayin`
+- **gerektirir:** —
+
+### ★ 0.5.10-12 · SAP çekirdeği: standart veriye yazma sırası released API ile başlıyor (AXET-SAP-0.5.2) (kural)
+
+- **neden:** Kesin yasak B değişmedi: standart tabloya doğrudan INSERT/UPDATE/DELETE/MODIFY hâlâ yok. Değişen yalnız izinli yolların sırası: önce released API (released RAP BO ile EML, released BAPI, released OData), sonra BAPI → RFC FM → BDC → kullanıcıdan manuel. Yazma kapısının red mesajı, oturum açılış özeti ve SAP alt görev brifingleri de yeni sırayı gösteriyor. Yazma kapısı yalnız doğrudan tablo yazımını reddeder; hangi API'nin seçildiğini zorlamaz (bunu inceleme maddesi BE-79 yakalar, 0.5.10-15). Çekirdek kimliği `AXET-SAP-0.5.2`: SAP projelerinde kesin yasak damgası "farklı" görünür ve `doctor` FAIL verir — `%guncelle-proje` ile `AGENTS.md` damgasını yenile, sonra yeni aXet oturumu aç. README artık damga yenilemesi için önce `%guncelle-proje`'yi gösterir (terminal yolu `new_project.py --sap`).
+- **dosyalar:** `core/sap/00-sap.md`, `scripts/session_brief.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/std_dml_scan.py`, `skills-sap/sap-adt-foundation/tests/test_std_dml_scan.py`, `skills-sap/sap-adt-foundation/tests/test_cli_gate.py`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-dev/references/role-briefs.md`, `README.md`
+- **test:** `python tests/run_tests.py -k sap_stamp`, `python tests/run_tests.py -k sap_skill`, `python tests/run_tests.py -k session_brief`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k dml`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k gate`
+- **gerektirir:** —
+
+### 0.5.10-13 · Yeni: standart belgeye yazan kodda "EML mi, BAPI mi, OData mı?" karar ağacı (yetenek)
+
+- **neden:** Standart bir belgeye ya da ana veriye (satış siparişi, teslimat, iş ortağı …) yazan kod gerektiğinde model tek bir sıralı ağaç izler: önce kodun hangi bağlamda koştuğu (commit kimde), sonra released RAP BO — EML'i seçmeden önce dört canlı teyit (BDEF var mı, operasyon açık mı, alan yazılabilir mi, metin/numara/muhatap tuzakları) — sonra released BAPI, released OData, release edilmemiş BAPI/FM, BDC, manuel. Her teyit adımında aXet'teki okuma komutu yazılı; aracı olmayan teyitlerde (OData `$metadata`) senden ekran ya da metin ister. Profil (`sap_profile`, `cleancore_policy`) hangi adımların açık olduğunu belirler; alan boşsa sana sorar. FM'in release durumunun ADT metadata'sında döndüğü ve modelin ağacı kendiliğinden bulup izlediği henüz ölçülmedi. Yapman gereken bir şey yok; `%sap-dev` bu işi kendisi yönlendirir.
+- **dosyalar:** `skills-sap/sap-dev/references/write-api-selection.md`, `skills-sap/sap-dev/SKILL.md`, `skills-sap/sap-dev/references/coding-patterns.md`, `skills-sap/README.md`, `skills-sap/sap-intake-triage/references/modules/sd.md`
+- **test:** `python tests/run_tests.py -k skill`, `python tests/run_tests.py -k readme`
+- **gerektirir:** `0.5.10-12`
+
+### 0.5.10-14 · RAP, klasik OData ve GUI skill'leri yazma karar ağacına bağlandı; released BO "operation not activated" satırı (kural)
+
+- **neden:** Standart belge üzerinde RAP façade, SEGW DPC_EXT, iç OData çağrısı ya da GUI kaydından geliştirme yaparken ilgili skill artık aynı karar ağacına yönlendirir (0.5.10-13). Released BO'da "operation … is not activated" hatası için sorun giderme satırı eklendi: EML'i zorlamak yerine released BAPI, yoksa released OData.
+- **dosyalar:** `skills-sap/sap-rap/SKILL.md`, `skills-sap/sap-rap/references/eml.md`, `skills-sap/sap-rap/references/layering-and-bdef.md`, `skills-sap/sap-rap/references/checklists.md`, `skills-sap/sap-rap/references/troubleshoot.md`, `skills-sap/sap-odata-backend/SKILL.md`, `skills-sap/sap-odata-backend/references/dpc-crud.md`, `skills-sap/sap-odata-backend/references/segw-service.md`, `skills-sap/sap-odata-backend/references/outbound-api-call.md`, `skills-sap/sap-gui-scripting/SKILL.md`, `skills-sap/sap-gui-scripting/references/handoff.md`, `skills-sap/sap-classic-abap/templates/classic-dynpro-dialog.prog.abap`, `skills-sap/sap-odata-backend/references/deep-insert-function-import.md`
+- **test:** `python tests/run_tests.py -k skill`
+- **gerektirir:** `0.5.10-13`
+
+### 0.5.10-15 · TS'te "API seçimi" bölümü (6.4) ve yeni inceleme maddesi BE-79 (kural)
+
+- **neden:** Standart nesneye yazan her geliştirmenin TS'inde 6.4 "API seçimi" tablosu zorunlu: değerlendirilen her yol (EML, BAPI, OData, FM, BDC), canlı durumu, released mı, commit kuralı, hata yönetimi, seçilen ve reddedilenlerin nedeni. TS yoksa aynı tablo sana sunulur ve paket notuna yazılır. `%sap-code-review` yeni BE-79 satırıyla gerekçesiz seçilmiş yazma yolunu uyarı (WARNING) olarak işaretler; BE-24'te sıra düzeltildi (released BAPI önce, sonra OData). BE-08: uzun metin kalıcılığı için `SAVE_TEXT … savemode_direct = 'X'` şartı RAP inceleme maddesine de yazıldı.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/templates/TS-template.md`, `skills-sap/sap-fs-ts-docs/references/ts-authoring.md`, `skills-sap/sap-fs-ts-docs/references/doc-checklist.md`, `skills-sap/sap-code-review/SKILL.md`, `skills-sap/sap-code-review/references/checklist-abap.md`, `skills-sap/sap-code-review/references/checklist-rap.md`, `skills-sap/sap-code-review/references/clean-core.md`, `skills-sap/sap-code-review/references/validator-map.md`
+- **test:** `python skills-sap/sap-fs-ts-docs/tests/run_tests.py`, `python -m unittest discover -s skills-sap/sap-code-review/tests`
+- **gerektirir:** `0.5.10-13`
+
+### 0.5.10-16 · UI5: elle kurulan istek `sap-client` taşımalı (FE-48, UI-BOOT-06) (kural)
+
+- **neden:** Manifest dışında kurulan ikinci OData modeli, varyant modeli ya da elle yazılan `fetch`/XHR isteği `sap-client`'ı kendiliğinden almaz. Aynı sunucunun iki client'ı aynı tarayıcıda açıkken bu istekler öbür client'ın verisini hata vermeden okuyup yazabilir. `%sap-ui5-fiori` ana modelin parametrelerini devralan hazır yardımcıyı ve iki client'la doğrulama yöntemini veriyor; büyük yük için önerilen ikinci model örneği (0.5.10-06) buna göre düzeltildi. UI5 alt görev brifingi artık `%sap-ui5-fiori`'ye yönlendirir ve bu kuralı taşır. Mevcut UI5 uygulamalarında `new ODataModel(`, `fetch(`, `XMLHttpRequest`, `sServiceUrl +` geçen yerleri tara (özellikle uygulamalar arasında kopyalanan kişiselleştirme/varyant yardımcısı).
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/checklists.md`, `skills-sap/sap-ui5-fiori/references/list-grid-alv.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`, `skills-sap/sap-dev/references/role-briefs.md`, `memory/feedback_ui5-elle-kurulan-istek-sap-client.md`, `memory/MEMORY.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`, `python tests/run_tests.py -k recall`
+- **gerektirir:** `0.5.10-06`
+
+### 0.5.10-17 · UI5 belge kilidi: sayfadan ayrılırken bırakma `fetch` + `keepalive` ile (FE-49, UI-SAVE-06) (kural)
+
+- **neden:** Belge kilidini sayfadan ayrılırken bırakan senkron istek Chromium'da sunucuya hiç gitmiyordu (navigasyonda ölçüldü); kilit ancak zaman aşımıyla düşüyordu. Yeni yöntem `fetch` + `keepalive` + CSRF + client parametresi; kilit bırakıldıktan sonra kilit bayrağı da sıfırlanmalı, yoksa aynı kullanıcının başka sekmedeki kilidi düşebilir. Sekme kapatma ayırt edilemedi; Firefox, Safari ve FLP ölçülmedi. Belge kilidi kullanan ekranlarda bırakma kodunu yeni reçeteye çevir. Örnek kod ana modelin client parametresini 0.5.10-16'daki yardımcıyla alır (bu kalemle birlikte seçilir).
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/checklists.md`, `skills-sap/sap-rap/references/draft-and-locks.md`, `memory/feedback_ui5-sayfadan-ayrilirken-senkron-xhr.md`, `memory/MEMORY.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`, `python tests/run_tests.py -k recall`
+- **gerektirir:** `0.5.10-16`
+
+### 0.5.10-18 · `%hata-bildir`: Issue kapanış yorumunu görünce ne yapılır (yetenek)
+
+- **neden:** Bakımcı bildirimleri artık yedi bölümlü bir kapanış yorumuyla kapatır: sonuç · yapılan · yapılmayan ve nedeni · senin yapacağın adımlar · dikkat · doğrulama · yeniden açma koşulu. `%hata-bildir` kapanışı görünce yapılacakları sıralar: yerel adımları sen uygularsın (`%guncelle` proje dosyalarını ve yerel ayarları değiştirmez), çıkarılan şeyi yerelde yeniden eklemezsin, düzeldiğini kendi makinende ölçer ve sonucu bildirim dosyasının `## Takip` bölümüne yazarsın; tutmuyorsa aynı Issue'ya yorum yazılır. Üretilemeyen bildirim de aynı yorumla kapanır. README'nin "Hata / öneri bildirme" bölümü de bu akışı anlatır.
+- **dosyalar:** `skills/hata-bildir/SKILL.md`, `README.md`
+- **test:** `python tests/run_tests.py -k hata`
+- **gerektirir:** —
+
+### 0.5.10-19 · İlk kurulum her yerde `aXet-Kur.cmd`: proje kısayolunun hata mesajı artık var olan dosyayı gösterir (düzeltme)
+
+- **neden:** Projedeki `KURULUMU-TAMAMLA` kısayolu aXet klonunu bulamayınca "aXet'i kur.cmd ile kur" diyordu; oysa `kur.cmd` klonun içinde durur, klon yoksa o dosya da yoktur. Mesaj artık ilk kurulum dosyası `aXet-Kur.cmd`'yi (çift tık) gösterir. `%guncelle` ve `%onboard` açıklamaları da ilk kurulumu `aXet-Kur.cmd` olarak anlatır; `kur.cmd` klonun içindeki yerel onarım yoludur (bağlantısız yeniden kurulum, `-Sifirla`, `-Kaldir`). Mevcut projelerdeki kısayol `%guncelle-proje` ile yenilenir; yalnız bu hata mesajı değişti.
+- **dosyalar:** `scripts/yeni_proje.py`, `tests/test_proje_tamamla.py`, `skills/guncelle/SKILL.md`, `skills/onboard/SKILL.md`
+- **test:** `python tests/run_tests.py -k z70`, `python tests/run_tests.py -k skill`
+- **gerektirir:** —
+
 ## v0.5.9 — 2026-09-25
 
 ### ★ 0.5.9-01 · SAP çekirdeği: standart objeler yalnız okunur; append ve Z DTEL'ini AI yaratmaz (AXET-SAP-0.5.1) (kural)

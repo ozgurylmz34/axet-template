@@ -179,8 +179,14 @@ jobs:
       # bulursa bu kol KIRMIZI olur — yayinda zaten duracak bir sizinti PR'da gorunur.
       # Public depoda bu adim ATLANIR (maintenance/ yok, agac ZATEN public) — orada `kok` kolu
       # yayinlanan agacin kendisini olcer.
+      # MUSTERI/KURUM AD LISTESI (Z134): adlar koda yazilmaz; tarama onlari gizli degiskenden okur.
+      # Gizli degisken yoksa (fork PR'i, tanimsiz) KAPSAM satiri "YUKLENMEDI ... OLCULEMEDI" der ve
+      # kol yine yesil olabilir — o durumda asil kapi bakimcinin yerel yayin taramasidir.
+      # Adim YALNIZ bu degiskeni gorur; test adimlari gormez (testler kendi listesini kurar).
       - name: Public duzen - dislananlari sil + uretilenleri koy
         if: matrix.takim == 'kok-public' && hashFiles('maintenance/yayin_hazirla.py') != ''
+        env:
+          AXET_SIZINTI_EK: ${{ secrets.AXET_SIZINTI_EK }}
         run: |
           $py = "import sys; sys.path.insert(0, 'maintenance'); import yayin_hazirla as y; print(' '.join"
           $d = python -B -c "$py(y.DISLANANLAR))"
@@ -281,5 +287,9 @@ jobs:
       - name: On kosul - Python bagimliliklari
         run: python -m pip install --quiet -r skills-sap/sap-adt-foundation/scripts/requirements.txt
 
+      # Prova gercek yayin_hazirla'yi kosar; Z134 kapisi ad listesi yoksa gercek yayini baslatmaz
+      # => bu adim da ayni gizli degiskeni gorur (yalniz bu adim; fork PR'inda gizli deger yoktur).
       - name: Yayin provasi
+        env:
+          AXET_SIZINTI_EK: ${{ secrets.AXET_SIZINTI_EK }}
         run: python maintenance/yayin_provasi.py
