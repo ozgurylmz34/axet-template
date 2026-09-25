@@ -784,6 +784,85 @@ class SessionBriefGuncellemeTest(GeciciTest):
         satirlar = self.bolum()
         self.assertTrue(any("atlandı (kritik): 0.1.0-01" in s for s in satirlar), satirlar)
 
+    # --- Z136 (2026-09-25): eski "atlandı" kaydı yayını fiilen içeren klonda kalıcı kritik WARN üretmesin ---
+    def _yan_dal_etiketi(self, etiket: str, degisiklik: bool, dal: str = "yayin-yan") -> None:
+        """`%guncelle`'nin gerçek hâli: yayın etiketi klonun ATASI DEĞİL (motor klona kendi commit'ini yazar).
+        Etiket, HEAD'den çatallanan yan dalda durur; `degisiklik` False ise ağacı HEAD'le AYNI."""
+        self.git(self.klon, "checkout", "-q", "-b", dal)
+        if degisiklik:
+            self.yaz(self.klon / "yeni.txt", "fark\n")
+            self.git(self.klon, "add", "yeni.txt")      # yalnız bu: -A uygulanan.json'u da alır (gerçekte gitignore'lu)
+            self.git(self.klon, "commit", "-q", "--no-verify", "-m", "yan")
+        else:
+            self.git(self.klon, "commit", "-q", "--no-verify", "--allow-empty", "-m", "yan")
+        self.git(self.klon, "tag", etiket, "HEAD")
+        self.git(self.klon, "checkout", "-q", "main")
+
+    def test_Z136_agac_etiketle_ayniysa_atlanan_kritik_uyarmaz(self):
+        """ÖLÇÜLMÜŞ KUSUR (kullanıcı makinesi 2026-09-25): klon ağacı v0.5.10 etiketiyle diff 0 iken brief
+        5 eski `atlandi` kritik kalem için her açılışta WARN basıyordu; etiket ata olmadığı için
+        `yayin_durumu` "icerildi" diyemiyordu ve `%guncelle` bu kalemleri bir daha önermiyor."""
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01", kritik=True))))
+        self.uygulananlari_yaz({"0.1.0-01": {"etiket": "v0.1.0", "durum": "atlandi"}})
+        # kontrol grubu: etiket YOKKEN (ölçülemez) uyarı kalır — eski davranış
+        self.assertTrue(any("atlandı (kritik): 0.1.0-01" in s for s in self.bolum()))
+        self._yan_dal_etiketi("v0.1.0", degisiklik=False)
+        satirlar = self.bolum()
+        self.assertFalse(any("WARN kritik" in s for s in satirlar), satirlar)
+
+    def test_Z136_agac_farkliysa_uyari_kalir(self):
+        """TERS YÖN (fail-closed): etiket ata değil VE ağacı farklı ⇒ içerik klonda olduğu ÖLÇÜLEMEZ ⇒ WARN kalır."""
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01", kritik=True))))
+        self.uygulananlari_yaz({"0.1.0-01": {"etiket": "v0.1.0", "durum": "atlandi"}})
+        self._yan_dal_etiketi("v0.1.0", degisiklik=True)
+        satirlar = self.bolum()
+        self.assertTrue(any("atlandı (kritik): 0.1.0-01" in s for s in satirlar), satirlar)
+
+    def _atlanmis_kritik_yayinlar(self, n: int) -> None:
+        """v0.1.0..v0.n.0 — her yayında bir kritik kalem, hepsi `atlandi` (neden yok)."""
+        etiketler = [f"v0.{i}.0" for i in range(1, n + 1)]
+        self.yayinlari_yaz(yayinlar(*(yayin(e, kalem(f"{e[1:]}-01", kritik=True)) for e in etiketler)))
+        self.uygulananlari_yaz({f"{e[1:]}-01": {"etiket": e, "durum": "atlandi"} for e in etiketler})
+
+    def _uyaranlar(self, n: int) -> set:
+        satirlar = self.bolum()
+        return {i for i in range(1, n + 1) if any(f"atlandı (kritik): 0.{i}.0-01" in s for s in satirlar)}
+
+    def test_Z136_esit_yayin_ve_oncekiler_icerildi_yenisi_uyarir(self):
+        """"O yayın VE ÖNCEKİLER": v0.2.0 ağacı eşit ⇒ 0.1.0 ile 0.2.0 susar; v0.3.0 (etiketi farklı ağaçta)
+        uyarmaya devam eder. `<=` yerine `==` olsaydı 0.1.0 uyarırdı."""
+        self._atlanmis_kritik_yayinlar(3)
+        self._yan_dal_etiketi("v0.2.0", degisiklik=False)
+        self._yan_dal_etiketi("v0.3.0", degisiklik=True, dal="yayin-yan-3")
+        self.assertEqual(self._uyaranlar(3), {3})
+
+    def test_Z136_yalniz_en_yeni_5_yayina_bakilir(self):
+        """Pencere: 7 yayında ağaç-eşitliği 5. en yenide (v0.3.0) ölçülür ⇒ v0.1..v0.3 susar;
+        6. en yenide (v0.2.0) ölçülmez ⇒ 7 kalemin 7'si uyarır (fail-closed, açılış süresi sınırı)."""
+        self._atlanmis_kritik_yayinlar(7)
+        self._yan_dal_etiketi("v0.3.0", degisiklik=False)
+        self.assertEqual(self._uyaranlar(7), {4, 5, 6, 7})
+        self.git(self.klon, "tag", "-d", "v0.3.0")
+        self._yan_dal_etiketi("v0.2.0", degisiklik=False, dal="yayin-yan-2")
+        self.assertEqual(self._uyaranlar(7), set(range(1, 8)))
+
+    def test_Z136_ayni_adli_dal_etiket_yerine_gecmez(self):
+        """Etiket yok; yayınla aynı adlı yan DAL ağacı eşit ⇒ `refs/tags/` onu görmez, uyarı kalır."""
+        self._atlanmis_kritik_yayinlar(1)
+        self.git(self.klon, "checkout", "-q", "-b", "v0.1.0")
+        self.git(self.klon, "commit", "-q", "--no-verify", "--allow-empty", "-m", "yan")
+        self.git(self.klon, "checkout", "-q", "main")
+        self.assertEqual(self._uyaranlar(1), {1})
+
+    def test_Z136_is_yok_ile_atlanan_kritik_uyarmaz(self):
+        """Z58 paritesi: `neden: is-yok` = yapılacak iş yoktu; `%guncelle` bunu sessizce karşılanmış sayar,
+        brief de uyarmaz. KONTROL GRUBU: aynı kalem başka nedenle (`kabul`) atlandıysa uyarı KALIR."""
+        self.yayinlari_yaz(yayinlar(yayin("v0.1.0", kalem("0.1.0-01", kritik=True))))
+        self.uygulananlari_yaz({"0.1.0-01": {"etiket": "v0.1.0", "durum": "atlandi", "neden": "is-yok"}})
+        self.assertFalse(any("WARN kritik" in s for s in self.bolum()))
+        self.uygulananlari_yaz({"0.1.0-01": {"etiket": "v0.1.0", "durum": "atlandi", "neden": "kabul"}})
+        self.assertTrue(any("atlandı (kritik): 0.1.0-01" in s for s in self.bolum()))
+
     def test_olculemedi_satiri_kalem_satiriyla_birlikte_korunur(self):
         """Kalem satırı üretilirken ÖLÇÜLEMEDİ satırları KORUNUR (session_brief.py:
         `return yeni + [s for s in satirlar if "ÖLÇÜLEMEDİ" in s ...]`).

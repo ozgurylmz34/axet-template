@@ -181,15 +181,30 @@ def guncelleme_kalemleri() -> list[dict] | None:
         from guncelle import yayin_durumu  # K-F: motorla TEK KAYNAK (aynı klasör)
     except Exception:  # noqa: BLE001 — motor içe aktarılamıyorsa ata testi ÖLÇÜLEMEZ
         return None
+    # Z136: `%guncelle` klona KENDİ commit'lerini yazar ⇒ yayın etiketi klonun atası olmaz ve `yayin_durumu`
+    # "icerildi" diyemez. Klonun ağacı bir yayın etiketinin ağacıyla AYNIYSA (diff-tree boş) o yayın ve
+    # öncekilerin içeriği fiilen klondadır ⇒ o kalemler "icerildi" sayılır. Ölçülemezse (etiket yok, git
+    # hata) eski davranış sürer (fail-closed). Yalnız en yeni 5 yayına bakılır (açılış süresi).
+    # `diff-tree` (porcelain `diff` değil): kullanıcının textconv sürücüsü farklı blob'ları eşit gösteremez.
+    # `refs/tags/`: aynı adlı bir dal etiketin yerine geçemez.
+    yayin_listesi = veri["yayinlar"]
+    agac_esit = -1
+    for i in range(len(yayin_listesi) - 1, max(-1, len(yayin_listesi) - 6), -1):
+        y = yayin_listesi[i]
+        etiket = str(y.get("etiket") or "") if isinstance(y, dict) else ""
+        if etiket and _git(AXET_HOME, "diff-tree", "--quiet", f"refs/tags/{etiket}", "HEAD", "--",
+                           timeout=8)[0] == 0:
+            agac_esit = i
+            break
     kalemler = []
-    for yayin in veri["yayinlar"]:
+    for sira, yayin in enumerate(yayin_listesi):
         if not isinstance(yayin, dict):
             continue
         # Yayın klonda zaten İÇERİLİYORSA (taze klon) motor onu plana hiç almaz ⇒ kalemi
         # "bekliyor" saymak kalıcı sahte bildirim üretir. Çözülemeyen etiket bekleyen sayılır
         # (motorla aynı: içerilip içerilmediği ölçülemez).
-        icerildi = yayin_durumu(lambda *a: _git(AXET_HOME, *a, timeout=8)[0],
-                                str(yayin.get("etiket") or "")) == "icerildi"
+        icerildi = sira <= agac_esit or yayin_durumu(lambda *a: _git(AXET_HOME, *a, timeout=8)[0],
+                                                     str(yayin.get("etiket") or "")) == "icerildi"
         for k in yayin.get("kalemler") or []:
             if not isinstance(k, dict) or not k.get("id"):
                 continue
@@ -200,6 +215,7 @@ def guncelleme_kalemleri() -> list[dict] | None:
                 "kritik": bool(k.get("kritik") or k.get("tur") == "guvenlik"),
                 "durum": ("icerildi" if icerildi else
                           kd.get("durum") if isinstance(kd, dict) else None),
+                "neden": kd.get("neden") if isinstance(kd, dict) else None,
             })
     return kalemler
 
@@ -233,6 +249,8 @@ def template_bolumu(fetch: bool) -> list[str]:
     for k in kalemler:
         if not k["kritik"] or k["durum"] in ("uygulandi", "icerildi"):
             continue
+        if k["durum"] == "atlandi" and k.get("neden") == "is-yok":
+            continue                           # Z136 = Z58 paritesi: yapılacak iş yoktu ⇒ sessizce karşılanmış
         durum = "atlandı (kritik)" if k["durum"] == "atlandi" else "bekliyor"
         yeni.append(f"WARN kritik güncelleme {durum}: {k['id']} {k['baslik']}".rstrip())
     # commit sayısı satırı düşer, ÖLÇÜLEMEDİ satırları korunur (bilgi kaybı olmasın)

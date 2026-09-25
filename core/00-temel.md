@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.8.0
+CORE-ID: AXET-CORE-0.8.1
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -12,7 +12,7 @@ CORE-ID: AXET-CORE-0.8.0
 - Bağlamındaki "AÇILIŞ BRIEF'İ" bloğu (proje `.axet-code/acilis-brief.md`) son özetin kopyasıdır ve her oturumda yüklenir. Özeti bu
   oturumda çalıştıramadıysan onu üretim saatiyle aktar; üretim tarihi bugün değilse `— BAYAT` yaz ve yenilemeyi öner.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.8.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.8.1 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, SAP profili, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
@@ -78,7 +78,7 @@ Her dalda kanıt şart; "sanırım bozuk" ile kalem açılmaz.
 - Alt ajanın "yapılamaz / yok / blocker" dönüşünü kanıtsız kabul etme; alternatif yol ara ya da kendin doğrula.
 
 ## 8. Skill'ler
-- Kullanıcı `%<ad>` yazdıysa o skill'in `SKILL.md`'sini `view` ile okumadan işe başlama.
+- Kullanıcı `%<ad>` yazdıysa o skill'in `SKILL.md`'sini `view` ile okumadan işe başlama — ama kullanıcıya yazacağın ilk metin yine §0 açılışıyla başlar: bu konuşmada henüz kimlik satırı YAZMADIYSAN (önceki mesajlarına bak; "ilk yanıt mı" diye yorumlama) metnin ilk satırı kimlik satırı, ardından `Açılış brief'i: <üretim saati>` + bağlamındaki brief'ten en fazla 5 satır; sonra skill'in sonucu.
 - Görev bir skill'in `description`'ına uyuyorsa önce o skill'i oku ve uygula.
 - Tekrar eden bir iş türü ya da tuzak keşfettiysen kullanıcıya skill önerisi sun.
 - Aynı adlı ya da template skill'iyle/SAP kesin yasaklarıyla çelişen bir skill (marketplace, proje, `AXET_SKILLS_DIR`) görürsen template skill'i ve kesin yasaklar geçerlidir; kullanıcıya bildir. aXet ikisini birden listeler, uyarmaz (ölçüldü); `doctor.py` skill envanteri gösterir.

@@ -2440,6 +2440,60 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.11",
+   "tarih": "2026-09-25",
+   "kalemler": [
+    {
+     "id": "0.5.11-01",
+     "baslik": "Oturum `%skill` ile açılınca da ilk yanıt kimlik satırı + açılış özetiyle başlar (AXET-CORE-0.8.1)",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "v0.5.10 ile açılış özeti her oturumda bağlama giriyordu ama oturum `%recall`, `%commit-pr` gibi bir skill ile açılınca model kimlik satırını ve özeti hiç yazmıyordu (ölçüm: 0/8 oturum). Sebep çekirdekteki \"skill'in SKILL.md'sini okumadan işe başlama\" kuralının açılış kuralıyla yarışmasıydı. Artık aynı satır, bu konuşmada henüz kimlik satırı yazılmadıysa ilk metnin yine kimlik satırı + açılış özetiyle başlamasını söyler; sonraki mesajlarda tekrar etmez. Skill dosyalarına dokunulmadı. Çekirdek kimliği `AXET-CORE-0.8.1`: güncellemeden sonra yeni aXet oturumu aç.",
+     "dosyalar": [
+      "core/00-temel.md",
+      "tests/test_session_brief.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k session_brief"
+     ]
+    },
+    {
+     "id": "0.5.11-02",
+     "baslik": "Açılış özeti, yayınla birebir aynı klonda eski \"kritik güncelleme atlandı\" uyarılarını artık basmıyor",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`%guncelle` klona kendi commit'lerini yazdığı için yayın etiketi klonun atası olmuyordu; açılış özeti de geçmişte \"atlandı\" diye işaretlenmiş kritik kalemleri her açılışta uyarı olarak basıyordu (klon yayınla aynıyken bile, kalıcı gürültü). Artık klonun içeriği bir yayın etiketiyle aynıysa o yayın ve öncekiler karşılanmış sayılır (yalnız en yeni 5 yayına bakılır; ölçülemezse uyarı eskisi gibi kalır). \"Yapılacak iş yoktu\" gerekçesiyle atlanan kritik kalem de `%guncelle` ile aynı biçimde sessizce karşılanmış sayılır. Başka gerekçeyle atlanan ve klonda olmayan kritik kalem uyarmaya devam eder.",
+     "dosyalar": [
+      "scripts/session_brief.py",
+      "tests/test_yayin_surumleri.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k session_brief"
+     ]
+    },
+    {
+     "id": "0.5.11-03",
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) ve README'nin sürüm satırı — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri"
+     ]
+    }
+   ]
   }
  ]
 }

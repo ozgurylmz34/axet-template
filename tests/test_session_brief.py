@@ -113,6 +113,20 @@ class AcilisBriefTest(GeciciTest):
         r = self.git(d, "check-ignore", ".axet-code/acilis-brief.md", kontrol=False)
         self.assertEqual(r.returncode, 0, "brief git'e kapalı değil")
 
+    def test_cekirdek_skill_kurali_acilisi_one_alir(self):
+        """Z105 lab (2026-09-25, AXET_TEST, hüküm oturum DB'sinden): `%skill` ile açılan oturumda model §8'deki
+        "SKILL.md'yi okumadan işe başlama" satırından skill akışına sapıyor, §0 açılışını atlıyordu (v0.5.9+v0.5.10
+        ölçümlerinde 0/8). Açılışı YALNIZ bu satıra eklemek tuttu (2/2 skill; sonraki mesajlarda tekrar yok).
+        Koşulun biçimi de ölçüldü: "ilk yanıtsa" diye yazılan koşul atlandı; modelin kendi mesajlarından
+        doğrulayabileceği "bu konuşmada henüz kimlik satırı YAZMADIYSAN" biçimi tuttu.
+        KAPSAM — bakılan: satırın metni. Bakılmayan: modelin fiilen uyduğu (canlı ölçüm, IS-LISTESI Z105)."""
+        metin = (AXET_HOME / "core" / "00-temel.md").read_text(encoding="utf-8")
+        satir = next((s for s in metin.splitlines() if s.startswith("- Kullanıcı `%<ad>` yazdıysa")), None)
+        self.assertIsNotNone(satir, "§8 skill satırı bulunamadı")
+        for parca in ("§0 açılışıyla başlar", "henüz kimlik satırı YAZMADIYSAN", "önceki mesajlarına bak",
+                      "\"ilk yanıt mı\" diye yorumlama", "Açılış brief'i: <üretim saati>"):
+            self.assertIn(parca, satir)
+
     def test_sablon_config_brief_yolunu_yukler(self):
         import json
         import doctor
