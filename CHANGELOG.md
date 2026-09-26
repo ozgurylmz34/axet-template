@@ -6,6 +6,22 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.12 — 2026-09-26
+
+### 0.5.12-01 · Yeni skill `%basla`: her aXet oturumunu bununla aç — taze oturum özeti, kimlik satırı ve devam sorusu (yetenek)
+
+- **neden:** Açılış özeti kendiliğinden tetiklenmiyordu: aXet'te hook yok ve model, ilk mesaj bir emir ya da başka bir `%skill` olunca açılışı atlayabiliyordu (ölçüm: skill ile açılan oturumlarda 2/3, emirle açılanlarda özet koşumu 2/10). Otomatik tetiklemeyi zorlamak yerine açılış tek komuta bağlandı: `%basla` oturum özetini (`session_brief.py`) taze çalıştırır, kimlik satırını ve özetten en fazla 5 satırı yazar, açık iş varsa hangisiyle devam edileceğini sorar. README ve kurulum belgesi her oturumun `%basla` ile açılmasını söyler. Mevcut açılış kuralları ve bağlamdaki son özet olduğu gibi kalır; `%basla` ile açılmayan oturumda model en fazla son özeti görür. Güncellemeden sonra yeni aXet oturumu aç ve `%basla` yaz.
+- **dosyalar:** `skills/basla/SKILL.md`, `docs/onboarding.md`
+- **test:** `python tests/run_tests.py -k skill`, `python tests/run_tests.py -k onboard`
+- **gerektirir:** —
+
+### 0.5.12-02 · Yayın kataloğu, README (açılış komutu + sürüm satırı) ve CI kaydı (düzeltme)
+
+- **neden:** Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) ve README — her yayında beyan edilir. Bu yayında README'nin "Günlük kullanım" ve "Yeni projede kabul kontrolü" bölümleri oturumun `%basla` ile açılmasını anlatır.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.11 — 2026-09-25
 
 ### 0.5.11-01 · Oturum `%skill` ile açılınca da ilk yanıt kimlik satırı + açılış özetiyle başlar (AXET-CORE-0.8.1) (düzeltme)
