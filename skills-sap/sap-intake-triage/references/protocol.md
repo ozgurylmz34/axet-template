@@ -99,7 +99,8 @@ blast-radius / risk. Kanıtsız ilerleme yok.
   sor (`ask_user`: tek seferde, seçenekli, önerini belirterek). SAP yazmasında `--scope S1 --reason "…"`.
   `ask_user` biçimi (ölçüldü, aXet araç hataları): `options` bir JSON **dizisi**dir (`[{"label":"…","description":"…"}, …]`),
   metin/XML değil; **en az 2** seçenek; her seçenekte `label` dolu. Serbest metin gereken soruda (ör. transport numarası)
-  ikinci seçenek olarak "Başka değer yazacağım" ver.
+  ikinci seçenek olarak "Başka değer yazacağım" ver. Tek cevaplı soruda (onay, tek değer) ikinci seçenek `İptal`'dir;
+  sayıyı tamamlamak için yasak ya da kapsam dışı bir eylem ("siz açın" — transport/paket yaratmak) seçenek yapılmaz.
 - **S2:**
   1. Artefaktı `.axet-code/intake/<id>.md` olarak üret (`templates/intake-artifact.md`; şema ve kontrol: `s2-artifact-schema.md`).
      Şablondaki yeni bölümler (script bakmaz, manuel kontrol):

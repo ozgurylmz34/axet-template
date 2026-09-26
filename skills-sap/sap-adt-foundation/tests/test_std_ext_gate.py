@@ -174,6 +174,164 @@ BOM = [
 ]
 
 
+# ── Z117 (2026-09-26) — Z104 bug gate kalanları ─────────────────────────────────────────────────────────────
+_STD_BASLIK = ("extension using interface I_SalesOrderTP implementation in class zbp_x unique;\n"
+               "define behavior for ZAXET_EXT_NODE {}")
+_Z_BASLIK = "extension using interface zi_a implementation in class zbp_x unique;\nextend behavior for Shop {}"
+# ⓐ Başlık `^` çapasına bağlıydı: `\s` sayılmayan baş karakterleri (çift BOM, ZWSP, NUL, WJ) std başlığı `[]`'e
+# gizliyordu (ölçüldü 2026-09-26, taban b56304d). SAP'nin bu karakterleri kabul edip etmediği DOĞRULANMADI ⇒ ilk
+# SÖZCÜK `EXTENSION` olup çapalı başlık eşleşmezse `?` (fail-closed). (ad, tip, kaynak)
+Z117A_BELIRSIZ = [(f"za {ad} + std başlık ({tip})", tip, on + govde)
+                  for ad, on in (("çift BOM", "﻿﻿"), ("ZWSP", "​"), ("NUL", "\x00"), ("WJ", "⁠"))
+                  for tip in ("bdef", None)
+                  for govde in (_STD_BASLIK,)]
+Z117A_BELIRSIZ.append(("za ZWSP + Z başlık (bdef) — önek bilinmiyor, Z olsa da ?", "bdef", "​" + _Z_BASLIK))
+# Kontrol grubu: ilk sözcük EXTENSION DEĞİL → çapasız arama tetiklenmez (alan/takma ad `extension` yanlış pozitif olmaz)
+Z117A_SERBEST = [
+    ("za-k1 tip None: yapı alanı adı extension", None,
+     "define structure zaxet_s {\n  extension : abap.char(1);\n}"),
+    ("za-k2 tip None: CDS takma adı Extension", None,
+     "define view entity ZI_X as select from zaxet_t { key a as Extension }"),
+    ("za-k3 BOM'lu Z→Z (tek BOM atılır, çapalı başlık)", "bdef", "﻿" + _Z_BASLIK),
+]
+# ⓑ Tip None + BDEF algılandı: DDL `?` bulgularının TAMAMI düşüyordu (yorum yalnız `extend behavior` diyordu) —
+# gerçek çözülemeyen `extend }` de `[]`'e gidiyordu (fail-open). Dar muafiyet: yalnız DDL biçimi taşımayan
+# `EXTEND <sözcük>` (behavior / draft …) düşer.
+_Z117B_KAYNAK = _Z_BASLIK + "\ndefine view entity ZI_Y as select from zaxet_t { extend }"
+Z117B_SERBEST = [
+    ("zb-k1 tip None: Z BDEF + extend draft determine action (BDEF iç sözcüğü)", None,
+     "extension using interface zrap630i_shoptp_sol\nimplementation in class zbp_x unique;\n\n"
+     "extend behavior for Shop\n{\n  extend draft determine action Prepare\n  {\n  }\n}"),
+    ("zb-k2 tip None: Z→Z BDEF extend behavior", None, _Z_BASLIK),
+]
+# ⓒ Belgelenen SINIR (düzeltilmedi): `;` `using interface`'ten ÖNCE bir `--` içindeyse (a) ve (c) görünümünde başlık
+# o `;`'da biter, arayüz görünmez → `?`. (c) modelinde (SAP `--`'yı yorum saymıyorsa) başlık gerçekten arayüzsüzdür;
+# `?`'i düşürmek o modelin güvenliğini bozar ⇒ bilinen yanlış pozitif.
+Z117C_SINIR = ("zc -- içindeki ; using interface'ten önce (Z→Z)", "bdef",
+               "extension -- not; x\nusing interface zi_a implementation in class zbp_x unique;\n"
+               "extend behavior for Shop {}")
+# ⓔ CDS `\'` kaçışı: `\'` dizeyi KAPATMIYORSA sonraki kod canlıdır; tarayıcı `'x\'`'i dize sayıp kalan `'`'i dize
+# AÇIŞI sanıyordu → satırın geri kalanı gizleniyordu. SAP'nin CDS/BDL'de `\'` kaçışını tanıyıp tanımadığı
+# DOĞRULANMADI ⇒ iki model de taranır. (ad, tip, kaynak, hedef, satır)
+Z117E_KACIS = [
+    ("ze1 'x\\'' sonrası aynı satırda extend (ddls)", "ddls",
+     "@EndUserText.label: 'x\\'' extend view entity I_SalesOrder with { a }", "I_SALESORDER", 1),
+    ("ze2 'x\\'' sonrası annotate (ddlx)", "ddlx",
+     "@EndUserText.label: 'x\\'' annotate entity I_Product with { @UI.hidden: true Product; }", "I_PRODUCT", 1),
+    ("ze3 N3 --extend bitişik (ddls)", "ddls", "--extend view entity I_SalesOrder with { a }", "I_SALESORDER", 1),
+]
+Z117E_SERBEST = [
+    ("ze-k1 \\' kaçışlı etiket + Z görünüm", "ddls",
+     "@EndUserText.label: 'it\\'s Z'\ndefine view entity ZI_X as select from zaxet_t { key a }"),
+    ("ze-k2 --extend Z hedef", "ddls", "--extend view entity ZI_X with { a }"),
+    ("ze-k3 tek tire önekli sözcük (a-extend) genişletme değil", "ddls",
+     "define view entity ZI_X as select from zaxet_t { key a-extend as b }"),
+]
+
+
+class Z117Tarayici(unittest.TestCase):
+    def _bir(self, ad, tip, kaynak, hedef, satir=None):
+        b = tara(kaynak, tip)
+        ok = len(b) == 1 and b[0].hedef == hedef and (satir is None or b[0].satir == satir)
+        H.kaydet(f"Z117 tarayıcı {ad}", f"1 bulgu {hedef}" + (f"@{satir}" if satir else ""),
+                 str([(x.hedef, x.satir) for x in b]), ok)
+        self.assertTrue(ok, (ad, b))
+        return b
+
+    def _bos(self, ad, tip, kaynak):
+        b = tara(kaynak, tip)
+        H.kaydet(f"Z117 tarayıcı KONTROL {ad}", "0 bulgu", str([(x.hedef, x.satir) for x in b]), not b)
+        self.assertEqual(b, [], ad)
+
+    def test_std_ext_z117a_capasiz_extension(self):
+        for ad, tip, kaynak in Z117A_BELIRSIZ:
+            with self.subTest(ad):
+                b = self._bir(ad, tip, kaynak, "?", 1)
+                self.assertIn("fail-closed", b[0].neden)
+        for ad, tip, kaynak in Z117A_SERBEST:
+            with self.subTest(ad):
+                self._bos(ad, tip, kaynak)
+
+    def test_std_ext_z117b_tip_none_ddl_belirsiz_dar_muafiyet(self):
+        # Kontrol grubu (lider şartı): aynı kaynak ddls ve None tipinde AYNI `?` sonucu (satır 3: `{ extend }`).
+        ddl = [(x.hedef, x.satir) for x in tara(_Z117B_KAYNAK, "ddls") if x.satir == 3]
+        yok = [(x.hedef, x.satir) for x in tara(_Z117B_KAYNAK, None)]
+        ok = ddl == [("?", 3)] and yok == [("?", 3)]
+        H.kaydet("Z117 tarayıcı zb tip None: Z BDEF + `{ extend }` → ddls ile aynı ?", "ddls=[?@3] None=[?@3]",
+                 f"ddls={ddl} None={yok}", ok)
+        self.assertTrue(ok, (ddl, yok))
+        for ad, tip, kaynak in Z117B_SERBEST:
+            with self.subTest(ad):
+                self._bos(ad, tip, kaynak)
+
+    def test_std_ext_z117c_tire_noktali_virgul_siniri(self):
+        ad, tip, kaynak = Z117C_SINIR
+        self._bir(ad + " (bilinen yanlış pozitif)", tip, kaynak, "?", 1)
+        # kontrol: `;` using interface'ten SONRA gelirse üç görünümde de yalnız Z → serbest (TIRE_YEM_SERBEST v2)
+        self._bos("zc-k1 -- içindeki ; arayüzden sonra", "bdef", TIRE_YEM_SERBEST[1][2])
+
+    def test_std_ext_z117d_satir_numarasi_bisect(self):
+        from sapadt import std_ext_scan as s
+        metin = "a\n\nbc\n" * 7 + "son"
+        dizin = s._SatirDizini(metin)
+        for konum in range(len(metin) + 1):
+            self.assertEqual(dizin(konum), metin.count("\n", 0, konum) + 1, konum)
+        # Yapısal (süreye bağlı DEĞİL — paylaşılan makinede süre eşiği 1,5 sn ↔ 20,6 sn oynadı, 2026-09-26):
+        # ① dizin metni TUTMAZ (metni tutmayan bir arama satır sonu sayamaz ⇒ O(log n)).
+        self.assertFalse([v for v in vars(dizin).values() if isinstance(v, str)], "dizin metni saklamamalı")
+        # ② tarama sırasında tek-seferlik O(n) `_satir` HİÇ çağrılmaz, dizin çağrı başına BİR kez kurulur.
+        kaynak = ("define view entity ZI_X as select from zaxet_t { key a }\n" * 2000) + ("extend\n" * 50)
+        kurulum = []
+        gercek_init = s._SatirDizini.__init__
+
+        def say(obj, m):
+            kurulum.append(1)
+            gercek_init(obj, m)
+        with mock.patch.object(s, "_satir", side_effect=AssertionError("tarama O(n) _satir çağırdı")), \
+                mock.patch.object(s._SatirDizini, "__init__", say):
+            b = tara(kaynak, "ddls")
+        ok = len(b) == 50 and b[0].satir == 2001 and b[-1].satir == 2050 and len(kurulum) == 1
+        # Bilgi (hüküm DEĞİL): patolojik girdi süresi — taban 2026-09-26: 100k satır + 2000 EXTEND 14,2 sn (O(k·n)).
+        import time
+        t0 = time.perf_counter()
+        tara(("define view entity ZI_X as select from zaxet_t { key a }\n" * 20000) + ("extend\n" * 400), "ddls")
+        H.kaydet("Z117 tarayıcı zd satır dizini: metinsiz · _satir yok · 1 kurulum", "50 ? · satır 2001-2050 · 1",
+                 f"{len(b)} · {b[0].satir if b else '-'}-{b[-1].satir if b else '-'} · {len(kurulum)} "
+                 f"(bilgi: 20k satır + 400 EXTEND {time.perf_counter() - t0:.2f} sn)", ok)
+        self.assertTrue(ok, (len(b), kurulum))
+
+    def test_std_ext_z117f_tire_dizisi_ustel_geri_izleme_yok(self):
+        # `_R_ILK_SOZCUK` eski deseni sözcüksüz tire dizisinde üsteldi (ölçüldü: 38 tire 32 sn; 60 tire dönmez).
+        # AYRI SÜREÇ + zaman aşımı: bozuk desende takım asılı kalmaz, test ADIYLA kırılır. Süre çocuk süreç İÇİNDE
+        # ölçülür (süreç açılışı sayılmaz); düzgün desende vaka başına milisaniye mertebesi.
+        import json
+        import subprocess
+        kod = ("import json, sys, time\nsys.path.insert(0, sys.argv[1])\nfrom sapadt.std_ext_scan import tara\n"
+               "u = '\\n'.join(['-' * 20] * 3)\n"
+               "v = [('-' * 60, 'bdef'), ('-' * 60, None), (u, None), (u, 'bdef'), ('-' * 38, 'bdef'),"
+               " (' --' * 40, None)]\n"
+               "o = []\nfor k, t in v:\n    t0 = time.perf_counter(); b = tara(k, t)\n"
+               "    o.append([round(time.perf_counter() - t0, 4), len(b)])\nprint(json.dumps(o))\n")
+        try:
+            p = subprocess.run([sys.executable, "-c", kod, str(H.SCRIPTS)], capture_output=True, text=True, timeout=30)
+            sonuc = (json.loads(p.stdout.strip().splitlines()[-1]) if p.returncode == 0
+                     else f"rc={p.returncode} {p.stderr[-300:]}")
+        except subprocess.TimeoutExpired:
+            sonuc = "zaman aşımı 30 sn (üstel geri izleme)"
+        ok = isinstance(sonuc, list) and len(sonuc) == 6 and all(s < 1.0 and n == 0 for s, n in sonuc)
+        H.kaydet("Z117 tarayıcı zf tire dizisi (60 · 3×20 · None): üstel geri izleme yok", "6 vaka < 1 sn · 0 bulgu",
+                 str(sonuc), ok)
+        self.assertTrue(ok, sonuc)
+
+    def test_std_ext_z117e_kacis_ve_bitisik_tire(self):
+        for ad, tip, kaynak, hedef, satir in Z117E_KACIS:
+            with self.subTest(ad):
+                self._bir(ad, tip, kaynak, hedef, satir)
+        for ad, tip, kaynak in Z117E_SERBEST:
+            with self.subTest(ad):
+                self._bos(ad, tip, kaynak)
+
+
 class Tarayici(unittest.TestCase):
     def test_std_ext_tarayici_pozitif(self):
         for ad, tip, kaynak, hedef, satir in POZITIF:
@@ -328,6 +486,22 @@ class Kapi(unittest.TestCase):
             with self.subTest(ad):
                 g = self.yaz(ad="ZAXET_EXT", tip=tip, source=kaynak)
                 H.kaydet(f"Z104 kapı KONTROL {ad}", "allowed", f"{g.allowed} {g.code}", g.allowed)
+                self.assertTrue(g.allowed, (ad, g.code, g.message))
+
+    def test_std_ext_gate_z117(self):
+        vakalar = ([(ad, tip, k, "?") for ad, tip, k in Z117A_BELIRSIZ]
+                   + [(ad, tip, k, h) for ad, tip, k, h, _s in Z117E_KACIS]
+                   + [("zb tip None", None, _Z117B_KAYNAK, "?")])
+        for ad, tip, kaynak, hedef in vakalar:
+            with self.subTest(ad):
+                g = self.yaz(ad="ZAXET_EXT", tip=tip, source=kaynak)
+                ok = not g.allowed and g.code == "ADR_0005_A" and f"hedef {hedef}" in (g.message or "")
+                H.kaydet(f"Z117 kapı {ad}", "ADR_0005_A", f"{g.code}", ok)
+                self.assertTrue(ok, (ad, g.code, g.message))
+        for ad, tip, kaynak in Z117A_SERBEST + Z117B_SERBEST + Z117E_SERBEST:
+            with self.subTest(ad):
+                g = self.yaz(ad="ZAXET_EXT", tip=tip, source=kaynak)
+                H.kaydet(f"Z117 kapı KONTROL {ad}", "allowed", f"{g.allowed} {g.code}", g.allowed)
                 self.assertTrue(g.allowed, (ad, g.code, g.message))
 
     def test_std_ext_gate_fail_closed(self):

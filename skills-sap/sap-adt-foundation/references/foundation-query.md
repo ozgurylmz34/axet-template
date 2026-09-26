@@ -192,9 +192,11 @@ cli adt_atc_check '{"name":"ZCL_DEMO_CLASS","object_type":"class"}'
 - SRVD/CDS değişince yayınlanmış metadata'nın tazelenmesi: `adt_publish_service` (yazma sınıfı).
   `published` üç değerlidir: `true` / `false` / `null` (ÖLÇÜLEMEDİ). Sonuç doğrulaması = `$metadata` okumak.
 - Klasik SEGW servisinde Generate + Activate yapılmadan metadata güncellenmez.
-- `$metadata` okuma: `GET /sap/opu/odata/SAP/<SERVIS>/$metadata`. CLI'de bunun için araç **yok** (`--list`, 30 araç,
-  2026-09-13) → kullanıcıdan tarayıcıda açıp ilgili `EntityType` bloğunu paylaşmasını iste. Kimlik bilgisi içeren bir
-  script yazma/çalıştırma (aXet çekirdeği §11). CLI'ye araç eklenirse `--list`'te görünür.
+- `$metadata` okuma: `GET /sap/opu/odata/SAP/<SERVIS>/$metadata`. ADT CLI'de bunun için araç **yok** (`--list`, 30 araç,
+  2026-09-13). Z144 (2026-09-26): `%sap-ui5-fiori` `scripts/fetch_ui_source.py metadata <SERVIS> --alan <Ad> --tip <EntityType>`
+  salt okuma okur ve §5.1'deki tip-kapsamlı kontrolü yapar; kimlik geliştiricinin kabuğunda set ettiği env
+  `FIORI_TOOLS_USER`/`FIORI_TOOLS_PASSWORD`'dan (deploy_ui ile aynı). Env yoksa kullanıcıdan tarayıcıda açıp ilgili
+  `EntityType` bloğunu paylaşmasını iste. Kimlik bilgisi içeren bir script yazma/çalıştırma (aXet çekirdeği §11).
 
 ### 5.1 Alan doğrulaması TİP-KAPSAMLI olmalı
 - Belge geneli düz metin araması sahte-pozitif verir: metadata iş entity'lerinin yanında altyapı tiplerini

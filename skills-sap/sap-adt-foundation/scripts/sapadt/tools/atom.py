@@ -769,7 +769,8 @@ def _read_function_module(name: str, object_type: str, include_source: bool) -> 
 
 
 @profil_tool()
-def adt_get(name: str, object_type: str = "class", include_source: bool = True) -> dict:
+def adt_get(name: str, object_type: str = "class", include_source: bool = True,
+            output_path: str | None = None, overwrite: bool = False) -> dict:
     """Get an SAP ADT object: existence, metadata, and (optionally) source (enqu: yalnız varlık, include_source=false).
 
     Kilit objesi (`enqu`, aXet 2026-09-14): generic ADT URL'i yok; yalnız salt-GET varlık sondası
@@ -781,10 +782,62 @@ def adt_get(name: str, object_type: str = "class", include_source: bool = True) 
     canlı kaynağın özeti `<proje>/.axet-code/sap-pull-state.json`'a yazılır; yanıttaki
     `pull_state` alanı (`kaydedildi` | `yazilamadi: …`) sonucu söyler. `adt_push_source` bu kayıt
     olmadan yazmaz. Okuma ayrıntıları: `_adt_get_oku`.
+
+    Z142ⓐ `output_path`: kaynak YEREL dosyaya yazılır (UTF-8, satır sonu çevrilmez) ve yanıttan `source` düşer
+    (`output_path`, `written`, `line_count` gelir). Yol kuralı `adt_pretty_print` ile TEK kaynaktan
+    (`sapadt.project.yerel_kaynak_yolu`): proje kökü içi · kaynak uzantısı (`KAYNAK_UZANTILARI`) · `.axet-code/`
+    dışı · `.axetcode-denylist` yolları dışı; var olan dosya `overwrite=true` olmadan EZİLMEZ (`output_exists`).
+    Yol geçersizse SAP'ye gidilmez.
+    `include_source=false` ya da metin taşımayan tip (msag, enqu) → `invalid_argument`. Pull kaydı aynen yazılır:
+    dosyadan düzenleyip `adt_push_source(source_path=…)` ile geri yazma yolunun ilk adımıdır.
     """
-    if include_source and (object_type or "").lower().strip() in ("msag", "messageclass"):
+    tip_k = (object_type or "").lower().strip()
+    yol = None
+    if output_path is not None:
+        from sapadt import project as _project
+        if not include_source:
+            return {"ok": False, "error": "invalid_argument",
+                    "message": "output_path include_source=true ister (yazılacak kaynak metni yok). SAP'ye gidilmedi."}
+        if tip_k in ("msag", "messageclass") or tip_k in _KILIT_OBJE_TIPLERI:
+            return {"ok": False, "error": "invalid_argument",
+                    "message": (f"object_type={object_type!r} kaynak METNİ taşımaz (mesaj listesi / yalnız varlık) — "
+                                "output_path bu tipte desteklenmez. SAP'ye gidilmedi.")}
+        yol, hata = _project.yerel_kaynak_yolu(output_path, "output_path")
+        if hata:
+            return {**hata, "message": hata["message"] + " SAP'ye gidilmedi."}
+        if yol.exists() and not overwrite:
+            return {"ok": False, "error": "output_exists",
+                    "message": "output_path zaten var; üzerine yazmak için overwrite=true ver ya da başka yol seç. "
+                               "SAP'ye gidilmedi."}
+    if include_source and tip_k in ("msag", "messageclass"):
         return adt_msgclass_read(name)   # aXet: mesaj listesi pull kaydı (adt_msgclass_write için)
-    r = _adt_get_oku(name, object_type, include_source)
+    r = _adt_get_pull_kaydi(_adt_get_oku(name, object_type, include_source), name, object_type, include_source)
+    if yol is not None and isinstance(r, dict):
+        r = _adt_get_dosyaya(r, yol)
+    return r
+
+
+def _adt_get_dosyaya(r: dict, yol) -> dict:
+    """Z142ⓐ: başarılı okumanın kaynağını `yol`a yaz, `source`u yanıttan düşür (pull kaydı ÖNCE yazıldı).
+    Obje yoksa / okunamadıysa dosya yazılmaz (`written:false`); yazma hatasında `source` yanıtta kalır."""
+    from sapadt import project as _project
+    r.setdefault("output_path", None)
+    r.setdefault("written", False)
+    if not (r.get("ok") is True and r.get("exists") is True and isinstance(r.get("source"), str)):
+        return r
+    hata = _project.yerel_dosyaya_yaz(yol, r["source"])
+    if hata:
+        r.update(ok=False, error="output_write_failed",
+                 message=f"Kaynak okundu ama yerel dosya yazılamadı ({hata}). SAP değişmedi; source yanıtta.")
+        return r
+    r["output_path"] = yol.relative_to(_project.project_dir()).as_posix()
+    r["written"] = True
+    r["line_count"] = len(r.pop("source").splitlines())
+    return r
+
+
+def _adt_get_pull_kaydi(r, name: str, object_type: str, include_source: bool):
+    """adt_get'in PULL-BEFORE-EDIT kaydı (gövde 2026-09-26 Z142ⓐ'da adt_get'ten aynen çıkarıldı)."""
     if (include_source and isinstance(r, dict) and r.get("ok") is True and r.get("exists") is False
             and r.get("include_absent_proven") is True):
         # aXet: sınıf alt-include'u 404 ile KANITLI yok → "çekildiği anda yoktu" kaydı. İlk yaratım
@@ -807,8 +860,12 @@ def _adt_get_oku(name: str, object_type: str = "class", include_source: bool = T
 
     Args:
         name: Object name (case-insensitive, normalised to upper on SAP side).
-        object_type: ADT object type. Common: 'class', 'doma', 'dtel', 'tabl', 'view',
+        object_type: ADT object type. Common: 'class', 'doma', 'dtel', 'tabl',
                      'ddls' (CDS), 'fugr', 'func', 'enqu', 'msag', 'prog'.
+                     ⚠ Klasik DB view (VIEW/DV) DESTEKLENMEZ (Z143, canlı ölçüldü 2026-09-26): discovery'deki
+                     `/sap/bc/adt/ddic/views` EXTERNAL VIEW ucudur (yok adda 404 "External View … does not exist");
+                     klasik view'da HTTP 500 (ASSERT), `/source/main` 404. Arama VIEW/DV'yi yalnız `vit/wb` (GUI) URI'siyle
+                     verir. Kontrol grubu: `tabl` `/source/main` 200.
         include_source: If True, also fetches source text. Set False for fast metadata-only.
 
     Returns:
@@ -1688,17 +1745,26 @@ def _silinen_satir_uyarisi(canli_kaynak: str, yeni_kaynak: str):
     """Z87 ⓑ+: canlıda olup yeni kaynakta olmayan satırlar → uyarı alanları; silme yoksa None.
 
     İki taraf readback kıyasıyla AYNI normalize'dan geçer (CRLF / satır sonu boşluğu sahte silme üretmez).
-    Uyarıdır, red değil: meşru düzenleme de satır siler; karar kullanıcıya satırlar gösterilerek verilir."""
-    import difflib
+    Uyarıdır, red değil: meşru düzenleme de satır siler; karar kullanıcıya satırlar gösterilerek verilir.
+
+    Z99 (2026-09-26): kıyas ÇOKLU-KÜME farkıdır (`Counter`, O(n)). Eski `difflib.SequenceMatcher(autojunk=False)`
+    süre sınırsızdı (sentetik: 10.000 satır yarısı değişik ≈ 5-10 sn, 20.000 ≈ 26 sn, patolojik girdide dakikalar).
+    Anlam: canlıdaki her satır yeni kaynakta EN AZ canlıdaki kadar geçiyorsa silme yoktur ⇒ YERİ DEĞİŞEN satır
+    "silindi" SAYILMAZ (kaybolmaz); yinelenen satırın bir kopyası eksikse sayılır. Örnek canlıdaki sırayla.
+    ⚠ BAKILMAYAN: aynı metinli bir satır bir yerden silinip başka yere eklendiyse fark görünmez (ör. yalnız
+    `ENDIF.` taşıyan blok); içerik taşıyan satırlar yine yakalanır."""
+    from collections import Counter
     from source_normalize import normalize_source  # type: ignore
     eski = normalize_source(canli_kaynak or "").splitlines()
     yeni = normalize_source(yeni_kaynak or "").splitlines()
-    silinen, eklenen = [], 0
-    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, eski, yeni, autojunk=False).get_opcodes():
-        if op in ("delete", "replace"):
-            silinen.extend(eski[i1:i2])
-        if op in ("insert", "replace"):
-            eklenen += j2 - j1
+    kalan = Counter(yeni)
+    silinen = []
+    for satir in eski:                 # canlı sırayla: yenide karşılığı tükenmiş satır = silinen
+        if kalan[satir] > 0:
+            kalan[satir] -= 1
+        else:
+            silinen.append(satir)
+    eklenen = sum(kalan.values())      # yenide canlıdan fazla geçen satırlar
     if not silinen:
         return None
     ornek = [(x if len(x) <= _SILME_SATIR_KIRP else x[:_SILME_SATIR_KIRP] + "…") for x in silinen[:_SILME_ORNEK]]
@@ -1734,10 +1800,11 @@ def _include_sonucu_esle(result):
 def adt_push_source(
     name: str,
     object_type: str,
-    source: str,
+    source: str | None = None,
     transport: str | None = None,
     skip_reviewer: bool = False,
     ack_drop: str = "",
+    source_path: str | None = None,
 ) -> dict:
     """Push source text to an existing SAP object.
 
@@ -1755,7 +1822,12 @@ def adt_push_source(
             ETMEZ; transport zorunlu) · 'ccimp'/'ccau'/'ccdef'/'ccmac' (sınıf alt-include'u — `name` = ANA SINIF;
             transport zorunlu; ana sınıf aktive edilir) · 'func' (FM kaynağı; fonksiyon grubu canlıdan
             çözülür ve Z/Y olmalı; aktive edilir). 'srvb'/'msag'/'enqu' → unsupported_type.
-        source: Source body text (full content; partial diffs not supported).
+        source: Source body text (full content; partial diffs not supported). `source_path` ile BİRLİKTE verilmez.
+        source_path (Z142ⓒ): kaynağın okunacağı YEREL dosya — `adt_get(output_path=…)` ile indirilip düzenlenen paket
+            klasörü dosyası. Yol kuralı `adt_get`/`adt_pretty_print` ile aynı (proje kökü içi · kaynak uzantısı ·
+            `.axet-code/` dışı · `.axetcode-denylist` yolları dışı); UTF-8 (BOM atılır), boş dosya reddedilir.
+            Kapı (gate.py) aynı dosyayı aynı kuralla
+            okuyup tarar. Yanıtta `source_path` (proje-göreli) döner.
         transport: Modifiable transport (optional if object already has assignment).
         skip_reviewer: Bypass reviewer pre-flight (NOT recommended).
         ack_drop: Comma-separated table field names whose DROP is explicitly
@@ -1773,13 +1845,28 @@ def adt_push_source(
     `removed_lines_warning {removed, added, sample}` + `warning`; yazma sürer (SKILL §2).
 
     Returns:
-        {ok, name, type, result, client_log, reviewer?, pull_state?, removed_lines_warning?, warning?}
+        {ok, name, type, result, client_log, reviewer?, pull_state?, removed_lines_warning?, warning?, source_path?}
     """
     try:
         require_writable_tier(get_active_tier(), what=f"{object_type} push")
         require_customer_namespace(name, what=object_type, object_type=object_type)
     except GuardrailViolation as gv:
         return gv.as_dict()
+    # Z142ⓒ: kaynak metni ya da yerel dosya — TAM OLARAK biri. Aşağıdaki Yasak A/B taramaları okunan metni tarar.
+    kaynak_yolu = None
+    if source_path is not None:
+        if source is not None:
+            return {"ok": False, "error": "invalid_argument", "name": name, "type": object_type,
+                    "message": "source ile source_path birlikte verilemez — yalnız biri. SAP'ye gidilmedi."}
+        from sapadt import project as _project
+        source, _yol, hata = _project.yerel_kaynak_oku(source_path, "source_path")
+        if hata:
+            return {**hata, "name": name, "type": object_type,
+                    "message": hata["message"] + " SAP'ye gidilmedi."}
+        kaynak_yolu = _yol.relative_to(_project.project_dir()).as_posix()
+    elif not isinstance(source, str):
+        return {"ok": False, "error": "invalid_argument", "name": name, "type": object_type,
+                "message": "source (metin) ya da source_path (yerel dosya) gerekli. SAP'ye gidilmedi."}
     from object_types import (is_class_include, is_function_module_type,  # type: ignore
                               normalize_class_include)
     tip = (object_type or "").lower().strip()
@@ -1941,6 +2028,8 @@ def adt_push_source(
         }
         if reviewer_warn:
             resp["reviewer"] = reviewer_warn
+        if kaynak_yolu:
+            resp["source_path"] = kaynak_yolu
         if silme_uyarisi:
             resp.update(silme_uyarisi)
         if (sinif_include or bdef_mi or fm_mi) and isinstance(result, dict):
@@ -1988,6 +2077,19 @@ def adt_push_source(
                 "SOZDIZIMI ON-KONTROLU OLCULEMEDI — push aktivasyona devam etti; bu 'sozdizimi "
                 "temiz' DEGILDIR (aktivasyon hukmu ve readback ayri kapidir). Sebep: "
                 + str(result.get("sozdizimi_sebep") or "bildirilmedi"))
+
+        # Z147 (2026-09-26): yazılan objenin İNAKTİF kayıt sayısı — BAĞIMSIZ worklist sondası, yalnız YÜKLEME olduysa
+        # (yüklenmediyse yazılan obje yoktur; alan basılmaz). Aktivasyon iddiası (`activated:true`) varken obje hâlâ
+        # listedeyse SAHTE-OK → ok:false; iddia yoksa (BDEF push'u tasarım gereği aktive etmez / aktivasyon düştü)
+        # yalnız bilgi. Modelin "en sonda adt_inactive_objects" hatırlamasına bırakılmaz.
+        if isinstance(result, dict) and result.get("source_uploaded"):
+            if sinif_include:
+                hedef = _akt_hedefi(name, "class")            # include ana sınıfla aktive edilir
+            elif fm_mi:
+                hedef = {"name": name, "uri": str(canli.get("resolved_uri") or ""), "type": "FUGR/FF"}
+            else:
+                hedef = _akt_hedefi(name, object_type)
+            _inaktif_hukmu(resp, client, [hedef], aktivasyon_iddiasi=result.get("activated") is True)
 
         # Readback-gate baseline'ı → adt_activate sonrası AKTİF source ile normalize-compare.
         # ⛔ Q271 (2026-09-09): tetikleyici **UPLOAD**, `ok` DEĞİL. Eskiden `if ok:` yazıyordu;
@@ -2289,6 +2391,49 @@ def _aktivasyon_readback(client, adlar: list) -> tuple[Optional[bool], str, list
         return None, "unavailable:%s" % type(exc).__name__, []
 
 
+def _akt_hedefi(name: str, object_type: str) -> dict:
+    """Worklist sondası hedefi {name, uri, type} — adt_activate klasik yol ve adt_push_source (Z147) ORTAK.
+    Tip çözülemezse "" (eşleşme URI sınırıyla yapılır; `sap_adt_lib.aktivasyon_worklist_kalan`)."""
+    hedef = {"name": name, "uri": _activation_uri(name, object_type) or ""}
+    try:
+        from object_types import get_adt_type  # type: ignore
+        hedef["type"] = get_adt_type(object_type) or ""
+    except Exception:  # noqa: BLE001 — tip yoksa URI/ad eslemesi yeter
+        hedef["type"] = ""
+    return hedef
+
+
+def _inaktif_alanlari(akt_ok, akt_sonda: str, akt_kalan: list) -> dict:
+    """Z147 (2026-09-26): yanıta yazılan objenin İNAKTİF kayıt sayısı. `inactive_count` = hedefin worklist'te kalan
+    (ad, tip) kaydı sayısı; sonda ölçemediyse `None` + `inactive_warning` ("ölçülemedi" ≠ "inaktif yok").
+    ⚠ BAKILMAYAN: kullanıcının TOPLAM inaktif sayısı (ham worklist silinmiş objeleri de sayar — adt_inactive_objects
+    TADIR çapraz kontrolü; lider kararı 2026-09-26: eklenmez)."""
+    alanlar = {"inactive_count": len(akt_kalan) if akt_ok is not None else None, "inactive_probe": akt_sonda}
+    if akt_ok is None:
+        alanlar["inactive_warning"] = ("İnaktif kayıt sayısı ÖLÇÜLEMEDİ (%s) — bu 'inaktif obje yok' DEMEK DEĞİLDİR; "
+                                       "zincire devam etmeden adt_inactive_objects ile elle ölç." % akt_sonda)
+    return alanlar
+
+
+def _inaktif_hukmu(resp: dict, client, hedefler: list, aktivasyon_iddiasi: bool) -> dict:
+    """Z147 sözleşmesi: sonda koş → `inactive_count` alanları; aktivasyon İDDİASI varken hedef hâlâ worklist'teyse
+    SAHTE-OK → `ok:false` + `activation_not_executed` (adt_activate klasik yolunun kayıt #70 deseni). İddia yoksa
+    (ör. BDEF push'u tasarım gereği aktive etmez) yalnız bilgi + `inactive_notice`; `ok` DEĞİŞMEZ."""
+    akt_ok, akt_sonda, akt_kalan = _aktivasyon_readback(client, hedefler)
+    resp.update(_inaktif_alanlari(akt_ok, akt_sonda, akt_kalan))
+    if akt_kalan:
+        resp["still_inactive"] = akt_kalan
+        if aktivasyon_iddiasi:
+            resp.update(ok=False, activated=False, error="activation_not_executed",
+                        message=("⛔ SAHTE-OK YAKALANDI: aktivasyon başarılı dendi ama yazılan obje HÂLÂ aktive-bekleyen "
+                                 "worklist'inde (%s). Zincirin devamına (bağımlı obje / publish / test) GEÇME."
+                                 % ", ".join("%s (%s)" % (h["name"], h["type"]) for h in akt_kalan)))
+        else:
+            resp["inactive_notice"] = ("Yazılan obje İNAKTİF (aktivasyon yapılmadı ya da başarısız). Zincire devam "
+                                       "etmeden adt_activate ile aktive et.")
+    return resp
+
+
 _KILIT_OBJE_TIPLERI = frozenset({"enqu", "lock", "lockobject", "lockobjects"})
 
 
@@ -2335,6 +2480,7 @@ def _kilit_objesi_aktive_et(client, name: str, object_type: str) -> dict:
         akt_ok, akt_sonda, akt_kalan = _aktivasyon_readback(client, [hedef])
         resp["activation_verified"] = akt_ok
         resp["activation_probe"] = akt_sonda
+        resp.update(_inaktif_alanlari(akt_ok, akt_sonda, akt_kalan))   # Z147
         if akt_ok is False:
             resp.update(ok=False, activated=False, error="activation_not_executed", still_inactive=akt_kalan,
                         message="SAHTE-OK: obje hâlâ aktive-bekleyen worklist'inde.")
@@ -2388,8 +2534,16 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
         `activation_probe`); `ok` false KALIR. Liste temizse `probe_note`: obje aktivasyondan
         ONCE listede degilse "temiz" ayirt edici DEGILDIR. SAP'ye ulasilamadiysa (`unreachable`)
         sonda kosmaz.
-    ⚠ `also=` (atomik cok-obje) ve `srvb` yollari zaten `activate_and_verify` ile
-    `activationExecuted` + `type=E` parse eder; readback onlarda TEKRARLANMAZ.
+    ⚠ `also=` (atomik cok-obje) ve `srvb` yollari `activate_and_verify` ile
+    `activationExecuted` + `type=E` parse eder (degilse istisna → `_err_from_exc`) VE basari
+    iddiasindan sonra worklist sondasini da kosar (Z147, `_inaktif_hukmu`): tum refs listede
+    kalirsa `ok=false` + `activation_not_executed` + `still_inactive`; `activation_verified`
+    alani bu yollarda YOKTUR (hukum `inactive_count` + `ok`'tadir).
+
+    `inactive_count` (Z147) OPSIYONELDIR — su donuslerde alan YOK: guardrail ihlali ·
+    `also` icinde `unsupported_type` · `enqu` `activation_failed` erken donusu · klasik yolda
+    `unreachable` erken donusu · her yolun `except` → `_err_from_exc` dali. Sonda olcemediyse
+    alan VAR ama `null` (+ `inactive_warning`).
     """
     try:
         require_writable_tier(get_active_tier(), what=f"{object_type} activate")
@@ -2436,7 +2590,8 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
                         resp["ok"] = False
             if rb_all:
                 resp["content_readback"] = rb_all
-            return resp
+            # Z147: activationExecuted=true BAĞIMSIZ worklist ile de ölçülür (tüm refs; sayı = kalan kayıt).
+            return _inaktif_hukmu(resp, client, [_akt_hedefi(n, t) for n, t in pairs], aktivasyon_iddiasi=True)
         except Exception as exc:
             return _err_from_exc(exc)
 
@@ -2457,12 +2612,12 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
             with _capture_stdout() as out:
                 tok = csrf(adt)
                 activate_and_verify(adt, tok, [(uri, name)])   # !=true / type=E → raises
-            return {
+            return _inaktif_hukmu({   # Z147
                 "ok": True, "name": name, "type": object_type, "activated": True,
                 "refs": [name], "client_log": out.getvalue().strip(),
                 "note": "activation-ref yolu (activate_object bu tipi desteklemiyor). "
                         "OData $metadata tazelemek gerekiyorsa ayrıca adt_publish_service çağır.",
-            }
+            }, client, [_akt_hedefi(name, object_type)], aktivasyon_iddiasi=True)
         except Exception as exc:
             return _err_from_exc(exc)
 
@@ -2489,12 +2644,7 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
         # False döndürüyor (ör. bağlantı kurulamadı) ama bu dal `ok: true` + `activated: false`
         # dönüyordu ⇒ CLI başarısız bir yazmayı exit 0 ile raporlardı. Artık `activated` False ise
         # `ok` False'tur; sebep log'dan sınıflanır (ulaşılamadı ≠ aktivasyon reddedildi).
-        akt_hedef = {"name": name, "uri": _activation_uri(name, object_type) or ""}
-        try:
-            from object_types import get_adt_type  # type: ignore
-            akt_hedef["type"] = get_adt_type(object_type) or ""
-        except Exception:  # noqa: BLE001 — tip yoksa URI/ad eslemesi yeter
-            akt_hedef["type"] = ""
+        akt_hedef = _akt_hedefi(name, object_type)
         if not activated:
             resp["ok"] = False
             if _bos_sonuc_sinifi(log_text) == "ulasilamadi":
@@ -2511,6 +2661,7 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
             akt_ok, akt_sonda, akt_kalan = _aktivasyon_readback(client, [akt_hedef])
             resp["activation_probe"] = akt_sonda
             resp["still_inactive"] = akt_kalan if akt_ok is not None else None
+            resp.update(_inaktif_alanlari(akt_ok, akt_sonda, akt_kalan))   # Z147
             if akt_ok is True:
                 resp["probe_note"] = (
                     "Obje aktive-bekleyen listesinde YOK. ⚠ Bu ayırt edici DEĞİL: obje "
@@ -2533,6 +2684,7 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
             akt_ok, akt_sonda, akt_kalan = _aktivasyon_readback(client, [akt_hedef])
             resp["activation_verified"] = akt_ok
             resp["activation_probe"] = akt_sonda
+            resp.update(_inaktif_alanlari(akt_ok, akt_sonda, akt_kalan))   # Z147
             if akt_ok is False:
                 # SAHTE-OK yakalandi: obje HALA aktive-bekleyen worklist'inde.
                 resp["ok"] = False

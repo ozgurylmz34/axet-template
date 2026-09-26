@@ -361,7 +361,12 @@ def check(root: Path, a) -> tuple[list[str], list[dict], dict]:
             else:
                 tara, mesaj = scanner
                 # object_type=None: tarayıcı tip bilgisiyle taramayı atlayabilir; .abap dosyası daima taranır (fail-closed)
-                hits = tara(text, None)
+                try:
+                    hits = tara(text, None)
+                except Exception as exc:  # noqa: BLE001 — Z117ⓔ: çalışırken patlayan tarayıcı da GEÇMEZ (Yasak A ile aynı)
+                    hits = None
+                    add("FAIL", "std_dml_scan_unavailable", f"Kesin Yasak B tarayıcısı çalışırken hata verdi "
+                        f"({type(exc).__name__}: {exc}): tarama yapılmadan teslim üretilmez", rel)
                 if hits:
                     add("FAIL", "ADR_0005_B", mesaj(hits), rel)
         elif info["ext"] == "xml":

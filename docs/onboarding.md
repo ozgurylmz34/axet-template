@@ -101,8 +101,10 @@ Var olan bir projeyi şablona getirmek için aXet'te **`%guncelle-proje`** yaz; 
 `KURULUMU-TAMAMLA`'ya çift tıkla (değişen proje ayarlarının onayını o pencere sorar).
 
 ### 3.2 SAP kimlik bilgileri
-Her SAP sistemi `conn\<AD>.env` dosyasıdır; aktif bağlantı proje kökündeki `.conn_adt`'dir. `conn/` ve `.conn_adt`
-git'e girmez, aXet ajanına kapalıdır (denylist), içeriği sohbete yazılmaz.
+Her SAP sistemi `conn\<AD>.env` dosyasıdır; aktif bağlantı proje kökündeki `.conn_adt`'dir. Bağlantı dosyaları
+(`conn/*.env`, `.conn_adt`) git'e girmez; `conn/` altında yalnız `conn/README.md` izlenir (şablon `.gitignore`:
+`!conn/README.md`) ve onun commit'i kullanıcıdadır — aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez.
+`conn/` ve `.conn_adt` aXet ajanına kapalıdır (denylist), içeriği sohbete yazılmaz.
 
 1. **Proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (`%yeni-proje` yazar; yoksa
    `& $HOME\axet\proje-tamamla.cmd <klasör>`). Pencere SAP bilgisi **sormaz** ve dosyayı kendisi **açmaz**:
@@ -152,6 +154,8 @@ python $HOME\axet\scripts\new_package.py <PAKET> --title "<başlık>"
 python $HOME\axet\scripts\new_package.py --index --check
 ```
 Bu komutlar yerel paket klasörünü kurar. **Paketi SAP'de SE21 ile sen yaratırsın**; aXet paket ya da transport yaratmaz.
+SAP'de zaten var olan bir paket için `new_package.py <PAKET> --mevcut` kullan: sorumlu, başlangıç tarihi ve üst paket
+canlı sistemden salt-okur okunur. Paket okunamaz ya da bulunamazsa klasör yazılmaz (çıkış 3).
 
 ### 3.4 Kabul kontrolü
 1. Projede yeni aXet oturumu aç (`axet-code -c <klasör>`) ve `%basla` yaz → ilk satırda `proje: <ad>` görünmeli.

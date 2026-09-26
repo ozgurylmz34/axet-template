@@ -1015,6 +1015,22 @@ def komut_kapanis(b: Baglam, args) -> int:
         rapor += ["", "## Ekip reposu",
                   "Bu değişiklikler proje reposuna commit edilecek; ekip arkadaşların pull edince "
                   "onlara da gelir. Commit KULLANICININ onayıyla atılır; push asla."]
+    # Z97/Z110 (karar 2026-09-26): `conn/README.md` şablon gereği İZLENİR (`.gitignore`: `!conn/README.md`), ama modelin
+    # `git add conn/...` denemesi denylist'e takılır (canlı ölçüldü: kullanıcı "commit et" dedi, model conn/README.md'yi
+    # eklemeye kalktı, "Access denied"). Model bu dosyayı hiç sahnelemez; commit'i kullanıcıya bırakılır. SAP dışı
+    # projede conn/ yoktur ⇒ bölüm basılmaz. Komut yalnız bu kapanışta GERÇEKTEN yazılan conn/ dosyaları için verilir.
+    conn_yazilan = [d["yol"] for d in plan["dosyalar"]
+                    if d["yol"].startswith("conn/")
+                    and durum["dosyalar"].get(d["yol"], {}).get("durum") == "dogrulandi"
+                    and durum["dosyalar"].get(d["yol"], {}).get("karar") != "yerel"]
+    if p.sap or conn_yazilan:
+        rapor += ["", "## conn/ — commit kullanıcının",
+                  "aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez (`git add -A` / `git add .` ile de "
+                  "sahnelemez); `conn/README.md`'nin commit'i kullanıcıya bırakılır (şablon onu izler, bağlantı "
+                  "dosyaları `.gitignore`'dadır)."]
+        if conn_yazilan:
+            rapor += [f"Bu güncellemede yazıldı: {', '.join(conn_yazilan)} — kendi terminalinde: "
+                      f"`git add {' '.join(conn_yazilan)}` + commit."]
     # Z48 (ürün kararı): `guncelle-proje` manifest'i KENDİSİ yenilemez — davranış yüzeyi onayı
     # bilinçli olarak kullanıcının terminalinde kalır; aksi güvenlik tasarımını deler. Yalnız tam
     # komut verilir.

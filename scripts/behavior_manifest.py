@@ -12,8 +12,8 @@ PROJE modu (dizin template reposunun dışındaysa):
   Onayı kullanıcı KENDİ terminalinde verir; aXet oturumu `generate` çalıştırmaz.
 
 TEMPLATE modu (dizin template reposuysa ya da --template):
-  yüzey    : AGENTS.md · .axetcode-denylist · config/permissions.json · core/** · skills/** · skills-sap/**
-             (tests/ ve __pycache__ hariç)
+  yüzey    : AGENTS.md · .axetcode-denylist · config/permissions.json · core/** · skills/** · skills-sap/** ·
+             scripts/** · templates/** (tests/ ve __pycache__ hariç)
   onay     : git. Commit edilmemiş değişiklik ve upstream'e gitmemiş commit'lerdeki yüzey dosyaları sapmadır.
              Manifest tutulmaz (her `git pull` onay istemesin); `generate` bu modda reddedilir.
              İSTİSNA (Z5): `%guncelle`'nin kendi kimliğiyle attığı commit'ler sapma SAYILMAZ, bilgi olarak
@@ -40,7 +40,9 @@ MANIFEST = Path(".axet-code") / "behavior-manifest.json"
 PROJE_DOSYALAR = ["AGENTS.md", ".axet-code.json", ".axetcode-denylist", "sap-project.json"]
 PROJE_DIZINLER = [".githooks", "validators-local", ".axet-code/skills", ".axet-code/commands"]
 TEMPLATE_DOSYALAR = ["AGENTS.md", ".axetcode-denylist", "config/permissions.json"]
-TEMPLATE_DIZINLER = ["core", "skills", "skills-sap"]
+# scripts/ ve templates/ (Z89, kullanıcı kararı 2026-09-26): klondaki elle değişiklik doctor'da GÖRÜNSÜN — engel değil,
+# görünürlük. `%guncelle`'nin kendi commit'leri kimliğiyle INFO'ya düşer (sapma sayılmaz); tests/ ve __pycache__ BUDANAN.
+TEMPLATE_DIZINLER = ["core", "skills", "skills-sap", "scripts", "templates"]
 BUDANAN = {"__pycache__", ".pytest_cache", "tests", "node_modules", ".git"}
 # `%guncelle` akışının git kimliği ve anlık-commit konusu. KOPYADIR — kaynak: scripts/guncelle.py:51 (GIT_KIMLIK)
 # ve :1456 (anlık commit mesajı). Eşliği tests/test_behavior_manifest.py::test_guncelle_kimligi_kaynakla_es pinler.
@@ -294,7 +296,7 @@ def main() -> int:
         for s in o["notlar"]:
             print(f"   {s}")
         print("KAPSAM — bakılanlar: git'e göre commit'siz ve upstream'e gitmemiş yüzey dosyaları · bakılmayanlar: "
-              "commit'lenmiş değişikliğin içeriği (onay git geçmişidir), memory/ scripts/ templates/ · "
+              "commit'lenmiş değişikliğin içeriği (onay git geçmişidir), memory/ tests/ · "
               f"'{GUNCELLE_EPOSTA}' kimliğiyle atılmış commit'ler sapma SAYILMAZ (yapısal olarak upstream'e gitmez) — "
               "kimlik taklit edilebilir, bu bir güvenlik sınırı DEĞİL, gürültü ayıklamasıdır · "
               "merge commit'leriyle gelen dosyalar atfedilemez ve temkinli olarak kullanıcı sayılır")

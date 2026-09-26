@@ -19,6 +19,7 @@
   | Tasarım kararı | İlgili kural (dosya · satır/kod) | uyuyor / sapıyor | Sapıyorsa: gerekçe + kullanıcıya sorulan soru ve cevabı |
   |---|---|---|---|
   | <karar> | <kural> | <uyuyor> | <—> |
+- Build planı (sırayla; ayrıntı %sap-dev §3): ① paket klasörü <source_root>/<MODÜL>/<PAKET>/ var mı → yoksa new_package.py (SAP'de paket varsa --mevcut) ② değiştirilecek objeleri paket klasörüne indir, yerelde düzenle, diff göster ③ <build adımları>
 - Açık kararlar / riskler:
 - Öz-tutarlılık (onaya sunmadan önce): [ ] değişen her karar riskler + kabul kriterleri + obje tablosuna işlendi · [ ] "yok / yapılamaz" diyen her madde TR+EN eş anlamlılarla ikinci aramadan geçti · [ ] ONAY kutusu boş yeni Z adı kalmadı
 - MUTABAKAT: [ ] kullanıcı sign-off

@@ -36,6 +36,8 @@ taşınan validator'lar `lib/validators/check_{rap_readonly_consumption,reuse_ga
 
 - Çıktı daima tek JSON nesnesi: `ok, tool, class, result, error{code,message}, gate{project_dir,tier,sap_write_optin,scope,reason,intake,review}`.
   `--list`te `tool/class/gate` null, `result = {tools:[{name,class,description,args,available_on[,write_when][,requires_transport]}], counts}`.
+  `--list --grep <desen>` (Z111ⓕ, 2026-09-26): aynı şema, yalnız adı ya da açıklaması desenini içeren araçlar (büyük/küçük harf duyarsız
+  alt dize, regex değil); `counts` süzülen kümeden. `--list`siz ya da boş desen → `usage_error` (3). Çıktıyı dosyaya yazıp süzmek gerekmez.
 - Sınıflandırma kod seviyesinde **salt-okur allowlist**tir (`gate.READ_TOOLS`, 20 araç, `ping` dahil); listede olmayan HER araç yazma kapısından geçer.
   `adt_unit_run`: `allow_risky_tests` truthy ise yazma (araç `if allow_risky_tests:` ile okur — `"false"` dizesi de truthy'dir; sınıflandırma araçla aynı kuralı kullanır).
 - Çıkış kodu: `0` başarı · `2` kapı/guard reddi (SAP'ye gidilmedi) · `1` araç/bağlantı hatası · `3` kullanım hatası.
@@ -247,7 +249,8 @@ Geri alınınca 3/3 OK. Araç katmanı süreç-içi testle (`test_inprocess_guar
   1. kayıt dosyası bozuk → exit 2 `pull_state_unreadable` · kayıt yok → exit 2 `pull_before_edit_missing` (ağa gidilmez);
   2. canlı kaynak `_adt_get_oku` ile okunur (kapının TEK ağ çağrısı) — okunamazsa exit 1 `pull_live_read_failed` (sessiz geçiş yok);
   3. canlı özet ≠ kayıt → exit 2 `source_changed_since_pull` (push yapılmaz; mesaj: yeniden çek, değişikliği yeni kaynağa uygula);
-  3b. (Z87 ⓑ+, 2026-09-24) aynı canlı metin ile yeni kaynak `difflib` ile kıyaslanır (iki taraf `normalize_source`'tan geçer, ek ağ çağrısı
+  3b. (Z87 ⓑ+, 2026-09-24; Z99 2026-09-26: `difflib.SequenceMatcher` yerine `Counter` çoklu-küme farkı — süre doğrusal, yeri değişen
+     satır silinmiş sayılmaz) aynı canlı metin ile yeni kaynak kıyaslanır (iki taraf `normalize_source`'tan geçer, ek ağ çağrısı
      YOK); canlıda olup yeni kaynakta olmayan satır varsa yanıta `removed_lines_warning: {removed, added, sample[≤5, 120 karakter]}` +
      `warning` konur — **uyarı, red değil**, push sürer (kullanıcı kararı: sert red / onay argümanı yok). Yazmadan ÖNCE hesaplanır;
      push istisnayla düşerse hata yanıtına da eklenir. Kıyas noktası dört push yolundan (düz, sınıf alt-include'u, BDEF, FM) önce
@@ -480,6 +483,9 @@ Yeni zincir icat edilmedi (görev sınırı). İki araçta da create hatası dö
   tüm-sınıf / oturum dili ≠ master korumaları, KİLİT ALTINDA yeniden okuma (TOCTOU; `phase:"under_lock"`), ÖNCE/SONRA kapısı `delete_gate` + kapsam beyanı;
   öznitelik kaçışına TAB/LF/CR eklendi. Sahte istemci ölçülmüş davranışa çevrildi (`test_msgclass_domain._sap_put_uygula`); testler MS1-MS7.
   **aXet ile canlı ÖLÇÜLMEDİ.**
+- **Z118ⓒ (2026-09-26):** kilit altı yeniden okuma SİLMESİZ yazıma da genişletildi (kaynakta yalnız silme kipindeydi). Gerekçe sahte SAP'de
+  ölçüldü: kilitsiz okuma ile LOCK arasında değişen mesaj tam gövdeyle eski metne döndü ve geri okuma kıyası (`beklenen = gönderilen`) bunu
+  görmedi (`ok:true`). Sıra artık GET → LOCK → GET → PUT → UNLOCK → GET (test MS8; MS5/M1 sıra beklentisi güncellendi). **Canlı ÖLÇÜLMEDİ.**
 - **Bilinçli farklar:** (1) `clear_enqueue_lock` güvenlik ağı (`adt-message-class.md:136,193-197`, `populate_message_class.py:305-310`) **alınmadı** —
   Kesin Yasak C; yalnız aracın kendi LOCK handle'ı UNLOCK edilir. Kilit alınamazsa DUR: HTTP 403/409/423 ya da gövdede `EU 510|locked|gesperrt|
   currently being edited|enqueue` → `lock_conflict`, aksi `lock_failed` (ikisi çıkış 1) + SM12 yönlendirmesi; PUT ve UNLOCK gönderilmez.
@@ -1440,3 +1446,22 @@ Canlı SAP'de ölçülmedi.
   P5 pencere; P6 bozuk dosya fail-open; P7 kapı reddi sayılmaz). Kırmızı-önce: kablolamasız P1 FAIL + P6 ERROR. Mutasyonlar
   (ESIK=99 → P1 · kod kıyası yok → P2 · başarı sıfırlamıyor → P3 · pencere yok → P5 · okuma hatasında engel → P6) hepsi ölü.
   Canlı SAP'de ölçülmedi (gerek yok: kesici ağa gitmez).
+
+## 24. Z117 tarayıcı kalanları + Z39 metin havuzu okuma aracı (2026-09-26)
+
+- **`sapadt/std_ext_scan.py` (Z117):** ⓐ ilk sözcük `EXTENSION` ama çapalı başlık eşleşmiyor (çift BOM / ZWSP / NUL / WJ öneki)
+  → `?` (önce `[]`) · ⓑ tip bilinmezken BDEF algılanınca yalnız `_R_EXTEND_BDEF_ICI` biçimindeki DDL `?`'i düşer (önce TÜM DDL
+  `?`'leri düşüyordu; `{ extend }` `[]` veriyordu) · ⓒ `--` içindeki `;` + Z→Z BDEF `?` → düzeltilmedi, modül notunda ve testte
+  sınır ((c) modelinde başlık gerçekten arayüzsüz) · ⓓ satır numarası `_SatirDizini` (`bisect`) — 100k satır + 2000 EXTEND:
+  taban 14,2 sn (3 görünüm) → 1,5 sn (6 görünüm) · ⓔ iki dize modeli (`''` · ters bölü; 3 → 6 görünüm) + `--extend` bitişik
+  yazılış `_ANAHTAR`'da `--` sonrası kabul edilir (tek `-` hâlâ bağlar).
+- **`utils/ddic_dtel.py` (Z117ⓔ):** `dtel_adaylari` iki dize modelinin aday birleşimi (üst küme).
+- **`sap-abapgit-delivery/scripts/abapgit_zip.py` (Z117ⓔ):** Yasak B `tara` çağrısı try içinde; istisna → `std_dml_scan_unavailable` FAIL
+  (önce traceback + rc=1).
+- **`tools/textpool.py::adt_textpool_read` (Z39 kalanı):** okuma sınıfı (`gate.READ_TOOLS`), `s4_private`, yalnız GET
+  (`_request_with_csrf_retry` + `_get_headers`, alt kaynağın KENDİ Accept tipi); `version` `active` | `working`; `parts` alt kümesi;
+  `headings` `invalid_argument`. Ayrıştırma `utils/textpool.girisler` (`@MaxLength` · `@DDICReference` · `=?` yer tutucu · tanınmayan `@…`
+  → `annotations`).
+- **Testler:** `test_std_ext_gate.py` `Z117Tarayici` (5) + `Kapi.test_std_ext_gate_z117` · `test_verdict_reviewer_k1_d1.py` B4b ·
+  `test_ddic_textpool.py` R1-R5 · `test_cli_gate.py` test_01 (okuma 26, `adt_textpool_read` satırı) · abapGit
+  `test_dml_scanner_runtime_error_is_structured_fail`. Kırmızı-önce ve mutasyonlar: iş listesinde Z117 / Z39 kapanış notu.

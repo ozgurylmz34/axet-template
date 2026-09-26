@@ -3,7 +3,8 @@
 > Kaynak: ekip ADT playbook'unun "foundation" bölümü (logon · download · push/activate · lock · paket ·
 > transport · search) + araç semantiği notları; aXet CLI'ye uyarlandı.
 > Sorgu/where-used/ATC/OData: `foundation-query.md` · hata indeksi: `known-errors-adt.md` ·
-> araç argümanları: `tool-catalog.md` · CLI'nin gerçek argümanları için otorite: `sap_adt_cli.py --list`.
+> araç argümanları: `tool-catalog.md` · CLI'nin gerçek argümanları için otorite: `sap_adt_cli.py --list`
+> (tek araç/konu için `--list --grep <desen>` — çıktıyı dosyaya yazıp süzme).
 >
 > **Okuma kuralı:** "ÇALIŞAN YÖNTEM" ve "DENENEN — BAŞARISIZ" satırları ölçülmüş deneyimdir; kısaltılmadı.
 > Bölümlerdeki ham ADT REST akışları (endpoint, header, XML) **araç bakımı ve teşhis** içindir:
@@ -262,10 +263,16 @@ ad denetimi yetmez; yazma kapısı (`gate.check_std_extension`, adım 5) ve `adt
   blok açınca `-- /*` … `-- */` arasındaki gerçek kod siliniyordu; `--` metni korununca da BDEF başlığı `--` içindeki `;`'da
   bitip `--` içindeki yem Z arayüzünü topluyordu (`extension -- using interface ZI_X ;` + alt satırda standart arayüz → `[]`).
   Güvenlik, iki SAP davranışının (b)/(c) ile doğru modellenmesine dayanır — SAP'nin gerçek davranışı ölçülmedi.
+- Z117 (2026-09-26) eklemeleri: ① her görünüm iki dize modeliyle taranır (`''` kaçışı · ters bölü kaçışı; SAP'nin `\'`'yü
+  kaçış sayıp saymadığı DOĞRULANMADI — `'x\'' extend view entity I_… with` önceden `[]` veriyordu) ② kaynağın ilk sözcüğü
+  `EXTENSION` olup önünde boşluk sayılmayan karakter (çift BOM, ZWSP, NUL…) varsa `?` red ③ tip bilinmezken BDEF algılanınca
+  yalnız BDEF gövdesinin kendi `extend <sözcük>` ifadelerinin `?`'i düşer; `extend }`, `extend view "…"` gibi çözülemeyenler
+  red kalır (önceden hepsi düşüyordu).
 - Bilinen yanlış pozitifler (fail-closed yönü, kod değiştirilmez): ① `--` yorumunda standart hedefli genişletme metni geçerse
-  red. ② Alan/alias adı tam olarak `extend` / `annotate` ise hedef çözülemez → `?` red (ölçüldü:
+  red (bitişik `--extend` dahil). ② Alan/alias adı tam olarak `extend` / `annotate` ise hedef çözülemez → `?` red (ölçüldü:
   `{ key extend, extend_flag as Extend }` → 2 bulgu `?`; `note as Annotate` → `?`; `extend_flag` tek başına serbest).
-  Çare: alanı/alias'ı yeniden adlandır.
+  Çare: alanı/alias'ı yeniden adlandır. ③ BDEF başlığında `;` `using interface`'ten ÖNCE bir `--` içindeyse (Z→Z olsa da) `?` red:
+  `--` yorum sayılmazsa başlık gerçekten arayüzsüzdür. Çare: `--` notunu başlıktan çıkar ya da `;`'suz yaz.
 - Kaynak yok / tarayıcı koşamadı → `std_ext_scan_unavailable`. ABAP kaynak tipleri (class, program, FM…) taranmaz.
 - Ne yapılır: DUR → kullanıcıya açıkla. Append/extend'i kullanıcı yaratır, sonucu sana bildirir; sen `adt_get` ile okuyup
   doğrularsın. Append/DTEL adı önerme.

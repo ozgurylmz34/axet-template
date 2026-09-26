@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.5.2
+SAP-CORE-ID: AXET-SAP-0.5.3
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -20,6 +20,7 @@ SAP-CORE-ID: AXET-SAP-0.5.2
 - **Tetik cümleleri (duyunca DUR, yasak tablosuna bak):** A — "standart tabloya alan ekle", "VBAK'a custom field", "append yarat" · B — "VBAK'a kayıt ekle", "T001'i güncelle" · C — "yeni transport aç", "transport release et", "yeni paket yarat", "kilidi sil" · D ihmali — Z obje etiketi başka dilde ya da boş.
 - Transport ve paket kullanıcıdan gelir; yoksa sor. İş bir transporta bağlıysa aynısıyla devam et, yeni isteme.
 - SAP'deki bir kaynağı değiştirmeden ÖNCE — analize başlamadan — güncel hâlini sistemden çek; yereldeki kopya bayat olabilir.
+- Z obje yazmaya ya da SAP kaynağı değiştirmeye başlamadan önce `%recall`'u obje tipi + işlem terimleriyle çalıştır (ör. "CDS view alan ekle", "klasik ALV excel"); sonuç yoksa eş anlamlıyla bir kez daha dene. Tanıdık bir tuzağın cevabı çoğu zaman zaten yazılıdır; `%recall` kendiliğinden gelmez.
 - Yükleme/aktivasyon "başarılı" dese de (HTTP 200 sahte-OK verebilir) sonucu sistemden tekrar okuyarak doğrula.
 - Z obje açıklamalarını ve metinlerini tahmin etme; spesifikasyondan ya da eski sistemden al.
 - Eski sistemden kopyalanan standart tablo/alan adlarını hedef sistemde teyit et.

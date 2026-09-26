@@ -38,3 +38,5 @@ __pycache__/
 /config/sap-write.local
 # Template kökünde canlı SAP testi için yerel profil (projelerde bu dosya repoya girer)
 /sap-project.json
+# Harici worktree provizyonunun bıraktığı .claude/ junction'ları (Z126) — aXet bu dizinde dosya izlemez
+/.claude/

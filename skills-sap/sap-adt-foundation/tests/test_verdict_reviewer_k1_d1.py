@@ -992,6 +992,27 @@ class B4CikarimDaralmasi(unittest.TestCase):
             H.kaydet(f"B4 {ad}", beklenen, g, g == beklenen)
             self.assertEqual(g, beklenen, ad)
 
+    def test_B4b_z117_ters_bolu_kacis(self):
+        """Z117ⓔ (`std_ext_scan` ile aynı sınıf): `\\'` kaçışı dize sınırını kaydırıyordu. `''` modelinde
+        `'x\\'' ; f1 : … ; @A : 'y'` tek dize sayılıp `f1` adayı GİZLENİYORDU (ölçüldü 2026-09-26: yalnız
+        ZAXET_E_ACIK). SAP'nin `\\'` kaçışını tanıyıp tanımadığı DOĞRULANMADI ⇒ iki model birleşir (aday ÜST küme)."""
+        from utils.ddic_dtel import dtel_adaylari
+        vakalar = {
+            "\\' sonrası aynı satırda alan": (
+                "define structure zaxet_s {\n  @EndUserText.label : 'x\\'' ; f1 : zaxet_e_gizli; @A : 'y'\n"
+                "  f2 : zaxet_e_acik;\n}", ["ZAXET_E_ACIK", "ZAXET_E_GIZLI"]),
+            "KONTROL \\' kaçışlı etiket, alanlar değişmez": (
+                "@EndUserText.label : 'it\\'s'\ndefine structure zaxet_s {\n  a : zaxet_e_a;\n  b : abap.char(1);\n}",
+                ["ZAXET_E_A"]),
+            "KONTROL dize içindeki alan biçimi iki modelde de dize": (
+                "@EndUserText.label : 'a : zaxet_e_dize;'\ndefine structure zaxet_s {\n  a : zaxet_e_a;\n}",
+                ["ZAXET_E_A"]),
+        }
+        for ad, (ddl, beklenen) in vakalar.items():
+            g = dtel_adaylari(ddl)
+            H.kaydet(f"B4b Z117 {ad}", beklenen, g, g == beklenen)
+            self.assertEqual(g, beklenen, ad)
+
 
 if __name__ == "__main__":
     unittest.main()

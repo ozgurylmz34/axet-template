@@ -31,6 +31,10 @@ KAPSAM_BEYANI = (
 # bölünmüş alan birleşir; aynı satırdaki anotasyon silinince alan kalır). Önceki hâl `\n` ile bölüp `@` ile başlayan
 # parçayı atıyordu ve yorum regex'i string'i tanımıyordu → üç biçimde aday sessizce kaçıyordu (taban regex'i yakalıyordu).
 _STRING_YORUM = re.compile(r"'(?:[^'\n]|'')*'|/\*.*?\*/|//[^\n]*", re.S)
+# Z117ⓔ (2026-09-26, `std_ext_scan` ile aynı sınıf): SAP'nin DDL dizesinde `\'`'yü kaçış sayıp saymadığı DOĞRULANMADI.
+# Tek (`''`) modelde `'x\'' ; f1 : z…; @A : 'y'` TEK dize sayılıp `f1` adayı gizleniyordu ⇒ adaylar iki modelde
+# çıkarılıp BİRLEŞTİRİLİR (üst küme = daha çok varlık denetimi; fail-closed yön).
+_STRING_YORUM_TERS = re.compile(r"'(?:[^'\\\n]|\\[^\n]|'')*'|/\*.*?\*/|//[^\n]*", re.S)
 _ANOTASYON = re.compile(
     r"@<?[\w.]+(?:\s*:\s*(?:''|#\w+|-?\d+(?:\.\d+)?|\w+|\[[^\]]*\]|\{[^}]*\}))?")
 _INCLUDE = re.compile(r"^include\b", re.I)
@@ -107,17 +111,18 @@ def aday_mi(tip: str) -> bool:
 
 
 def dtel_adaylari(ddl: str) -> list[str]:
-    """Struct/tablo DDL metninden DTEL adaylarını çıkar (BÜYÜK harf, sıralı, tekil)."""
-    metin = _STRING_YORUM.sub(_string_yorum_at, ddl or '')
-    metin = _ANOTASYON.sub(' ', metin)
+    """Struct/tablo DDL metninden DTEL adaylarını çıkar (BÜYÜK harf, sıralı, tekil). İki dize modelinin birleşimi."""
     adaylar: set[str] = set()
-    for parca in re.split(r'[;{}]', metin):
-        s = parca.strip()
-        if not s or _INCLUDE.match(s) or _TANIM.match(s):
-            continue
-        m = _ALAN.search(s)
-        if m and aday_mi(m.group('tip')):
-            adaylar.add(m.group('tip').upper())
+    for desen in (_STRING_YORUM, _STRING_YORUM_TERS):
+        metin = desen.sub(_string_yorum_at, ddl or '')
+        metin = _ANOTASYON.sub(' ', metin)
+        for parca in re.split(r'[;{}]', metin):
+            s = parca.strip()
+            if not s or _INCLUDE.match(s) or _TANIM.match(s):
+                continue
+            m = _ALAN.search(s)
+            if m and aday_mi(m.group('tip')):
+                adaylar.add(m.group('tip').upper())
     return sorted(adaylar)
 
 

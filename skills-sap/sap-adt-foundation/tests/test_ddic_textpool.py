@@ -651,6 +651,83 @@ class DdicTextpool(unittest.TestCase):
         self.kaydet("P7 textpool: allow_remove ile silinecek B99 aktifte duruyor → readback_mismatch",
                     "remove_not_applied · temizde ok", f"{r.get('error')} {rb} · {r2.get('ok')}", ok1 and ok2)
 
+    # ── Z39 kalanı: adt_textpool_read (bağımsız OKUMA aracı; yazma aracının okuma yolunu kullanır) ─────────────
+    CANLI_SEM = "@MaxLength:10\r\nB00=İşlem Türü\r\n\r\n@MaxLength:16\r\nB01=Seçim Kriterleri"
+    CANLI_SEC = "@DDICReference\r\nP_BUKRS =?\r\n\r\nP_FILE  =Excel Dosyası\r\n\r\nRB_RAPOR=Sözleşmeleri Listele"
+
+    def _oku(self, yanit=None, **kw):
+        """yanit: alt kaynak → Yanit | Exception; verilmezse iki alt kaynak 200 + CANLI_*."""
+        yanit = yanit or {"symbols": Yanit(200, self.CANLI_SEM), "selections": Yanit(200, self.CANLI_SEC)}
+
+        def yon(c):
+            if c["method"] == "GET" and "/textelements/programs/zaxet_p_den/source/" in c["path"]:
+                return yanit.get(c["path"].rsplit("/", 1)[-1], Yanit(500, "beklenmedik alt kaynak"))
+            return AssertionError(f"okuma aracı beklenmedik çağrı yaptı: {c['method']} {c['path']}")
+        adt, _ist = self.kur(yon)
+        return adt, self.tp.adt_textpool_read("zaxet_p_den", **kw)
+
+    def test_R1_textpool_read_aktif_iki_alt_kaynak(self):
+        adt, r = self._oku()
+        sem, sec = r["parts"]["symbols"], r["parts"]["selections"]
+        get = [c for c in adt.cagri]
+        ok = (r.get("ok") is True and r.get("name") == "ZAXET_P_DEN" and r.get("version") == "active"
+              and all(c["method"] == "GET" for c in get) and len(get) == 2
+              and all(c["params"] == {"version": "active"} for c in get)
+              and {c["path"].rsplit("/", 1)[-1]: c["headers"].get("Accept") for c in get}
+              == {"symbols": "application/vnd.sap.adt.textelements.symbols.v1",
+                  "selections": "application/vnd.sap.adt.textelements.selections.v1"}
+              and sem["entries"] == [{"key": "B00", "text": "İşlem Türü", "max_length": 10},
+                                     {"key": "B01", "text": "Seçim Kriterleri", "max_length": 16}]
+              and sec["entries"] == [
+                  {"name": "P_BUKRS", "text": "?", "ddic_reference": True, "placeholder": True},
+                  {"name": "P_FILE", "text": "Excel Dosyası", "ddic_reference": False, "placeholder": False},
+                  {"name": "RB_RAPOR", "text": "Sözleşmeleri Listele", "ddic_reference": False, "placeholder": False}]
+              and sem["count"] == 2 and sec["count"] == 3 and "headings" in " ".join(r.get("not_checked", [])))
+        self.kaydet("R1 textpool_read: yalnız GET ×2 · version=active · alt kaynak Accept · ayrıştırma",
+                    "ok · 2 GET · girişler", f"ok={r.get('ok')} err={r.get('error')} çağrı={[(c['method'], c['path'][-10:], c['params']) for c in get]} {r.get('parts')}", ok)
+
+    def test_R2_textpool_read_working_ve_parca_secimi(self):
+        adt, r = self._oku(version="working", parts=["symbols"])
+        ok = (r.get("ok") is True and len(adt.cagri) == 1 and adt.cagri[0]["path"].endswith("/source/symbols")
+              and adt.cagri[0]["params"] == {} and list(r["parts"]) == ["symbols"])
+        self.kaydet("R2 textpool_read: version=working → parametresiz GET · parts=[symbols] → tek GET",
+                    "1 GET · param yok", f"{[(c['path'][-8:], c['params']) for c in adt.cagri]} {r.get('error')}", ok)
+
+    def test_R3_textpool_read_hata_yollari(self):
+        _a1, r404 = self._oku({"symbols": Yanit(404, ""), "selections": Yanit(200, self.CANLI_SEC)})
+        _a2, r500 = self._oku({"symbols": Yanit(200, self.CANLI_SEM), "selections": Yanit(500, "dump")})
+        _a3, rexc = self._oku({"symbols": ConnectionError("ağ"), "selections": Yanit(200, self.CANLI_SEC)})
+        ok = (r404.get("ok") is False and r404.get("error") == "not_found"
+              and r500.get("ok") is False and r500.get("error") == "read_failed"
+              and r500["parts"]["selections"] == {"ok": False, "http_status": 500, "body_head": "dump"}
+              and r500["parts"]["symbols"]["ok"] is True
+              and rexc.get("error") == "read_failed" and rexc["parts"]["symbols"]["ok"] is False
+              and "ConnectionError" in rexc["parts"]["symbols"]["reason"])
+        self.kaydet("R3 textpool_read: 404 → not_found · 500 → read_failed (diğer parça korunur) · istisna",
+                    "not_found · read_failed ×2", f"{r404.get('error')} · {r500.get('error')} · {rexc.get('error')}", ok)
+
+    def test_R4_textpool_read_ag_oncesi_redler(self):
+        adt, _ = self.kur(lambda c: AssertionError("ağ"))
+        f = self.tp.adt_textpool_read
+        vakalar = [("boş ad", f("  ")), ("boşluklu ad", f("ZAXET P")), ("41 karakter", f("Z" * 41)),
+                   ("sürüm bilinmiyor", f("ZAXET_P_DEN", version="inactive")),
+                   ("headings desteklenmez", f("ZAXET_P_DEN", parts=["headings"])),
+                   ("bilinmeyen parça", f("ZAXET_P_DEN", parts=["xyz"])), ("boş parça listesi", f("ZAXET_P_DEN", parts=[]))]
+        sonuc = [(a, r.get("error")) for a, r in vakalar]
+        ok = all(e == "invalid_argument" for _a, e in sonuc) and adt.cagri == []
+        self.kaydet("R4 textpool_read: ağ öncesi redler", "invalid_argument ×7 · çağrı 0",
+                    f"{sonuc} çağrı={len(adt.cagri)}", ok)
+
+    def test_R5_textpool_read_okuma_sinifi_ve_profil(self):
+        from sapadt import gate
+        from sapadt._app import load_all_tools
+        spec = load_all_tools()["adt_textpool_read"]
+        ok = (gate.tool_class("adt_textpool_read", {}) == "read" and "adt_textpool_read" in gate.READ_TOOLS
+              and "adt_textpool_read" not in gate.REQUIRES_TRANSPORT
+              and tuple(spec.available_on) == ("s4_private",))
+        self.kaydet("R5 textpool_read: READ_TOOLS + read sınıfı + transport istemez + s4_private",
+                    "read · s4_private", f"{gate.tool_class('adt_textpool_read', {})} {spec.available_on}", ok)
+
 
     # ── Canlı ölçüm bulguları (DEV, 2026-09-21 — kk-ddic r2_*): kırmızı-önce testler ─────────────────────────
     # Canlı gerçek (r2_10_struct): yapı AKTİF yaratıldı (DD02L INTTAB/A, DD03L 2 satır) ama araç `ok:false`

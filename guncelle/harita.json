@@ -1,6 +1,6 @@
 {
   "surum": 1,
-  "aciklama": "aXet template mimari haritası (makine okur). Her izlenen dosya TAM BİR sınıfa düşer. Kurallar SIRALI: ilk eşleşen 'siniflar' kaydı kazanır (desen biçimi: fnmatch.fnmatchcase — maintenance/sync_check.py:78-82 deseni). Kaynak: maintenance/guncelle-mimari/TASARIM.md §3 + RAPOR.md §1-§4.",
+  "aciklama": "aXet template mimari haritası (makine okur). Her izlenen dosya TAM BİR sınıfa düşer. Kurallar SIRALI: ilk eşleşen 'siniflar' kaydı kazanır (desen biçimi: fnmatch.fnmatchcase — maintenance/sync_check.py `first_rule` deseni). Kaynak: maintenance/guncelle-mimari/TASARIM.md §3 + RAPOR.md §1-§4.",
   "olcum": {
     "taban_commit": "b3e7ab54e71cb6c8bc9501143ad7559429f3d3d3",
     "dal": "feat/2026-09-15-p1-harita",
@@ -76,20 +76,20 @@
       "sinif": "config-izin-kok",
       "ust_sinif": "config-izin",
       "glob": [".axetcode-denylist", ".gitattributes", ".gitignore", "config/permissions.json"],
-      "yukleme": "config/permissions.json → global config permissions.rules; install.py birleştirir (scripts/install.py:175-183)",
+      "yukleme": "config/permissions.json → global config permissions.rules; install.py birleştirir (scripts/install.py `apply_ours`)",
       "etkin": "install-sonra-yeni-oturum",
       "esler": ["scripts/install.py", "tests/test_install.py"],
       "test": [{"komut": "python tests/run_tests.py -k install", "cwd": ".", "on_kosul": null}],
       "risk": "yuksek",
       "ozel_adim": "python scripts/install.py",
       "kritik_yol": true,
-      "not": "install.py RETIRED_RULES eski desenleri temizler (scripts/install.py:53-71)."
+      "not": "install.py RETIRED_RULES eski desenleri temizler (scripts/install.py `RETIRED_RULES` · `strip_ours`)."
     },
     {
       "sinif": "kurulum-araci-kok",
       "ust_sinif": "kurulum-araci",
       "glob": ["kur.cmd", "kur.ps1", "yeni-proje.cmd", "proje-tamamla.cmd", "aXet-Kur.cmd"],
-      "yukleme": "aXet'e yüklenmez; kullanıcı terminalden elle çalıştırır (README.md:37-39)",
+      "yukleme": "aXet'e yüklenmez; kullanıcı çift tıklar ya da terminalden çalıştırır (README '## Kurulum' · kur.ps1 baş yorumu)",
       "etkin": null,
       "esler": ["tests/test_kur.py", "tests/test_yeni_proje.py", "tests/test_proje_tamamla.py"],
       "test": [
@@ -105,14 +105,14 @@
       "sinif": "bakim-repo-agents",
       "ust_sinif": "belge-lisans",
       "glob": ["AGENTS.md"],
-      "yukleme": "yalnız bu template reposunun KENDİSİ üzerinde çalışılırken yüklenir (AGENTS.md:4-5)",
+      "yukleme": "yalnız bu template reposunun KENDİSİ üzerinde çalışılırken yüklenir (AGENTS.md baş notu)",
       "etkin": "yeni-oturum",
       "esler": [],
       "test": [],
       "risk": "orta",
       "ozel_adim": null,
       "kritik_yol": false,
-      "not": "Kök AGENTS.md bakımcı talimatıdır; proje şablonunun templates/project/AGENTS.md'si AYRI sınıftır. RİSK GEREKÇESİ (2026-09-17, D17 yargı kalemi) — 'dusuk' → 'orta': §3'ün risk varsayılanı 'yuksek' olduğu için derece gerekçesiz bırakılmaz. Ölçülenler: (a) bu dosya aXet'in KENDİ davranış yüzeyindedir — behavior_manifest.py:40 TEMPLATE_DOSYALAR listesinin ilk üyesi, diğer iki üyesi (config/permissions.json, .axetcode-denylist) risk 'yuksek' + kritik_yol true; (b) yayin_hazirla.py:31 ZORUNLU_DOSYALAR'da → public sürüme ZORUNLU girer, yani 'yalnız bakımcıya ait, tüketiciye gitmez' karşı-argümanı ölçümle ÇÜRÜK; (c) eski 'dusuk' derecesi belge-lisans kovasından miras görünüyordu — o kovanın 6 üyesinden 5'i etkin=null atıl metindir (LICENSE/README/docs/skill indeksleri), bu sınıf oradaki TEK etkin!=null üyedir; ayrıca haritanın oturum-başı yüklenen 6 sınıfının tek 'dusuk'u buydu (memory/** bile 'orta'). 'yuksek' DEĞİL: izin dosyası doğrudan komut çalıştırma yetkisi verir, bu dosya talimat taşır — 'orta' ölçülen kanıtın tam karşılığıdır, fazlası değil. kritik_yol false KALIR: §3'e göre kritik_yol asgari güvence raporu/gate zinciri üyeliğidir, bu dosya gate zinciri üyesi değildir."
+      "not": "Kök AGENTS.md bakımcı talimatıdır; proje şablonunun templates/project/AGENTS.md'si AYRI sınıftır. RİSK GEREKÇESİ (2026-09-17, D17 yargı kalemi) — 'dusuk' → 'orta': §3'ün risk varsayılanı 'yuksek' olduğu için derece gerekçesiz bırakılmaz. Ölçülenler: (a) bu dosya aXet'in KENDİ davranış yüzeyindedir — scripts/behavior_manifest.py TEMPLATE_DOSYALAR listesinin ilk üyesi, diğer iki üyesi (config/permissions.json, .axetcode-denylist) risk 'yuksek' + kritik_yol true; (b) maintenance/yayin_hazirla.py ZORUNLU_DOSYALAR'da → public sürüme ZORUNLU girer, yani 'yalnız bakımcıya ait, tüketiciye gitmez' karşı-argümanı ölçümle ÇÜRÜK; (c) eski 'dusuk' derecesi belge-lisans kovasından miras görünüyordu — o kovanın 6 üyesinden 5'i etkin=null atıl metindir (LICENSE/README/docs/skill indeksleri), bu sınıf oradaki TEK etkin!=null üyedir; ayrıca haritanın oturum-başı yüklenen 6 sınıfının tek 'dusuk'u buydu (memory/** bile 'orta'). 'yuksek' DEĞİL: izin dosyası doğrudan komut çalıştırma yetkisi verir, bu dosya talimat taşır — 'orta' ölçülen kanıtın tam karşılığıdır, fazlası değil. kritik_yol false KALIR: §3'e göre kritik_yol asgari güvence raporu/gate zinciri üyeliğidir, bu dosya gate zinciri üyesi değildir."
     },
     {
       "sinif": "belge-kok",
@@ -153,7 +153,7 @@
       "risk": "dusuk",
       "ozel_adim": null,
       "kritik_yol": false,
-      "not": "docs/agentic-connectors.md ve docs/axet-davranis-olcumleri.md public sürüme girmez (maintenance/yayin_hazirla.py:27)."
+      "not": "docs/agentic-connectors.md ve docs/axet-davranis-olcumleri.md public sürüme girmez (maintenance/yayin_hazirla.py `DISLANANLAR`)."
     },
     {
       "sinif": "ci-codeowners",
@@ -172,7 +172,7 @@
       "sinif": "bakim-ic",
       "ust_sinif": "bakim-ic",
       "glob": ["maintenance/*"],
-      "yukleme": "hiçbir şekilde yüklenmez; public sürüme de girmez (maintenance/yayin_hazirla.py:27 DISLANANLAR)",
+      "yukleme": "hiçbir şekilde yüklenmez; public sürüme de girmez (maintenance/yayin_hazirla.py `DISLANANLAR`)",
       "etkin": null,
       "esler": [],
       "test": [],
@@ -187,12 +187,12 @@
       "sinif": "cekirdek-kural-sap-kanonik",
       "ust_sinif": "kesin-yasak-kanonigi",
       "glob": ["core/sap/00-sap.md"],
-      "yukleme": "global options.context_paths (scripts/install.py:172) + sap_stamp.kanonik_blok() ile proje AGENTS.md'sine damga (scripts/sap_stamp.py:16-27)",
+      "yukleme": "global options.context_paths (scripts/install.py `apply_ours`) + sap_stamp.kanonik_blok() ile proje AGENTS.md'sine damga (scripts/sap_stamp.py `kanonik_blok` · `BASLA`/`BITIR`)",
       "etkin": "yeni-oturum",
       "esler": ["scripts/sap_stamp.py", "scripts/new_project.py", "scripts/doctor.py", "templates/project/AGENTS.md"],
       "test": [
         {"komut": "python tests/run_tests.py -k sap_stamp", "cwd": ".", "on_kosul": null},
-        {"komut": "python scripts/doctor.py", "cwd": ".", "on_kosul": "check_stamp yalnız SAP profilli proje kökünde anlamlı (scripts/doctor.py:975)"}
+        {"komut": "python scripts/doctor.py", "cwd": ".", "on_kosul": "check_stamp yalnız SAP profilli proje kökünde anlamlı (scripts/doctor.py `check_stamp`)"}
       ],
       "risk": "yuksek",
       "ozel_adim": "türemiş projelerde %guncelle-proje ile damga yenilenir",
@@ -203,20 +203,20 @@
       "sinif": "cekirdek-kural",
       "ust_sinif": "cekirdek-kural",
       "glob": ["core/*"],
-      "yukleme": "global options.context_paths — install.py her oturumda tam metni gönderir (scripts/install.py:172)",
+      "yukleme": "global options.context_paths — install.py her oturumda tam metni gönderir (scripts/install.py `apply_ours`)",
       "etkin": "yeni-oturum",
       "esler": [],
-      "test": [{"komut": "python scripts/doctor.py", "cwd": ".", "on_kosul": "check_template boyut/yapı denetimi (scripts/doctor.py:641)"}],
+      "test": [{"komut": "python scripts/doctor.py", "cwd": ".", "on_kosul": "check_template boyut/yapı denetimi (scripts/doctor.py `check_template`)"}],
       "risk": "yuksek",
       "ozel_adim": null,
       "kritik_yol": false,
-      "not": "İçerik değişikliği için install.py yeniden koşmak gerekmez; YENİ aXet oturumu yeter (README.md:48)."
+      "not": "İçerik değişikliği için install.py yeniden koşmak gerekmez; YENİ aXet oturumu yeter (GUNCELLE.md kart tablosu `cekirdek-kural` satırı: aXet'i kapat-aç)."
     },
     {
       "sinif": "ders-memory",
       "ust_sinif": "ders-memory",
       "glob": ["memory/*"],
-      "yukleme": "memory/MEMORY.md context_paths içinde (scripts/install.py:172 TEAM_MEMORY); feedback_*.md indeksten link'lenir",
+      "yukleme": "memory/MEMORY.md context_paths içinde (scripts/install.py `apply_ours` · `TEAM_MEMORY`); feedback_*.md indeksten link'lenir",
       "etkin": "yeni-oturum",
       "esler": ["memory/MEMORY.md", "memory/feedback_*.md"],
       "test": [],
@@ -229,7 +229,7 @@
       "sinif": "ders-memory-proje-sablon",
       "ust_sinif": "ders-memory",
       "glob": ["templates/project/.axet-code/memory/*"],
-      "yukleme": "new_project.py proje köküne kopyalar; proje .axet-code.json context_paths'i okur (scripts/doctor.py:937)",
+      "yukleme": "new_project.py proje köküne kopyalar; proje .axet-code.json context_paths'i okur (scripts/doctor.py `check_project`)",
       "etkin": null,
       "esler": ["scripts/new_project.py", "templates/project/.axet-code.json"],
       "test": [{"komut": "python tests/run_tests.py -k new_project", "cwd": ".", "on_kosul": null}],
@@ -249,7 +249,7 @@
         "templates/project/.gitignore",
         "templates/project/.githooks/*"
       ],
-      "yukleme": "new_project.py proje köküne kopyalar (scripts/new_project.py:83-115); sonradan senkronize OLMAZ",
+      "yukleme": "new_project.py proje köküne kopyalar (scripts/new_project.py `main` · `sablon_yollari`); sonradan senkronize OLMAZ",
       "etkin": null,
       "esler": ["scripts/new_project.py", "scripts/project_precommit.py"],
       "test": [{"komut": "python tests/run_tests.py -k new_project", "cwd": ".", "on_kosul": null}],
@@ -282,7 +282,7 @@
       "risk": "orta",
       "ozel_adim": null,
       "kritik_yol": false,
-      "not": "AGENTS.md '- SAP' satırı ↔ sap-project.json tutarlılığı doctor.py:827 check_sap_satiri ile zorlanır."
+      "not": "AGENTS.md '- SAP' satırı ↔ sap-project.json tutarlılığı scripts/doctor.py check_sap_satiri ile zorlanır."
     },
     {
       "sinif": "paket-sablon",
@@ -379,7 +379,7 @@
       "sinif": "test-kok",
       "ust_sinif": "test-fixture",
       "glob": ["tests/*"],
-      "yukleme": "aXet çalışma zamanına yüklenmez; yalnız python tests/run_tests.py ile koşulur (tests/run_tests.py:36)",
+      "yukleme": "aXet çalışma zamanına yüklenmez; yalnız python tests/run_tests.py ile koşulur (tests/run_tests.py)",
       "etkin": "aninda",
       "esler": ["scripts/doctor.py", "scripts/install.py", "scripts/new_project.py"],
       "test": [{"komut": "python tests/run_tests.py", "cwd": ".", "on_kosul": "repo dışı izole TMP önerilir (RAPOR §4)"}],
@@ -392,14 +392,14 @@
       "sinif": "skill-govde",
       "ust_sinif": "skill-govde-referans-asset",
       "glob": ["skills/*/SKILL.md", "skills-sap/*/SKILL.md"],
-      "yukleme": "global options.skills_paths (klasör); %<skill-adı> çağrısında okunur (scripts/install.py:173-174)",
+      "yukleme": "global options.skills_paths (klasör); %<skill-adı> çağrısında okunur (scripts/install.py `apply_ours`)",
       "etkin": "skill-cagrisi",
       "esler": ["skills-sap/README.md", "scripts/doctor.py"],
       "test": [{"komut": "python scripts/doctor.py --skills", "cwd": ".", "on_kosul": null}],
       "risk": "orta",
       "ozel_adim": "skill klasörü YENİ eklendiyse python scripts/install.py",
       "kritik_yol": false,
-      "not": "frontmatter name/description denetimi: scripts/doctor.py:94-121 frontmatter_problems, :641 check_template."
+      "not": "frontmatter name/description denetimi: scripts/doctor.py frontmatter_problems, check_template."
     },
     {
       "sinif": "skill-index-belge",
@@ -440,8 +440,8 @@
       "etkin": "aninda",
       "esler": ["skills-sap/sap-ui5-fiori/tests/run_tests.py", "skills/office-docs/tests/run_tests.py"],
       "test": [
-        {"komut": "python skills-sap/sap-ui5-fiori/tests/run_tests.py", "cwd": ".", "on_kosul": "Node/Playwright kurulu değilse SKIP (README.md:32)"},
-        {"komut": "python skills/office-docs/tests/run_tests.py", "cwd": ".", "on_kosul": "isteğe bağlı pip paketleri yoksa SKIP (README.md:30)"}
+        {"komut": "python skills-sap/sap-ui5-fiori/tests/run_tests.py", "cwd": ".", "on_kosul": "Node/Playwright kurulu değilse SKIP (README '## Gereksinimler' isteğe bağlı paket tablosu, `@playwright/cli` satırı)"},
+        {"komut": "python skills/office-docs/tests/run_tests.py", "cwd": ".", "on_kosul": "isteğe bağlı pip paketleri yoksa SKIP (README '## Gereksinimler' isteğe bağlı paket tablosu, `python-docx` satırı)"}
       ],
       "risk": "dusuk",
       "ozel_adim": null,
@@ -517,7 +517,7 @@
       "sinif": "validator-runner",
       "ust_sinif": "validator-ailesi",
       "glob": ["skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/run_review.py"],
-      "yukleme": "SAP yazma çağrısında süreç içi import; TASK_VALIDATORS eşlemesini taşır (validator-map.md:3,7-8)",
+      "yukleme": "SAP yazma çağrısında süreç içi import; TASK_VALIDATORS eşlemesini taşır (skills-sap/sap-code-review/references/validator-map.md baş notu `Otorite koddur` + §1)",
       "etkin": "aninda",
       "esler": [
         "skills-sap/sap-code-review/references/validator-map.md",
@@ -559,7 +559,7 @@
       "yukleme": "%sap-ui5-fiori akışında ya da UI test takımından çalıştırılır",
       "etkin": "aninda",
       "esler": ["skills-sap/sap-ui5-fiori/tests/run_tests.py", "skills-sap/sap-ui5-fiori/tests/fixtures/*"],
-      "test": [{"komut": "python skills-sap/sap-ui5-fiori/tests/run_tests.py", "cwd": ".", "on_kosul": "Node/Playwright kurulu değilse SKIP (README.md:32)"}],
+      "test": [{"komut": "python skills-sap/sap-ui5-fiori/tests/run_tests.py", "cwd": ".", "on_kosul": "Node/Playwright kurulu değilse SKIP (README '## Gereksinimler' isteğe bağlı paket tablosu, `@playwright/cli` satırı)"}],
       "risk": "orta",
       "ozel_adim": null,
       "kritik_yol": false,
@@ -598,7 +598,7 @@
       "sinif": "skill-referans",
       "ust_sinif": "skill-govde-referans-asset",
       "glob": ["skills/*/references/*", "skills-sap/*/references/*"],
-      "yukleme": "global options.skills_paths; %<skill> çağrısında okunur (scripts/install.py:173-174)",
+      "yukleme": "global options.skills_paths; %<skill> çağrısında okunur (scripts/install.py `apply_ours`)",
       "etkin": "skill-cagrisi",
       "esler": ["skills-sap/sap-adt-foundation/SKILL.md"],
       "test": [{"komut": "python scripts/doctor.py --skills", "cwd": ".", "on_kosul": null}],

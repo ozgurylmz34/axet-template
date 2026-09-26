@@ -553,6 +553,50 @@ class AracYolu(_Kayit):
                     (r.get("ok"), r.get("activation_verified")),
                     r.get("ok") is True and r.get("activation_verified") is True)
 
+    # ── Z147 (2026-09-26): her aktivasyon yanıtında yazılan objenin inaktif kayıt sayısı (`inactive_count`).
+    # Sözleşme: aktivasyon iddiası + sayı>0 → ok:false `activation_not_executed` · ölçülemezse null + uyarı.
+    def test_Z147_1_klasik_yol_sayi(self):
+        sonuc = {}
+        for ad, govde, wl in (("temiz", GOVDE_TRUE, _Yanit(200, WL_HEDEF_YOK)),
+                              ("listede", GOVDE_TRUE, _Yanit(200, WL_HEDEF_VAR)),
+                              ("olculemedi", GOVDE_TRUE, _Yanit(500, "x")),
+                              ("basarisiz+listede", GOVDE_HATA, _Yanit(200, WL_HEDEF_VAR))):
+            self._istemci([_Yanit(200, govde)], wl)
+            r = self.atom.adt_activate(SINIF_A, "class")
+            sonuc[ad] = (r.get("ok"), r.get("inactive_count"), bool(r.get("inactive_warning")))
+        self.kaydet("Z147 adt_activate klasik: temiz=0 · listede=1(ok false) · ölçülemedi=null+uyarı · başarısız=1",
+                    "(T,0,F)(F,1,F)(T,None,T)(F,1,F)", sonuc,
+                    sonuc == {"temiz": (True, 0, False), "listede": (False, 1, False),
+                              "olculemedi": (True, None, True), "basarisiz+listede": (False, 1, False)})
+
+    def _rap_istemci(self, post, worklist_metni, wl_durum=200):
+        s = self._istemci(post, _Yanit(wl_durum, worklist_metni, headers={"X-CSRF-Token": "TOKEN"}))
+        a = s.adt_client
+        a.client, a.language = "100", "TR"
+        a._invalidate_csrf_cache = lambda: None
+        return s
+
+    def test_Z147_2_also_ve_srvb_yolu_sayi(self):
+        sonuc = {}
+        for ad, wl, durum in (("temiz", WL_HEDEF_YOK, 200), ("listede", WL_HEDEF_VAR, 200), ("olculemedi", "x", 500)):
+            self._rap_istemci([_Yanit(200, GOVDE_TRUE)], wl, durum)
+            r = self.atom.adt_activate(SINIF_A, "class", also=[{"name": "ZBC000_I_DEMO", "object_type": "ddls"}])
+            sonuc["also-" + ad] = (r.get("ok"), r.get("inactive_count"), r.get("error"))
+        srvb_wl = _worklist(("/sap/bc/adt/businessservices/bindings/zbc000_ui_demo_o2", "SRVB/SVB", "ZBC000_UI_DEMO_O2"))
+        self._rap_istemci([_Yanit(200, GOVDE_TRUE)], srvb_wl)
+        r = self.atom.adt_activate("ZBC000_UI_DEMO_O2", "srvb")
+        sonuc["srvb-listede"] = (r.get("ok"), r.get("inactive_count"), r.get("error"))
+        beklenen = {"also-temiz": (True, 0, None), "also-listede": (False, 1, "activation_not_executed"),
+                    "also-olculemedi": (True, None, None), "srvb-listede": (False, 1, "activation_not_executed")}
+        self.kaydet("Z147 adt_activate also=/srvb: activationExecuted=true ama listede → ok false", str(beklenen),
+                    sonuc, sonuc == beklenen)
+
+    def test_Z147_3_kilit_yolu_sayi(self):
+        c = _lib_client([_Yanit(200, GOVDE_TRUE)], _Yanit(200, WL_HEDEF_YOK))
+        r = self.atom._kilit_objesi_aktive_et(c, KILIT, "enqu")
+        self.kaydet("Z147 kilit objesi yolu inactive_count=0", "ok · 0", (r.get("ok"), r.get("inactive_count")),
+                    r.get("ok") is True and r.get("inactive_count") == 0)
+
     def test_J11_sap_client_olculmedi_satiri(self):
         s = self._istemci([_Yanit(200, GOVDE_YALNIZ_GENERATION)], _Yanit(200, WL_HEDEF_YOK))
         tampon = io.StringIO()

@@ -160,6 +160,7 @@ kullanıcıya aktar, ne gerektiğini söyle.
   2026-09-21 (yalnız `s4_private`; canlı DEV 2026-09-21: tablo yaratma `ok` — aktif, readback 3/3 · tablo tipi yapı satırlı onarım yolu `ok` ·
   metin havuzu yazma `ok`; ilkel satırlı ttyp onarımı ve metin havuzu `activation_final` henüz ÖLÇÜLMEDİ): Z tablo `adt_table_create` · tablo tipi `adt_ttyp_create` · metin havuzu `adt_textpool_write` ·
   `adt_push_source` `ccdef`/`ccmac` (yazma yolu canlı ölçüldü 2026-09-21 → yanıtta `write_path_measured:true`). Ayrıntı: `references/tool-catalog.md`.
+  Metin havuzunu OKUMA (yazmadan önce ve sonra, aktif sürüm): `adt_textpool_read` (okuma sınıfı, `s4_private`).
   Program açıklaması ADT ile değişmez → kullanıcı SE38'de değiştirir.
   CSV / `.cds` klasöründen çok obje (domain, dtel, cds, enqu, msag): `scripts/sap_adt_populate.py` — aynı kapı + reviewer hattından geçer,
   önce `--dry-run`; tablo türü yok (`references/foundation-ops.md` §9).
@@ -191,7 +192,7 @@ kullanıcıya aktar, ne gerektiğini söyle.
 ## Referanslar
 | Dosya | İçerik |
 |---|---|
-| `references/tool-catalog.md` | 41 araç: sınıf, amaç, argüman, uyarı |
+| `references/tool-catalog.md` | 42 araç: sınıf, amaç, argüman, uyarı |
 | `references/profiles.md` | SAP profil yetenek matrisi (rehber, canlı test gerekir) + CLI profil etiketleri |
 | `references/foundation-ops.md` | Okuma/indirme, yaratma, push, aktivasyon, include+program akışı, FM/CDS/class protokol notları, kilit, transport, paket, arama |
 | `references/foundation-query.md` | SQL ve tablo okuma, where-used/blast-radius (`CROSS`), ATC, OData `$metadata` doğrulama |

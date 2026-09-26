@@ -30,6 +30,67 @@ def _sil(yol: Path) -> None:
         shutil.rmtree(yol, onerror=duzelt)
 
 
+# Z96 (+Z120ⓑ, 2026-09-26): geçici kök bir git reposunun DIŞINDA olmalı. Ölçülen vaka (2026-09-24): aXet TMP/TEMP'i
+# `<proje>\.axet-code\tmp`'ye çekiyor; `mkdtemp()` repo içine düştü ve "git reposu değil" varsayan testler kod hatası
+# olmadan kırmızı verdi (28/217). Adaylar sırayla: sistem TMP'si (tempfile) → %LOCALAPPDATA%\Temp (Z67 TMP-OLUSTUR
+# ile aynı ilke). Hiçbiri repo dışında değilse `GeciciTest` FAIL değil, açık SKIP verir (ölçülemedi ≠ kırmızı).
+# Kök TMP'den farklı seçildiyse `GeciciTest.env` TMP/TEMP/TMPDIR'i de oraya çevirir: test edilen betiklerin kendi
+# `mkdtemp`'i de repo dışına düşsün. KAPSAM: git kurulu değilse repo ölçülemez → aday olduğu gibi kullanılır.
+_GIT_ORTAM_DISI = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES")
+
+
+def git_reposunda_mi(yol: Path) -> bool:
+    """`yol` bir git çalışma ağacının (ya da `.git` dizininin) içinde mi. git yoksa False (ölçülemez)."""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_ORTAM_DISI}
+    try:
+        r = subprocess.run(["git", "-C", str(yol), "rev-parse", "--is-inside-work-tree"], env=env,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           stdin=subprocess.DEVNULL, timeout=60)
+    except OSError:
+        return False
+    return r.returncode == 0   # rc 0 + "false" = `.git` dizininin içi: o da repo içidir
+
+
+def gecici_kok_sec(adaylar: list[Path]) -> Path | None:
+    """Var olan ve git reposu DIŞINDA kalan ilk aday (çözülmüş yol); yoksa None."""
+    for aday in adaylar:
+        try:
+            aday = Path(aday).resolve()
+        except OSError:
+            continue
+        if aday.is_dir() and not git_reposunda_mi(aday):
+            return aday
+    return None
+
+
+def _kok_adaylari() -> list[Path]:
+    adaylar = [Path(tempfile.gettempdir())]
+    lad = os.environ.get("LOCALAPPDATA")
+    if lad:
+        adaylar.append(Path(lad) / "Temp")
+    return adaylar
+
+
+_GECICI_KOK: list = []   # işlem başına bir kez ölçülür: [Path | None]
+
+
+def gecici_kok() -> Path | None:
+    if not _GECICI_KOK:
+        _GECICI_KOK.append(gecici_kok_sec(_kok_adaylari()))
+    return _GECICI_KOK[0]
+
+
+def gecici_dizin(prefix: str) -> Path:
+    """Repo DIŞINDA yeni geçici dizin (`tempfile.mkdtemp` yerine). Kök sabitlenemezse `unittest.SkipTest`."""
+    kok = gecici_kok()
+    if kok is None:
+        raise unittest.SkipTest(
+            "ÖLÇÜLEMEDİ: geçici kök bir git reposunun DIŞINA sabitlenemedi (adaylar: "
+            + ", ".join(str(a) for a in _kok_adaylari()) + ") — 'git reposu değil' varsayan testler burada "
+            "yanlış kırmızı verirdi (Z96). TMP'yi repo dışına al ve tekrar koş.")
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=str(kok))).resolve()
+
+
 # Z8 (2026-09-22): `proje()` her testte `git init` + `new_project.py` alt süreçlerini koşuyordu (ölçüldü: test
 # başına ≈1,6 sn). Üretilen proje yalnız ADA bağlı: iki farklı mutlak yolda üretilen ağaçlar yalnız
 # `.axet-code/sablon-surumu.json` `zaman` alanında ayrışıyor, XDG'ye yazılmıyor. Kalıp işlem başına bir kez
@@ -46,7 +107,7 @@ def _proje_kalibi(test: "GeciciTest", ad: str, sap: bool, git_init: bool) -> Pat
     if anahtar in _KALIPLAR:
         return _KALIPLAR[anahtar]
     if _KALIP_KOK is None:
-        _KALIP_KOK = Path(tempfile.mkdtemp(prefix="axet-kalip-")).resolve()
+        _KALIP_KOK = gecici_dizin("axet-kalip-")
         atexit.register(_sil, _KALIP_KOK)
     d = _KALIP_KOK / str(len(_KALIPLAR)) / ad
     d.mkdir(parents=True)
@@ -63,7 +124,7 @@ class GeciciTest(unittest.TestCase):
     config'i yok sayılır (kullanıcının hooksPath/autocrlf ayarı sonucu değiştirmesin)."""
 
     def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="axet-test-")).resolve()
+        self.tmp = gecici_dizin("axet-test-")   # repo DIŞI; sabitlenemezse SkipTest (Z96)
         self.xdg = self.tmp / "_xdg"
         self.xdg.mkdir()
         bos_gitconfig = self.tmp / "_gitconfig"
@@ -84,6 +145,10 @@ class GeciciTest(unittest.TestCase):
             # ve AXET_PAKET_PIP ile sahte pip verir.
             "AXET_PAKET_KUR": "0",
         })
+        kok = gecici_kok()
+        if kok is not None and kok != Path(tempfile.gettempdir()).resolve():
+            # Z96: sistem TMP'si repo içindeydi → test edilen betiklerin mkdtemp'i de repo dışı köke düşsün.
+            self.env.update({"TMP": str(kok), "TEMP": str(kok), "TMPDIR": str(kok)})
 
     def tearDown(self) -> None:
         _sil(self.tmp)

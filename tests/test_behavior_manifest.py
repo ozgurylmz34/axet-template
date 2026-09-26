@@ -169,7 +169,8 @@ class TemplateYuzeyTest(GeciciTest):
         os.environ.update({k: v for k, v in self.env.items() if k.startswith("GIT_")})
         self.k = self.tmp / "klon"
         for rel in ("core/00-temel.md", "skills/a/SKILL.md", "config/permissions.json", "memory/MEMORY.md",
-                    "skills-sap/b/tests/test_x.py", "scripts/doctor.py"):
+                    "skills-sap/b/tests/test_x.py", "scripts/doctor.py", "templates/project/AGENTS.md",
+                    "tests/test_a.py"):
             self.yaz(self.k / rel, "ilk\n")
         self.git(self.k, "init", "-q", "-b", "main")
         self.git(self.k, "add", "-A")
@@ -196,9 +197,36 @@ class TemplateYuzeyTest(GeciciTest):
         self.assertIn("KAYITSIZ yeni dosya (commit'siz): skills/yeni/SKILL.md", metin)
 
     def test_yuzey_disi_degisiklik_sayilmaz(self):
-        for rel in ("memory/MEMORY.md", "skills-sap/b/tests/test_x.py", "scripts/doctor.py"):
+        # Kontrol grubu (Z89 sonrası da yüzey DIŞI): hafıza, skill testleri, kök testler, derleme artığı.
+        for rel in ("memory/MEMORY.md", "skills-sap/b/tests/test_x.py", "tests/test_a.py",
+                    "scripts/__pycache__/doctor.cpython-312.pyc"):
             self.yaz(self.k / rel, "değişti\n")
-        self.assertEqual(bm.template_denetle(self.k)[0], "es")
+        self.assertEqual(bm.template_denetle(self.k)[0], "es", bm.template_denetle(self.k)[1])
+
+    def test_Z89_scripts_ve_templates_yuzeyde(self):
+        """Z89 (kullanıcı kararı 2026-09-26): klondaki scripts/ ve templates/ elle değişikliği GÖRÜNÜR (engel değil)."""
+        self.yaz(self.k / "scripts/doctor.py", "değişti\n")
+        self.yaz(self.k / "templates/project/yeni.md", "x\n")
+        durum, satirlar = bm.template_denetle(self.k)
+        self.assertEqual(durum, "sapma", satirlar)
+        metin = "\n".join(satirlar)
+        self.assertIn("commit edilmemiş değişiklik [M]: scripts/doctor.py", metin)
+        self.assertIn("KAYITSIZ yeni dosya (commit'siz): templates/project/yeni.md", metin)
+
+    def test_Z89_doctor_scripts_degisikligini_WARN_basar(self):
+        """Uçtan uca doctor satırı: gerçek git durumu → `template_sinifla` → `doctor.template_bulgulari`."""
+        import doctor
+        temiz = doctor.template_bulgulari(bm.template_sinifla(self.k))
+        self.assertEqual([m for d, m in temiz if d == "WARN"], [], "kontrol grubu: değişmemiş klon WARN vermemeli")
+        self.assertTrue(any(d == "PASS" for d, _m in temiz), temiz)
+        self.yaz(self.k / "scripts/doctor.py", "değişti\n")
+        bulgu = doctor.template_bulgulari(bm.template_sinifla(self.k))
+        warn = [m for d, m in bulgu if d == "WARN"]
+        self.assertEqual(len(warn), 1, bulgu)
+        self.assertIn("scripts/doctor.py", warn[0])
+        kapsam = [m for d, m in bulgu if "KAPSAM" in m][0]
+        self.assertIn("scripts/**", kapsam)
+        self.assertIn("templates/**", kapsam)
 
     def test_git_degilse_olculemedi(self):
         d = self.tmp / "gitsiz"

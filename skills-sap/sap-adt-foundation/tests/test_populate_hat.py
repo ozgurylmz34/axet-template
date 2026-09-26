@@ -31,7 +31,7 @@ for _p in (H.SCRIPTS, H.SCRIPTS / "sapadt" / "lib"):
         sys.path.insert(0, str(_p))
 
 from test_new_write_tools import TR, SahteADT, SahteIstemci, Yanit  # noqa: E402
-from test_msgclass_domain import MsagADT, _msag_xml, _put_mesajlari  # noqa: E402
+from test_msgclass_domain import MsagADT, _msag_xml, _sap_put_uygula  # noqa: E402
 
 S1 = ["--sap-write", "--scope", "S1", "--reason", "Toplu yazıcı hat testi gerekçesi"]
 PKG = "ZAXET_PKG"
@@ -208,7 +208,9 @@ class ReviewerVeMesaj(_Ortak):
             if c["method"] == "POST" and c["params"].get("_action") == "LOCK":
                 return Yanit(200, "<asx:abap><DATA><LOCK_HANDLE>HX9</LOCK_HANDLE></DATA></asx:abap>")
             if c["method"] == "PUT":
-                durum["msgs"] = _put_mesajlari(c["data"])
+                # Z118ⓔ: ölçülmüş SAP semantiği (tek kaynak `test_msgclass_domain._sap_put_uygula`) — gövdede olmayana
+                # DOKUNULMAZ, silme yalnız `<mc:deletedmessages>`. Eski sahte tam listeyle DEĞİŞTİRİYORDU (R2c kalibrasyonu).
+                durum["msgs"] = _sap_put_uygula(durum["msgs"], c["data"])
                 return Yanit(200, "")
             if c["method"] == "POST" and c["params"].get("_action") == "UNLOCK":
                 return Yanit(200, "")
@@ -240,6 +242,26 @@ class ReviewerVeMesaj(_Ortak):
               and [m[:2] for m in durum["msgs"]] == [("001", "Yeni metin"), ("002", "Kalır")])
         self.kaydet("R2b KONTROL --allow-overwrite → tek PUT, 001 değişti, 002 korundu", "0 · 1 PUT",
                     f"{kod} · PUT={len(puts)} · {durum['msgs']}", ok)
+
+    def test_R2c_msag_sahte_put_semantigi_olculmus_davranis(self):
+        """Z118ⓔ — hat sahtesinin KALİBRASYONU: SAP'nin ölçülmüş MSAG PUT davranışı (kaynak çekirdek
+        `playbook/adt-message-class.md` §27.5, s4_private 2025): tam PUT gövdesinden ÇIKARILAN mesaj SİLİNMEZ (200, no-op;
+        229→229); silme yalnız `<mc:deletedmessages>` ile (229→228). Eski sahte PUT'u tam liste DEĞİŞTİRME sayıyordu —
+        o sahteyle "listeden çıkararak silen" bir araç bu hatta yeşil görünürdü."""
+        from sapadt.tools import msgclass as mc
+        bas = [("001", "Bir", False, False), ("002", "İki", False, False), ("003", "Üç", False, False)]
+        yalniz_001 = [{"no": "001", "text": "Bir", "selfexplanatory": False, "documented": False}]
+        yol = "/sap/bc/adt/messageclass/zaxet_msg"
+        adt, durum = self._msag_hat(bas)
+        adt.yonlendir({"method": "PUT", "path": yol, "params": {}, "headers": {},
+                       "data": mc._govde("ZAXET_MSG", "Açıklama", "TR", "U", PKG, yalniz_001)})
+        self.kaydet("R2c sahte: gövdeden ÇIKARILAN 002/003 silinmez (ölçülmüş no-op)", "001,002,003",
+                    [m[0] for m in durum["msgs"]], [m[0] for m in durum["msgs"]] == ["001", "002", "003"])
+        adt, durum = self._msag_hat(bas)
+        adt.yonlendir({"method": "PUT", "path": yol, "params": {}, "headers": {},
+                       "data": mc._govde("ZAXET_MSG", "Açıklama", "TR", "U", PKG, yalniz_001, ["002"])})
+        self.kaydet("R2c sahte KONTROL: <mc:deletedmessages 002> → yalnız 002 gider", "001,003",
+                    [m[0] for m in durum["msgs"]], [m[0] for m in durum["msgs"]] == ["001", "003"])
 
 
 class EnquSondasi(_Ortak):

@@ -232,6 +232,34 @@ class RuleTests(Base):
         self.assertEqual(rc, 2)
         self.assertIn("std_dml_scan_unavailable", {f["code"] for f in json.loads(out)["findings"]})
 
+    def test_dml_scanner_runtime_error_is_structured_fail(self):
+        """Z117ⓔ: Yasak B tarayıcısı YÜKLENİR ama `tara` çalışırken patlar → traceback + rc=1 değil (önceki hâl:
+        `hits = tara(text, None)` try'sızdı), yapılandırılmış `std_dml_scan_unavailable` FAIL; ZIP üretilmez."""
+        base = self.d / "kopya4" / "skills-sap"
+        fake = base / "sap-abapgit-delivery" / "scripts" / "abapgit_zip.py"
+        fake.parent.mkdir(parents=True)
+        shutil.copy(SCRIPT, fake)
+        pkg = base / "sap-adt-foundation" / "scripts" / "sapadt"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "std_dml_scan.py").write_text(
+            "def tara(kaynak, object_type=None):\n    raise RuntimeError('bozuk tarayici')\n\n"
+            "def mesaj(bulgular):\n    return ''\n", encoding="utf-8")
+        self.write("src/zcl_demo.clas.abap", ABAP_OK + "* değişti\n")
+        rc, out, err = run("check", "--root", self.ws, "--files", "src/zcl_demo.clas.abap", "--project-dir",
+                           self.project, "--json", script=fake)
+        self.assertEqual(rc, 2, (out, err))
+        self.assertNotIn("Traceback", err)
+        bulgu = [f for f in json.loads(out)["findings"] if f["code"] == "std_dml_scan_unavailable"]
+        self.assertTrue(bulgu, out)
+        self.assertEqual(bulgu[0]["level"], "FAIL", bulgu)
+        self.assertIn("RuntimeError", bulgu[0]["message"])
+        rc, out, err = run("pack", "--root", self.ws, "--files", "src/zcl_demo.clas.abap", "--project-dir",
+                           self.project, script=fake)
+        self.assertEqual(rc, 2, (out, err))
+        self.assertNotIn("Traceback", err)
+        self.assertFalse((self.ws / "dist").exists())
+
     def test_standard_extension_A(self):
         """Z104: Z adlı obje içinden standart objeyi genişletme — foundation tarayıcısı (yazma kapısıyla aynı)."""
         self.write("src/zzavbak.tabl.xml", "<abapGit><DD02V><TABNAME>ZZAVBAK</TABNAME><DDTEXT>Ek</DDTEXT>"

@@ -2534,6 +2534,389 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.13",
+   "tarih": "2026-09-26",
+   "kalemler": [
+    {
+     "id": "0.5.13-01",
+     "baslik": "UI5 uygulamasının kaynağı yerelde yoksa SAP'den indirilir, yerelde birebir doğrulanır ve salt-okur proxy ile çalıştırılır; deploy canlıdaki değişikliği görmeden yazmaz",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Kaynağı yerelde olmayan bir Fiori uygulamasını değiştirmek için önce SAP'deki BSP'den kaynağı çıkarmak gerekiyordu ve bunun aracı yoktu. Yeni `fetch_ui_source.py`: `indir` (BSP'yi OData, olmazsa ADT dosya deposu üzerinden indirir; `-dbg.js` dosyalarından gerçek kaynağı UI5 build aracının adlandırma kuralıyla kurar — `.controller`, `.view`, `.fragment`, `.designtime`, `.support`; zip'teki güvensiz dosya adlarını yazmaz, yazım yarıda kalırsa bu koşumun yazdıklarını geri alır; `.canli/` altına canlı anlık görüntüyü yazar), `eslik` (değiştirmeden build alıp canlıdaki dosya listesiyle birebir karşılaştırır ve canlının kaynak haritalarının `-dbg` dosyasını gösterdiğini doğrular — fark ya da TypeScript gibi dönüşüm izi varsa değişikliğe başlanmaz), `drift` (anlık görüntüden bu yana canlı değişti mi) ve `metadata` (servis `$metadata`'sında bir alanın DOĞRU EntityType'ta olduğunu tip kapsamlı doğrular). `ui_local_proxy.py` uygulamayı yerelde canlı servise bağlar ama yalnız okuma isteklerini geçirir: GET/HEAD ve yalnız GET parçalı `$batch` — bu batch SAP'ye istemcinin gövdesiyle değil, proxy'nin baştan kurduğu temiz gövdeyle gider. Geri kalan her isteğe 403 verir, yalnız 127.0.0.1'e bağlanır ve yabancı Host başlığını reddeder. `deploy_ui.py deploy` artık build'den ÖNCE canlıyı anlık görüntüyle karşılaştırır: canlı değişmişse durur (çıkış 1), ölçülemezse durur (çıkış 2); deploy sonrası tam dosya listesini doğrular, eşitse anlık görüntüyü günceller. Akış sırası: SKILL.md §8a.",
+     "dosyalar": [
+      "skills-sap/sap-ui5-fiori/SKILL.md",
+      "skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md",
+      "skills-sap/sap-ui5-fiori/scripts/_bspkaynak.py",
+      "skills-sap/sap-ui5-fiori/scripts/deploy_ui.py",
+      "skills-sap/sap-ui5-fiori/scripts/fetch_ui_source.py",
+      "skills-sap/sap-ui5-fiori/scripts/ui_local_proxy.py",
+      "skills-sap/sap-ui5-fiori/tests/_helpers.py",
+      "skills-sap/sap-ui5-fiori/tests/test_deploy_ui.py",
+      "skills-sap/sap-ui5-fiori/tests/test_fetch_ui_source.py",
+      "skills-sap/sap-adt-foundation/references/foundation-query.md",
+      "skills-sap/README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-ui5-fiori/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.13-02",
+     "baslik": "DDLX/DCL kabuğu artık araçla yaratılabildiği hâlde \"yok\" diyen bayat not düzeltildi (sap-dev + Fiori Elements UX)",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`sap-dev` ve `sap-ui5-fiori/references/fiori-elements-ux.md` metadata extension (DDLX) ve erişim kontrolü (DCL) kabuğunun araçla yaratılamadığını söylüyordu; araç bunu bir süredir yapıyor. Model bu yüzden kullanıcıdan gereksiz elle adım istiyordu.",
+     "dosyalar": [
+      "skills-sap/sap-dev/SKILL.md",
+      "skills-sap/sap-ui5-fiori/references/fiori-elements-ux.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k skill"
+     ]
+    },
+    {
+     "id": "0.5.13-03",
+     "baslik": "SAP kaynağı dosya üzerinden okunur/yazılır: `adt_get output_path` ve `adt_push_source source_path`; build'den önce paket klasörü + indir-düzenle-diff-onay-push sırası",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Kaynak şimdiye kadar yanıtın içinde taşınıyordu; büyük kaynakta model metni elle kopyalıyor, bazen kısaltıyordu. `adt_get` artık kaynağı proje kuralına uyan bir yerel dosyaya yazabiliyor (`output_path`, `overwrite`), `adt_push_source` kaynağı dosyadan okuyabiliyor (`source_path`; `source` ile birlikte verilemez; dosya yok/boş/UTF-8 değilse ya da yol kural dışıysa red). Yazma kapısı dosyadan okunan metni de Yasak A/B taramasından geçirir. `sap-dev` §3.4 ve intake adım 8 build planının sırasını söyler: paket klasörü → kaynağı indir → yerelde düzenle → diff göster → onaydan sonra push; intake şablonuna \"Build planı\" satırı eklendi.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/project.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/diag.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_pull_before_edit.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "skills-sap/sap-dev/SKILL.md",
+      "skills-sap/sap-intake-triage/SKILL.md",
+      "skills-sap/sap-intake-triage/references/s2-artifact-schema.md",
+      "skills-sap/sap-intake-triage/templates/command-intake.md",
+      "skills-sap/sap-intake-triage/templates/intake-artifact.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_pull_before_edit",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_cli_gate",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k intake"
+     ]
+    },
+    {
+     "id": "0.5.13-04",
+     "baslik": "Push ve aktivasyondan sonra obje hâlâ inaktifse araç bunu söyler (`inactive_count`)",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "\"Aktive edildi\" yanıtı objenin gerçekten aktif olduğunu kanıtlamıyordu: `also=` ve servis bağlama yollarında SAP aktivasyonu yaptım dediği hâlde obje inaktif listesinde kalabiliyor ve araç `ok:true` dönüyordu. Artık `adt_push_source` (yükleme olduysa) ve `adt_activate`'in dört yolu hedefin inaktif listedeki kaydını sayar (`inactive_count`); aktivasyon iddiası varken obje listedeyse `ok:false` + `activation_not_executed`, ölçülemezse `inactive_warning`.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/tests/test_verdict_activation.py",
+      "skills-sap/sap-adt-foundation/tests/test_new_write_tools.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_verdict_activation",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_new_write_tools"
+     ]
+    },
+    {
+     "id": "0.5.13-05",
+     "baslik": "Push öncesi \"silinen satır\" uyarısı büyük kaynakta saniyeler yerine anında hesaplanır",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Silinen satır uyarısı büyük kaynakta (10.000 satır) 5-7 saniye sürüyordu. Hesap sayım tabanlı yapıldı: yeri değişen satır artık \"silindi\" sayılmıyor, yinelenen bir satırın eksik kopyası sayılıyor.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/tests/test_pull_before_edit.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_pull_before_edit"
+     ]
+    },
+    {
+     "id": "0.5.13-06",
+     "baslik": "Yeni salt-okur araç `adt_textpool_read`: program metin havuzunu (seçim ekranı metinleri, text symbol'ler) okur",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Metin havuzu yalnız yazma aracının içinde okunabiliyordu; bir programın metinlerine bakmak için ayrı bir okuma yolu yoktu. Yeni araç yalnız GET yapar, `version` (active/working) ve `parts` ile seçim alır, okuma sınıfındadır (onay istemez). Okuma aracı sayısı 25 → 26.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/textpool.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/textpool.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/references/profiles.md",
+      "skills-sap/sap-adt-foundation/SKILL.md",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "docs/sap-api-policy.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k textpool",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_cli_gate"
+     ]
+    },
+    {
+     "id": "0.5.13-07",
+     "baslik": "Standart obje genişletme taramasının açıkları kapandı (çapasız EXTENSION, tipsiz kaynak, ters bölü kaçışı, `--extend`, abapGit taraması)",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Standart objeyi genişleten kaynağı yakalayan tarama bazı biçimlerde sessizce geçiyordu: başında görünmez karakter olan `EXTENSION`, tipi verilmemiş kaynakta DDL genişletmesi, dize içinde ters bölüyle kaçırılmış tırnak, `--extend` bitişik yazım. Bunlar artık ya red ya \"emin değilim\" (`?`) verir. abapGit paketlemesinde standart tablo yazma taraması hata verirse eskiden traceback ile düşüyordu; artık yapılandırılmış FAIL verir. Büyük kaynakta tarama hızlandı (100k satır: 14 sn → 1,5 sn). Bilinen sınır: yorum içindeki `;` Z→Z davranış tanımında yanlış \"emin değilim\" üretebilir (belgede).",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/std_ext_scan.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddic_dtel.py",
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills-sap/sap-adt-foundation/tests/test_std_ext_gate.py",
+      "skills-sap/sap-adt-foundation/tests/test_verdict_reviewer_k1_d1.py",
+      "skills-sap/sap-abapgit-delivery/scripts/abapgit_zip.py",
+      "skills-sap/sap-abapgit-delivery/tests/run_tests.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k std_ext",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_verdict_reviewer_k1_d1",
+      "python skills-sap/sap-abapgit-delivery/tests/run_tests.py"
+     ]
+    },
+    {
+     "id": "0.5.13-08",
+     "baslik": "SAP araç katmanı sertleştirmesi: bozuk adreste host maskesi, doğru araç adı, mesaj sınıfında kilit altı yeniden okuma",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "① Bağlantı adresinde şablondan kalmış `<PORT>` gibi bozuk bir port varsa araç traceback veriyor ve hata metninde host adını maskesiz basabiliyordu; artık host yine maskelenir, bağlantı kontrolü güvenli tarafta kalır (red). ② Transport eksik uyarısı model tarafından çağrılamayan bir iç metod adını öneriyordu; artık `adt_transport_list` der. ③ `adt_msgclass_write` kilit alındıktan sonra her yazımda kaynağı yeniden okur: okuma ile kilit arasında başkası bir mesajı değiştirdiyse o değişikliği sessizce ezmek yerine durur (`source_changed_since_pull`). Bedeli yazım başına bir okuma daha.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/redact.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/guardrails.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/msgclass.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_guvenlik_sertlestirme.py",
+      "skills-sap/sap-adt-foundation/tests/test_msgclass_domain.py",
+      "skills-sap/sap-adt-foundation/tests/test_populate_hat.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_guvenlik_sertlestirme",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_msgclass_domain",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_populate_hat"
+     ]
+    },
+    {
+     "id": "0.5.13-09",
+     "baslik": "`sap_adt_cli.py --list --grep <desen>`: araç listesinde ad/açıklamaya göre süzme",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Araç listesi 40'ı geçti; doğru aracı bulmak için model tüm listeyi okuyordu. `--grep` ad ve açıklamada harf duyarsız alt dize arar, çıktı biçimi aynı kalır.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py",
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_cli_list_suzme.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_cli_list_suzme"
+     ]
+    },
+    {
+     "id": "0.5.13-10",
+     "baslik": "Çekirdek metin: kabuk tuzakları maddelendi, tek cevaplı soruda ikinci seçenek \"İptal\", SAP'ye yazmadan önce `%recall` (AXET-CORE-0.8.2 · AXET-SAP-0.5.3)",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "Kabuk satırındaki dört tuzak (olmayan komutlar, `find` bayrakları, `/c/...` yolları, Türkçe kodlama) tek uzun satırdaydı ve model bunları tekrar tekrar yaşıyordu; her biri kendi hata metniyle ayrı madde oldu, `rg` bulunamazsa bash yerine arama araçlarının kullanılması eklendi. `ask_user` iki seçenek istediği için model tek cevaplı soruya ikinci bir seçenek uyduruyordu; ikinci seçenek artık \"Vazgeç / iptal\". SAP çekirdeğine: Z obje yazmaya ya da SAP kaynağını değiştirmeye başlamadan önce `%recall` obje tipi + işlem terimleriyle çalıştırılır. Güncellemeden sonra yeni aXet oturumu aç.",
+     "dosyalar": [
+      "core/00-temel.md",
+      "core/sap/00-sap.md",
+      "tests/test_sap_skill_bilgi.py",
+      "tests/test_guncelle_baslatici.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_sap_skill_bilgi",
+      "python tests/run_tests.py -k test_guncelle_baslatici"
+     ]
+    },
+    {
+     "id": "0.5.13-11",
+     "baslik": "Commit onayı dal bağlamını gösterir; başka günün `wip/` dalına sessiz commit yok; tek cevaplı sorularda \"İptal\"",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`%commit-pr` ve `%gun-sonu` commit onayında hangi dalda olunduğunu göstermiyordu; önceki günden kalan bir `wip/` dalına bugünün işi sessizce commit'leniyordu. Artık dal adı, `main`'e göre ileri/geri ve ileri commit listesi gösterilir; başka günün dalındaysan yeni dal önerilir, cevap yoksa commit atılmaz. Tek geçerli cevabı olan sorularda ikinci seçenek \"İptal\".",
+     "dosyalar": [
+      "skills/commit-pr/SKILL.md",
+      "skills/gun-sonu/SKILL.md",
+      "skills-sap/sap-dev/SKILL.md",
+      "skills-sap/sap-intake-triage/references/protocol.md",
+      "tests/test_skill_yonlendirme.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k skill_yonlendirme"
+     ]
+    },
+    {
+     "id": "0.5.13-12",
+     "baslik": "Var olan SAP paketi için yerel paket klasörü canlı bilgiyle kurulur: `new_package.py --mevcut`",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "SAP'de zaten var olan bir paketin yerel klasörü kurulurken sorumlu, başlangıç tarihi ve üst paket tahminle ya da boş yazılıyordu. `--mevcut` bunları canlıdan salt-okur okur (TADIR/TDEVC). Sorumlu canlıda yoksa ya da `--owner` ile çelişirse durur (çıkış 2); canlı okunamazsa ya da paket yoksa durur (çıkış 3); iki durumda da klasör yazılmaz, varsayılan değer yazılmaz. Normal kip değişmedi.",
+     "dosyalar": [
+      "scripts/new_package.py",
+      "templates/package/.rules.md.tmpl",
+      "templates/package/README.md.tmpl",
+      "templates/package/SESSION_NOTES.md.tmpl",
+      "tests/test_new_package.py",
+      "skills-sap/sap-dev/SKILL.md",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_new_package"
+     ]
+    },
+    {
+     "id": "0.5.13-13",
+     "baslik": "`%guncelle` yapılacak iş yokken geri dönüş etiketi ve anlık commit bırakmaz; güncelleme sırasında akış dışı test koşulmaz",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Bekleyen kalemler dosya değişikliği gerektirmediği hâlde `onkontrol`/`hazirla` geri dönüş etiketi ve anlık commit bırakıyordu (plan \"klon güncel\" derken). Artık bekleyen kalem varsa planın hesabı yazmadan koşulur; iş yoksa etiket atılmaz, hesap hata verirse eski güvenli yol korunur. Bedel: yalnız işi olan turlarda birkaç saniye. Ayrıca güncelleme akışında adım dışı test koşmak yasaklandı (turları uzatıyordu); kural güncellemeden sonraki ilk `%guncelle`de etkin.",
+     "dosyalar": [
+      "scripts/guncelle.py",
+      "GUNCELLE.md",
+      "skills/guncelle/SKILL.md",
+      "tests/test_guncelle.py",
+      "tests/test_guncelle_baslatici.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_guncelle.",
+      "python tests/run_tests.py -k test_guncelle_baslatici"
+     ]
+    },
+    {
+     "id": "0.5.13-14",
+     "baslik": "`%guncelle-proje`: `conn/` altındaki dosyaları model git'e eklemez; `conn/README.md` commit'i kullanıcıda",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Proje şablonu `conn/README.md`'yi git'te izler ama model \"commit et\" denince `conn/` altını eklemeye çalışıyordu (izin katmanı engelledi). Kapanış raporu artık \"conn/ — commit kullanıcının\" bölümünü ve gereken komutu verir; skill kuralı README dahil `conn/` altında hiçbir dosyanın model tarafından eklenmeyeceğini söyler. README ve kurulum belgesindeki \"`conn/` git'e girmez\" cümlesi \"yalnız `conn/README.md` izlenir\" diye düzeltildi.",
+     "dosyalar": [
+      "scripts/guncelle_proje.py",
+      "skills/guncelle-proje/SKILL.md",
+      "README.md",
+      "docs/onboarding.md",
+      "tests/test_guncelle_proje.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_guncelle_proje"
+     ]
+    },
+    {
+     "id": "0.5.13-15",
+     "baslik": "`%gun-sonu` açılış özeti komutu (`--no-fetch`) artık onay sormaz",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "`%gun-sonu`'nun `session_brief.py --no-fetch` komutu izin kuralına uymadığı için her gün sonunda onay soruyordu. Kurulum bu biçim için jokersiz, birebir bir izin kuralı yazar; ek argümanlı ya da zincirlenmiş (`&&`, `;`, `|`) komşu biçimler yine sorulur. `--project-dir` biçimine bilerek kural yok (değişken yol joker ister, joker zincirli komuta da uyar). İzin belgesi güncellendi. Güncellemeden sonra `python scripts/install.py` yeniden çalıştırılır; o zamana kadar doctor \"eksik izin kuralı\" uyarısı verir.",
+     "dosyalar": [
+      "scripts/install.py",
+      "config/permissions.json",
+      "docs/izin-kurallari.md",
+      "skills/gun-sonu/SKILL.md",
+      "skills/basla/SKILL.md",
+      "skills/onboard/SKILL.md",
+      "tests/test_install.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_install",
+      "python tests/run_tests.py -k skill"
+     ]
+    },
+    {
+     "id": "0.5.13-16",
+     "baslik": "doctor klondaki `scripts/` ve `templates/` elle değişikliğini de gösterir; Git kimliği eksikse önce kurulumu önerir",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Klondaki elle değişiklik yalnız çekirdek ve skill klasörlerinde görünüyordu; `scripts/` ve `templates/` altındaki değişiklik fark edilmiyordu. Artık doctor bunları da uyarı olarak gösterir (engel değil). Git kimliği eksikken doctor önce aXet-Kur.cmd'nin yeniden çalıştırılmasını, olmazsa elle `git config` komutunu önerir.",
+     "dosyalar": [
+      "scripts/behavior_manifest.py",
+      "scripts/doctor.py",
+      "README.md",
+      "tests/test_behavior_manifest.py",
+      "tests/test_doctor.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_behavior_manifest",
+      "python tests/run_tests.py -k test_doctor"
+     ]
+    },
+    {
+     "id": "0.5.13-17",
+     "baslik": "aXet-Kur.cmd `-Kaldir` ile çalışıp Python bulamazsa doğru kapanış mesajını verir",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Kaldırma kipinde Python bulunamazsa kapanış mesajı kurulum mesajıydı; artık \"aynı komutla (-Kaldir ile) yeniden çalıştır\" der.",
+     "dosyalar": [
+      "aXet-Kur.cmd",
+      "kur.ps1",
+      "tests/test_kur.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_kur."
+     ]
+    },
+    {
+     "id": "0.5.13-18",
+     "baslik": "Test ve CI altyapısı: geçici klasör git reposu dışında, kırılgan brief testi, güncelleme haritasında satır atıfı yok, CI'da UI5 takımı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Testlerin geçici klasörü bir git reposunun içine düşerse \"git reposu değil\" testleri yanlış kırılıyordu; artık kök repo dışına sabitlenir, sabitlenemezse test \"ölçülemedi\" diye atlanır. Açılış özeti testi commit başlığındaki bir ifadeye takılıyordu; artık yalnız durum satırına bakar. Güncelleme haritasındaki satır numarası atıfları (kod kayınca bayatlıyordu) başlık/sembol çapasına çevrildi. CI artık sap-ui5-fiori takımını da koşar. Worktree'lerde `.claude/` klasörü git dışında tutulur. Bakım araçlarının testleri araç yoksa kendini atlar.",
+     "dosyalar": [
+      "tests/_helpers.py",
+      "tests/test_gecici_kok.py",
+      "tests/test_session_brief.py",
+      "guncelle/harita.json",
+      ".github/workflows/testler.yml",
+      ".gitignore",
+      "tests/test_axet_iz.py",
+      "tests/test_yayin_hazirla.py",
+      "tests/test_yayin_provasi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_gecici_kok",
+      "python tests/run_tests.py -k test_session_brief",
+      "python tests/run_tests.py -k harita"
+     ]
+    },
+    {
+     "id": "0.5.13-19",
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Yayın aracının ürettiği meta veri (değişiklik günlüğü, yayın kataloğu, CI hükmü) ve README'nin sürüm satırı — her yayında beyan edilir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k readme"
+     ]
+    }
+   ]
   }
  ]
 }

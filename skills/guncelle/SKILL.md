@@ -86,6 +86,12 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
   bir `--force`, `git clean` · `plan.json`/`durum.json`'u elle düzenlemek · `.conn_adt` okumak ·
   `install.py --sap-write` ve `behavior_manifest.py generate` (ikisi de aXet'e kapalıdır; gerekirse
   kullanıcı KENDİ terminalinde çalıştırır) · planda olmayan bir dosyaya dokunmak.
+- **Akış DIŞINDA test koşma.** `tests/run_tests.py` (filtreli ya da filtresiz), proje/skill test
+  takımları ya da kendi seçtiğin bir test komutu bu akışın parçası DEĞİLDİR: hangi testin koşacağına
+  motor karar verir (`olc --asama once|sonra`, `butunluk`). Kırmızı ya da şüphe görürsen kendi
+  koşumunla teşhise girme, `<TMP>` dışında dizin açma — `olc --asama sonra` ve bütünlük turunun
+  hükmünü kullanıcıya AYNEN raporla. (Ölçüldü: akış dışı test koşumu ~2 dakikalık bir güncellemeyi
+  dakikalarca uzattı ve akışta olmayan bir teşhise sürükledi.)
 - **Commit etme, push etme.** Motor kendi commit'lerini kendi git kimliğiyle atar; sen ayrıca
   commit atmazsın. Klon hiçbir zaman push edilmez.
 - Kullanıcı cevap vermeden bir yargı vakasını işaretleme; testsiz "tamam" deme.

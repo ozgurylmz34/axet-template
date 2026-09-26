@@ -15,7 +15,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | `sap-classic-abap` | Klasik sınıf, program + include, fonksiyon grubu, rapor/ALV (şablonlarla), Dynpro, e-posta, form |
 | `sap-odata-backend` | Klasik OData: SEGW, DPC_EXT/MPC_EXT, deep insert, function import, dış API çağrısı |
 | `sap-code-review` | SAP backend değişikliğinin incelemesi: obje tipi kontrol listeleri, çevrimdışı kontroller (inceleme zinciri, abaplint, released halef haritası), bağımsız inceleyici brifingi |
-| `sap-ui5-fiori` | UI5 freestyle (OData V2) ve Fiori elements ekranları: iskelet, grid/ALV paritesi, filtre, value-help, lokal çalıştırma, runtime doğrulama, BSP deploy (kullanıcı OK'u sonrası) |
+| `sap-ui5-fiori` | UI5 freestyle (OData V2) ve Fiori elements ekranları: iskelet, grid/ALV paritesi, filtre, value-help, lokal çalıştırma, yalnız SAP'de duran uygulamanın kaynağını indirme + salt-okur yerel test, runtime doğrulama, BSP deploy (kullanıcı OK'u sonrası) |
 | `sap-gui-scripting` | Veri yalnız SAP GUI ekranında görünüyorsa (ALV, tablo kontrolü, ekran alanı): model script yazar, geliştirici çalıştırır (ecc, s4_private) |
 | `sap-abapgit-delivery` | Değişikliği abapGit ZIP olarak hazırla (kesin yasak + Yasak B taramasıyla); içe aktarımı geliştirici yapar |
 | `sap-fs-ts-docs` | FS/TS/KD yazımı ve incelemesi, izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü PDF, TS öncesi canlı teyit turu |

@@ -57,6 +57,9 @@ Tam protokol, kriterler ve örnekler: `references/protocol.md` — ilk kullanım
      **madde madde MUTABAKAT** → işareti kullanıcı onayından sonra koy → ancak sonra build (ayrıntı: `references/protocol.md` §6).
    - "Araç / yöntem yok" demeden önce TR + EN eş anlamlılarla büyük/küçük harf duyarsız ikinci arama (`protocol.md` §4 kalite kilidi).
 7. **Çıkışta:** öğrenilen ders/desen `%remember` ile (projeye özelse proje hafızası, her projede geçerliyse ekip hafızası önerisi).
+8. **Build'e geçiş (S0/S1/S2) → `%sap-dev` ZORUNLU:** build planından ve ilk SAP yazmasından önce `%sap-dev`'i yükle ve
+   §3'ü uygula (aktif paket · `.rules.md` · `SESSION_NOTES` · paket klasörü yoksa `new_package.py` · değiştirilecek
+   objeleri paket klasörüne indir). Build planının ilk adımı paket klasörüdür, son adımı değil.
 
 ## ⛔ Kapsam beyanı — SAP'ye her yazmada zorunlu (kullanıcı kararı)
 - SAP'ye yazan **her** CLI çağrısında kapsam beyan edilir:

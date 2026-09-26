@@ -49,8 +49,18 @@ def host_sirlari(url: str | None) -> list[str]:
         if host:
             out.add(host)
             out.add(host.lower())
-    if u.port:
-        out |= {f"{h}:{u.port}" for h in list(out)}
+    # Z118ⓐ (2026-09-26): `u.port` ÖZELLİĞİ ayrıştırmayı erteler — şablonda kalmış `<PORT>` burada ValueError atar
+    # (`urlparse` değil). Önceden try dışındaydı → CLI `calistir` / `gate.log_write_attempt` / populate / screen
+    # traceback veriyordu (log satırı yok). Port okunamazsa host yine maskelenir; ham `host:port` biçimi de eklenir
+    # (hata metinleri URL'yi yazıldığı gibi taşır). Aynı sınır: `gate.check_target_system` / `check_connection`.
+    try:
+        port = u.port
+    except ValueError:
+        port = None
+    if port:
+        out |= {f"{h}:{port}" for h in list(out)}
+    if netloc:
+        out |= {netloc, netloc.lower()}
     return sorted({s for s in out if len(s) >= 4}, key=len, reverse=True)
 
 

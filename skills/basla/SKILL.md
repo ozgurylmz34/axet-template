@@ -16,8 +16,9 @@ description: >
 1. **Özeti çalıştır:** proje `AGENTS.md` "Oturum" bölümündeki `session_brief.py` komutu. Bölüm yoksa
    `<AXET_HOME>/scripts/session_brief.py`; `<AXET_HOME>` = bu skill klasörünün iki üstü
    (`<AXET_HOME>/skills/basla/SKILL.md`) — yolu buradan türet, varsayma.
-   Bulunulan dizin proje kökü değilse komuta `--project-dir "<proje kökü>"` ekle. Komut özeti
-   `.axet-code/acilis-brief.md`'ye de yazar.
+   Komutu AYNEN çalıştır: ek argüman ya da zincir (`&&`, `;`) ekleme — birebir biçim izinlidir, başkası onay sorar.
+   Bulunulan dizin proje kökü değilse komuta `--project-dir "<proje kökü>"` ekle; bu biçim onay sorar (yol
+   değişken olduğu için birebir izin kuralına yazılamaz). Komut özeti `.axet-code/acilis-brief.md`'ye de yazar.
    Çalışmazsa hatayı aynen göster; özeti tahminle üretme. O durumda bağlamdaki "AÇILIŞ BRIEF'İ" bloğunu üretim
    saatiyle aktar; tarihi bugün değilse `— BAYAT` yaz.
 2. **Yanıtı yaz — bu adım koşulsuzdur, atlanmaz.** Bu yanıt çekirdek §0/§8 açılışının KENDİSİDİR: kimlik satırını ve

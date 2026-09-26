@@ -36,8 +36,9 @@ description: >
 2. Tanıdık bir belirtiyse önce `%recall`, sonra `references/known-errors-ui5.md`.
 3. **Kullanıcıdan gelir, uydurulmaz:** servis adı, alan listesi ve etiketler (spesifikasyondan), BSP adı, SAP paketi,
    transport, ortak VH mı yerel mi, varyant servisi var mı.
-4. Alan/navigation/function import adı **canlı `$metadata`**'dan: kullanıcıdan servisin `$metadata`'sını tarayıcıdan
-   kaydetmesini iste → `scripts/check_ui_odata_refs.py`. Kontrol API'si şüphesinde UI5 API referansı. Tahmin yok.
+4. Alan/navigation/function import adı **canlı `$metadata`**'dan: env kimliği set ise
+   `scripts/fetch_ui_source.py metadata <SERVIS> --alan <Ad> --tip <EntityType>` (tip-kapsamlı, salt okuma); değilse
+   kullanıcıdan servisin `$metadata`'sını tarayıcıdan kaydetmesini iste → `scripts/check_ui_odata_refs.py`. Kontrol API'si şüphesinde UI5 API referansı. Tahmin yok.
 5. Plumbing (save, nav, `setData`, master-detail) `references/freestyle-odata-v2.md` §1–2'den; iş içeriği her ekranda ayrıca yazılır.
 6. Kapanış: statik kontroller (§5) → `%code-review` → lokal çalıştır → **kullanıcı testi** → (OK ise) deploy → `verify`
    → `%verify-done` → paket `SESSION_NOTES.md`.
@@ -105,6 +106,14 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
   sonuç + `verify` aynı mesajda. Statik yardım sayfaları varsa `verify_ui_static_assets.py`.
 - Parola okunmaz, yazdırılmaz, komut satırına konmaz. Yalın `fiori deploy` / `npm run deploy` koşulmaz.
 
+### 8a. Kaynak yerelde yoksa (yalnız SAP'de deploy edilmiş uygulama)
+- **Önce oku:** `references/deploy-and-local-run.md` §7.
+- **Sıra (atlanamaz):** `fetch_ui_source.py indir <BSP> --out <paket>/ui/<app>` → `npm install` (onayla) →
+  `fetch_ui_source.py eslik <app>` — **eşit değilse düzenleme yok**, farkları kullanıcıya göster → düzenle →
+  `ui_local_proxy.py <app>` ile salt-okur yerel test (yazma istekleri 403) → kullanıcı OK → `deploy_ui.py deploy`
+  (drift + tam liste kendiliğinden).
+- Kaynağı kullanıcıdan istemek bu yol denendikten sonradır; TS/Fiori Elements/eşlik FAIL → DUR, kullanıcıya sor.
+
 ### 9. Runtime doğrulama
 - **Önce oku:** `references/runtime-verification.md`.
 - **Yap:** `scripts/ui-smoke/run_ui_smoke.py --port <port>` (Playwright proje içi kuruluysa; kurulumu kullanıcı onaylar)
@@ -127,6 +136,8 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 | `references/known-errors-ui5.md` | belirti → bölüm indeksi |
 | `scripts/check_ui5_freestyle_traps.py` | T1 `_X` nav + T4 `f:fields` içi container = ERROR; T2 `type=Number` + T3 `core:Title` = WARN |
 | `scripts/check_list_view_grid.py` | liste/rapor adlı view'da `sap.m.Table` |
+| `scripts/fetch_ui_source.py` | kaynağı yerelde olmayan uygulama: `indir` (OData zip / ADT filestore → `webapp` geri kurma + iskelet + `.canli/`) · `eslik` (değiştirmeden build == canlı) · `drift` · `metadata` (tip-kapsamlı alan kontrolü) — deploy-and-local-run §7 |
+| `scripts/ui_local_proxy.py` | salt-okur yerel test sunucusu: dist'i sunar, `/sap/*` okumalarını iletir (GET/HEAD + yalnız GET parçalı `/sap/opu/odata(4)/…/$batch`; ayrıştır → doğrula → yeniden kur: parça bazlı beyaz liste — tek `Content-Type`, sınırla bölünen her parça `application/http` + tam `GET … HTTP/1.1`; emin olunamayan 403 — ve SAP'ye istemcinin baytları değil proxy'nin kurduğu kanonik gövde gider: yeni sınır, prolog/epilog yok, beyaz liste iç başlıklar), yazma istekleri ve yabancı Host 403 |
 | `scripts/check_filter_search_pattern.py` | `caseSensitive:false` BLOCKER; filtre VH'si MultiInput değil WARNING |
 | `scripts/check_i18n_keys.py` | kullanılan anahtar iki dosyada mı, yer tutucu kümesi, tek kesme |
 | `scripts/check_ui_odata_refs.py` | kaydedilmiş `$metadata`'ya karşı entity set / function import / property (çok servisli), çevrimdışı |

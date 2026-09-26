@@ -487,12 +487,12 @@ class DomainVeMesajSinifi(unittest.TestCase):
               and put[0]["headers"].get("sap-language") == "TR"
               and not any(k.lower() == "if-match" for k in put[0]["headers"])
               and unlock and unlock[0]["params"] == {"_action": "UNLOCK", "lockHandle": "HX9"}
-              and [m for m, _ in self._yollar(adt)] == ["GET", "POST", "PUT", "POST", "GET"]
+              and [m for m, _ in self._yollar(adt)] == ["GET", "POST", "GET", "PUT", "POST", "GET"]   # Z118ⓒ kilit altı GET
               and kok.get(f"{{{NS_AC}}}masterLanguage") == "TR" and kok.get(f"{{{NS_AC}}}type") == "MSAG/N"
               and kok.find(f"{{{NS_AC}}}packageRef").get(f"{{{NS_AC}}}name") == "ZAXET_PKG"
               and r.get("pull_state") == "guncellendi"
               and not any(c["path"] in ("clear_enqueue_lock", "lock_object", "unlock_object") for c in adt.cagri))
-        self.kaydet("M1 birleştirme: 003 eklendi, 001/002 korundu (documented dahil) · LOCK→PUT(If-Match yok)→UNLOCK→readback",
+        self.kaydet("M1 birleştirme: 003 eklendi, 001/002 korundu (documented dahil) · LOCK→GET→PUT(If-Match yok)→UNLOCK→readback",
                     "ok · 3 mesaj · sıra", f"ok={r.get('ok')} err={r.get('error')} put={gonderilen} sıra={self._yollar(adt)}", ok)
 
     def test_M2_uzerine_yazma_yalniz_bayrakla(self):
@@ -810,17 +810,44 @@ class DomainVeMesajSinifi(unittest.TestCase):
                     and self._say(adt, "POST", "UNLOCK") == 1)
 
     def test_MS5_silmesiz_yazma_kontrol_grubu(self):
-        """(e) KONTROL GRUBU — silme yokken yazma akışı DEĞİŞMEZ: kilit altı okuma yok, gövdede deletedmessages yok."""
+        """(e) KONTROL GRUBU — silme yokken gövdede deletedmessages YOK, kapı alanı yok. Z118ⓒ (2026-09-26): kilit altı
+        yeniden okuma artık silmesiz yazımda da var ⇒ sıra GET→LOCK→GET→PUT→UNLOCK→GET (eskiden 5 adım)."""
         adt, durum = self._sil_kur()
         r = self._yaz(messages=[{"no": "030", "text": "Yeni mesaj"}])
         put = [c for c in adt.cagri if c["method"] == "PUT"]
         g = put[0]["data"] if put else ""
         ok = (r.get("ok") is True and r.get("readback_verified") is True
-              and self._yollar(adt) == [self._GET, ("POST", "LOCK"), self._PUT, ("POST", "UNLOCK"), self._GET]
+              and self._yollar(adt) == [self._GET, ("POST", "LOCK"), self._GET, self._PUT, ("POST", "UNLOCK"), self._GET]
               and g and "deletedmessages" not in g and "delete_gate" not in r
               and [m[0] for m in durum["msgs"]] == ["000", "001", "002", "006", "011", "020", "030"])
-        self.kaydet("MS5 kontrol: silmesiz ekleme → GET→LOCK→PUT→UNLOCK→GET · deletedmessages YOK · 7 mesaj",
-                    "ok · 5 adım", f"ok={r.get('ok')} sıra={self._yollar(adt)}", ok)
+        self.kaydet("MS5 kontrol: silmesiz ekleme → GET→LOCK→GET→PUT→UNLOCK→GET · deletedmessages YOK · 7 mesaj",
+                    "ok · 6 adım", f"ok={r.get('ok')} sıra={self._yollar(adt)}", ok)
+
+    def test_MS8_normal_yazim_kilit_alti_yeniden_okuma(self):
+        """Z118ⓒ — silmesiz (ekleme / üzerine yazma) yazımda da KİLİT ALTINDA canlı yeniden okunur (TOCTOU).
+        Kilitsiz okuma ile LOCK arasında başkası bir mesajı değiştirirse tam gövde onu ESKİ metne geri çevirirdi
+        (gövde kilitten önceki okumadan kurulur) ve geri okuma kıyası da "beklenen = gönderilen" olduğu için bunu
+        GÖRMEZDİ ⇒ sessiz geri alma. Kilit altı fark → PUT YOK."""
+        def baskasi_degistirir(d):   # yazma öncesi okumadan SONRA, kilit alınırken başkası 002'nin metnini değiştirir
+            d["msgs"] = [(n, t + " [başkası]", s, dc) if n == "002" else (n, t, s, dc) for n, t, s, dc in d["msgs"]]
+        for ad, arg in (("ekleme", {"messages": [{"no": "030", "text": "Yeni mesaj"}]}),
+                        ("üzerine yazma", {"messages": [{"no": "001", "text": "Yeni metin"}], "allow_overwrite": True})):
+            adt, durum = self._sil_kur(on_lock=baskasi_degistirir)
+            r = self._yaz(**arg)
+            m002 = dict((m[0], m[1]) for m in durum["msgs"]).get("002", "")
+            self.kaydet(f"MS8 {ad}: kilit altında canlı değişmiş → source_changed_since_pull · SIFIR PUT · 1 UNLOCK · "
+                        "002 başkasının metninde kalır", "source_changed_since_pull · PUT 0",
+                        f"{r.get('error')} faz={r.get('phase')} sıra={self._yollar(adt)} 002={m002!r}",
+                        r.get("ok") is False and r.get("error") == "source_changed_since_pull"
+                        and r.get("phase") == "under_lock" and self._say(adt, "PUT") == 0
+                        and self._say(adt, "POST", "UNLOCK") == 1 and m002.endswith("[başkası]"))
+        adt, durum = self._sil_kur()
+        durum["get_plan"] = [200, 500]   # 1 = yazma öncesi canlı · 2 = kilit altında
+        r = self._yaz(messages=[{"no": "030", "text": "Yeni mesaj"}])
+        self.kaydet("MS8 ekleme: kilit altında okuma 500 → pull_live_read_failed · SIFIR PUT · 1 UNLOCK",
+                    "pull_live_read_failed · PUT 0", f"{r.get('error')} sıra={self._yollar(adt)}",
+                    r.get("error") == "pull_live_read_failed" and self._say(adt, "PUT") == 0
+                    and self._say(adt, "POST", "UNLOCK") == 1 and durum["msgs"] == self._SIL_BAS)
 
     def test_MS6_silme_govdesi_oz_denetimi(self):
         """Gövde öz-denetimi KENDİ BAŞINA (kaynak çekirdek U5): doğru gövde → [], her bozuk gövde → hata listesi."""

@@ -31,6 +31,9 @@ Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya s
 3. **Taban uydurma YASAK.** `VTB` (taban bilinmiyor) dosyada otomatik birleştirme yapılmaz;
    kullanıcı "yeniyi al / yereli koru / elle" seçer.
 4. **Commit ajanın işi değil.** Proje reposuna commit KULLANICININ onayıyla atılır; `push` asla.
+   **`conn/` altında README dahil hiçbir dosyayı git'e EKLEMEZSİN** (`git add conn/...` denylist'e takılır;
+   `git add -A` / `git add .` ile de sahneleme — yolları tek tek ekle). `conn/README.md` şablon gereği
+   izlenir; commit'ini kullanıcı kendi terminalinde atar — kapanış raporunun "conn/" bölümünü aynen ver.
 5. Script'in çıktısını **aynen** göster; raporu sen yazma.
 
 ## How to use this skill
@@ -99,7 +102,8 @@ KOŞMAZSIN.
   (`behavior_manifest.py generate --project-dir "<proje>"`) AYNEN ver. Bölüm "GEREKLİ" diyorsa onay
   verilmeden `doctor` onaysız değişiklik gösterir. Kısayolu/komutu sen çalıştırma.
 - Proje bir ekip reposuysa: "bu değişiklikler commit edilince ekip arkadaşlarına da gider".
-- Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN.
+- Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN. Kullanıcı "commit et" derse bile `conn/`
+  altındaki dosyaları (README dahil) ekleme: raporun "conn/ — commit kullanıcının" bölümündeki komutu ver.
 
 ## Yapmayacakların
 `git reset --hard` · `git push` · `--force` · `git clean` · `plan.json`/`durum.json`/`onay.json`'u elle

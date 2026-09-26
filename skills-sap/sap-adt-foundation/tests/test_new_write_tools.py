@@ -371,8 +371,11 @@ class YeniYazmaYollari(unittest.TestCase):
               and put["params"] == {"corrNr": TR, "lockHandle": "H123"}
               and put["headers"].get("Content-Type") == "text/plain; charset=utf-8"
               and "If-Match" not in put["headers"]
-              and not any("/activation" in c["path"] for c in adt.cagri)
-              and "activation_note" in r)
+              and not any(c["method"] != "GET" and "/activation" in c["path"] for c in adt.cagri)
+              and "activation_note" in r
+              # Z147: yükleme sonrası bağımsız worklist sondası (salt GET); bu sahte 500 döner → ölçülemedi, ok değişmez
+              and ("GET", "inactiveobjects") in sira and r.get("inactive_count") is None
+              and bool(r.get("inactive_warning")))
         self.kaydet("B bdef push: canlı oku→LOCK→PUT(If-Match yok)→UNLOCK→readback, aktivasyon YOK",
                     "ok · sıra · aktivasyon yok", f"ok={r.get('ok')} err={r.get('error')} sıra={sira}", ok)
 

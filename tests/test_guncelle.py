@@ -431,6 +431,134 @@ class Z69BosTurTest(GuncelleTemel):
         self.assertNotIn("Klon güncel", self.cikti(r))
 
 
+class Z69bSiniflandirmaliGuncelTest(GuncelleTemel):
+    """Z69b (2026-09-26): `plan`ın SINIFLANDIRMA gerektiren iki "Klon güncel" çıkışı da etiket bırakmaz.
+
+    Z69 yalnız ucuz ölçümü (`bekleyen_kalemler`) `onkontrol`/`hazirla` girişine taşımıştı; `plan`ın
+    iki rc 1 çıkışı — ② ertelenmiş kalemin beyan ettiği yolların HİÇBİRİ eylem gerektirmiyor ③ bekleyen
+    kalemlerin hiçbiri dosya değişikliği gerektirmiyor — yalnız `plan`da ölçülüyordu ⇒ o turlarda
+    `hazirla` yine anlık commit + `guncelle-oncesi-*` etiketi bırakıyordu. Artık ucuz ölçüm "bekleyen
+    VAR" dediğinde `plan`ın hesabı (`plan_uret`, yazmaz) aynen koşulur. Çıkış ① (bekleyen kalem yok)
+    `Z69BosTurTest`tedir.
+
+    Kurgu: 3-03 (`config/permissions.json`) dışındaki tüm kalemler `uygulanan.json`'da mühürlü; yerel
+    dosya v3 içeriğine zaten eşit ⇒ yol işlemsiz (V4e/V2e). Kontrol grubu: aynı kurgu, yerel dosya v1
+    hâlinde (V1 = eylem) ⇒ etiket atılır.
+    """
+
+    ISLEMSIZ_YOL = "config/permissions.json"
+    V3_ICERIK = '{"deny": ["a", "b"]}\n'
+    etiketler = Z69BosTurTest.etiketler
+    guncel_satiri_var = Z69BosTurTest.guncel_satiri_var
+
+    def kurgu(self, *, ertelendi: bool, islemsiz: bool) -> None:
+        tumu = {k["id"]: {"durum": "uygulandi"} for y in YAYINLAR["yayinlar"] for k in y["kalemler"]}
+        del tumu["3-03"]
+        if ertelendi:
+            tumu["3-03"] = {"durum": "atlandi", "neden": "ertelendi"}
+        d = self.f.durum_dizini()
+        d.mkdir(exist_ok=True)
+        (d / "uygulanan.json").write_text(json.dumps(
+            {"surum": 1, "dosyalar": {}, "kalemler": tumu}, ensure_ascii=False), encoding="utf-8")
+        if islemsiz:
+            self.f.yerel_degistir(self.ISLEMSIZ_YOL, self.V3_ICERIK)
+
+    def bos_tur_olcumu(self, plan_mesaji: str) -> None:
+        """Ortak hüküm: onkontrol 1 · hazirla 1 (etiket YOK, anlık commit YOK) · plan 1 + beklenen çıkış."""
+        head = self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip()
+        r = self.f.calistir("onkontrol")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.guncel_satiri_var(r)
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.guncel_satiri_var(r)
+        self.assertEqual(self.etiketler(), [], "sınıflandırmalı boş turda geri dönüş etiketi atıldı (Z69b)")
+        self.assertEqual(self.git(self.f.tuketici, "rev-parse", "HEAD").stdout.strip(), head,
+                         "sınıflandırmalı boş turda yerel anlık commit atıldı (Z69b)")
+        # Kurgunun GERÇEKTEN hedeflenen `plan` çıkışını tetiklediğinin kanıtı (başka bir çıkış değil).
+        r = self.f.calistir("plan")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertIn(plan_mesaji, r.stdout, self.cikti(r))
+        self.assertFalse((self.f.durum_dizini() / "plan.json").exists(), "rc 1'de plan.json yazıldı")
+
+    def test_Z69b_ertelenmis_kalemin_yollari_islemsizse_etiket_atilmaz(self):
+        """`plan` çıkış ② — Z62 düşürmesinden sonra beyan boş kalıyor."""
+        self.kurgu(ertelendi=True, islemsiz=True)
+        self.bos_tur_olcumu("Klon güncel: bekleyen yayın kalemi yok.")
+
+    def test_Z69b_hicbir_kalem_dosya_degisikligi_gerektirmiyorsa_etiket_atilmaz(self):
+        """`plan` çıkış ③ — kalem plana giriyor ama `dosyalar`ı boş."""
+        self.kurgu(ertelendi=False, islemsiz=True)
+        self.bos_tur_olcumu("Klon güncel: bekleyen kalemlerin hiçbiri dosya değişikliği gerektirmiyor.")
+
+    def _kontrol_grubu(self, ertelendi: bool) -> None:
+        self.kurgu(ertelendi=ertelendi, islemsiz=False)
+        self.assertEqual(self.f.calistir("onkontrol").returncode, 0)
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(len(self.etiketler()), 1)
+        r = self.f.calistir("plan")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual([d["yol"] for k in self.f.plan()["kalemler"] for d in k["dosyalar"]],
+                         [self.ISLEMSIZ_YOL])
+
+    def test_Z69b_kontrol_grubu_eylem_varsa_etiket_atilir(self):
+        """Kontrol grubu (çıkış ③'ün eşi): yol V1 (eylem) ⇒ onkontrol 0 · hazirla 0 + tek etiket · plan 0."""
+        self._kontrol_grubu(ertelendi=False)
+
+    def test_Z69b_kontrol_grubu_ertelenmis_kalem_eylem_varsa_etiket_atilir(self):
+        """Kontrol grubu (çıkış ②'nin eşi): ertelenmiş kalemin yolu V1 ⇒ yeniden önerilir, etiket atılır."""
+        self._kontrol_grubu(ertelendi=True)
+
+    def test_Z69b_hesap_DUR_verirse_eski_fail_closed_yol(self):
+        """Tam hesap `Dur` verirse "güncel" DENMEZ: onkontrol 0 (ÖLÇÜLEMEDİ notu) · hazirla etiketi ATAR
+        (bekleyen işi atlamak yerine) · `plan` kendi DUR'unu verir. Arıza enjeksiyonu
+        `DiskShaOlculemediTest` ile aynı: kullanıcı dosyasına bağlı, clean komutu başarısız, `required` filtre."""
+        t, yol = self.f.tuketici, "skills/cakisan/SKILL.md"
+        self.f.yerel_degistir(yol, "---\nname: cakisan\n---\nKULLANICININ dosyasi\n")
+        (t / ".git" / "info").mkdir(exist_ok=True)
+        (t / ".git" / "info" / "attributes").write_text(f"{yol} filter=kirik\n", encoding="utf-8")
+        self.git(t, "config", "filter.kirik.clean", "false")
+        self.git(t, "config", "filter.kirik.smudge", "cat")
+        self.git(t, "config", "filter.kirik.required", "true")
+        r = self.f.calistir("onkontrol")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("bekleyen kalem: ÖLÇÜLEMEDİ", r.stdout, self.cikti(r))
+        self.assertNotIn("Klon güncel", self.cikti(r))
+        r = self.f.calistir("hazirla")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(len(self.etiketler()), 1, "ölçülemeyen turda etiket atılmadı (fail-closed bozuldu)")
+        r = self.f.calistir("plan")
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+
+
+class Z69bPlanUretTest(GuncelleTemel):
+    """Z69b şart (1): `komut_plan`'ın hesabı `plan_uret`e ayrıldı — ayrım davranışı DEĞİŞTİRMEZ.
+
+    ① `plan_uret` klona HİÇBİR ŞEY yazmaz (plan.json/durum.json yok) ② `plan` komutunun yazdığı
+    plan.json, `plan_uret`in döndürdüğü planın aynısıdır (yalnız `uretim` zaman damgası hariç).
+    KAPSAM — bakılmayan: ayrım ÖNCESİ kodla karşılaştırma (tek seferlik ölçüm, lane raporunda);
+    sürekli bekçi ALTIN çıktılı plan testleridir (`PlanVakaTest`, Z62 sınıfları).
+    """
+
+    def test_plan_uret_yazmaz_ve_plan_komutuyla_ayni_plani_verir(self):
+        import guncelle  # noqa: PLC0415
+        self.senaryolari_uygula()
+        klon = guncelle.Klon(self.f.tuketici)
+        mesaj, plan = guncelle.plan_uret(guncelle.Baglam(klon, guncelle.harita_yukle(None)))
+        self.assertIsNone(mesaj)
+        self.assertTrue(plan["kalemler"], "kurgu: plan dolu olmalı (yoksa karşılaştırma boş)")
+        d = self.f.durum_dizini()
+        self.assertFalse((d / "plan.json").exists(), "plan_uret plan.json yazdı")
+        self.assertFalse((d / "durum.json").exists(), "plan_uret durum.json yazdı")
+        r = self.f.calistir("plan")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        yazilan = self.f.plan()
+        yazilan.pop("uretim")
+        plan.pop("uretim")
+        self.assertEqual(json.loads(json.dumps(plan, ensure_ascii=False)), yazilan)
+
+
 # =====================================================================================================
 # 2. PLAN — §4 vaka kodlarının ALTIN ÇIKTISI
 # =====================================================================================================

@@ -15,11 +15,10 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
-from _helpers import AXET_HOME, GeciciTest, _sil
+from _helpers import AXET_HOME, GeciciTest, _sil, gecici_dizin
 
 KUR_CMD = AXET_HOME / "kur.cmd"
 KUR_PS1 = AXET_HOME / "kur.ps1"
@@ -76,7 +75,7 @@ class KurTest(GeciciTest):
     @classmethod
     def setUpClass(cls) -> None:
         cls._once = _gercek_damga()
-        cls.sinif_tmp = Path(tempfile.mkdtemp(prefix="axet-kur-")).resolve()
+        cls.sinif_tmp = gecici_dizin("axet-kur-")   # repo DIŞI (Z96)
         cls.kaynak_sablon = cls.sinif_tmp / "kaynak.git"
         r = subprocess.run(["git", "clone", "-q", "--bare", str(AXET_HOME), str(cls.kaynak_sablon)],
                            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300)
@@ -1272,9 +1271,10 @@ class KurTest(GeciciTest):
         self.assertFalse(kayit.exists(), "-WingetKapali varken winget çağrıldı")
 
     def test_kur_disi_yardim_metinleri_winget_onermez(self):
-        """Aynı politika kur.ps1 dışındaki yardım metinlerinde: Python eksik mesajı winget komutu önermez, yazılım
-        merkezini gösterir. rg için HİÇBİR kurulum yolu gösterilmez (kullanıcı kararı 2026-09-24: ek uygulama önerilmez;
-        install.py rg yokken yalnız bilgi satırı basar). Kapsam: yalnız bu üç dosyanın metni (çalıştırılmaz)."""
+        """Aynı politika kur.ps1 dışındaki yardım metinlerinde: dört dosyanın hiçbiri winget komutu önermez ve rg için
+        HİÇBİR kurulum yolu göstermez (kullanıcı kararı 2026-09-24: ek uygulama önerilmez; install.py rg yokken yalnız
+        bilgi satırı basar). Python eksik mesajının yazılım merkezini gösterdiği YALNIZ iki .cmd'de ölçülür;
+        install.py/doctor.py için bu iddia ölçülmez. Kapsam: yalnız bu dört dosyanın metni (çalıştırılmaz)."""
         for yol in ("yeni-proje.cmd", "proje-tamamla.cmd", "scripts/install.py", "scripts/doctor.py"):
             with self.subTest(yol=yol):
                 metin = (AXET_HOME / yol).read_bytes().decode("utf-8")
@@ -1417,12 +1417,30 @@ class KurTest(GeciciTest):
         """Çift tıklamalık aXet-Kur.cmd'yi GERÇEKTEN koşar: geçici kopyada yalnız indirme adresi bu klonun kur.ps1'ine
         (file:// — Invoke-WebRequest PS 5.1'de okur, ölçüldü) çevrilir; geri kalan satırlar, çıkış kodu eşlemesi ve
         etiketler aynen. lf=True: GitHub'dan indirilen kopya gibi LF satır sonlu (depoda blob LF'tir; .gitattributes
-        eol=crlf yalnız checkout'u etkiler). TEMP geçici klasör: indirilen kur.ps1 oraya yazılır."""
-        metin = AXET_HOME.joinpath("aXet-Kur.cmd").read_bytes()
-        adres = re.search(rb"https://raw\.githubusercontent\.com/\S+?/kur\.ps1", metin).group(0)
-        metin = metin.replace(adres, KUR_PS1.as_uri().encode("ascii"))
+        eol=crlf yalnız checkout'u etkiler). TEMP geçici klasör: indirilen kur.ps1 oraya yazılır.
+
+        Z121ⓕ (bug gate 274a2d0): cmd.exe LF'li dosyada etiketi 512 baytlık bloklar hâlinde arar ⇒ davranış etiketlerin
+        BAYT OFSETİNE bağlıdır. Yerel adres gerçek adresten farklı uzunlukta olduğu için ofsetler kayıyordu; fark
+        adres satırından ÖNCEKİ en uzun `rem` satırında dengelenir (yorum gövdesi aynı uzunlukta `x`'lerle yazılır)
+        ve her etiketin ofsetinin gerçek dosyayla BİREBİR aynı olduğu assert edilir."""
+        gercek = AXET_HOME.joinpath("aXet-Kur.cmd").read_bytes()
+        adres = re.search(rb"https://raw\.githubusercontent\.com/\S+?/kur\.ps1", gercek).group(0)
+        yerel = KUR_PS1.as_uri().encode("ascii")
+        metin = gercek.replace(adres, yerel)
+        fark = len(yerel) - len(adres)
+        rem = max(re.finditer(rb"(?m)^rem [^\r\n]*", metin[:metin.index(yerel)]), key=lambda m: len(m.group(0)))
+        govde = len(rem.group(0)) - len(b"rem ") - fark
+        self.assertGreaterEqual(govde, 0, f"yerel adres {fark} bayt uzun; dengeleyecek rem satırı yetmiyor")
+        metin = metin[:rem.start()] + b"rem " + b"x" * govde + metin[rem.end():]
         if lf:
             metin = metin.replace(b"\r\n", b"\n")
+            gercek = gercek.replace(b"\r\n", b"\n")
+
+        def etiketler(b: bytes) -> list[tuple[int, bytes]]:
+            return [(m.start(), m.group(0)) for m in re.finditer(rb"(?m)^:\w+", b)]
+        self.assertEqual(len(metin), len(gercek))
+        self.assertTrue(etiketler(gercek))
+        self.assertEqual(etiketler(metin), etiketler(gercek), "etiket bayt ofsetleri gerçek dosyadan kaydı")
         kopya = self.tmp / ("_axetkur_lf.cmd" if lf else "_axetkur_crlf.cmd")
         kopya.write_bytes(metin)
         temp = self.tmp / "_temp_axetkur"
@@ -1464,12 +1482,17 @@ class KurTest(GeciciTest):
                        "DURDU: Ön koşul sorunu var (yukarıda)."], [portal]),
             ("winget", ["-Kaynak", str(self.kaynak), "-Hedef", str(self.hedef), "-Evet", "-Winget"],
              env_portal, ["DURDU: Eksik ön koşul var (yukarıda). Kurduktan sonra bu dosyaya TEKRAR çift tıkla."], [portal]),
+            # Z121ⓕ: -Kaldir'da "TEKRAR çift tıkla" YANLIŞ olurdu — seçeneksiz çift tık KURULUMU başlatır.
             ("kaldır python yok", ["-Kaldir", "-Hedef", str(sahte_klon), "-WingetKapali"],
-             env_portal, ["bulunamadı; kaldırma install.py ile yapılır."], [portal, "== 1/5"]),
+             env_portal, ["bulunamadı; kaldırma install.py ile yapılır.",
+                          "kaldırmayı AYNI komutla (-Kaldir ile) yeniden çalıştır"], [portal, "== 1/5"]),
         ]
         kapanis = "Kurulum DURDU: on kosul sorunu var. Ne yapmaniz gerektigi hemen yukaridaki mesajda yazar."
+        kaldir_kapanis = "Kaldirma DURDU: on kosul sorunu var. Ne yapmaniz gerektigi hemen yukaridaki mesajda yazar."
         for ad, args, env, kendi, yasak in durumlar:
-            for lf in ((True, False) if ad == "eksik program" else (True,)):
+            kaldirma = "-Kaldir" in args
+            son_mesaj = kaldir_kapanis if kaldirma else kapanis
+            for lf in ((True, False) if ad in ("eksik program", "kaldır python yok") else (True,)):
                 with self.subTest(durum=ad, lf=lf):
                     r = self.axet_kur_cmd(*args, env=env, lf=lf)
                     c = self.cikti(r)
@@ -1478,14 +1501,21 @@ class KurTest(GeciciTest):
                         self.assertIn(s, c)
                     for s in yasak:
                         self.assertNotIn(s, c)
-                    # son mesaj: cmd'nin tarafsız kapanışı, kur.ps1'in talimatından SONRA; koşulsuz "portaldan kurun" yok
-                    self.assertIn(kapanis, c)
-                    self.assertLess(max(c.rindex(s) for s in kendi), c.index(kapanis), c)
+                    # son mesaj: cmd'nin kapanışı, kur.ps1'in talimatından SONRA; koşulsuz "portaldan kurun" yok
+                    self.assertIn(son_mesaj, c)
+                    self.assertLess(max(c.rindex(s) for s in kendi), c.index(son_mesaj), c)
                     self.assertNotIn("Eksik program var", c)
-                    son = c[c.index(kapanis):]
-                    self.assertIn("Program eksik dediyse", son)  # portal yalnız koşullu anılır
-                    self.assertIn("TEKRAR cift tiklayin", son)
-                    self.assertIn("destek ekibine", son)
+                    son = c[c.index(son_mesaj):]
+                    if kaldirma:
+                        self.assertNotIn(kapanis, c)
+                        self.assertIn("AYNI komutla (-Kaldir ile) tekrar calistirin", son)
+                        self.assertIn("kaldirmayi degil KURULUMU baslatir", son)
+                        self.assertNotIn("TEKRAR cift tiklayin", son)
+                    else:
+                        self.assertNotIn(kaldir_kapanis, c)
+                        self.assertIn("Program eksik dediyse", son)  # portal yalnız koşullu anılır
+                        self.assertIn("TEKRAR cift tiklayin", son)
+                        self.assertIn("destek ekibine", son)
                     self.assertFalse(self.hedef.exists())
 
     # --- internet işareti (Zone.Identifier) -------------------------------------------------------------------
@@ -2130,7 +2160,7 @@ class KurPythonYoluTest(GeciciTest):
     @classmethod
     def setUpClass(cls) -> None:
         cls._once = _gercek_damga()
-        cls.sinif_tmp = Path(tempfile.mkdtemp(prefix="axet-kurpy-")).resolve()
+        cls.sinif_tmp = gecici_dizin("axet-kurpy-")   # repo DIŞI (Z96)
         cls.venv = cls.sinif_tmp / "venv"
         r = subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(cls.venv)], capture_output=True,
                            text=True, stdin=subprocess.DEVNULL, timeout=300)

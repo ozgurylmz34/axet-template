@@ -4,7 +4,7 @@ aXet.code'un Claude Code'a olabildiğince yakın çalışması için ortak kural
 kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullanıcının global aXet config'ini
 bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 
-> Sürüm: v0.5.12 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.13 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -70,7 +70,8 @@ Sonra **proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (aXet bu dosya
    proje ayarlarının onayı sorulur, kontrol (`doctor`) koşar ve aXet'i projede açmayı önerir — ilk satırda
    `proje: <ad>` görünmeli.
 
-Parola dosyada düz metindir; `conn/` git'e girmez ve aXet ajanına kapalıdır. Sistem değiştirmek için aXet'te
+Parola dosyada düz metindir; `conn/` altındaki bağlantı dosyaları git'e girmez (yalnız `conn/README.md` izlenir, onun
+commit'i de sende — aXet `conn/` altına dokunmaz) ve klasör aXet ajanına kapalıdır. Sistem değiştirmek için aXet'te
 `%sistem` (ya da "QA'ya geç"). Var olan projeyi şablona getirmek için `%guncelle-proje`; bitince yine
 `KURULUMU-TAMAMLA`'ya çift tıkla (ayar onayını o sorar).
 
@@ -81,6 +82,7 @@ Terminal yolu, elle kurulum ve bağlantı teşhisi: [`docs/onboarding.md`](docs/
 ## Yeni paket (SAP projesi)
 ```powershell
 python $HOME\axet\scripts\new_package.py ZSD001_CLC --title "Sevkiyat raporu"   # modül addan çıkar (SD)
+python $HOME\axet\scripts\new_package.py ZSD001_CLC --title "…" --mevcut       # SAP'de VAR olan paket: Owner/tarih canlıdan
 python $HOME\axet\scripts\new_package.py --index --check                        # paket listesi güncel mi
 ```
 `<source_root>/<MODÜL>/<PAKET>/` altına obje tipi klasörlerini, `.rules.md` (ad önekleri, bağımlılık, transport),
@@ -177,7 +179,7 @@ aXet.code 1.3.0'da ölçüldü. Bilmen gerekenler:
 - **Hook yok:** kurallar talimat, izin kuralı ve betikle uygulanır; mekanik zorlama sınırlıdır.
 - **Özel ajan tanımı çalışmaz** (`.axet-code/agents`, `agent create`): iş devri yerleşik `agent` aracıyla yapılır.
 - **Merkezi klon yazmaya kapalı değildir.** Sapmayı `doctor.py` git'e karşı raporlar: klonun davranış yüzeyindeki
-  (`core/`, `skills/`, `skills-sap/`, `AGENTS.md`, `config/permissions.json`, `.axetcode-denylist`) senden gelen
+  (`core/`, `skills/`, `skills-sap/`, `scripts/`, `templates/`, `AGENTS.md`, `config/permissions.json`, `.axetcode-denylist`) senden gelen
   değişiklik WARN olur, `%guncelle`'nin kendi commit'leri bilgi satırı olur. Eski yazma koruması (config'e yazılan
   `edit` yasakları) 2026-09-18'de kaldırıldı: `%guncelle` klonun içine yazdığı için kendi akışını engelliyordu, bash
   ve farklı harf karışımıyla da atlatılabiliyordu. Yeniden kurulum eski sürümlerin yazdığı bu yasakları config'ten siler.

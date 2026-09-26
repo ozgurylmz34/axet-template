@@ -49,7 +49,8 @@ def ask_deny_uzunluk_ihlalleri(kurallar: dict) -> list[str]:
       deny'ı ezer ve komut sorulmadan çalışır (yaşanmış vaka: HEAD taşındı, kanarya dosyası silindi).
     · allow↔deny (2026-09-17, tek koşum, motor kanıtı = BgJob log satırı + işaret dosyası): aynı uzunluk kuralı
       allow için de işliyor — uzun allow kısa deny'ı EZDİ (komut çalıştı), uzun deny kısa allow'u ezdi.
-      Şablonda bugün allow deseni YOK; kural gelecekte eklenecek olanı korur (bugün no-op, yarın tek savunma).
+      Statik dosyada allow deseni YOK; kural gelecekte eklenecek olanı korur. `install.py`'nin klon yolundan
+      ÜRETTİĞİ jokersiz allow'lar (Z12, Z140) bu denetimin dışındadır → `uretilen_izin_ihlalleri` ayrıca bakar.
 
     İki ölçülmemiş nokta, ikisi de KATI tarafa yuvarlanır:
     · Uzunluğun '*' hariç sabit karakterle mi toplam uzunlukla mı sayıldığı DOĞRULANMADI → ikisi birden istenir.
@@ -134,8 +135,9 @@ def beklenen_klon_bash(klon) -> dict:
     (ölçüm aracı kendini kanıtlamasın). Bu yüzden desen BURADA yeniden türetilir; metnin
     ürünle eşliğini `OturumOzetiAllowTest.test_1/test_4` ayrıca ölçer.
     """
-    return {**guncel_kurallar()["bash"],
-            'python "' + (klon / "scripts" / "session_brief.py").as_posix() + '"': "allow"}
+    komut = 'python "' + (klon / "scripts" / "session_brief.py").as_posix() + '"'
+    # Z140ⓑ (2026-09-26): `%gun-sonu`/`%onboard` biçimi — AGENTS komutu + TEK ek ` --no-fetch`, jokersiz.
+    return {**guncel_kurallar()["bash"], komut: "allow", komut + " --no-fetch": "allow"}
 
 
 JOKERLER = ("*", "?", "[")
@@ -208,12 +210,83 @@ class OturumOzetiAllowTest(unittest.TestCase):
     def test_5_yasam_dongusu_apply_sonra_strip(self):
         import install
         kurallar = self._kurallar()
-        desen = install.session_brief_allow()
         cfg: dict = {}
         install.apply_ours(cfg, kurallar, sap=False)
-        self.assertEqual(cfg["permissions"]["rules"]["bash"].get(desen), "allow")
+        for desen in (install.session_brief_allow(), install.session_brief_allow("--no-fetch")):
+            self.assertEqual(cfg["permissions"]["rules"]["bash"].get(desen), "allow", desen)
         install.strip_ours(cfg, kurallar)
         self.assertNotIn("permissions", cfg, "kaldırma sonrası üretilen desen config'te KALMAMALI")
+
+
+class OturumOzetiNoFetchAllowTest(unittest.TestCase):
+    """Z140ⓑ (kullanıcı kararı 2026-09-26, AÇIK ONAY, DAR KAPSAM): `session_brief.py --no-fetch` biçimine JOKERSİZ,
+    BİREBİR allow. Dayanak: `%gun-sonu` her gün sonu bu komutu koşuyor ve tam-eşleşme kuralı ona uymadığı için
+    onay soruyordu (Z105'te ölçüldü). Güvenlik dayanağı Z12 ile aynı: joker yok ⇒ desen yalnız TEK bir komut
+    metnine uyar; ek argüman ya da zincir (`&&`, `;`) eşleşmez ve SORULUR (fail-safe).
+    ⛔ `--project-dir "<yol>"` biçimine kural YOK (bilinçli): yol değişkendir ⇒ birebir yazılamaz, joker gerekir
+    (`--project-dir "*"`) ve joker `"x" && git reset --hard && echo "` zincirine de uyar. `test_4` bunu kilitler.
+    Eşleşme simülasyonu `fnmatchcase` (ölçülmüş semantik: tam metne glob, harfe duyarlı) — canlı motor DEĞİL."""
+
+    def setUp(self) -> None:
+        import install
+        self.install = install
+        self.taban = install.session_brief_allow()
+        self.desen = install.session_brief_allow("--no-fetch")
+        self.kurallar = install.load_rules()
+        self.izinliler = {p for p, k in self.kurallar["bash"].items() if k == "allow"}
+
+    def _izin_alan(self, komut: str) -> list[str]:
+        return [p for p in self.izinliler if fnmatch.fnmatchcase(komut, p)]
+
+    def test_1_desen_BIREBIR_ve_JOKERSIZ(self):
+        self.assertEqual(self.desen, self.taban + " --no-fetch")
+        for j in JOKERLER:
+            self.assertNotIn(j, self.desen, f"desen joker içeriyor ({j!r}) → uzunluk muafiyetinin dayanağı düşer")
+        self.assertEqual(self.kurallar["bash"].get(self.desen), "allow")
+        self.assertEqual(uretilen_izin_ihlalleri(self.kurallar), [])
+
+    def test_2_KONTROL_iki_izinli_bicim_allow_alir(self):
+        self.assertEqual(self._izin_alan(self.taban), [self.taban], "çıplak açılış komutu allow almalı")
+        self.assertEqual(self._izin_alan(self.taban + " --no-fetch"), [self.desen], "--no-fetch biçimi allow almalı")
+
+    def test_3_NEGATIF_komsu_bicimler_izin_ALMAZ(self):
+        komsular = [
+            self.taban + " --no-fetch --project-dir \"C:/p\"",          # ek argüman
+            self.taban + " --no-fetch --json",                            # ek argüman
+            self.taban + " --no-fetch ",                                  # sonda boşluk
+            self.taban + " --no-fetchX",                                  # bitişik ek metin
+            self.taban + "  --no-fetch",                                  # çift boşluk
+            self.taban + " --no-fetch && git reset --hard HEAD~1",        # zincir &&
+            self.taban + " --no-fetch; rm -rf /tmp/x",                    # zincir ;
+            self.taban + " --no-fetch | tee x",                           # boru
+            self.taban + " --no-fetch\ngit push -f",                      # satır sonu zinciri
+            self.taban + " && git reset --hard",                          # çıplak biçimin zinciri
+            "cd x && " + self.taban + " --no-fetch",                      # önden zincir
+            self.taban.replace("python", "py") + " --no-fetch",           # farklı yorumlayıcı yazımı
+        ]
+        for komut in komsular:
+            with self.subTest(komut=komut):
+                self.assertEqual(self._izin_alan(komut), [], f"komşu biçim izin aldı: {komut!r}")
+
+    def test_4_project_dir_bicimine_kural_YOK(self):
+        """Bilinçli kapsam daralması (lider kararı 2026-09-26, AR-1 seçenek a): değişken yol → joker → zincir riski."""
+        self.assertEqual([p for p in self.izinliler if "--project-dir" in p], [])
+        self.assertEqual(self._izin_alan(self.taban + ' --project-dir "C:/proje"'), [])
+        self.assertEqual(self._izin_alan(self.taban + ' --no-fetch --project-dir "C:/proje"'), [])
+
+    def test_5_izin_verilmeyen_ek_REDDEDILIR(self):
+        """Üretim fonksiyonu yalnız listelenmiş ekleri kabul eder — yeni ek sessizce kural doğurmasın."""
+        for ek in ("--project-dir", "--no-fetch *", "*"):
+            with self.subTest(ek=ek):
+                with self.assertRaises(ValueError):
+                    self.install.session_brief_allow(ek)
+
+    def test_6_gun_sonu_ve_onboard_metni_izinli_bicimi_yaziyor(self):
+        """Kablolama: skill metni bu biçimi TARİF etmezse model başka yazım üretir ve kural hiç eşleşmez."""
+        for skill in ("gun-sonu", "onboard"):
+            with self.subTest(skill=skill):
+                metin = (AXET_HOME / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn('session_brief.py" --no-fetch', metin)
 
 
 class EmekliKuralTest(unittest.TestCase):

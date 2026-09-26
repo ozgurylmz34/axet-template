@@ -40,11 +40,19 @@ goto son
 
 rem Cikis 2 dort durumda gelir: eksik program (portal listesi), Git kurulu ama calismiyor, -Winget yolu,
 rem -Kaldir sirasinda Python yok. Ne yapilacagini kur.ps1 hemen yukarida kendisi yazar; burasi tarafsiz kalir.
+rem -Kaldir ayri kapanir: secenek vermeden cift tik kaldirmayi degil KURULUMU baslatir (Z121).
 :onkosul
+echo %* | findstr /i /c:"-Kaldir" >nul && goto kaldirma_durdu
 echo  Kurulum DURDU: on kosul sorunu var. Ne yapmaniz gerektigi hemen yukaridaki mesajda yazar.
 echo  Program eksik dediyse onu kurun (sirket bilgisayarinda: Software Center / Company Portal),
 echo  sonra bu pencereyi kapatin ve bu dosyaya TEKRAR cift tiklayin.
 echo  Baska bir sorun yazdiysa oradaki adimi izleyin; anlasilmazsa ekran goruntusunu destek ekibine gonderin.
+goto son
+
+:kaldirma_durdu
+echo  Kaldirma DURDU: on kosul sorunu var. Ne yapmaniz gerektigi hemen yukaridaki mesajda yazar.
+echo  Sorunu giderdikten sonra kaldirmayi AYNI komutla (-Kaldir ile) tekrar calistirin.
+echo  Dosyaya secenek vermeden cift tiklamak kaldirmayi degil KURULUMU baslatir.
 goto son
 
 :indirilemedi

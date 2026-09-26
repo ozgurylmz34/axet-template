@@ -93,9 +93,11 @@ def require_transport(transport: str | None, *, what: str = "operation",
     if package == YEREL_PAKET:
         return
     if not transport or not transport.strip():
+        # Z118ⓑ: ipucu ARAÇ adını verir (`adt_transport_list`); `list_user_transports` istemci metodudur
+        # (lib/sap_client.py), model onu çağıramaz. Ad araç kayıt tablosunda testle bağlı (test_guvenlik_sertlestirme B1).
         raise GuardrailViolation(
             "ADR_0005_C",
-            f"{what} için transport zorunlu — list_user_transports ile aktif transportları sor ve kullanıcıya doğrulat",
+            f"{what} için transport zorunlu — adt_transport_list ile aktif transportları sor ve kullanıcıya doğrulat",
         )
 
 

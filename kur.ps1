@@ -1303,6 +1303,8 @@ try {
         if (-not $python) {
             if ($script:PyEski) { Yaz "DURDU: Python sürümü yetersiz (bulunan $script:PyEski; gerekli $script:PyAsgari ya da üstü); kaldırma install.py ile yapılır." }
             else { Yaz "DURDU: Python $script:PyAsgari+ bulunamadı; kaldırma install.py ile yapılır." }
+            # Z121: bu dosyaya seçeneksiz çift tık kaldırmayı değil KURULUMU başlatır → komut aynen tekrarlanmalı.
+            Yaz '  Python hazır olunca kaldırmayı AYNI komutla (-Kaldir ile) yeniden çalıştır; seçeneksiz çift tık kurulumu başlatır.'
             Bitir 2
         }
         $script:PY = $python.Yol

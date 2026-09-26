@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from _helpers import GeciciTest, rg_siz_path  # önce: scripts/ yolunu ekler
+from _helpers import GeciciTest, git_reposunda_mi, rg_siz_path  # önce: scripts/ yolunu ekler
 import doctor
 import sap_stamp
 
@@ -1458,8 +1458,8 @@ class GitKimlikTest(GeciciTest):
         self.cwd = self.tmp / "repo_disi"
         self.cwd.mkdir()
         # Ön koşul: cwd bir git reposunun içinde DEĞİL (içindeyse üst reponun yerel config'i sonucu sızdırır).
-        r = self.git(self.cwd, "rev-parse", "--is-inside-work-tree", kontrol=False)
-        self.assertNotEqual(r.returncode, 0, f"geçici dizin bir git reposunun içinde: {self.cwd}")
+        # GeciciTest kökü zaten repo dışına sabitler ya da SKIP eder (Z96); bu satır aynı ölçütle ikinci güvence.
+        self.assertFalse(git_reposunda_mi(self.cwd), f"geçici dizin bir git reposunun içinde: {self.cwd}")
 
     def kimlik(self, ad: str | None, eposta: str | None) -> None:
         satirlar = ["[user]"]
@@ -1471,6 +1471,15 @@ class GitKimlikTest(GeciciTest):
 
     def kimlik_satirlari(self, r) -> list[str]:
         return [s for s in r.stdout.splitlines() if s.startswith("[") and "git kimliği" in s]
+
+    def duzeltme_kurulumu_gosterir(self, mesaj: str) -> None:
+        """Z121ⓐ: birincil düzeltme YENİ kurulum akışıdır (kur.ps1 ADIM 2 Git kimliğini sorar ve kaydeder); elle
+        `git config --global` yalnız "olmazsa" yedeğidir ve ondan SONRA gelir."""
+        self.assertIn("aXet-Kur.cmd'ye tekrar çift tıkla", mesaj)
+        self.assertIn("kurulum Git kimliğini sorar ve kaydeder", mesaj)
+        self.assertIn("olmazsa", mesaj)
+        self.assertLess(mesaj.index("aXet-Kur.cmd"), mesaj.index("olmazsa"), mesaj)
+        self.assertLess(mesaj.index("olmazsa"), mesaj.index("git config --global user.name"), mesaj)
 
     def repo(self, remote: bool) -> None:
         """cwd'yi git reposu yapar; `remote` → push riski gerçek (WARN seviyesi)."""
@@ -1487,6 +1496,7 @@ class GitKimlikTest(GeciciTest):
         for parca in ("user.email", "user.name", "Windows", "push edilmeyecekse zararsız",
                       "git config --global user.email", "yargılanmaz", "remote yalnız bulunulan repoda ölçülür"):
             self.assertIn(parca, satir[0])
+        self.duzeltme_kurulumu_gosterir(satir[0])
 
     def test_kimliksiz_repo_disi_info(self):
         satir = self.kimlik_satirlari(self.calistir("doctor.py", cwd=self.cwd))
@@ -1508,6 +1518,7 @@ class GitKimlikTest(GeciciTest):
             self.assertIn(parca, satir[0])
         self.assertNotIn("example.invalid", r.stdout.split("git kimliği", 1)[1].splitlines()[0])
         self.assertNotIn("bu makinedeki", satir[0], "proje dizininde genel (template) metni basılmamalı")
+        self.duzeltme_kurulumu_gosterir(satir[0])
         # WARN dalı çıkış kodunu değiştirmemeli: aynı remote'lu repoda kimlikli koşunun rc'siyle karşılaştır.
         self.kimlik("Ad Soyad", self.ADRES)
         kimlikli = self.calistir("doctor.py", cwd=self.cwd)
@@ -1551,6 +1562,7 @@ class GitKimlikTest(GeciciTest):
         self.assertEqual(durum, "WARN")
         self.assertIn("git kimliği tanımsız", mesaj)
         self.assertIn("remote'u ÖLÇÜLEMEDİ (rc=2: bozuk)", mesaj)
+        self.duzeltme_kurulumu_gosterir(mesaj)
 
     def test_yalniz_eposta_eksik_warn(self):
         self.repo(remote=True)

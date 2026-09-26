@@ -798,7 +798,8 @@ def bekleyen_kalemler(b: Baglam) -> Bekleyen:
     `komut_plan` VE `onkontrol`/`hazirla` girişi (`_bekleyen_yok_mu`) aynı fonksiyonu kullanır:
     eskiden ölçüm yalnız `plan`daydı ve `hazirla` ondan ÖNCE koştuğu için her boş tur bir
     `guncelle-oncesi-*` etiketi bırakıyordu. Ucuzdur: dosya sınıflandırması YAPMAZ (yalnız
-    yayınlar.json + etiket başına iki `git rev-parse`/`merge-base`).
+    yayınlar.json + etiket başına iki `git rev-parse`/`merge-base`). Bu ölçüm "bekleyen VAR"
+    dediğinde `_bekleyen_yok_mu` ayrıca `plan_uret`i koşar (Z69b: sınıflandırmalı iki çıkış).
     """
     k = b.k
     s = Bekleyen()
@@ -859,7 +860,18 @@ def bekleyen_kalemler(b: Baglam) -> Bekleyen:
     return s
 
 
-def komut_plan(b: Baglam, args) -> int:
+def plan_uret(b: Baglam) -> tuple[str | None, dict | None]:
+    """`plan`ın HESABI — klona hiçbir şey YAZMAZ (Z69b, 2026-09-26). Döner: (`Klon güncel: …`
+    satırı, None) ya da (None, plan). Ölçülemeyen durum `Dur`dur (sessiz "güncel" yok).
+
+    ⛔ NEDEN AYRI: "iş var mı" sorusunun üç cevabı vardır ve ikisi dosya sınıflandırması ister
+    (ertelenmiş kalemin tüm yolları işlemsiz · hiçbir kalem dosya değişikliği gerektirmiyor). Z69
+    yalnız ucuz olanı (`bekleyen_kalemler`) `onkontrol`/`hazirla`ya taşımıştı ⇒ bu iki turda
+    `hazirla` yine anlık commit + etiket bırakıyordu. `_bekleyen_yok_mu` artık bu fonksiyonu AYNEN
+    koşar: iki ölçüm iki ayrı sonuç veremez. Sınıflandırma yerel içeriği DİSKTEN okur ve taban
+    `merge-base HEAD origin/main`'dir ⇒ `hazirla`nın anlık commit'i sonucu değiştirmez.
+    Yazım (plan.json, durum.json damgası) yalnız `komut_plan`dadır.
+    """
     k = b.k
     yeniden_ad = b.yeniden_adlandirmalar()
     kapsam = b.kapsam()
@@ -888,8 +900,7 @@ def komut_plan(b: Baglam, args) -> int:
                           "`git -C <klon> fetch --tags origin` çalıştır.")
 
     if not beyan:
-        print(KLON_GUNCEL)
-        return 1
+        return KLON_GUNCEL, None
 
     # 2) kapsamın tamamını sınıflandır (sayaçlar), kalem dosyalarını ayrıca kaydet
     sayaclar: dict[str, int] = {}
@@ -946,8 +957,7 @@ def komut_plan(b: Baglam, args) -> int:
             karsilanan.add(kid)
             del beyan[kid], kalem_kaydi[kid]
     if not beyan:
-        print("Klon güncel: bekleyen yayın kalemi yok.")
-        return 1
+        return KLON_GUNCEL, None
     # Taşıma hedefini beyan eden kalem, kaynağın sahibiyle aynı pakete girer (sahip seçilince o da
     # seçilsin ki kapanış nedenini ölçebilsin) ⇒ union-find'e hedefin kaynağı da verilir.
     paketler = _union_find({kid: ys | {hedef_kaynak[y] for y in ys if y in hedef_kaynak}
@@ -1026,8 +1036,7 @@ def komut_plan(b: Baglam, args) -> int:
                         f"ajan bu kartı basamaz (§7 adım 8)")
 
     if not any(k2["dosyalar"] for k2 in kalemler):
-        print("Klon güncel: bekleyen kalemlerin hiçbiri dosya değişikliği gerektirmiyor.")
-        return 1
+        return KLON_GUNCEL_DOSYASIZ, None
 
     plan = {
         "surum": 1, "taban_commit": b.taban_global, "yeni_etiket": b.yeni_ref,
@@ -1042,6 +1051,15 @@ def komut_plan(b: Baglam, args) -> int:
         "uyarilar": uyarilar,
         "uretim": _simdi(),
     }
+    return None, plan
+
+
+def komut_plan(b: Baglam, args) -> int:
+    k = b.k
+    mesaj, plan = plan_uret(b)
+    if mesaj:
+        print(mesaj)
+        return 1
     _yaz_json(k.durum_dizini / "plan.json", plan)
     # K2: durum.json döngü-kapsamlıdır ama SİLİNMEZ (bkz. `_plan_muhru`) → bu turun damgasını
     # taşır. Önceki turun kayıtları KORUNUR; kapanış damgaya bakarak "bu tur ölçüldü mü"
@@ -2738,26 +2756,39 @@ def _kaynak_anahtari(k: str) -> str:
 
 
 def _bekleyen_yok_mu(klon: Klon, args) -> tuple[bool | None, str]:
-    """Z69: `onkontrol`/`hazirla` girişinde ucuz "iş var mı" ölçümü — `plan` adım 1 ile AYNI
-    fonksiyon (`bekleyen_kalemler`). Döner: (True, _) = güncel · (False, _) = bekleyen var ·
+    """Z69/Z69b: `onkontrol`/`hazirla` girişinde "iş var mı" ölçümü — `plan` ile AYNI kod.
+    Döner: (True, `Klon güncel: …` satırı) = güncel · (False, "") = bekleyen iş var ·
     (None, sebep) = ÖLÇÜLEMEDİ.
 
+    İki kademe: önce ucuz ölçüm (`bekleyen_kalemler`: yalnız yayınlar.json + etiket başına iki git
+    çağrısı) — bekleyen kalem yoksa sınıflandırma hiç koşmaz (boş turların çoğu burada biter). Bekleyen
+    kalem VARSA `plan_uret` aynen koşar ve `plan`ın sınıflandırma gerektiren iki "Klon güncel"
+    çıkışını da öngörür (Z69b). Maliyet (ölçüldü 2026-09-26, 575 dosyalık klon, 199 değişen yol):
+    `plan` 4.2-5.2 sn ⇒ yalnız bekleyen kalemi olan turlarda `onkontrol` ve `hazirla`ya bu kadar eklenir.
+
     Fail-closed yön: ölçülemeyen ya da etiketi çözülemeyen yayın "güncel" SAYILMAZ — akış `plan`a
-    gider ve kendi DUR'unu verir (etiket atılması zararsızdır; bekleyen işi atlamak değildir).
-    KAPSAM: yalnız `plan`ın İLK "Klon güncel" çıkışını öngörür. Sınıflandırma gerektiren iki çıkış
-    (ertelenmiş kalemin tüm yolları işlemsiz · hiçbir kalem dosya değişikliği gerektirmiyor) burada
-    ÖLÇÜLMEZ; o turlarda etiket yine atılır.
+    gider ve kendi DUR'unu verir (etiket atılması zararsızdır; bekleyen işi atlamak değildir). Tam
+    hesaptaki HER istisna da ÖLÇÜLEMEDİ'dir: beklenmeyen bir hata burada "güncel" diye yutulmaz,
+    `plan` onu kendi çıktısında gösterir.
     """
     try:
-        s = bekleyen_kalemler(Baglam(klon, harita_yukle(args.harita)))
+        b = Baglam(klon, harita_yukle(args.harita))
+        s = bekleyen_kalemler(b)
     except (Dur, BilinmeyenEtkin, OSError, ValueError) as e:
         return None, " ".join(str(e).split())[:300]
     if s.cozulemeyen:
         return None, f"yayın etiketi çözülemiyor: {', '.join(s.cozulemeyen)}"
-    return (not s.beyan), ""
+    if not s.beyan:
+        return True, KLON_GUNCEL
+    try:
+        mesaj, _plan = plan_uret(b)
+    except Exception as e:  # noqa: BLE001 — fail-closed: ölçülemeyen tur "güncel" sayılmaz
+        return None, f"plan hesabı: {type(e).__name__}: " + " ".join(str(e).split())[:300]
+    return (True, mesaj) if mesaj else (False, "")
 
 
 KLON_GUNCEL = "Klon güncel: bekleyen yayın kalemi yok."
+KLON_GUNCEL_DOSYASIZ = "Klon güncel: bekleyen kalemlerin hiçbiri dosya değişikliği gerektirmiyor."
 
 
 def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
@@ -2813,11 +2844,13 @@ def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
     except ValueError:
         bilgi.append(f"TMP: {tmp} (klon dışı)")
 
-    # 8 — Z69: bekleyen yayın kalemi var mı (`plan` adım 1 ile aynı ölçüm). Sorun varsa ölçülmez:
-    # önce o düzeltilir. Güncelse akış burada biter — `hazirla` etiketi hiç atılmaz.
-    guncel = None
+    # 8 — Z69/Z69b: yapılacak iş var mı (`plan` ile aynı hesap). Sorun varsa ölçülmez: önce o
+    # düzeltilir. Güncelse akış burada biter — `hazirla` etiketi hiç atılmaz.
+    guncel, guncel_satiri = None, KLON_GUNCEL
     if not sorunlar:
         guncel, sebep = _bekleyen_yok_mu(klon, args)
+        if guncel:
+            guncel_satiri = sebep
         if guncel is None:
             bilgi.append(f"bekleyen kalem: ÖLÇÜLEMEDİ ({sebep}) — `plan` ölçecek")
         elif not guncel:
@@ -2830,17 +2863,18 @@ def komut_onkontrol(b: Baglam | None, args, klon: Klon) -> int:
     if sorunlar:
         return 2
     if guncel:
-        print(KLON_GUNCEL + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
+        print(guncel_satiri + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
         return 1
     return 0
 
 
 def komut_hazirla(b: Baglam | None, args, klon: Klon) -> int:
     klon.durum_dizini.mkdir(parents=True, exist_ok=True)
-    # Z69: iş yoksa geri dönüş noktası (anlık commit + etiket) ATILMAZ — `onkontrol` atlanmış olsa
-    # bile yan etkinin olduğu yerde de ölçülür. Ölçülemezse (None) eski davranış: etiket atılır.
-    if _bekleyen_yok_mu(klon, args)[0]:
-        print(KLON_GUNCEL + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
+    # Z69/Z69b: iş yoksa geri dönüş noktası (anlık commit + etiket) ATILMAZ — `onkontrol` atlanmış
+    # olsa bile yan etkinin olduğu yerde de ölçülür. Ölçülemezse (None) eski davranış: etiket atılır.
+    guncel, satir = _bekleyen_yok_mu(klon, args)
+    if guncel:
+        print(satir + " Geri dönüş noktası atılmadı; yapılacak iş yok.")
         return 1
     st = klon.git("status", "--porcelain", "--untracked-files=no")
     if st.returncode != 0:

@@ -235,6 +235,16 @@ jobs:
         if: matrix.takim == 'foundation'
         run: python skills-sap/sap-adt-foundation/tests/run_tests.py
 
+      # Z119 (2026-09-26, kullanici karari): sap-ui5-fiori takimi CI'da HIC kosmuyordu (yalniz yerelde).
+      # Stdlib-only: SAP/internet/npm yok, ag yalniz 127.0.0.1 sahte sunucusu; smoke testi playwright
+      # KURULU DEGILSE (skill klasorunde node_modules yok) kurulum mesajini bekler, indirme yapmaz.
+      # Olculdu (2026-09-26, yerel, BelowNormal oncelik, tek kosum): 100 test, 0 failure, ~84 sn.
+      # NEDEN foundation kolu: kok kolu uzun kol (kok takimi 2411 sn, yukaridaki not); foundation
+      # kolu (~393 sn) kisa oldugu icin eklenen sure matrisin duvar saatini uzatmaz. Ek bagimlilik yok.
+      - name: SAP UI5 fiori takimi
+        if: matrix.takim == 'foundation'
+        run: python skills-sap/sap-ui5-fiori/tests/run_tests.py
+
   kurulum:
     name: Kurulum dumani (install + doctor)
     runs-on: windows-latest

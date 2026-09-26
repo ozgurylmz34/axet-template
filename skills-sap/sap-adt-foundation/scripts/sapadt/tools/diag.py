@@ -499,25 +499,11 @@ def _pp_hedef(name: str, object_type: str) -> tuple[str | None, str | None, dict
 
 
 def _pp_cikti_yolu(output_path) -> tuple[Path | None, dict | None]:
-    """`output_path` → mutlak yol. Proje kökü dışı, `.abap` dışı uzantı, `.axet-code/` altı → invalid_argument."""
+    """`output_path` → mutlak yol. Proje kökü dışı, `.abap` dışı uzantı, `.axet-code/` altı, `.axetcode-denylist`
+    yolu altı → invalid_argument.
+    Kural TEK kaynakta (`sapadt.project.yerel_kaynak_yolu`, Z142); bu araç uzantıyı `.abap` ile daraltır."""
     from sapadt import project as _project
-    if not (isinstance(output_path, str) and output_path.strip()):
-        return None, {"ok": False, "error": "invalid_argument", "message": "output_path boş olamaz (ya da hiç verme)."}
-    kok = _project.project_dir()
-    ham = Path(output_path.strip())
-    yol = (ham if ham.is_absolute() else kok / ham).resolve()
-    try:
-        goreli = yol.relative_to(kok)
-    except ValueError:
-        return None, {"ok": False, "error": "invalid_argument",
-                      "message": "output_path proje kökünün İÇİNDE olmalı (göreli yol proje köküne göre çözülür)."}
-    if yol.suffix.lower() != _PP_UZANTI:
-        return None, {"ok": False, "error": "invalid_argument",
-                      "message": f"output_path uzantısı {_PP_UZANTI} olmalı (yapılandırma dosyaları bu araçla yazılamaz)."}
-    if goreli.parts and goreli.parts[0].lower() == ".axet-code":
-        return None, {"ok": False, "error": "invalid_argument",
-                      "message": "output_path .axet-code/ altında olamaz (kapı kayıtlarının dizini)."}
-    return yol, None
+    return _project.yerel_kaynak_yolu(output_path, "output_path", (_PP_UZANTI,))
 
 
 @profil_tool()
@@ -596,14 +582,10 @@ def adt_pretty_print(name: str, object_type: str = "class", output_path: str | N
     if yol is None:
         out["source"] = bicimli
     else:
-        try:
-            yol.parent.mkdir(parents=True, exist_ok=True)
-            gecici = yol.with_name(yol.name + ".tmp")
-            gecici.write_bytes(bicimli.encode("utf-8"))
-            os.replace(gecici, yol)
-        except OSError as exc:
+        yazma_hatasi = _project.yerel_dosyaya_yaz(yol, bicimli)
+        if yazma_hatasi:
             return _temizle({"ok": False, "error": "output_write_failed", **temel,
-                             "message": f"Yerel dosya yazılamadı ({type(exc).__name__}: {exc}). SAP değişmedi."}, adt)
+                             "message": f"Yerel dosya yazılamadı ({yazma_hatasi}). SAP değişmedi."}, adt)
         out["output_path"] = yol.relative_to(_project.project_dir()).as_posix()
         out["written"] = True
     out["notice"] = ("SAP'de hiçbir şey değişmedi (kaydetme/kilit/aktivasyon/transport yok). Sisteme almak için: "

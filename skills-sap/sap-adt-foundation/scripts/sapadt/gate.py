@@ -78,6 +78,8 @@ READ_TOOLS = frozenset({
     "adt_revisions", "adt_system_info", "adt_object_structure", "sap_doctor",
     # Z128 (2026-09-25, kullanıcı onayı): biçimlenmiş kaynağı döndürür/YEREL dosyaya yazar; SAP'ye yalnız GET + prettyprinter POST'u
     "adt_pretty_print",
+    # Z39 kalanı (2026-09-26, lider onayı): metin havuzu OKUMA — yalnız GET (kilit/PUT/POST yok; tools/textpool.py)
+    "adt_textpool_read",
 })
 # Okuma kapısını (`check_read`) ve profil kontrolünü CLI'de ATLAYAN araçlar. `ping` SAP'ye gitmez;
 # `sap_doctor` sap-project.json/.conn_adt eksikliğini TEŞHİS etmek için var — aynı ön koşulları
@@ -153,13 +155,20 @@ def check_connection(proj) -> tuple[str, str] | None:
     ÖLÇÜLDÜ: istemci `.conn_adt`'yi `load_dotenv(override=False)` ile yükler ⇒ ortamda
     `ADT_SAP_URL`/`ADT_SAP_CLIENT` varsa bağlantı ONA gider, tier ise dosyadan okunur.
     İkisi ayrışırsa "DEV" diye doğrulanan kapı başka bir sisteme yazdırır → red.
+    Z118ⓐ (2026-09-26): taraflardan biri ayrıştırılamıyorsa (ör. şablonda kalmış `<PORT>` → `urlparse(...).port`
+    ValueError) eşitlik ölçülemez ⇒ FAIL-CLOSED ayrışan sayılır (traceback yerine red; `check_target_system` ile
+    aynı sınır). Hangi tarafın bozuk olduğu ve değer mesaja BASILMAZ.
     """
     ayrisan = []
     for key, norm in (("ADT_SAP_URL", _norm_url), ("ADT_SAP_CLIENT", lambda s: (s or "").strip())):
         if key not in os.environ:
             continue
         dosya = _project.conn_file_last(key, proj)
-        if norm(os.environ.get(key)) != norm(dosya):
+        try:
+            ayni = norm(os.environ.get(key)) == norm(dosya)
+        except ValueError:  # geçersiz port / bozuk IPv6 — ölçülemeyen eşitlik geçiş değildir
+            ayni = False
+        if not ayni:
             ayrisan.append(key)
     if ayrisan:
         return ("conn_env_mismatch",
@@ -178,9 +187,9 @@ def check_target_system(proj, url: str | None, client: str | None) -> tuple[str,
     SONRA çağrılır. FAIL-CLOSED: iki taraftan biri boş/okunamıyorsa da red. Değerler mesaja BASILMAZ.
     Ayrıştırılamayan HEDEF URL (`ui5-deploy.yaml`; ör. şablonda kalmış `<PORT>` → `urlparse(...).port`
     ValueError) da red: traceback (rc=1, logsuz) yerine `write_target_mismatch` döner ki çağıran loglayıp 3 ile
-    çıkabilsin. Bilinen sınır (açık kalem): `.conn_adt` ADT_SAP_URL'nin KENDİSİ ayrıştırılamıyorsa bu fonksiyon
-    yine red döner ama çağıranın log yolu (`log_write_attempt` → `redact.host_sirlari` `u.port`) ValueError ile
-    traceback verir (rc=1, log yok, yazma da yok).
+    çıkabilsin. `.conn_adt` ADT_SAP_URL'nin KENDİSİ ayrıştırılamıyorsa da bu fonksiyon red döner; çağıranın log
+    yolundaki (`log_write_attempt` → `redact.host_sirlari`) eski ValueError traceback'i Z118ⓐ'da kapandı (port
+    okunamazsa host yine maskelenir, log satırı yazılır).
     """
     conn_url = _project.effective_conn_value("ADT_SAP_URL", None, proj)
     conn_client = _project.effective_conn_value("ADT_SAP_CLIENT", None, proj)
@@ -348,6 +357,30 @@ def check_names(tool: str, obje_adi, object_type=None, ek_obje_adlari=(),
 # reviewer girdisidir (ABAP değil); `adt_activate`/`adt_syntax_check`/`adt_classrun` SAP'deki
 # mevcut kodu işler, kaynak metni almaz (bilinen sınır: IMPLEMENTATION.md §12.5).
 SOURCE_ARG_TOOLS = {"adt_push_source": "source"}
+#: Z142ⓒ (2026-09-26): aynı kaynağın YEREL DOSYADAN verildiği argüman. Kapı dosyayı aracın okuyacağı AYNI kuralla
+#: (`sapadt.project.yerel_kaynak_oku`: proje kökü içi · kaynak uzantısı · `.axet-code/` dışı · denylist dışı ·
+#: UTF-8) okuyup tarar ⇒
+#: kapının kaynağı GENİŞLER, gevşemez. Okunamazsa / kural dışıysa / metin argümanıyla birlikte verilirse
+#: FAIL-CLOSED (`*_scan_unavailable`). Araç okuduğu metni kendi ikinci katman taramasından da geçirir.
+SOURCE_PATH_ARG_TOOLS = {"adt_push_source": "source_path"}
+
+
+def _kaynak_arg_metni(tool: str, tool_args: dict | None) -> tuple[str | None, str | None]:
+    """Kaynak taşıyan aracın taranacak metni → (metin, None) | (None, eksik-gerekçesi). `tool` SOURCE_ARG_TOOLS'ta olmalı."""
+    a = tool_args if isinstance(tool_args, dict) else {}
+    anahtar, yol_anahtari = SOURCE_ARG_TOOLS[tool], SOURCE_PATH_ARG_TOOLS.get(tool)
+    kaynak = a.get(anahtar)
+    if yol_anahtari is not None and a.get(yol_anahtari) is not None:
+        if kaynak is not None:
+            return None, f"`{anahtar}` ile `{yol_anahtari}` birlikte verildi (yalnız biri verilir)"
+        from sapadt import project as _proj
+        metin, _yol, hata = _proj.yerel_kaynak_oku(a.get(yol_anahtari), yol_anahtari)
+        if hata:
+            return None, f"`{yol_anahtari}` okunamadı ({hata.get('error')}: {hata.get('message')})"
+        return metin, None
+    if isinstance(kaynak, str):
+        return kaynak, None
+    return None, f"`{anahtar}` metni kapıya verilmedi (tool_args)"
 
 
 def check_std_dml(tool: str, tool_args: dict | None, object_type=None,
@@ -357,14 +390,12 @@ def check_std_dml(tool: str, tool_args: dict | None, object_type=None,
     FAIL-CLOSED: kaynak taşıyan araçta kaynak metni yoksa / metin değilse / tarayıcı koşamazsa
     `std_dml_scan_unavailable` ile reddedilir (sessiz geçiş YOK). Script'ler `check_write`'a
     `tool_args` (kaynak dahil) vermek zorundadır."""
-    anahtar = SOURCE_ARG_TOOLS.get(tool)
-    if anahtar is None:
+    if tool not in SOURCE_ARG_TOOLS:
         return None
-    kaynak = (tool_args or {}).get(anahtar)
-    if not isinstance(kaynak, str):
+    kaynak, eksik = _kaynak_arg_metni(tool, tool_args)
+    if kaynak is None:
         return ("std_dml_scan_unavailable",
-                f"Kesin Yasak B taraması koşamadı: {tool} için `{anahtar}` metni kapıya verilmedi "
-                f"(tool_args). Kaynak taranmadan yazma yapılmaz.")
+                f"Kesin Yasak B taraması koşamadı: {tool} için {eksik}. Kaynak taranmadan yazma yapılmaz.")
     try:
         from sapadt.std_dml_scan import mesaj, tara
         bulgular = tara(kaynak, object_type if isinstance(object_type, str) else None)
@@ -381,14 +412,12 @@ def check_std_dml(tool: str, tool_args: dict | None, object_type=None,
 def _ext_kaynagi(tool: str, tool_args: dict | None) -> tuple[str | None, str | None]:
     """Z104: genişletme taraması için yazılacak kaynak → (metin, None) | (None, eksik-gerekçesi) | (None, None)=denetim yok.
 
-    `adt_push_source`: `source` argümanı. `adt_struct_create`: alan adı DOĞRULANMAZ (composite.py yalnız dolu mu bakar)
+    `adt_push_source`: `source` argümanı ya da `source_path` dosyası (Z142ⓒ). `adt_struct_create`: alan adı DOĞRULANMAZ (composite.py yalnız dolu mu bakar)
     ⇒ yazılacak DDL aynı render'la (`yapi_ddl_kaynagi`) üretilip taranır. Render girdiyi reddederse (satır sonu,
     geçersiz alan listesi) araç da ağa gitmeden reddeder → burada denetim atlanır (None, None)."""
     a = tool_args if isinstance(tool_args, dict) else {}
-    anahtar = SOURCE_ARG_TOOLS.get(tool)
-    if anahtar is not None:
-        kaynak = a.get(anahtar)
-        return (kaynak, None) if isinstance(kaynak, str) else (None, f"`{anahtar}` metni kapıya verilmedi (tool_args)")
+    if tool in SOURCE_ARG_TOOLS:
+        return _kaynak_arg_metni(tool, a)
     if tool == "adt_struct_create":
         alanlar = a.get("fields")
         if not isinstance(alanlar, list) or not all(isinstance(f, dict) for f in alanlar):

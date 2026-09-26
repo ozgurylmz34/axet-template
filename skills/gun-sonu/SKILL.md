@@ -21,8 +21,9 @@ description: >
 - **Kullanma:** oturum içinde konu değişimi → `%handoff`; bitmiş işi PR ile yayınlama → `%commit-pr`.
 
 ## How to use this skill
-1. **Durumu gör:** proje `AGENTS.md` "Oturum" bölümündeki komutla `session_brief.py --no-fetch`; ardından
-   `git status` ve `git diff --stat`.
+1. **Durumu gör:** proje kökünde, `AGENTS.md` "Oturum" bölümündeki komutun sonuna yalnız ` --no-fetch` ekleyerek:
+   `python "<AXET_HOME>/scripts/session_brief.py" --no-fetch`. Başka ek, zincir (`&&`, `;`) ya da önüne `cd` koyma —
+   bu birebir biçim izinlidir, başkası onay sorar. Ardından ayrı komutlarla `git status` ve `git diff --stat`.
 2. **Checkpoint:** biten (dosya yolları + doğrulama komutu ve sonucu) · yarım kalan (dosya/adım, neden durdu) ·
    yarın ilk somut adım · açık sorular. Doğrulanmamışı `DOĞRULANMADI` yaz. Sonucu beklenen bir alt görev varsa
    sonucunu al ya da "yarım" yaz.
@@ -44,18 +45,23 @@ description: >
    - `git diff` oku: kimlik bilgisi, `.conn*`, `.env`, geçici dosya, alakasız değişiklik girmeyecek.
    - Bozuk/yarım yazılmış dosyayı commit etme; checkpoint'e "commit edilmedi: <dosya>, <neden>" yaz.
    - `main` ya da `master` üzerindeysen önce `git switch -c wip/<YYYY-AA-GG>-<kisa-konu>` (değişiklikler yeni dalda kalır).
+   - **Başka günün `wip/` dalındaysan** (dal adındaki tarih bugün değil): iş listesinde bugünkü işin maddesi `dal: <bu dal>`
+     diyorsa aynı dalda devam et. Demiyorsa sessizce commit etme; dal adını ve `main`'e göre ileri/geri sayısını göster
+     (`%commit-pr` adım 4) ve sor — `ask_user`: `Yeni dal aç (önerilen)` · `Bu dala commit et` · `İptal`. Yeni dal:
+     `git fetch origin` → `git switch -c wip/<YYYY-AA-GG>-<kisa-konu> origin/main` (yerel repo: `main`); commit'lenmemiş değişiklikler taşınır,
+     `switch` çakışma derse DUR. Cevap gelmezse commit yok: checkpoint'e "commit edilmedi: dal kararı bekliyor (<dal>)" yaz.
    - Dosyaları adıyla ekle (`git add <dosyalar>`; listeyi kullanıcıya göster) →
      `git commit -m "wip: <konu> — gün sonu <YYYY-AA-GG>"`.
 8. **Push:** kullanıcının "gün sonu" demesi **bu projenin bu dalını** push etme talebidir:
    `git push -u origin <dal>`. `--force` yok. Push reddedilirse DUR, çıktıyı aynen bildir.
-   Kullanıcı "gün sonu" demeden bu skill'e girdiysen push'u sor.
+   Kullanıcı "gün sonu" demeden bu skill'e girdiysen push'u sor (`ask_user`: `Push et` · `İptal`).
    - **Remote yoksa** (`git remote` çıktısı boş = yerel repo): push adımı YOKTUR; bu hata değildir, DURMA. Kendiliğinden remote tanımlama.
      Raporda yaz: "push yok (remote yok) — iş yalnız bu makinede, yedeği yok". Dal açık kalır: iş listesindeki aktif
      maddeye `dal: <dal> (main'e birleşmedi)` ekle. Dalı `main`'e birleştirme gün sonunun parçası DEĞİLDİR ("gün sonu"
      birleştirme onayı sayılmaz); kullanıcı isterse `%commit-pr` adım 9 (yerel birleştirme), ayrı açık onayla.
    - Template reposunda (ekip `memory/` dersleri) değişiklik varsa o **ayrı depodur**: onayı oraya taşıma, ayrıca sor.
 9. **Doğrula:** `git status` (temiz ya da bilinçli bırakılanlar listeli) · `git log -1 --oneline` · push çıktısı (remote yoksa "push yok") ·
-   `session_brief.py --no-fetch` son hâli. Bu koşu açılış brief'ini (`.axet-code/acilis-brief.md`) de yeniler: yarınki oturum
+   adım 1'deki `session_brief.py" --no-fetch` komutu (aynı biçimle) son hâli. Bu koşu açılış brief'ini (`.axet-code/acilis-brief.md`) de yeniler: yarınki oturum
    özeti çalıştırmasa bile bugünün son hâlini bağlamında görür. Çıktının son satırı "açılış brief'i yazıldı" değilse raporda yaz.
 10. **Rapor:** commit ve dal · push sonucu · güncellenen dosyalar · yarın ilk adım. "Yeni oturumda açılış özeti bunları
     gösterecek; 'devam' demen yeter." de.

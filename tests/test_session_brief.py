@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from _helpers import AXET_HOME, GeciciTest
 
+BRIEF_DURUM = "açılış brief'i"
+
+
+def brief_durum_satirlari(out: str) -> list[str]:
+    """`brief_yaz`'ın durum satırı(ları): satır BAŞINDA "açılış brief'i" (yazıldı / YAZILMADI / YAZILAMADI).
+    Z138 (2026-09-25, main CI kırmızısı): özet gövdesi iki boşlukla girintilidir ve `son commit: <başlık>` ile katalog
+    başlıklarını da basar; başlığında bu ifade geçen bir commit TÜM çıktıya bakan assertion'ı kırıyordu. Yalnız
+    durum satırı sayılır — gövdedeki anma sayılmaz (kontrol grubu: `test_KONTROL_proje_basliginda_ifade…`)."""
+    return [s for s in out.splitlines() if s.startswith(BRIEF_DURUM)]
+
 
 class SessionBriefTest(GeciciTest):
     def brief(self, proje):
@@ -175,8 +185,38 @@ class AcilisBriefTest(GeciciTest):
         hedef = AXET_HOME / ".axet-code" / "acilis-brief.md"
         once = hedef.stat().st_mtime_ns if hedef.exists() else None
         out = self.brief(AXET_HOME)
-        self.assertNotIn("açılış brief'i", out)
+        self.assertEqual(brief_durum_satirlari(out), [], out)   # Z138: gövde değil, durum satırı
         self.assertEqual(once, hedef.stat().st_mtime_ns if hedef.exists() else None)
+
+    def baslikli_commit(self, d):
+        """`d`'de başlığında "açılış brief'i" geçen bir commit atar (Z138 vakası: #62 başlığı)."""
+        if not (d / ".git").exists():
+            self.git(d, "init", "-q", "-b", "main")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "--no-verify", "--allow-empty", "-m", "fix: açılış brief'i başlıkta (Z138)")
+
+    def test_template_icinde_basliginda_ifade_olsa_da_yazilmaz(self):
+        """Z138'in kendisi: template kipinde (betik ile proje aynı klon) son commit başlığı ifadeyi taşır. Eski
+        assertion (`assertNotIn` tüm çıktı) burada kırılırdı; durum satırı yine YOK olmalı."""
+        tpl = self.tmp / "sahte_template"
+        self.yaz(tpl / "scripts" / "session_brief.py", (AXET_HOME / "scripts" / "session_brief.py").read_text(
+            encoding="utf-8"))
+        self.baslikli_commit(tpl)
+        r = self.calistir(tpl / "scripts" / "session_brief.py", "--no-fetch", "--project-dir", str(tpl))
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn(BRIEF_DURUM, r.stdout)                  # kırılgan koşul GERÇEKTEN kuruldu (gövdede)
+        self.assertEqual(brief_durum_satirlari(r.stdout), [], r.stdout)
+        self.assertFalse((tpl / ".axet-code").exists())
+
+    def test_KONTROL_proje_basliginda_ifade_durum_satiri_tek(self):
+        """Kontrol grubu: projede brief YAZILIR → ifade gövdede de geçse durum satırı TAM BİR tane, doğru olanı."""
+        d = self.proje()
+        self.baslikli_commit(d)
+        out = self.brief(d)
+        self.assertTrue(any(s.startswith("  son commit:") and BRIEF_DURUM in s for s in out.splitlines()), out)
+        satirlar = brief_durum_satirlari(out)
+        self.assertEqual(len(satirlar), 1, out)
+        self.assertTrue(satirlar[0].startswith("açılış brief'i yazıldı: .axet-code/acilis-brief.md ("), satirlar)
 
     def test_yazim_hatasi_eski_brief_korunur(self):
         import session_brief

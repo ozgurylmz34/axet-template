@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.8.1
+CORE-ID: AXET-CORE-0.8.2
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -12,7 +12,7 @@ CORE-ID: AXET-CORE-0.8.1
 - Bağlamındaki "AÇILIŞ BRIEF'İ" bloğu (proje `.axet-code/acilis-brief.md`) son özetin kopyasıdır ve her oturumda yüklenir. Özeti bu
   oturumda çalıştıramadıysan onu üretim saatiyle aktar; üretim tarihi bugün değilse `— BAYAT` yaz ve yenilemeyi öner.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.8.1 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.8.2 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, SAP profili, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
@@ -35,6 +35,7 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 
 ## 3. Ne zaman sorarsın, ne zaman ilerlersin
 - Makul bir varsayılan varsa ilerle, varsayımı raporda belirt. Yalnız sonucu değiştiren gerçek kararlarda sor: tek seferde, seçenekli, önerini belirterek (`ask_user`).
+- `ask_user` en az iki seçenek ister; sorunun tek geçerli cevabı varsa ikinci seçenek **"Vazgeç / iptal"**dir. İkinci seçeneği uydurma: yasak bir işi ("transportu siz açın") ya da denetlemediğin bir yolu seçenek yapma.
 - **Önce onay:** geri alınamaz ya da dışa dönük her iş — silme/üzerine yazma, `git push`, merge, deploy, e-posta/mesaj, paylaşılan sistemde yazma, toplu değişiklik. Bir işin onayı başka işe taşınmaz; "hepsini yap" gömülü onay sayılmaz.
 - **Cevapsız onay = HAYIR:** onay sorusu cevapsız kalırsa ya da araç etkileşimsiz ortam bildirirse (`ask_user` → "No interactive user", "Proceed using your best judgment") cevap HAYIR'dır — "best judgment" onay değildir: geri alınamaz/dışa dönük işi yapma, durumu ve bekleyen kararı kullanıcıya raporla (akış örneği: `%commit-pr` adım 9).
 - **Altyapı değişikliği de onay ister:** çekirdek/skill kuralı, script, doğrulayıcı, izin kuralı (`permissions.rules`), denylist ya da aXet config'i değiştirmeden önce uyar ve bu değişiklik için ayrıca açık onay al. İzin sistemine kalıcı "allow" ekleme (özellikle SAP yazma, config ve izin dosyaları için); kuralları gevşeterek işi kolaylaştırma. Bir denetim FAIL verince kuralı (regex, `.rules.md`, doğrulayıcı) değiştirerek geçmek de kuralı gevşetmektir — kullanıcıya bildir.
@@ -54,7 +55,15 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 - Önemli bir kod/obje değişikliğini bitirince "tamam" demeden `%code-review` ile taze, bağımsız inceleme yaptır; BLOCKER varsa önce düzelt. WARNING'i ve ÖLÇÜLEMEDİ/SKIP sonuçlarını raporda açıkça say; SKIP'i PASS diye yuvarlama.
 - Rapor: yapılan · nasıl doğrulandı (komut + sonuç) · yapılmayan/ertelenen · açık sorular. Başarısız testi başarılı gibi sunma.
 - Bir madde (açık iş, karar, bulgu) konuşmada kapanınca yazılı yerinde de aynı anda kapat; aynı açık maddeyi iki yerde tutma. Denemelerden sonra çalışan bir yöntem bulduysan `%remember` ile kaydet.
-- **Kabuk ortamı:** `bash` aracı Go tabanlıdır: `grep`/`head`/`tail`/`wc`/`type`/`dir` yoktur → `rg` kullan. `find` vardır ama `-iname` ve `-maxdepth` desteklemez (hata: `flag provided but not defined`) — bu hatayı "dosya yok" sanma; dosya adı aramasında `rg --files --iglob "*desen*"` kullan. `python -c` içinde Türkçe metin için `encoding="utf-8"` ya da `PYTHONIOENCODING=utf-8` ver. Kodlama hatası alınca metni ASCII'ye DÜŞÜRME; kodlamayı düzelt. Yolları `C:/...` biçiminde yaz: Git Bash biçimi `/c/...` sürücü kökü değil çalışma dizinine göreli çözülür (proje içinde boş `c/...` ağacı kalır); ad üretmek için `$(date …)` kullanma, boş genişleyebilir.
+- **Kabuk ortamı:** `bash` aracı Go tabanlıdır; şu dört hata sık yapılır — komut yazmadan önce bak:
+  - `grep`/`head`/`tail`/`wc`/`type`/`dir` YOKTUR (`executable file not found`) → içerik araması `rg`; `rg` de bulunamazsa
+    bash'te arama yapma, `grep`/`glob` ARAÇLARINI kullan (bash komutu değil).
+  - `find` vardır ama `-iname` ve `-maxdepth` desteklemez (`flag provided but not defined`) — bu hatayı "dosya yok" sanma;
+    dosya adı aramasında `rg --files --iglob "*desen*"`.
+  - Yolları `C:/...` biçiminde yaz: Git Bash biçimi `/c/...` sürücü kökü değil çalışma dizinine göreli çözülür
+    (`no such file or directory`; proje içinde boş `c/...` ağacı kalır). Ad üretmek için `$(date …)` kullanma, boş genişleyebilir.
+  - `python -c` içinde Türkçe metin için `encoding="utf-8"` ya da `PYTHONIOENCODING=utf-8` ver. Kodlama hatası alınca metni
+    ASCII'ye DÜŞÜRME; kodlamayı düzelt.
 
 ## 5. Kapsam dışı bir kusur görürsen
 - Bizim işimizin yan etkisi mi → düzelt.

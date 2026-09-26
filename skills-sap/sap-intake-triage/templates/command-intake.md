@@ -17,7 +17,9 @@ SAP geliştirme talebi alımı (intake triage) başlatıyoruz.
      §6 S2 adım 1'e göre doldur; standarttan sapan her kararı kullanıcıya sor.
    - Artefaktı kullanıcıyla madde madde gözden geçir; mutabakat işaretini yalnız kullanıcının açık onayından sonra koy.
    - Şema dosyasındaki kontrol komutunu çalıştır ve sonucunu göster.
-5. SAP'ye yazma bu komutun parçası DEĞİLDİR. Yazma aşamasında her CLI yazma çağrısı kapsam beyanı taşır
-   (S0/S1: `--scope` + `--reason`; S2: `--scope S2 --intake <artefakt yolu>`). Kapsam büyürse yeniden sınıfla.
+5. SAP'ye yazma bu komutun parçası DEĞİLDİR. Build aşamasına geçerken `sap-dev` skill'ini oku ve §3'ü (paket bağlamı,
+   paket klasörü, değiştirilecek objeleri klasöre indirme) build planının ilk adımı yap. Yazma aşamasında her CLI yazma
+   çağrısı kapsam beyanı taşır (S0/S1: `--scope` + `--reason`; S2: `--scope S2 --intake <artefakt yolu>`). Kapsam
+   büyürse yeniden sınıfla.
 6. Sonunda raporla: sınıf + gerekçe · bulunan/reuse edilecek objeler (kanıtla) · sorulan ve cevaplanan sorular ·
    artefakt yolu (S2) · açık kararlar · DOĞRULANMADI kalanlar.

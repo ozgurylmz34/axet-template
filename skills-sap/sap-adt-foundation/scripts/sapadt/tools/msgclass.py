@@ -27,6 +27,8 @@ KAYNAKTAN BİLİNÇLİ FARKLAR:
      oturum dili = master dil, gövde öz-denetimi) · KİLİT ALTINDA yeniden okuma (TOCTOU) · ÖNCE/SONRA kapısı
      (`delete_gate` + kapsam beyanı). Kaynaktan fark: silme ile ekleme/değiştirme aynı çağrıda VERİLEMEZ (karışık tek
      PUT canlıda ölçülmedi; kaynak da iki kipi ayırır — populate_message_class.py:787-788).
+     Kilit altı yeniden okuma (TOCTOU) Z118ⓒ'den (2026-09-26) beri SİLMESİZ yazımda da yapılır (kaynakta yalnız silme
+     kipindeydi): sıra GET → LOCK → GET → PUT → UNLOCK → GET.
   3. PULL-BEFORE-EDIT: `adt_msgclass_read` mesaj listesinin kanonik özetini kaydeder; yazma anındaki canlı özet
      farklıysa `source_changed_since_pull` (başkası arada değiştirdi → üzerine yazılmaz).
   4. Yazma sonrası canlı geri okuma beklenen tam listeyle kıyaslanır (`readback_verified`); fark → `ok:false`.
@@ -303,7 +305,7 @@ def _kilit_alti_fark(name: str, canli: dict) -> dict | None:
         return {"error": "source_changed_since_pull", "phase": "under_lock",
                 "message": f"Kilit ALTINDA okunan canlı sınıf yazma öncesi okumadan FARKLI (başlık: {fark} · mesaj: "
                            f"{fark_no[:10]}) — gövde bu değişikliği geri alırdı; PUT gönderilmedi, kilit bırakıldı. "
-                           "adt_msgclass_read ile yeniden oku, silmeyi yeniden ver."}
+                           "adt_msgclass_read ile yeniden oku, değişikliği (yazma ya da silme) yeni listeye göre yeniden ver."}
     return None
 
 
@@ -496,13 +498,15 @@ def adt_msgclass_write(
                         sap_body=lt[:300])
             return _temizle(resp, adt)
         handle = m.group(1)
-        if silinecek:
-            # TOCTOU (populate_message_class.py:678-696, adt-message-class.md §27.5 T11): yazma öncesi okuma kilitten
-            # ÖNCE yapıldı; arada kalan bir mesaj değiştiyse gövde onu ESKİ metne geri çevirir ve kapı bayat ÖNCE'yle
-            # kıyaslayıp "tuttu" derdi ⇒ KİLİT ALTINDA yeniden oku; farklıysa ya da ölçülemezse PUT GÖNDERİLMEZ.
-            red = _kilit_alti_fark(name, canli)
-            if red:
-                resp.update(**red)
+        # TOCTOU (populate_message_class.py:678-696, adt-message-class.md §27.5 T11): yazma öncesi okuma kilitten
+        # ÖNCE yapıldı; arada kalan bir mesaj değiştiyse gövde onu ESKİ metne geri çevirir ve kapı bayat ÖNCE'yle
+        # kıyaslayıp "tuttu" derdi ⇒ KİLİT ALTINDA yeniden oku; farklıysa ya da ölçülemezse PUT GÖNDERİLMEZ.
+        # Z118ⓒ (2026-09-26): SİLMESİZ yazımda da (ekleme / üzerine yazma) — tam gövde yine kilitten önceki okumadan
+        # kurulur ve geri okuma kıyası "beklenen = gönderilen" olduğundan geri alınan başkasının değişikliğini GÖRMEZ
+        # (sahte SAP'de ölçüldü: kilit anında değişen 002 sessizce eski metne döndü, ok:true). Bedeli çağrı başına +1 GET.
+        red = _kilit_alti_fark(name, canli)
+        if red:
+            resp.update(**red)
         if "error" not in resp:
             put_gonderildi = True
             pr = adt._request_with_csrf_retry(

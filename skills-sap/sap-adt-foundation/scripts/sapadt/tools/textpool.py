@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """adt_textpool_write (Z39, aXet 2026-09-21) — klasik program metin havuzu: metin sembolleri + seçim metinleri.
+adt_textpool_read (Z39 kalanı, 2026-09-26) — aynı uçların salt-okur okuması (dosyanın sonunda; kilit/PUT yok).
 
 Neden ayrı araç: `adt_push_source` yalnız `source/main`'i taşır; metin öğeleri ayrı uçta, ayrı kilitle yaşar.
 Yüklenmezse `TEXT-xxx` ve seçim ekranı etiketleri çalışma anında BOŞ görünür (program aktif ve sözdizimi temiz
@@ -336,3 +337,95 @@ def adt_textpool_write(
                           "giriş hâlâ duruyor: steps.readback.*.remove_not_applied) — metin havuzu "
                           "terfi etmemiş olabilir; ekranda metin görünmez. steps.activate_px ve steps.readback'e bak.")
     return out
+
+
+# ═══════════════════════════════════════ adt_textpool_read ═══════════════════════════════════════
+# Z39 kalanı (2026-09-26): bağımsız OKUMA aracı. Yazma aracının readback'i yalnız KENDİ yazdığı girişleri
+# kıyaslıyordu; metin havuzunun ne içerdiğini (başka biri yazdıysa, yazma hiç yapılmadıysa) gösteren salt-okur
+# yol yoktu. Okuma yolu yazma aracınınkiyle AYNIDIR: `_KOK` + `/source/<alt>`, alt kaynağın KENDİ Accept tipi
+# (`tp.ALT_KAYNAK_CT`; çekirdek §23.7 okuma reçetesi, canlı-doğrulanmış 2026-07-31: `text/plain` → 406),
+# `_request_with_csrf_retry` + `_get_headers`. Kilit YOK, PUT/POST YOK.
+_OKUMA_SURUMLERI = {"active": {"version": "active"}, "working": {}}
+_OKUMA_KAPSAM_DISI = ("headings (liste başlıkları): okuma Accept tipi kaynakta belgelenmedi — ÖLÇÜLEMEDİ",
+                      "metin sembolünün / seçim adının programda kullanılıp kullanılmadığı",
+                      "programın varlığı ve aktifliği (404 yalnız metin öğeleri ucu için)")
+
+
+def _prog_adi_gecerli(name) -> bool:
+    import re
+    return isinstance(name, str) and bool(re.fullmatch(r"(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_]+", name)) \
+        and len(name) <= 40
+
+
+# Profil: yazma aracıyla AYNI kanıt tabanı (uç reçetesi yalnız s4_private sistemde canlı ölçüldü).
+@profil_tool(available_on=("s4_private",))
+def adt_textpool_read(name: str, version: str = "active", parts: list[str] | None = None) -> dict:
+    """Read a classic program's text pool (text symbols + selection texts). READ-ONLY — no lock, no write.
+
+    Args:
+        name: Program adı (Z/Y ya da standart; okuma). En çok 40 karakter; `/ad-alanı/` önekli olabilir.
+        version: `active` (varsayılan; ekranda görünen = aktif sürüm) · `working` (sürüm parametresiz GET — inaktif
+            sürüm varsa onu gösterir; yazma sonrası "yazıldı ama terfi etmedi" ayrımı için `active` ile kıyasla).
+        parts: `["symbols", "selections"]` alt kümesi (varsayılan ikisi). `headings` desteklenmez.
+
+    Returns:
+        {ok, name, type:'prog', version, parts:{<alt>: {ok, http_status, count, entries}}, checked, not_checked,
+         error?, message?}
+        symbols.entries    : [{key, text, max_length}]
+        selections.entries : [{name, text, ddic_reference, placeholder}] (`placeholder` = metin `?`: aktif sürümde
+                             terfi etmemiş seçim metni). Tanınmayan `@…` satırı girişte `annotations` olarak kalır.
+        error: invalid_argument (ağa gidilmedi) · not_found (metin öğeleri ucu 404) · read_failed (HTTP ≠ 200 ya da
+               istisna; diğer alt kaynağın sonucu `parts` içinde korunur)
+    """
+    from utils import textpool as tp  # type: ignore
+    alt_liste = list(tp.ALT_KAYNAK_CT) if parts is None else parts
+    hata = None
+    if not _prog_adi_gecerli(name):
+        hata = f"name={name!r}: program adı harf/rakam/_ (isteğe bağlı /ad-alanı/ öneki), en çok 40 karakter olmalı."
+    elif version not in _OKUMA_SURUMLERI:
+        hata = f"version={version!r}: {' | '.join(_OKUMA_SURUMLERI)} olmalı."
+    elif not isinstance(alt_liste, list) or not alt_liste:
+        hata = f"parts={parts!r}: {list(tp.ALT_KAYNAK_CT)} alt kümesi (boş olmayan liste) olmalı."
+    else:
+        yanlis = [a for a in alt_liste if a not in tp.ALT_KAYNAK_CT]
+        if yanlis:
+            hata = (f"parts içinde desteklenmeyen alt kaynak: {yanlis} — desteklenen {list(tp.ALT_KAYNAK_CT)}. "
+                    + " ".join(v for k, v in tp.DESTEKLENMEYEN.items() if k in yanlis))
+    temel = {"name": str(name).strip().upper(), "type": "prog", "version": version,
+             "checked": [f"{a} ({version})" for a in alt_liste] if not hata else [],
+             "not_checked": list(_OKUMA_KAPSAM_DISI)}
+    if hata:
+        return {"ok": False, "error": "invalid_argument", **temel, "message": hata + " SAP'ye gidilmedi."}
+
+    from urllib.parse import quote
+    try:
+        client = _get_client()
+    except Exception as exc:  # noqa: BLE001
+        return {**_err_from_exc(exc), **temel}
+    adt = getattr(client, "adt_client", None) or client
+    kok = adt.url.rstrip("/") + _KOK + quote(name.lower(), safe="")
+    sonuc: dict[str, dict] = {}
+    for alt in dict.fromkeys(alt_liste):
+        try:
+            r = adt._request_with_csrf_retry("get", f"{kok}/source/{alt}",
+                                             headers=adt._get_headers(accept_type=tp.ALT_KAYNAK_CT[alt]),
+                                             params=dict(_OKUMA_SURUMLERI[version]), timeout=30)
+        except Exception as exc:  # noqa: BLE001
+            sonuc[alt] = {"ok": False, "reason": f"exception:{type(exc).__name__}: {exc}"[:300]}
+            continue
+        kod = int(getattr(r, "status_code", 0) or 0)
+        if kod != 200:
+            sonuc[alt] = {"ok": False, "http_status": kod, "body_head": str(getattr(r, "text", ""))[:300]}
+            continue
+        g = tp.girisler(alt, r.text or "")
+        sonuc[alt] = {"ok": True, "http_status": 200, "count": len(g), "entries": g}
+    temel["parts"] = sonuc
+    if any(v.get("http_status") == 404 for v in sonuc.values()):
+        return {"ok": False, "error": "not_found", **temel,
+                "message": f"{temel['name']} metin öğeleri ucu 404 — program yok ya da henüz yaratılmadı."}
+    if not all(v["ok"] for v in sonuc.values()):
+        return {"ok": False, "error": "read_failed", **temel,
+                "message": "Metin havuzu okunamadı: " + "; ".join(
+                    f"{a}: HTTP {v.get('http_status')}" if "http_status" in v else f"{a}: {v.get('reason')}"
+                    for a, v in sonuc.items() if not v["ok"]) + ". Okunabilen alt kaynaklar `parts` içinde."}
+    return {"ok": True, **temel}

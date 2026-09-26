@@ -213,9 +213,20 @@ class DdicAdOnerisiKuraliTest(unittest.TestCase):
     def test_cekirdek_kabuk_notu_find_kisitini_tasir(self):
         """Her oturum yüklenen çekirdek: Go `find` -iname/-maxdepth desteklemez → rg --files --iglob (Z46)."""
         md = _oku(AXET_HOME / "core" / "00-temel.md")
-        kabuk = next(s for s in md.splitlines() if "**Kabuk ortamı:**" in s)
+        kabuk = _kabuk_blogu(md)
         for parca in ("-iname", "-maxdepth", "rg --files --iglob"):
             self.assertIn(parca, kabuk)
+
+
+def _kabuk_blogu(md: str) -> str:
+    """`- **Kabuk ortamı:**` satırı + altındaki girintili alt maddeler (Z107: satır maddelere bölündü)."""
+    satirlar = md.splitlines()
+    i = next(n for n, s in enumerate(satirlar) if s.startswith("- **Kabuk ortamı:**"))
+    j = i + 1
+    while j < len(satirlar) and satirlar[j].startswith("  "):
+        j += 1
+    return "\n".join(satirlar[i:j])
+
 
 if __name__ == "__main__":
     unittest.main()

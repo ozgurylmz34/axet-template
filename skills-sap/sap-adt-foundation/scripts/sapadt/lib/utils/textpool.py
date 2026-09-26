@@ -110,6 +110,46 @@ def ayristir(alt: str, govde: str) -> dict:
     return out
 
 
+_MAXLEN = re.compile(r"^@MaxLength\s*:\s*(\d+)\s*$", re.I)
+_DDICREF = re.compile(r"^@DDICReference\b", re.I)
+
+
+def girisler(alt: str, govde: str) -> list[dict]:
+    """Canlı alt kaynak gövdesi → giriş listesi, sıra korunur (`adt_textpool_read`, Z39 kalanı).
+
+    symbols    : [{"key", "text", "max_length"}] — `@MaxLength:NN` bir SONRAKİ girişe aittir (giriş başına).
+    selections : [{"name", "text", "ddic_reference", "placeholder"}] — `@DDICReference` bir sonraki girişe aittir;
+                 `placeholder` = metin `?` (aktif sürümde terfi etmemiş seçim metni, çekirdek §23.7 madde 6).
+    Tanınmayan `@…` satırı sonraki girişin `annotations` listesine HAM olarak konur (sessizce atılmaz)."""
+    out: list[dict] = []
+    bekleyen: list[str] = []
+    for satir in (govde or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if not satir.strip():
+            continue
+        if satir.lstrip().startswith("@"):
+            bekleyen.append(satir.strip())
+            continue
+        if "=" not in satir:
+            continue
+        k, v = satir.split("=", 1)
+        k, v = k.strip().upper(), v.rstrip()
+        if not k:
+            continue
+        if alt == "symbols":
+            ml = [int(m.group(1)) for m in map(_MAXLEN.match, bekleyen) if m]
+            g = {"key": k, "text": v, "max_length": ml[-1] if ml else None}
+            diger = [a for a in bekleyen if not _MAXLEN.match(a)]
+        else:
+            g = {"name": k, "text": v, "ddic_reference": any(_DDICREF.match(a) for a in bekleyen),
+                 "placeholder": v.strip() == "?"}
+            diger = [a for a in bekleyen if not _DDICREF.match(a)]
+        if diger:
+            g["annotations"] = diger
+        out.append(g)
+        bekleyen = []
+    return out
+
+
 def beklenen(alt: str, girdiler) -> dict:
     if alt == "symbols":
         return {str(s["key"]).upper(): s["text"].rstrip() for s in girdiler}

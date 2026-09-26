@@ -7,6 +7,8 @@ Hiçbir test gerçek SAP'ye, internete ya da npm'e gitmez. Ağ yalnız 127.0.0.1
 from __future__ import annotations
 
 import base64
+import io
+import json
 import os
 import shutil
 import subprocess
@@ -15,6 +17,7 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import zipfile
 from pathlib import Path
 
 BURASI = Path(__file__).resolve().parent
@@ -157,6 +160,22 @@ def gecici_app(url: str = "http://127.0.0.1:1", name: str = "ZXX001_ORDER", dist
     t = simdi if dist_taze else simdi - 1000
     os.utime(dist / "Component-preload.js", (t, t))
     return kok
+
+
+def odata_yol(name: str = "ZXX001_ORDER") -> str:
+    """Sahte sunucu anahtarı: UI5 repository OData servisi (sorgu dizesi sunucuda atılır)."""
+    return f"/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV/Repositories('{name}')"
+
+
+def odata_zip(dosyalar: dict, name: str = "ZXX001_ORDER", package: str = "ZXX001",
+              description: str = "Demo siparis uygulamasi") -> bytes:
+    """`ABAP_REPOSITORY_SRV` JSON yanıtı: `d.ZipArchive` = base64 zip (canlıda ölçülen biçim)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for rel, icerik in dosyalar.items():
+            z.writestr(rel, icerik)
+    return json.dumps({"d": {"Name": name, "Package": package, "Description": description, "Info": "",
+                             "ZipArchive": base64.b64encode(buf.getvalue()).decode()}}).encode()
 
 
 def temizle(app: Path) -> None:

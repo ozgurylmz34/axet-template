@@ -138,7 +138,14 @@ def _pattern_is_ours(pattern: str) -> bool:
 # ve `--uninstall`'da silinir (tests/test_install.py::KlonKorumasiKaldirildiTest).
 
 
-def session_brief_allow() -> str:
+# Açılış özeti komutuna izin verilen EKLER (Z140ⓑ, kullanıcı kararı 2026-09-26). Her ek JOKERSİZ, birebir bir allow
+# deseni doğurur. "" = çıplak komut (Z12) · "--no-fetch" = `%gun-sonu`/`%onboard` biçimi.
+# ⛔ `--project-dir` BİLİNÇLİ YOK: değeri değişken bir yoldur ⇒ birebir yazılamaz, joker ister (`--project-dir "*"`)
+# ve joker `"x" && git reset --hard && echo "` zincirine de uyar. O biçim onay sorulmaya devam eder (fail-safe).
+SESSION_BRIEF_IZINLI_EKLER = ("", "--no-fetch")
+
+
+def session_brief_allow(ek: str = "") -> str:
     """Her oturumun ilk işi olan açılış özeti komutunun BİREBİR metni (Z12, 2026-09-20).
 
     ⛔ JOKER İÇERMEZ ve bu tesadüf DEĞİL, kuralın tek güvenlik dayanağıdır. Desen komut
@@ -161,15 +168,24 @@ def session_brief_allow() -> str:
 
     Metin `templates/project/AGENTS.md`'nin `_doldur`dan sonraki hâliyle AYNI olmak
     ZORUNDA (new_project `<AXET_HOME>` → `as_posix()`); eşliği test denetler.
+
+    `ek` (Z140ⓑ, 2026-09-26): yalnız `SESSION_BRIEF_IZINLI_EKLER`deki bir ek; komutun sonuna TEK boşlukla
+    eklenir (`… session_brief.py" --no-fetch`). Listede olmayan ek `ValueError` — yeni bir ek sessizce kural
+    doğurmasın. Aynı jokersizlik dayanağı: ek argümanlı/zincirli komşu biçimler eşleşmez ve SORULUR
+    (simülasyonla testli: tests/test_install.py::OturumOzetiNoFetchAllowTest; canlı motorda ÖLÇÜLMEDİ —
+    güvenlik dayanağı S1-S4 ölçümünün birebir-desen sınıfıdır).
     """
-    return 'python "' + (AXET_HOME / "scripts" / "session_brief.py").as_posix() + '"'
+    if ek not in SESSION_BRIEF_IZINLI_EKLER:
+        raise ValueError(f"session_brief için izinli olmayan ek: {ek!r} (izinliler: {SESSION_BRIEF_IZINLI_EKLER})")
+    return 'python "' + (AXET_HOME / "scripts" / "session_brief.py").as_posix() + '"' + (" " + ek if ek else "")
 
 
 def load_rules() -> dict:
     rules = json.loads(PERMISSIONS_FILE.read_text(encoding="utf-8"))["rules"]
     # Klon yoluna bağlı olduğu için statik dosyada DURAMAZ; burada üretilir. `apply_ours` yazar,
     # `strip_ours` aynı sözlüğü gördüğü için kaldırır ⇒ yaşam döngüsü kendiliğinden simetrik.
-    rules.setdefault("bash", {})[session_brief_allow()] = "allow"
+    for ek in SESSION_BRIEF_IZINLI_EKLER:
+        rules.setdefault("bash", {})[session_brief_allow(ek)] = "allow"
     return rules
 
 

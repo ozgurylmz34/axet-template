@@ -151,8 +151,9 @@ Başlık alanı deseni:
 </Annotations>
 ```
 - Etiketler sabit string yerine i18n'e bağlanır (L7-3).
-- RAP tabanlı serviste annotation'lar metadata extension (DDLX) ile backend'de; aXet CLI'sinde DDLX kabuğu yok →
-  `%sap-rap`.
+- RAP tabanlı serviste annotation'lar metadata extension (DDLX) ile backend'de. DDLX kabuğu v0.5.2'den beri CLI'de var
+  (`adt_post_shell` `ddlx` → `adt_push_source` → `adt_activate`, canlı ölçüldü 2026-09-22; hedef CDS
+  `@Metadata.allowExtensions: true`) → `%sap-rap`.
 - Annotation dataSource'u manifest'e eklerken `app-skeleton.md` §8.1.
 
 ## 10. Kalite kontrol listesi (tasarım)

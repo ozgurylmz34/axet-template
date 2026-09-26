@@ -46,6 +46,7 @@ kayıt defteriyle (`REGISTRY`, `_profile.TIP_PROFIL_KISITI`) birebir kıyaslanı
 | `adt_screen_generate` | ecc, s4_private | klasik Dynpro/CUA yalnız bu profillerde (matris §1) |
 | `adt_set_description` | s4_private | envelope PUT reçetesinin kanıt profili; ölçüm yalnız DDLS (`tools/description.py`) |
 | `adt_table_create` | s4_private | kabuk + kilitli DDL reçetesinin kaynak profili (`tools/ddic.py`); aXet'te canlı DOĞRULANMADI |
+| `adt_textpool_read` | s4_private | yazma aracıyla aynı uç ve Accept reçetesi (`tools/textpool.py`, okuma; Z39 kalanı) |
 | `adt_textpool_write` | s4_private | REPT kilidi + PX aktivasyonu reçetesinin kaynak profili (`tools/textpool.py`); canlı DOĞRULANMADI |
 | `adt_ttyp_create` | s4_private | tablo tipi + DD40L readback reçetesinin kaynak profili (`tools/ddic.py`); canlı DOĞRULANMADI |
 | `adt_transport_list` | ecc, s4_private, s4_public | `btp_abap` transport = gcts → CTS ucu yok |

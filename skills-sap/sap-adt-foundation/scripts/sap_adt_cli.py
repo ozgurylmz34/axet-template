@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """sap_adt_cli.py — SAP ADT araçlarının TEK komut satırı giriş noktası (aXet).
 
-    python sap_adt_cli.py --list
+    python sap_adt_cli.py --list [--grep <desen>]
     python sap_adt_cli.py <tool> [--args-json '{...}' | --args-file <f.json>] [--project-dir <dir>]
       yazma sınıfı araçlar ek olarak:
         --sap-write --scope S0|S1|S2 [--reason "<tek satır>"] [--intake <.axet-code/intake/..md>]
@@ -66,6 +66,8 @@ def _parser() -> _Parser:
                 description="SAP ADT araçları — tek giriş noktası (JSON çıktı).")
     p.add_argument("tool", nargs="?", help="araç adı (bkz. --list)")
     p.add_argument("--list", action="store_true", help="araçları listele")
+    p.add_argument("--grep", help="yalnız --list ile: adı ya da açıklaması <desen>'i içeren araçlar "
+                                  "(büyük/küçük harf duyarsız alt dize; çıktı şeması aynı)")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--args-json", help="araç argümanları (JSON nesnesi)")
     g.add_argument("--args-file", help="araç argümanları dosyası (JSON nesnesi)")
@@ -117,7 +119,10 @@ def _ilk_satir(fn) -> str:
     return doc.strip().splitlines()[0].strip() if doc.strip() else ""
 
 
-def _listele() -> int:
+def _listele(desen: str | None = None) -> int:
+    """`desen` verilirse (Z111ⓕ) yalnız adı ya da açıklaması onu içeren araçlar döner — büyük/küçük harf duyarsız ALT
+    DİZE (regex değil). Öğe biçimi ve `counts` anahtarları süzmesiz listeyle aynıdır; `counts` süzülen kümeden sayılır.
+    Araç kayıt tablosu (`load_all_tools`) değişmez — yalnız bu çıktı süzülür."""
     from sapadt import gate
     from sapadt._app import load_all_tools
     from sapadt._profile import TIP_KISITLI_ARACLAR, TIP_PROFIL_KISITI
@@ -138,6 +143,9 @@ def _listele() -> int:
         if ad in TIP_KISITLI_ARACLAR:
             satir["object_type_available_on"] = {t: list(p) for t, p in TIP_PROFIL_KISITI.items()}
         araclar.append(satir)
+    if desen is not None:
+        d = desen.casefold()
+        araclar = [a for a in araclar if d in a["name"].casefold() or d in (a["description"] or "").casefold()]
     sayim = {"read": sum(1 for a in araclar if a["class"] == "read"),
              "write": sum(1 for a in araclar if a["class"] == "write"), "total": len(araclar)}
     return _cikti(_payload(result={"tools": araclar, "counts": sayim}, ok=True), EXIT_OK)
@@ -193,10 +201,15 @@ def main(argv=None) -> int:
     except UsageError as exc:
         return _cikti(_payload(err=(exc.code, exc.message)), EXIT_USAGE)
 
+    if ns.grep is not None and not ns.list:
+        return _cikti(_payload(err=("usage_error", "--grep yalnız --list ile kullanılır.")), EXIT_USAGE)
     if ns.list:
         if ns.tool:
             return _cikti(_payload(err=("usage_error", "--list ile araç adı birlikte verilmez.")), EXIT_USAGE)
-        return _listele()
+        if ns.grep is not None and not ns.grep.strip():
+            return _cikti(_payload(err=("usage_error", "--grep boş olamaz (süzmesiz liste için --grep verme).")),
+                          EXIT_USAGE)
+        return _listele(ns.grep.strip() if ns.grep is not None else None)
     if not ns.tool:
         return _cikti(_payload(err=("usage_error", "Araç adı ya da --list gerekli.")), EXIT_USAGE)
 

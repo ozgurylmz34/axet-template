@@ -16,7 +16,8 @@ SAP Python paketlerini de denetler (17. adım; klon güncel olsa da).
 izlenen değişikliklerini `guncelle: yerel anlık <tarih>` commit'ine alır — geri dönüş noktan budur;
 ② `kapanis` adımı uygulanan kalemleri `guncelle: <yayın> kalemler <id…>` commit'ine yazar.
 Kullanıcıya bunu BAŞTAN söyle: klonun git geçmişinde bu iki commit görünecek.
-**Bekleyen yayın kalemi yoksa** (klon güncel) hiçbir commit ve etiket atılmaz: `onkontrol` bunu
+**Yapılacak iş yoksa** (klon güncel: bekleyen yayın kalemi yok ya da bekleyen kalemlerin hiçbiri dosya
+değişikliği gerektirmiyor) hiçbir commit ve etiket atılmaz: `onkontrol` bunu `plan`la aynı hesapla
 ölçer ve 1 döner (`hazirla` da aynı ölçümle 1 döner, hiçbir şey atmaz).
 **"Güncel" nasıl tanınır:** çıkış 1 **VE** çıktıda `Klon güncel:` ile başlayan satır (`onkontrol`,
 `hazirla`, `plan` üçü de aynı satırı basar). Çıkış 1 olup bu satır YOKSA (ör. Python hatası/traceback)
@@ -34,7 +35,7 @@ izlenmez.
 |---|---|---|---|---|
 | 0 | Başlangıç | `git -C <klon> fetch --tags`, bu dosyayı `origin/main`'den oku | 0 | ağ yoksa "şimdi güncellenemez" de, DUR |
 | 1 | Etkileşim | kullanıcıdan "başlayalım mı" cevabını al | açık onay | etkileşimsiz koşuyorsan DUR |
-| 2 | Ön kontrol | `guncelle.py onkontrol` — klon kimliği/origin/TMP + **bekleyen yayın kalemi var mı** (`plan`la aynı ölçüm) | 0 (1 + `Klon güncel:` satırı = güncel: kullanıcıya söyle, **adım 17'yi koş**, BİTİR — etiket atılmaz) | 2 ya da satırsız 1 → çıktıyı AYNEN göster, DUR |
+| 2 | Ön kontrol | `guncelle.py onkontrol` — klon kimliği/origin/TMP + **yapılacak iş var mı** (`plan`la aynı hesap) | 0 (1 + `Klon güncel:` satırı = güncel: kullanıcıya söyle, **adım 17'yi koş**, BİTİR — etiket atılmaz) | 2 ya da satırsız 1 → çıktıyı AYNEN göster, DUR |
 | 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 (1 + `Klon güncel:` satırı = güncel, hiçbir şey atılmadı → adım 17, BİTİR) | 2 ya da satırsız 1 → DUR (geri alınamayacak bir güncelleme başlatılmaz) |
 | 4 | Plan | `guncelle.py plan` | 0 (1 + `Klon güncel:` satırı = güncel → adım 17, bitir) | 2 ya da satırsız 1 → DUR |
 | 5 | Seçim | plan tablosunu göster → `guncelle.py sec --hepsi` ya da `--kalem/--cikar` | 0 | 2 → tutarsızlığı açıkla, yeniden sor |
@@ -117,6 +118,12 @@ hangi testlerin koşacağını ve özel adım gerekip gerekmediğini söyler.
 - `.conn_adt` dosyasını okumak ya da içeriğini istemek
 - `install.py --sap-write` · `behavior_manifest.py generate` (ikisi de aXet'e kapalıdır; gerekiyorsa
   kullanıcı KENDİ terminalinde çalıştırır)
+- **akış DIŞINDA test koşmak** — `tests/run_tests.py` (filtreli ya da filtresiz), proje/skill test
+  takımları, kendi seçtiğin herhangi bir test komutu. Hangi testin koşacağına motor karar verir
+  (`olc --asama once|sonra`, `butunluk`); akışın istediği komutlar yukarıdaki tablodadır. Kırmızı ya
+  da şüphe görürsen kendi test koşumunla teşhise girme ve `<TMP>` dışında dizin açma: hükmü
+  `olc --asama sonra` ile bütünlük turu (adım 10-13) verir — onu kullanıcıya AYNEN raporla; bütünlük
+  FAIL'inde adım 13'ün düzeltme döngüsü geçerlidir
 - testsiz "tamam" demek; planda olmayan bir dosyaya dokunmak
 - kullanıcı cevap vermeden bir yargı vakasını işaretlemek
 

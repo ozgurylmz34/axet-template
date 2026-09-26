@@ -71,10 +71,16 @@ class Kapi(unittest.TestCase):
         tools = {t["name"]: t for t in data["result"]["tools"]}
         okuma = sorted(n for n, t in tools.items() if t["class"] == "read")
         yazma = sorted(n for n, t in tools.items() if t["class"] == "write")
-        H.kaydet("1a --list okuma sayısı", "25", str(len(okuma)), len(okuma) == 25)
-        self.assertEqual(len(okuma), 25, okuma)  # Z128: +adt_pretty_print
+        H.kaydet("1a --list okuma sayısı", "26", str(len(okuma)), len(okuma) == 26)
+        self.assertEqual(len(okuma), 26, okuma)  # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read
         for ad in ("adt_revisions", "adt_system_info", "adt_object_structure", "sap_doctor", "adt_pretty_print"):
             self.assertEqual((tools[ad]["class"], tools[ad]["available_on"]), ("read", ["all"]), ad)
+        tr = tools["adt_textpool_read"]
+        ok_tr = ((tr["class"], tr["available_on"]) == ("read", ["s4_private"]) and not tr.get("requires_transport")
+                 and {a["name"] for a in tr["args"]} == {"name", "version", "parts"})
+        H.kaydet("1f adt_textpool_read: read · s4_private · transport yok · argümanlar", "hepsi doğru",
+                 json.dumps({k: tr.get(k) for k in ("class", "available_on", "requires_transport")}), ok_tr)
+        self.assertTrue(ok_tr, tr)
         sd = tools["adt_set_description"]
         ok_sd = (sd["available_on"] == ["s4_private"] and sd.get("requires_transport") is True
                  and {a["name"] for a in sd["args"]} == {"name", "object_type", "description", "transport"})
@@ -325,6 +331,46 @@ class Kapi(unittest.TestCase):
                                              "source": append.replace("vbak", "zaxet_t")}), *S1],
                                 project=p, rc=2, code="pull_before_edit_missing")
         self.assertNotEqual((d2.get("error") or {}).get("code"), "ADR_0005_A")
+
+    # ── 6j-yol. Z142ⓒ: kaynak YEREL DOSYADAN (`source_path`) — kapı dosyayı aynı yol kuralıyla okuyup tarar ──
+    # Kapının kaynağı GENİŞLER, gevşemez: kirli dosya kapıda red; okunamayan / kural dışı yol / `source` ile birlikte
+    # → fail-closed red (exit 2, ağa gidilmez). Kontrol grubu: temiz dosya kapıdan geçer (araçta ağ hatası, exit 1).
+    def test_06j_source_path_gate(self):
+        p = proje()
+        kirli = ("CLASS zaxet_dml IMPLEMENTATION.\n  METHOD run.\n"
+                 "    UPDATE vbak SET netwr = 0 WHERE vbeln = iv_vbeln.\n  ENDMETHOD.\nENDCLASS.\n")
+        temiz = kirli.replace("vbak", "zaxet_log")
+        (p / "src").mkdir()
+        (p / "src" / "kirli.clas.abap").write_text(kirli, encoding="utf-8")
+        (p / "src" / "temiz.clas.abap").write_text(temiz, encoding="utf-8")
+        (p / "src" / "append.tabl.asddls").write_text(
+            "extend type vbak with zzavbak {\n  zzfield : abap.char(10);\n}\n", encoding="utf-8")
+
+        def push(ad, args, rc, code):
+            return self.kos(ad, ["adt_push_source", "--args-json", json.dumps(
+                {"name": "ZAXET_DML", "object_type": "class", **args}), *S1], project=p, rc=rc, code=code)[0]
+
+        d = push("6j-yol1 source_path kirli dosya (std UPDATE) → ADR_0005_B KAPIDA",
+                 {"source_path": "src/kirli.clas.abap"}, 2, "ADR_0005_B")
+        kapida = d["result"] is None and "hedef VBAK" in d["error"]["message"]
+        H.kaydet("6j-yol1b red kapıda (result=null) + hedef VBAK", "kapıda", f"kapida={kapida}", kapida)
+        self.assertTrue(kapida, d)
+        self.kos("6j-yol2 source_path append dosyası (extend type vbak) → ADR_0005_A KAPIDA",
+                 ["adt_push_source", "--args-json", json.dumps(
+                     {"name": "ZZAVBAK", "object_type": "tabl", "transport": TR,
+                      "source_path": "src/append.tabl.asddls"}), *S1], project=p, rc=2, code="ADR_0005_A")
+        for ad, args in (("6j-yol3 source + source_path birlikte → red", {"source": temiz,
+                                                                          "source_path": "src/temiz.clas.abap"}),
+                         ("6j-yol4 source_path .conn_adt → red", {"source_path": ".conn_adt"}),
+                         ("6j-yol5 source_path yok dosya → red", {"source_path": "src/yok.clas.abap"}),
+                         ("6j-yol6 source da source_path da yok → red", {})):
+            push(ad, args, 2, "std_dml_scan_unavailable")
+        (p / ".axet-code").mkdir(exist_ok=True)
+        (p / ".axet-code" / "sap-pull-state.json").write_text(json.dumps({"class:ZAXET_DML": {
+            "sha256": "0" * 64, "pulled_at": "2026-09-13T00:00:00+00:00", "object_type": "class"}}),
+            encoding="utf-8")
+        push("6j-yol7 KONTROL: temiz dosya → kapıdan geçer (ağ hatası)", {"source_path": "src/temiz.clas.abap"},
+             1, "pull_live_read_failed")
 
     # ── 6k. PULL-BEFORE-EDIT: çekme kaydı yoksa push reddi (ağdan önce) ──────────────
     def test_06k_pull_before_edit_missing(self):

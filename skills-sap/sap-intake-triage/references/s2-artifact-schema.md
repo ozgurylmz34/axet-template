@@ -36,7 +36,8 @@ denetler; kapı yalnız yolu denetler: proje-göreli, `.axet-code/intake/` altı
 | 8 | **MUTABAKAT** | ✅ (işaretli) | Kullanıcı onayından sonra işaretlenir |
 
 **Ek bölümler (şablonda var, script bakmaz — manuel kontrol; kurallar `protocol.md` §6 S2 adım 1):** Sistem sürümü ·
-Etkilenen objeler altındaki ad/canlı kontrol/`ONAY: [ ]` tablosu · Tablo yönetim alanları · Kural taraması · Öz-tutarlılık.
+Etkilenen objeler altındaki ad/canlı kontrol/`ONAY: [ ]` tablosu · Tablo yönetim alanları · Kural taraması · Build planı
+(ilk adım paket klasörü — `%sap-dev` §3) · Öz-tutarlılık.
 Tablo satırları (`|` ile başlayan) alan değerine katılmaz; zorunlu alanın **ilk satırı** yine doldurulmalıdır.
 ⚠ Bu bölümlerdeki kutulara (`[ ]`) `mutabakat` ya da `sign-off` kelimesi yazma: o satırda `[x]` olursa script onu kullanıcı
 onayı sayar.

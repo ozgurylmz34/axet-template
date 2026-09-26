@@ -36,6 +36,12 @@ Alt komutlar:
          [--reason "<tek satır>"] [--intake <.axet-code/intake/..md>] [--project-dir <proje>] [--ignore-cert]
       onay + env kimliği kontrolü → SAP YAZMA KAPISI → prepare (build ZORUNLU)
       → `npx --no-install fiori deploy --config ui5-deploy.yaml --yes` → canlı doğrulama (KATI: kaçış farkı da STALE).
+      Z144: uygulamada `.canli/` anlık görüntüsü varsa (kaynak `fetch_ui_source.py indir` ile SAP'den alındıysa)
+      build'den ÖNCE DRIFT ölçülür — canlı, anlık görüntüden sonra değiştiyse (başkası deploy etti) DURUR (exit 1),
+      ölçülemezse DURUR (exit 2). Deploy SONRASI preload'a ek olarak canlının TÜM dosya listesi dist ile kıyaslanır
+      (fark → exit 1); eşitse `.canli/` yeni canlıyla güncellenir.
+  verify ... --tam
+      Preload'a ek olarak canlının tüm dosya listesini dist ile kıyaslar (OData repo servisi; yedek ADT filestore).
 
 Kimlik: env FIORI_TOOLS_USER / FIORI_TOOLS_PASSWORD (geliştirici set eder; script basmaz). Hedef: ui5-deploy.yaml.
 Proje kökü (sap-project.json + .conn_adt): --project-dir, yoksa cwd (sap_adt_cli ile aynı).
@@ -55,6 +61,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _bspnet as B  # noqa: E402
+import _bspkaynak as K  # noqa: E402
 
 DEPLOY_KOMUTU = "npx --no-install fiori deploy --config ui5-deploy.yaml --yes"
 BUILD_KOMUTU = "npm run build"
@@ -77,7 +84,7 @@ BAKILMAYANLAR_PREPARE = [
     "BSP'nin tanıdığı uzantıların tam listesi (yalnız ölçülmüş .svg/.woff ERROR, benzer font uzantıları UYARI)",
 ]
 BAKILMAYANLAR_VERIFY = [
-    "preload DIŞI statik dosyalar (webapp/help/**, görseller, i18n dosyaları) — verify_ui_static_assets.py",
+    "preload DIŞI statik dosyalar (webapp/help/**, görseller, i18n dosyaları) — `verify --tam` ya da verify_ui_static_assets.py",
     "tarayıcı / FLP / ICM önbelleği (canlı GET cache-bust'lı; kullanıcı tarayıcısı ayrıca hard refresh ister)",
     "yerel dist'in webapp kaynağından güncel build olup olmadığı (dist webapp'ten eskiyse UYARI basılır; kesin kanıt değil)",
 ]
@@ -356,11 +363,18 @@ def komut_verify(a) -> int:
             if yeni > preload.stat().st_mtime:
                 print(f"  [UYARI] {app.name}: webapp/{yeni_ad} dist'ten yeni — kıyas BAYAT dist'e karşı yapılıyor")
         durum, notu = canli_dogrula(app, ayar, kimlik, a.ignore_cert, kati=False)
+        if getattr(a, "tam", False) and durum in ("OK", "OK~"):
+            tdurum, tnot, _ = K.tam_liste_olc(app, ayar, kimlik, a.ignore_cert, preload_karsilastir)
+            notu += f" · {tnot}"
+            if tdurum != "OK":
+                durum = tdurum
         sayac[durum] += 1
         etiket = {"OK": "[OK]  ", "OK~": "[OK~] ", "STALE": "[STALE]", "OLCULEMEDI": "[ÖLÇÜLEMEDİ]"}[durum]
         print(f"  {etiket} {app.name} — {notu}")
-    print("\nKAPSAM: yalnız Component-preload.js kıyaslandı. BAKILMAYANLAR:")
-    for m in BAKILMAYANLAR_VERIFY:
+    tam = getattr(a, "tam", False)
+    print(f"\nKAPSAM: {'Component-preload.js + canlının tüm dosya listesi' if tam else 'yalnız Component-preload.js'} "
+          "kıyaslandı. BAKILMAYANLAR:")
+    for m in BAKILMAYANLAR_VERIFY[1 if tam else 0:]:
         print(f"  - {m}")
     print(f"\nSONUÇ: OK={sayac['OK']} OK~={sayac['OK~']} STALE={sayac['STALE']} ÖLÇÜLEMEDİ={sayac['OLCULEMEDI']}")
     if sayac["STALE"]:
@@ -474,6 +488,19 @@ def komut_deploy(a) -> int:
     logla = sap_yazma_kapisi(a, app)  # SAP'ye yazan HER yol buradan geçer; build dahil hiçbir şey kapıdan önce koşmaz
     if isinstance(logla, int):
         return logla
+    drift, dnot, _ = K.drift_olc(app, kimlik, a.ignore_cert)
+    print(f"  deploy öncesi drift: [{drift}] {dnot}")
+    if drift == "DEGISTI":
+        print("\n[FAIL] canlı, kaynağın indirildiği andan sonra değişmiş — deploy o değişikliği EZERDİ. Deploy "
+              "KOŞULMADI, build yapılmadı. Kullanıcıya göster; yeniden indir (`fetch_ui_source.py indir` yeni "
+              "klasöre) → değişikliği yeniden uygula. (exit 1)")
+        logla("drift", 1)
+        return 1
+    if drift == "OLCULEMEDI":
+        print("\n[FAIL] anlık görüntü var ama canlı ile kıyaslanamadı — araya giren deploy olmadığı KANITLANMADI. "
+              "Deploy KOŞULMADI. (exit 2)")
+        logla("drift_unmeasured", 2)
+        return 2
     env = os.environ.copy()
     if a.ignore_cert:
         env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
@@ -500,8 +527,54 @@ def komut_deploy(a) -> int:
     durum, notu = canli_dogrula(app, ayar, kimlik, a.ignore_cert, kati=True)
     print(f"  canlı doğrulama: [{durum}] {notu}")
     if durum == "OK":
-        print("\n[OK] deploy doğrulandı: canlı Component-preload == yüklenen dist. "
-              "Preload dışı statik dosyalar için: verify_ui_static_assets.py")
+        tdurum, tnot, canli = K.tam_liste_olc(app, ayar, kimlik, a.ignore_cert, preload_karsilastir)
+        print(f"  tam liste doğrulama: [{tdurum}] {tnot}")
+        if tdurum == "STALE":
+            print("\n[FAIL] canlı preload == dist ama canlının dosya listesi dist'ten FARKLI — başarı BEYAN EDİLMEZ "
+                  "(exit 1). Fark 'yalnız-2' ise canlıda dist'te olmayan dosya kalmış (ör. dışlanan klasör).")
+            logla("verify_stale_files", 1)
+            return 1
+        anlik = K.anlik_oku(app)
+        if tdurum == "OK" and anlik is not None:
+            # Deploy + doğrulama BİTTİ; anlık görüntü yazımı düşerse deploy başarısı geri alınmaz. Çıkış kodu:
+            #  · eski görüntü BAYT BAYT yerinde (ölçüldü) → exit 0 + açık UYARI: sonraki drift eskiye göre ölçer ve
+            #    DEGISTI der → sonraki deploy DURUR (güvenli yön); sıfırdan farklı kod "deploy başarısız" okunup
+            #    doğrulanmış deploy'un gereksiz tekrarına yol açardı.
+            #  · eski görüntü KORUNAMADI / temizlenemeyen geçici yol → exit 2: `.canli/` bozuk ya da eksikse sonraki
+            #    deploy'un drift kapısı sessizce devre dışı kalabilir — operatör müdahalesi şart (deploy yine
+            #    doğrulandı, TEKRAR EDİLMEZ).
+            kok = app / K.ANLIK_KLASOR
+            onceki = K.anlik_ham(kok)
+            try:
+                K.anlik_yaz(app, canli, {**anlik[1], "guncellendi": "deploy sonrası"})
+                print(f"  {K.ANLIK_KLASOR}/ anlık görüntüsü deploy edilen canlıyla güncellendi (sonraki drift buna karşı).")
+            except (K.GuvensizYolHatasi, OSError) as exc:
+                kalan = [str(p) for p in (kok / "dist.yeni", kok / (K.ANLIK_BILGI + ".yeni")) if p.exists()]
+                korundu = onceki is not None and K.anlik_ham(kok) == onceki
+                if korundu and not kalan:
+                    print(f"  [UYARI] {K.ANLIK_KLASOR}/ anlık görüntüsü GÜNCELLENEMEDİ ({type(exc).__name__}: {exc}) — "
+                          "eski görüntü bayt bayt yerinde (ölçüldü); sonraki drift ESKİYE göre ölçer ve DEGISTI der "
+                          f"(sonraki deploy durur). Gidermek için: `fetch_ui_source.py indir` ile yeni klasöre anlık "
+                          "görüntü al.")
+                    print("\n[OK] deploy doğrulandı: canlı Component-preload == yüklenen dist ve canlının tüm dosya "
+                          f"listesi == dist. ({K.ANLIK_KLASOR}/ güncellenemedi — yukarıdaki UYARI.)")
+                    logla("ok_snapshot_not_updated", 0)
+                    return 0
+                print(f"\n[FAIL] deploy DOĞRULANDI (preload + tam liste == dist; TEKRAR DEPLOY ETME) ama "
+                      f"{K.ANLIK_KLASOR}/ anlık görüntüsü güncellenemedi ({type(exc).__name__}: {exc}) ve "
+                      + ("eski görüntü KORUNAMADI (bayt bayt farklı ya da okunamıyor)" if not korundu else
+                         f"geçici yollar kaldı: {kalan}")
+                      + f" — sonraki deploy'un drift kapısı buna güvenemez: {K.ANLIK_KLASOR}/'yi silip "
+                        "`fetch_ui_source.py indir` ile yeniden al. (exit 2)")
+                logla("ok_snapshot_broken", 2)
+                return 2
+        if tdurum == "OLCULEMEDI":
+            print("  [UYARI] tam liste ÖLÇÜLEMEDİ — yalnız preload kanıtlandı; preload dışı dosyalar için "
+                  "`verify --tam` ya da verify_ui_static_assets.py."
+                  + (f" {K.ANLIK_KLASOR}/ güncellenmedi ⇒ sonraki deploy'un drift ölçümü DEGISTI diyebilir; önce "
+                     "`fetch_ui_source.py drift` ile bak." if anlik is not None else ""))
+        print("\n[OK] deploy doğrulandı: canlı Component-preload == yüklenen dist"
+              + (" ve canlının tüm dosya listesi == dist." if tdurum == "OK" else "."))
         logla("ok", 0)
         return 0
     if durum == "OLCULEMEDI":
@@ -527,6 +600,7 @@ def main() -> int:
     p2 = alt.add_parser("verify", help="salt-okuma: canlı preload == yerel dist mi")
     p2.add_argument("apps", nargs="+")
     p2.add_argument("--ignore-cert", action="store_true", help="TLS sertifika doğrulamasını kapat (self-signed)")
+    p2.add_argument("--tam", action="store_true", help="preload'a ek olarak canlının tüm dosya listesini kıyasla")
     p3 = alt.add_parser("deploy", help="YALNIZ kullanıcı onayıyla: build + deploy + canlı doğrulama")
     p3.add_argument("app")
     p3.add_argument("--user-ok", help="kullanıcının sohbetteki açık onay cümlesi (zorunlu)")

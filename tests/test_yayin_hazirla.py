@@ -227,6 +227,118 @@ class YayinHazirlaTest(GeciciTest):
         self.assertIn("KAPSAM — bakılan (WARNING = yalnız listelenir", c)
         self.assertIn("KAPSAM — bakılmayan:", c)
 
+    # --- Z145ⓑ (2026-09-26): geliştirme deposunun KENDİSİ de public — `--depo-tara` tüm depoyu yerinde tarar ----
+    # Vaka: yerel listedeki bir müşteri adı maintenance/IS-LISTESI.md üzerinden main'e girdi; yayın taraması
+    # maintenance/'ı dışladığı için görmedi. Kip: BLOCKER = yerel liste · öbür DESENLER = UYARI · liste yoksa rc 1.
+    def depo_tara(self, depo, *ek: str):
+        r = self.calistir(depo / "maintenance" / "yayin_hazirla.py", "--depo-tara", *ek, cwd=depo)
+        return r.returncode, self.cikti(r)
+
+    def liste(self, d):
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", "# yerel liste\n" + UYDURMA + "\n")
+
+    def test_depo_tara_maintenance_icindeki_ad_blocker(self):
+        d = self.depo(**{"maintenance__IS-LISTESI.md": "Z1: " + UYDURMA + " projesinde ölçüldü.\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("yerel liste (müşteri/kurum): maintenance/IS-LISTESI.md:1:", c)
+        self.assertIn("BULGU: 1 (BLOCKER)", c)
+        # kontrol grubu = Z145'in kendisi: yayın taraması aynı depoda bu adı GÖRMEZ (maintenance/ dışlanır)
+        rc_yayin, c_yayin = self.tara(d)
+        self.assertEqual(rc_yayin, 0, c_yayin)
+        self.assertNotIn("IS-LISTESI.md", c_yayin)
+
+    def test_KONTROL_depo_tara_temiz_depo_ve_liste_kendini_yakalamaz(self):
+        d = self.depo(**{"maintenance__IS-LISTESI.md": "Z1: nötr metin.\n"})
+        self.liste(d)                       # liste burada gitignore'lu DEĞİL → dışlama TAM yolla yapılmalı
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("BULGU: 0", c)
+        self.assertNotIn("sizinti-yerel.txt:", c)
+        self.assertIn("maintenance/sizinti-yerel.txt .gitignore'da DEĞİL", c)   # ayrıca uyarılır
+
+    def test_depo_tara_liste_disi_ayni_ad_baska_dosyada_yakalanir(self):
+        """Dışlama dosya ADINA değil TAM yola bağlı: başka klasördeki aynı adlı dosya taranır."""
+        d = self.depo(**{"docs__sizinti-yerel.txt": UYDURMA + "\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("yerel liste (müşteri/kurum): docs/sizinti-yerel.txt:1:", c)
+
+    def test_depo_tara_izlenen_taranir_gitignore_lu_taranmaz(self):
+        d = self.depo(**{"docs__izlenen.md": UYDURMA + "\n", "yerel__not.md": UYDURMA + "\n",
+                         ".gitignore": "/yerel/\n/maintenance/sizinti-yerel.txt\n"})
+        self.liste(d)
+        self.git(d, "add", "docs/izlenen.md")
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("docs/izlenen.md:1:", c)
+        self.assertNotIn("yerel/not.md", c)
+        self.assertNotIn(".gitignore'da DEĞİL", c)   # kontrol: liste gitignore'lu → uyarı yok
+
+    def test_depo_tara_desenler_uyari_cikisi_etkilemez(self):
+        d = self.depo(**{"maintenance__sync.json": SIZINTI_ORNEKLERI[1][1] + "\n" + SIZINTI_ORNEKLERI[1][1] + "\n",
+                         "maintenance__not.md": SIZINTI_ORNEKLERI[2][1] + "\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertRegex(c, r"iç repo adı: \d+ satır \(yalnız sayı")
+        self.assertIn("maintenance/sync.json 2", c)                  # dosya başına sayı
+        self.assertNotIn("iç repo adı: maintenance/sync.json", c)    # satırlar tek tek listelenmez
+        self.assertIn("oturum bağlantısı: maintenance/not.md:1:", c)
+        self.assertIn("BULGU: 0", c)
+
+    def test_depo_tara_liste_yoksa_fail_closed(self):
+        d = self.depo(**{"maintenance__IS-LISTESI.md": "Z1: " + UYDURMA + "\n"})
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("ÖLÇÜLEMEDİ", c)
+        self.assertNotIn("BULGU: 0", c)
+
+    def test_depo_tara_hedefle_birlikte_kullanim_hatasi(self):
+        d = self.depo()
+        self.liste(d)
+        rc, c = self.depo_tara(d, "--hedef", str(self.tmp / "cikti"))
+        self.assertEqual(rc, 2, c)
+        self.assertIn("--depo-tara tek başına kullanılır", c)
+        self.assertFalse((self.tmp / "cikti").exists())
+
+    # --- L5 bug gate (2026-09-26): git'in listelediği ama `is_file()` False dönen yol SESSİZCE düşmez ------------
+    # Gerçek MAX_PATH makinenin LongPathsEnabled ayarına bağlı (KopyaHatasiTest notu) ⇒ aynı sınıf deterministik
+    # üretilir: izlenen dosya çalışma ağacından silinir → `ls-files --cached` listeler, `is_file()` False döner.
+    def test_acilamayan_yol_kapsamda_olculemedi_sayilir(self):
+        d = self.depo(**{"notlar__silinen.md": "nötr\n", "notlar__kalan.md": "nötr\n"})
+        self.liste(d)
+        self.git(d, "add", "notlar/silinen.md")
+        (d / "notlar" / "silinen.md").unlink()
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)                       # çıkış kodu değişmez; görünürlük KAPSAM satırındadır
+        self.assertIn("KAPSAM — ÖLÇÜLEMEDİ 1 yol", c)
+        self.assertIn("ilk 5: notlar/silinen.md", c)
+        rc2, c2 = self.tara(d)                           # yayın kipi (--calisma-agaci) aynı sınıfı aynı biçimde söyler
+        self.assertIn("KAPSAM — ÖLÇÜLEMEDİ 1 yol", c2)
+        self.assertIn("ilk 5: notlar/silinen.md", c2)
+
+    def test_KONTROL_acilamayan_yol_yoksa_olculemedi_sifir(self):
+        d = self.depo(**{"notlar__kalan.md": "nötr\n"})
+        self.liste(d)
+        self.git(d, "add", "notlar/kalan.md")
+        rc, c = self.depo_tara(d)
+        self.assertIn("KAPSAM — ÖLÇÜLEMEDİ 0 yol", c)   # sıfırken de basılır
+        self.assertNotIn("ilk 5:", c)
+        rc2, c2 = self.tara(d)
+        self.assertIn("KAPSAM — ÖLÇÜLEMEDİ 0 yol", c2)
+
+    def test_depo_tara_kapsam_beyani(self):
+        d = self.depo()
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        for s in ("KAPSAM — BLOCKER (çıkış 1): yerel liste (müşteri/kurum): 1 desen",
+                  "KAPSAM — dışlanan:", "KAPSAM — bakılmayan:", "git geçmişi"):
+            self.assertIn(s, c)
+
 
 @unittest.skipUnless(BETIK.is_file(), "maintenance/yayin_hazirla.py yok (public sürümde maintenance/ dışlanır)")
 class YayinHazirlaGercekAgacTest(GeciciTest):

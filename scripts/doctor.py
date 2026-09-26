@@ -828,7 +828,7 @@ def template_bulgulari(olc: dict) -> list[tuple[str, str]]:
     out.append(("INFO", "template yüzeyi KAPSAM — bakılanlar: "
                 + " · ".join(bm.TEMPLATE_DOSYALAR + [d + "/**" for d in bm.TEMPLATE_DIZINLER])
                 + " (git status + `@{u}...HEAD` farkı) — bakılmayanlar: değişikliğin İÇERİĞİ (yalnız hangi dosya) · "
-                  "memory/ scripts/ templates/ tests/ · klonun `origin` adresinin doğruluğu · "
+                  "memory/ tests/ · klonun `origin` adresinin doğruluğu · "
                   f"'{bm.GUNCELLE_EPOSTA}' kimliği TAKLİT EDİLEBİLİR (gürültü ayıklaması, güvenlik sınırı DEĞİL) · "
                   "merge commit'iyle gelen dosya atfedilemez, temkinli olarak kullanıcı sayılır · "
                   "upstream tanımsızsa commit dalı hiç ÖLÇÜLMEZ"))
@@ -1294,7 +1294,10 @@ def check_paketler(sap: bool) -> None:
 GIT_KIMLIK_KAPSAM = ("yalnız tanımsızlık ölçülür; tanımlı adresin doğruluğu ya da türetilmiş olup olmadığı "
                      "yargılanmaz · remote yalnız bulunulan repoda ölçülür · GIT_AUTHOR_*/GIT_COMMITTER_* ortam "
                      "değişkenlerine bakılmaz")
-GIT_KIMLIK_DUZELTME = ("git config --global user.name \"Ad Soyad\" · "
+# Z121ⓐ (2026-09-26): kimliği artık kurulum soruyor (kur.ps1 ADIM 2 `Git-Kimligi-Adimi`: tanımlıysa "doğru mu?",
+# değilse sorar ve `git config --global` ile yazar) ⇒ birincil düzeltme o akış; elle komut yalnız "olmazsa" yedeği.
+GIT_KIMLIK_DUZELTME = ("aXet-Kur.cmd'ye tekrar çift tıkla (kurulum Git kimliğini sorar ve kaydeder); olmazsa elle: "
+                       "git config --global user.name \"Ad Soyad\" · "
                        "git config --global user.email \"ad.soyad@sirket.com\"")
 
 

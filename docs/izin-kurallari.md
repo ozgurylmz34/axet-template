@@ -29,7 +29,10 @@ kapsam sayımı `config/permissions.json` içindeki `_aciklama` alanındadır; b
   (komut çalıştı), uzun `deny` kısa `allow`'u ezdi. ⚠ **Eşitlikte sonuç tutarsız çıktı:** eşit uzunlukta iki
   allow/deny çiftinde kazanan değişti (anahtar sırasıyla — ya da alfabetik sırayla; ikisi ayırt EDİLEMEDİ),
   yani eşitlikte kazananı karar türü belirlemiyor ve sonuç nondeterministik olabilir. **Pratik kural: eşit
-  uzunlukta desen yazma.** Şablonda `allow` deseni yoktur; uzunluk testi bugün yalnız ask↔deny çiftlerini denetler.
+  uzunlukta desen yazma.** Statik dosyada (`config/permissions.json`) `allow` deseni yoktur; `install.py` klon yoluna
+  bağlı iki **jokersiz, birebir** `allow` üretir (aşağıda "Açılış özeti komutu"). Uzunluk testi ask **ve** allow ↔ deny
+  çiftlerini denetler; üretilen jokersiz allow'lar bu kuraldan bilinçli muaftır, joker girerse muafiyet düşer
+  (`tests/test_install.py::uretilen_izin_ihlalleri`).
 - **Kısa ask desenleri geniş sorar:** `*deploy_ui*` deploy dışı çağrılarda da onay ister (`deploy_ui.py --help`, `prepare`,
   `verify`); `*Remove-It*` özyinelemesiz `Remove-Item` ve `Remove-ItemProperty`'yi de kapsar.
 - **`rm` ailesinde karar asimetrisi (bilinçli, ölçüme dayalı):** `*rm --recursive*` **deny**'dir ama `*rm -rf *` ve
@@ -51,6 +54,11 @@ kapsam sayımı `config/permissions.json` içindeki `_aciklama` alanındadır; b
   *"desen bu komut metnine uyuyor"*dur, *"`ask` ne yapar"* DEĞİL — o ayrı ve zaten ölçülü: **`axet-code run` kipinde
   `ask` SORMADAN onaylar** (README → Bilinen sınırlar). Yani bu beş komut bugün **bloklanmıyor**.
   `bash -c` ve değişkenle kurulan komut ölçülmedi; desenler güvenlik sınırı değildir.
+- **Eşleşme BÜYÜK/KÜÇÜK HARFE DUYARLIDIR** (ölçüldü 2026-09-17, aXet.code 1.3.0, lab config; kanıt motor tarafından,
+  model beyanı değil): `echo "RD /S x"` **çalıştı** (kontrol: `echo "rd /s x"` reddedildi), `echo "RM -RF /tmp/x"` de
+  çalıştı. Desenlerin tamamı komutu ve bayrağı TEK yazımla yazar (kanonik küçük harfli biçim; `-R`/`-D`/`-xdf` gibi
+  bayraklar kendi kanonik harfleriyle) ⇒ harf yazımı değiştirilen komut desene uymaz. Varyantlar kombinatoryal olduğu
+  için desen ekleyerek kapatılamaz — bilinen sınırdır. Kaynak ölçüm kaydı: `config/permissions.json` `_aciklama`.
 - **`git -C <yol> …` KAÇIŞI — ölçüldü ve KISMEN KAPATILDI (2026-09-17, kullanıcı kararı).**
   `git` ile alt-komut arasına giren her global seçenek (`-C`, `--git-dir=`, `-c ayar=değer`) `*git <altkomut>…*`
   kalıbındaki desenleri ATLAR. Ölçüldü (simülasyon, `fnmatch.fnmatchcase`, 40 desenin tamamına karşı):
@@ -137,6 +145,21 @@ kapsam sayımı `config/permissions.json` içindeki `_aciklama` alanındadır; b
   ÇALIŞTI): `npm run -s "deploy"`, `npm rum "deploy"`, `npm urn "deploy"`, `npm urn -s deploy`, `npm rum --silent deploy`,
   `npm run-script 'deploy'`. yarn/bun tırnaklı biçimler (`yarn "deploy"`, `yarn run "deploy"`, `bun run "deploy"`) de desensiz;
   araç kurulu olmadığı için script'i çalıştırdıkları DOĞRULANAMADI. Hepsi testte "hâlâ açık" diye kilitli.
+- **Açılış özeti komutu — üretilen `allow` kuralları (Z12 2026-09-20 · Z140 2026-09-26, kullanıcı onayı).** Şablonun
+  tek `allow` kaynağı `install.py` `session_brief_allow()`dur: klon yolundan `python "<klon>/scripts/session_brief.py"`
+  (çıplak; `%basla` ve çekirdek §0) ile `python "<klon>/scripts/session_brief.py" --no-fetch` (`%gun-sonu`,
+  `%onboard`) desenlerini **jokersiz** üretir; yol makineye bağlı olduğu için statik dosyada durmazlar. Güvenlik
+  dayanağı jokersizliktir: desen komut metninin tamamına uyduğundan yalnız o tek metne uyar; zincire uzatılmış metin
+  (`… --no-fetch && git reset --hard`) eşleşmez ⇒ "uzun allow kısa deny'ı ezer" tırmanışı yapısal olarak kapalıdır.
+  Çıplak biçim canlı ölçüldü (2026-09-20, S0-S4: `install.session_brief_allow` docstring'i); `--no-fetch` biçimi
+  yalnız **simülasyonla** testlidir (`fnmatchcase`): ek argüman, sonda ya da çift boşluk, bitişik metin, `&&`, `;`,
+  `|`, satır sonu, önden `cd … &&` ve `py` yazımı izin almaz (`tests/test_install.py::OturumOzetiNoFetchAllowTest`).
+  Komşu biçimler **sorulur** (fail-safe). Kurulu makinede yeni desen `install.py` yeniden koşulana kadar config'te
+  yoktur; o arada `doctor.py` "eksik/farklı izin kuralı" WARN'ı verir.
+  ⛔ **`--project-dir "<yol>"` biçimine kural YOK — bilinçli.** Yol değişkendir ⇒ birebir yazılamaz; yazılabilecek
+  tek desen jokerli `python "<klon>/scripts/session_brief.py" --project-dir "*"` olurdu ve `*` tırnağı da yuttuğu için
+  `… --project-dir "x" && git reset --hard HEAD~1 && echo "y"` metnine de uyar (simülasyon: eşleşti) — uzun allow
+  kısa deny'ı ezer. Bu biçim (`%basla` proje kökü dışındayken, `%guncelle-proje` adım 7) onay sormaya devam eder.
 - **Yanlış pozitif: desen metni komutun herhangi bir yerinde geçerse eşleşir.** Ölçülen: `echo "rm -rf notu"`,
   `python x.py "rd /s metni"`, `git commit -m "git push --force notu"`, `echo "git reset --hard açıklaması"`.
   Simülasyonla beklenen (ölçülmedi): `rg -n "git reset --hard" .` ve `grep -rn "git reset --hard" docs` (deny),

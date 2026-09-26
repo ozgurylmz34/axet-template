@@ -8,11 +8,12 @@
 **Sınıf özeti (`--list` ile ölçüldü, 2026-09-13):** okuma 24 (`ping` + `sap_doctor` + 22 `adt_*`, `adt_unit_run` dahil) · yazma 13 · toplam 37.
 **2026-09-21 eki (DDIC şeridi, Z38/Z39/Z40):** yazma +3 (`adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`) → yazma 16 · toplam 40 (`--list`, çevrimdışı ölçüldü).
 **2026-09-25 eki (Z128):** okuma +1 (`adt_pretty_print`) → okuma 25 · yazma 16 · toplam 41 (`--list`, çevrimdışı ölçüldü).
+**2026-09-26 eki (Z39 kalanı):** okuma +1 (`adt_textpool_read`) → okuma 26 · yazma 16 · toplam 42 (`--list`, çevrimdışı ölçüldü).
 Profil etiketlerinin tamamı ve yetenek matrisi: `references/profiles.md` (rehber; etiket tablosu kodla test edilir).
 `adt_set_description` yalnız `s4_private`'ta açıktır ve transport ister.
 `adt_unit_run` `allow_risky_tests=true` verilirse yazma sınıfına geçer (`--list`: `write_when`).
 `adt_transport_list` yalnız `ecc`, `s4_private`, `s4_public` profillerinde açıktır (`available_on`); `btp_abap`'ta yoktur.
-`adt_screen_generate` yalnız `ecc`, `s4_private` profillerinde açıktır. `adt_msgclass_write`, `adt_table_create`, `adt_ttyp_create`, `adt_textpool_write` yalnız `s4_private`'ta açıktır
+`adt_screen_generate` yalnız `ecc`, `s4_private` profillerinde açıktır. `adt_msgclass_write`, `adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`, `adt_textpool_read` yalnız `s4_private`'ta açıktır
 (kaynak reçetenin kanıtı yalnız bu profil; diğer profilde `tool_not_available_for_profile`, çıkış 2).
 `adt_post_shell` / `adt_push_source` içinde `fugr` ve `func` tipleri yalnız `ecc`, `s4_private`'ta (`--list`: `object_type_available_on`;
 diğer profilde `type_not_available_for_profile`, çıkış 2).
@@ -51,8 +52,14 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 
 ### `adt_get`
 - **Amaç:** obje var mı, metadata, (isteğe bağlı) kaynak.
-- **Argümanlar:** `name` (zorunlu) · `object_type="class"` · `include_source=true`.
+- **Argümanlar:** `name` (zorunlu) · `object_type="class"` · `include_source=true` · `output_path=null` · `overwrite=false`.
 - **Dönüş:** `{ok, name, type, exists, source?, metadata?, client_log}`; yoksa `{ok:true, exists:false}`.
+  `output_path` verilince (Z142ⓐ, 2026-09-26) kaynak YEREL dosyaya yazılır (UTF-8, satır sonu çevrilmez) ve `source` yanıttan düşer:
+  `{…, output_path (proje-göreli), written, line_count}`. Yol kuralı `adt_pretty_print` ile tek kaynaktan (`sapadt/project.py`):
+  proje kökü içi · kaynak uzantısı (`.abap .asddls .asddlxs .asdcls .asbdef .bdef .cds .ddl .srvd .srvdsrv .xml`) · `.axet-code/` dışı · `.axetcode-denylist` yolları dışı (varsa; ör. `conn/`, `secrets` altı okunmaz/yazılmaz);
+  var olan dosya `overwrite=true` olmadan ezilmez (`output_exists`). Geçersiz yol, `include_source=false` ya da metin taşımayan tip
+  (msag, enqu) → `invalid_argument`, SAP'ye gidilmez. Obje yoksa dosya yazılmaz (`written:false`). Pull kaydı aynen yazılır ⇒
+  indir (`output_path`) → dosyada düzenle → `adt_push_source(source_path=…)` zinciri.
 - **Uyarılar:** tablo/yapı için kardeş uç denenir (`sibling_probe`: `checked_found` / `checked_absent` / `unavailable:<sebep>`) ·
   **tip kaynaktan belirlenir (v0.5.1, Z53):** canlı SAP `/ddic/structures/<tablo>` ucundan da 200 + `define table …` döner (ve tersi
   olabilir) → uç 200 verse bile kaynağın ilk `define table|structure` anahtar sözcüğü istenen tiple uyuşmuyorsa yanıt `resolved_type`
@@ -258,7 +265,7 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
   diff_preview, output_path, written, notice}`; `output_path` verilmezse biçimli metin `source` alanında döner.
 - **Çağrı:** SAP'ye iki istek gider — `GET <kaynak ucu>` (`adt_get` ile aynı uç, sürüm verilmez = son sürüm) ve
   `POST /sap/bc/adt/abapsource/prettyprinter` (gövde = kaynak, parametre yok). Satır sonları LF'e çevrilir.
-- **Yerel dosya kuralları:** `output_path` proje kökü içinde (göreli yol köke göre), `.abap` uzantılı ve `.axet-code/` dışında olmalı; aksi
+- **Yerel dosya kuralları:** `output_path` proje kökü içinde (göreli yol köke göre), `.abap` uzantılı, `.axet-code/` ve `.axetcode-denylist` yolları dışında olmalı; aksi
   `invalid_argument` (çıkış 3). Böylece `.conn_adt`, `sap-project.json`, `.rules.md` ya da kapı kayıtları bu araçla ezilemez. Var olan dosya
   `overwrite=false` iken `output_exists` (çıkış 1). Yol ve tip denetimleri SAP'ye gitmeden yapılır.
 - **Uyarılar:** pull kaydı (`sap-pull-state.json`) YAZMAZ, push'tan önce taban için `adt_get` şart · hata kodları ayrı: `not_found` (404),
@@ -303,11 +310,20 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 
 ### `adt_push_source`
 - **Amaç:** mevcut objeye tam kaynak gönderme.
-- **Argümanlar:** `name` (Z/Y) · `object_type` · `source` (tam içerik) · `transport` (obje zaten atanmışsa isteğe bağlı) ·
+- **Argümanlar:** `name` (Z/Y) · `object_type` · `source` (tam içerik) **ya da** `source_path` (yerel dosya, Z142ⓐ/ⓒ 2026-09-26) — tam olarak
+  biri · `transport` (obje zaten atanmışsa isteğe bağlı) ·
   `skip_reviewer=false` · `ack_drop=""` (ikisi de aXet yazma kapısında **yasak**: verilirse `reviewer_bypass_forbidden`, çıkış 2).
-- **Dönüş:** `{ok, name, type, result, readback_verified, readback_notice?, syntax_precheck?, syntax_precheck_notice?, syntax_errors?, reviewer?, post_check?, removed_lines_warning?, warning?}`.
+  `source_path`: `adt_get(output_path)` ile aynı yol kuralı; UTF-8 (BOM atılır), boş dosya ve UTF-8 olmayan dosya reddedilir. Yazma kapısı
+  aynı dosyayı aynı kuralla okuyup Yasak A/B taramasından geçirir; dosya okunamaz / kural dışı / `source` ile birlikte verilirse kapı
+  fail-closed reddeder (`std_dml_scan_unavailable`, çıkış 2). Yanıtta `source_path` (proje-göreli) döner.
+- **Dönüş:** `{ok, name, type, result, readback_verified, readback_notice?, syntax_precheck?, syntax_precheck_notice?, syntax_errors?, reviewer?, post_check?, removed_lines_warning?, warning?, inactive_count?, inactive_probe?, inactive_warning?, inactive_notice?, still_inactive?, source_path?}`.
   `removed_lines_warning: {removed, added, sample}` (2026-09-24): canlıda olup yeni kaynakta olmayan satırlar — yazma DURMAZ; yerel kopya
   `adt_get` çıktısından türemediyse bu satırlar kaybolur → satırları kullanıcıya göster, onaysız tekrar yazma (SKILL §2).
+  Kıyas çoklu-küme farkıdır (Z99, 2026-09-26; süre doğrusal): yeri değişen satır silinmiş sayılmaz, yinelenen satırın eksik kopyası sayılır.
+  `inactive_count` (Z147, 2026-09-26): kaynak YÜKLENDİYSE yazılan objenin aktive-bekleyen worklist kaydı sayısı (bağımsız salt-GET sonda).
+  Aktivasyon iddiası (`activated:true`) varken > 0 → `ok:false` + `error:"activation_not_executed"` + `still_inactive`; iddia yoksa
+  (BDEF push'u aktive etmez / aktivasyon düştü) yalnız bilgi + `inactive_notice`; sonda ölçemezse `null` + `inactive_warning`
+  ("inaktif yok" DEĞİLDİR). Kullanıcının toplam inaktif sayısı eklenmez (ham worklist silinmiş objeleri de sayar → `adt_inactive_objects`).
   `syntax_precheck:"olculemedi"` → aktivasyon öncesi sözdizimi ön-kontrolü **ölçülemedi** (`valid:null`, kontrol istisnası
   ya da çağrı istisnası); push aktivasyona devam etti, `ok` değişmez, `syntax_precheck_notice` sebebi yazar — "sözdizimi temiz" DEĞİLDİR.
 - **Uyarılar:** açıklama "aktivasyon ayrı adım" der, alt katman kilit→yükleme→aktivasyon→readback dener → sonucu
@@ -335,8 +351,14 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 ### `adt_activate`
 - **Amaç:** tek obje ya da `also` ile atomik çoklu aktivasyon.
 - **Argümanlar:** `name` · `object_type="class"` · `also=[{"name":"…","object_type":"…"}]`.
-- **Dönüş:** `{ok, activated, errors?, warnings?, refs?, activation_verified?, still_inactive?}`.
+- **Dönüş:** `{ok, activated, errors?, warnings?, refs?, activation_verified?, still_inactive?, inactive_count?, inactive_probe?, inactive_warning?}`.
 - **Uyarılar:** tek-obje yolunda `activation_verified` (`false` = sahte-OK, `ok:false`, `error:"activation_not_executed"`; `null` = kanıtlanmadı) ·
+  `inactive_count` (Z147, 2026-09-26) dört yolda da (tek obje · `also` · `srvb` · `enqu`) sonda koştuğunda gelir: hedef obje(ler)in worklist'te kalan kayıt sayısı;
+  **alan opsiyoneldir** — şu dönüşlerde YOK: guardrail ihlali · `also` içinde `unsupported_type` · `enqu` `activation_failed` ·
+  klasik yolda `error:"unreachable"` · her yolun istisna dalı (`auth_failed`/`connection_failed`/…; `also`/`srvb`'de
+  `activationExecuted≠true` ya da `type=E` de istisnadır) → alan yokluğu "0 inaktif" DEĞİLDİR;
+  `also`/`srvb` yolunda `activationExecuted=true` iken > 0 → `ok:false` + `activation_not_executed` (önceden bu yollarda sonda yoktu);
+  ölçülemezse `null` + `inactive_warning` ·
   bağımlı zincirlerde (CDS + BDEF + behavior class, include + program) `also` kullan · standart bağlam programını aktive
   etmek Yasak A gri bölgesi → kullanıcı onayı (`foundation-ops.md` §4.3) ·
   **`enqu` (kilit objesi, 2026-09-13):** tek-obje yolu `ENQU/DL` referansıyla aktive eder (`activation_executed` + worklist readback);
@@ -450,7 +472,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   `delete_numbers=["005"]` · `allow_overwrite=false` · `package` (yalnız canlı okumada paket yoksa; farklıysa red).
 - **Semantik:** araç önce canlı listeyi okur ve tam gövdeyi **birleştirerek** kurar: yeni numara eklenir, verilmeyen mevcut mesajlar
   **korunur** (`documented` bayrağı dahil). Mevcut numaraya farklı metin/bayrak → `allow_overwrite=true` yoksa `msgclass_overwrite_not_allowed` (çıkış 2,
-  `plan.overwritten` önce/sonra). Değişiklik yoksa kilit alınmaz (`changed:false`).
+  `plan.overwritten` önce/sonra). Değişiklik yoksa kilit alınmaz (`changed:false`). **Her yazımda** (Z118ⓒ, silmesiz dahil) LOCK'tan sonra canlı
+  **kilit altında yeniden okunur** (TOCTOU): farklı → `source_changed_since_pull`, okunamadı → `pull_live_read_failed` (`phase:"under_lock"`, PUT YOK,
+  kilit bırakılır) — aksi hâlde tam gövde, okuma ile kilit arasında başkasının yaptığı değişikliği sessizce geri alırdı.
 - **Silme (Z113):** ⛔ SAP tam PUT'tan **çıkarılan mesajı SİLMEZ** (kaynak ölçümü 229→229 no-op). Silme yalnız `delete_numbers` ile ve **ayrı çağrıda**
   (`messages` ile birlikte → `invalid_argument`): gövdeye kalanlar canlı öznitelikleriyle + `<mc:deletedmessages mc:msgno="NNN"/>` yazılır, gövde öz-denetimi
   (bozuksa `delete_body_selfcheck_failed`, kilit yok), LOCK → **kilit altında canlı yeniden okunur** (farklı → `source_changed_since_pull`, okunamadı →
@@ -529,6 +553,22 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   metinler aktif görünse de `ok:false`, mesaj program hatasını taşır) · `unlock_warning`.
 - **Kapsam:** liste başlıkları (headings) yazılmaz (biçim belgelenmedi). Canlı 2026-09-21 (DEV): yazma + PX terfisi + aktif readback `ok:true`, `would_remove_entries` yazmadan döndü;
   `activation_final` ve `generation_only` sınıflaması bu turda eklendi — canlıda henüz ÖLÇÜLMEDİ.
+- **Bağımsız doğrulama:** yazmadan sonra aktif içeriği `adt_textpool_read` ile oku (yazma aracının readback'i yalnız kendi girdisini kıyaslar).
+
+### `adt_textpool_read` (klasik program metin havuzu — OKUMA, 2026-09-26, Z39 kalanı)
+- **Amaç:** programın metin sembollerini ve seçim metinlerini OKUMAK — yazmadan önce ne var, yazdıktan sonra ekranda (aktif sürümde) ne görünüyor.
+  Okuma sınıfı (`--sap-write` gerekmez; `gate.READ_TOOLS`), transport istemez, kilit almaz; yalnız GET. Profil: yalnız `s4_private` (yazma aracıyla aynı uç).
+- **Argümanlar:** `name` (Z/Y ya da standart program; ≤ 40 karakter, `/ad-alanı/` önekli olabilir) · `version="active"` (`active` = ekranda görünen ·
+  `working` = sürüm parametresiz GET, inaktif sürüm varsa onu gösterir) · `parts=["symbols","selections"]` (alt küme seçilebilir).
+- **Uç:** `/sap/bc/adt/textelements/programs/<prog>/source/<symbols|selections>`; her alt kaynak KENDİ Accept tipiyle
+  (`application/vnd.sap.adt.textelements.symbols.v1` · `…selections.v1`; `text/plain` → 406, çekirdek okuma reçetesi).
+- **Dönüş:** `{ok, name, type:"prog", version, parts:{<alt>:{ok, http_status, count, entries}}, checked, not_checked}` ·
+  `symbols.entries=[{key, text, max_length}]` · `selections.entries=[{name, text, ddic_reference, placeholder}]` — `placeholder:true` = metin `?`
+  (aktif sürümde terfi etmemiş seçim metni; ekranda görünmez). Tanınmayan `@…` satırı girişte `annotations` olarak kalır.
+- **Hatalar:** `invalid_argument` (ad / sürüm / parça geçersiz, `headings` dahil — SAP'ye gidilmez) · `not_found` (uç 404) ·
+  `read_failed` (HTTP ≠ 200 ya da istisna; okunabilen alt kaynak `parts` içinde korunur).
+- **Kapsam (`not_checked`):** liste başlıkları (headings; okuma Accept tipi belgelenmedi — ÖLÇÜLEMEDİ) · sembolün/seçimin programda kullanılıp kullanılmadığı ·
+  programın varlığı/aktifliği (404 yalnız metin öğeleri ucu için).
 
 ### `adt_syntax_check` (adına rağmen YAZMA)
 - **Amaç:** sözdizimi kontrolü — gerçek semantik "temizse aktive et".

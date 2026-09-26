@@ -28,7 +28,7 @@ Bir adım geçmeden sonrakine geçme; kullanıcı atlamak isterse atlanan adım�
 | 0 | Ön koşullar | `axet-code -v` · `git --version` · `python --version` · `rg --version` | ilk üçü sürüm basar (rg isteğe bağlı: yoksa yalnız bilgi; kurmayı önerme) |
 | 1 | Kurulum | `git -C <AXET_HOME> rev-parse --show-toplevel` · `python <AXET_HOME>/scripts/doctor.py` | klon yolu basılır · global config satırlarında FAIL yok |
 | 2 | Yükleme | bu oturumun ilk satırı (kanarya) | `AXET-CORE-…` var; SAP işi yapılacaksa `SAP:` açık |
-| 3 | Proje | proje kökünde `doctor.py` proje satırları · `session_brief.py --no-fetch` | 0 FAIL · hatasız özet · ilk satırda `proje: <ad>` |
+| 3 | Proje | proje kökünde `doctor.py` proje satırları · proje `AGENTS.md` "Oturum" komutu + ` --no-fetch` (`session_brief.py" --no-fetch`; ek/zincir yok) | 0 FAIL · hatasız özet · ilk satırda `proje: <ad>` |
 | 3b | SAP bağlantısı | `git check-ignore .conn_adt` · `doctor.py` · `sap_adt_cli.py ping` | dosya adı basılır · PASS · ping başarılı |
 | 3c | Paket | `new_package.py --index --check` | liste güncel |
 | 4 | Günlük kullanım | — | `docs/onboarding.md` §4'ü özetle |

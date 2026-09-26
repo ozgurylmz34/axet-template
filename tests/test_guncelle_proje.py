@@ -1505,5 +1505,68 @@ class Z79SapDisiTest(ProjeTemel):
         self.assertIn('behavior_manifest.py" generate --project-dir "', rapor)
 
 
+CONN_KURALI = "aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez"
+
+
+class Z97ConnCommitTest(ProjeTemel):
+    """Z97/Z110 (karar 2026-09-26): `conn/README.md` şablon gereği İZLENİR (`.gitignore`: `!conn/README.md`) ama
+    modelin `git add conn/...` denemesi denylist'e takılır (ölçüldü, canlı: kullanıcı "commit et" dedi → model
+    `git add conn/README.md` → "Access denied"). Kapanış raporu bunu AÇIKÇA söyler: conn/ altında README dahil hiçbir
+    dosyayı model git'e eklemez, `conn/README.md`'nin commit'i kullanıcıya bırakılır.
+
+    KAPSAM — bakılmayan: modelin bu cümleye fiilen uyduğu (canlı ölçüm işi) · denylist'in kendisi (test_install).
+    """
+    sap = True
+
+    def _kapanis(self, degisim: dict | None) -> str:
+        if degisim is not None:
+            self.f.ilerlet(degisim)
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        return (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+
+    def test_conn_readme_yazilinca_rapor_commiti_kullaniciya_birakir(self):
+        rapor = self._kapanis({"templates/project-sap/conn/README.md": "# conn v2\n"})
+        self.assertIn("[PASS] conn/README.md", rapor, "önkoşul: conn/README.md bu kapanışta yazılmış olmalı")
+        self.assertIn(CONN_KURALI, rapor)
+        self.assertIn("git add conn/README.md", rapor, "kullanıcıya kendi terminali için komut verilmeli")
+
+    def test_conn_yazilmayan_SAP_kapanisinda_kural_var_komut_yok(self):
+        """Kontrol grubu: plan conn/'a dokunmasa da SAP projesinde kural cümlesi durur (model `git add -A` ile de
+        conn/README.md'yi sahnelemesin), ama yazılmamış dosya için komut verilmez."""
+        rapor = self._kapanis({"templates/project/proje-recetesi.ornek.md": "# Reçete v2\nA\nB\nC\n"})
+        self.assertIn(CONN_KURALI, rapor)
+        self.assertNotIn("git add conn/README.md", rapor)
+
+
+class Z97SkillMetniTest(unittest.TestCase):
+    """Skill metni de aynı kuralı taşır: modelin kapanıştan sonra okuduğu yer SKILL.md'dir (rapor tek kaynak değil).
+    Canlı vakada model kapanıştan SONRA gelen "commit et" isteğiyle `git add conn/README.md` denedi."""
+
+    def test_skill_conn_altini_git_e_eklememeyi_soyler(self):
+        metin = (AXET_HOME / "skills" / "guncelle-proje" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`conn/` altında README dahil hiçbir dosyayı git'e EKLEMEZSİN", metin)
+        self.assertIn("`conn/README.md` şablon gereği", metin)
+        self.assertIn("conn/ — commit kullanıcının", metin, "skill raporun bölüm adına işaret etmeli")
+
+
+class Z97SapDisiConnTest(ProjeTemel):
+    """Kontrol grubu: SAP dışı projede conn/ yoktur ⇒ kapanış raporu conn/ kuralını basmaz (gürültü yok)."""
+    sap = False
+
+    def test_sap_disi_kapanista_conn_kurali_yok(self):
+        self.f.ilerlet()
+        self.planla()
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertNotIn("conn/", rapor)
+
+
 if __name__ == "__main__":
     unittest.main()
