@@ -2183,182 +2183,12 @@ class TasimaKaynagiYedekTest(GuncelleTemel):
         self.assertEqual(self._yerel_kopyalar(), [])
 
 
-class AkisTest(AkisTemel):
-    def test_olc_once_ve_sonra_kaydeder(self):
-        r = self.f.calistir("olc", "--asama", "once")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertTrue(veri["testler"], "en az bir test komutu seçilmeliydi")
-
-    def test_olc_gecersiz_asama_cikis_2(self):
-        self.assertEqual(self.f.calistir("olc", "--asama", "ortada").returncode, 2)
-
-    def test_geri_al_tek_dosya(self):
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self.assertTrue((self.f.tuketici / "scripts/sap_stamp.py").exists())
-        r = self.f.calistir("geri-al", "scripts/sap_stamp.py")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertFalse((self.f.tuketici / "scripts/sap_stamp.py").exists(),
-                         "tabanda olmayan dosya geri almada silinmeli")
-
-    def test_geri_al_hepsi_yerel_degisikligi_korur(self):
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("geri-al", "--hepsi")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n")
-        self.assertIn("doctor YEREL",
-                      (self.f.tuketici / "scripts/doctor.py").read_text(encoding="utf-8"))
-
+class AkisTestTaban(AkisTemel):
     # --- Z82: geri-al, uygula SONRASI elle yapılan düzenlemeyi yedeksiz ezmez ------------------
     def _yerel_yedekler(self) -> list[str]:
         return sorted(p.relative_to(self.f.tuketici).as_posix()
                       for p in self.f.tuketici.rglob("*.yerel*")
                       if ".git" not in p.relative_to(self.f.tuketici).parts)
-
-    def test_Z82_geri_al_uygula_sonrasi_elle_duzenlemeyi_yerel_olarak_saklar(self):
-        """Etikette blob'u olan yol `git checkout <etiket> --` ile geri yazılır; uygula'dan SONRA
-        yapılan düzenlemenin hiçbir yerde kopyası yoktur (ne etikette ne yeni ref'te)."""
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        (self.f.tuketici / "LICENSE").write_text("MIT elle duzenlendi\n", encoding="utf-8")
-        r = self.f.calistir("geri-al", "LICENSE")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n",
-                         "geri-al etiketteki hâli geri yazmalı (davranış değişmez)")
-        yedekler = self._yerel_yedekler()
-        self.assertEqual(yedekler, ["LICENSE.yerel"], self.cikti(r))
-        self.assertEqual((self.f.tuketici / "LICENSE.yerel").read_text(encoding="utf-8"),
-                         "MIT elle duzenlendi\n", "elle düzenleme geri alınamaz biçimde ezildi")
-        self.assertIn("Yedeksiz yerel içerik saklandı: LICENSE.yerel", self.cikti(r))
-
-    def test_Z82_kontrol_geri_al_hepsi_elle_duzenleme_yoksa_yerel_uretmez(self):
-        """Diskteki içerik motorun yazdığı (yeni ref blob'u ya da birleştirme sonucu) ise
-        kurtarılabilir: `.yerel` çöpü üretilmez. Tek beklenen yedek fixture'ın V7 kullanıcı dosyasıdır
-        (izlenmeyen; Z82 öncesinden beri saklanır — `test_geri_al_hepsi_izlenmeyen_kullanici_dosyasini_silmez`)."""
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("geri-al", "--hepsi")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertEqual(self._yerel_yedekler(), ["skills/cakisan/SKILL.md.yerel"], self.cikti(r))
-
-    def test_durum_tablo_basar(self):
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("durum")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertIn("scripts/sap_stamp.py", self.cikti(r))
-        self.assertIn("dogrulandi", self.cikti(r))
-
-    # --- §12a KAPANIŞ MUTASYONLARI -------------------------------------------------------------
-    def test_kapanis_bekleyen_dosya_varsa_1(self):
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        self.assertIn("KAPANMADI", (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8"))
-
-    def test_kapanis_durum_json_elle_dogrulandi_yapilirsa_disk_farkli_1(self):
-        """§6: ajanın 'yaptım' demesi durum değiştirmez — kapanış diskten yeniden doğrular.
-
-        ⚠ Akışın GERİ KALANI tamamlanır (ölçüm + özel adım + bütünlük), yoksa `kapanis` zaten
-        başka bir sebeple 1 döner ve test bu kuralı ölçmemiş olur. Mutasyon M4 ilk hâlinde tam
-        olarak bunu gösterdi: disk doğrulaması kapatıldığı hâlde test YEŞİL kalıyordu.
-        """
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self._tum_yargilari_kapat()
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-        # kontrol grubu: bu noktada akış TEMİZ kapanmalı
-        self.assertEqual(self.f.calistir("kapanis").returncode, 0,
-                         "kontrol grubu kırmızıysa asıl ölçüm anlamsız")
-        d = self.f.durum()
-        for k in d["dosyalar"].values():
-            k["durum"] = "dogrulandi"
-        (self.f.durum_dizini() / "durum.json").write_text(
-            json.dumps(d, ensure_ascii=False), encoding="utf-8")
-        # diski boz
-        self.f.yerel_degistir("scripts/sap_stamp.py", "elle bozuldu\n")
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        self.assertIn("scripts/sap_stamp.py", self.cikti(r))
-
-    def test_kapanis_kabul_ile_cikis_3_ve_gerekce_raporda(self):
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("kapanis", "--kabul", "bilerek yarım bırakıldı")
-        self.assertEqual(r.returncode, 3, self.cikti(r))
-        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
-        self.assertIn("bilerek yarım bırakıldı", rapor)
-
-    def test_ozel_adim_kosar_ve_duruma_yazilir(self):
-        self.ozel_adimlari_kostur()
-        ozel = self.f.durum()["ozel_adimlar"]
-        self.assertTrue(ozel)
-        self.assertTrue(all(v["durum"] in ("kostu", "manuel") for v in ozel.values()), ozel)
-
-    def test_ozel_adim_bilinmeyen_sinif_cikis_2(self):
-        self.assertEqual(self.f.calistir("ozel-adim", "boyle-bir-sinif-yok").returncode, 2)
-
-    def test_kapanis_tamamlanmis_akista_0_ve_uygulanan_json_guncellenir(self):
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self._tum_yargilari_kapat()
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        u = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))
-        self.assertEqual(u["dosyalar"]["scripts/sap_stamp.py"], "v3")
-        self.assertIn("3-01", u["kalemler"])
-        # kapanış commit'i atıldı
-        son = self.git(self.f.tuketici, "log", "-1", "--format=%s").stdout
-        self.assertTrue(son.startswith("guncelle:"), son)
-
-    def test_Z58_kapanis_atlandi_kaleme_neden_yazar_ertelendi_ve_is_yok(self):
-        """Z58: 3-05'in üç dosyası da ertelendi ⇒ `neden: ertelendi`. 2-01/2-02'nin dosyaları
-        (doctor.py, 00-temel.md) v3'ün 3-01/3-02'sinde yeniden beyan edildiği için plan onları
-        SONRAKİ kaleme bağlar (komut_plan adım 3) ⇒ plandaki `dosyalar` boş ⇒ `neden: is-yok`.
-        Uygulanmış kalem `neden` taşımaz."""
-        plan_k = {k["id"]: k for k in self.f.plan()["kalemler"]}
-        self.assertEqual(plan_k["2-01"]["dosyalar"], [], "kurgu: 2-01'in dosyası sonraki kaleme geçmeli")
-        self.assertEqual(plan_k["2-02"]["dosyalar"], [], "kurgu: 2-02'nin dosyası sonraki kaleme geçmeli")
-        self.assertEqual(sorted(d["yol"] for d in plan_k["3-05"]["dosyalar"]),
-                         ["docs/logo.png", "kur.cmd", "skills/cakisan/SKILL.md"])
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        ertelenen = ("docs/logo.png", "kur.cmd", "skills/cakisan/SKILL.md")
-        for yol in ("core/00-temel.md", "scripts/doctor.py", "docs/tasinan2.md"):
-            self.assertEqual(self.f.calistir("isaretle", yol, "--karar", "yeni").returncode, 0)
-        self.assertEqual(self.f.calistir("isaretle", "docs/silinecek.md", "--karar", "yerel").returncode, 0)
-        for yol in ertelenen:
-            r = self.f.calistir("isaretle", yol, "--karar", "ertelendi", "--gerekce", "sonra")
-            self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        u = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))
-        kal = u["kalemler"]
-        self.assertEqual((kal["3-05"]["durum"], kal["3-05"].get("neden")), ("atlandi", "ertelendi"))
-        self.assertEqual((kal["2-01"]["durum"], kal["2-01"].get("neden")), ("atlandi", "is-yok"))
-        self.assertEqual((kal["2-02"]["durum"], kal["2-02"].get("neden")), ("atlandi", "is-yok"))
-        self.assertEqual(kal["3-01"]["durum"], "uygulandi")
-        self.assertNotIn("neden", kal["3-01"], "uygulanmış kalem neden taşımaz")
-
-    def test_Z58_kapanis_kabul_ile_bekleyen_kalem_neden_kabul(self):
-        """`kapanis --kabul` (kod 3) da mühür basar; dosyası `bekliyor` kalan kalem `is-yok`
-        DEĞİLDİR (yoksa önkoşul uyarısı sessizce kaybolurdu) ⇒ `neden: kabul`."""
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        r = self.f.calistir("kapanis", "--kabul", "bilerek yarım")
-        self.assertEqual(r.returncode, 3, self.cikti(r))
-        kal = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))["kalemler"]
-        self.assertEqual(self.f.durum()["dosyalar"]["core/00-temel.md"]["durum"], "bekliyor",
-                         "kurgu: 3-02'nin tek dosyası bekliyor kalmalı")
-        self.assertEqual((kal["3-02"]["durum"], kal["3-02"].get("neden")), ("atlandi", "kabul"))
-        # Z58 bug gate: 2-01'in tek dosyası (doctor.py) 3-01'e devredildi ve orada `bekliyor` kaldı
-        # ⇒ 2-01'in içeriği İNMEDİ ⇒ `kabul` (eskiden "dosyasız" diye `is-yok` deniyordu).
-        self.assertEqual(self.f.durum()["dosyalar"]["scripts/doctor.py"].get("durum", "bekliyor"),
-                         "bekliyor", "kurgu: devredilen doctor.py inmemeli")
-        self.assertEqual(kal["2-01"].get("neden"), "kabul")
 
     # --- Z58 bug gate (v0.5.4, MEDIUM, ölçüldü): `is-yok` yalnız DEVREDİLEN dosya gerçekten indiyse --
     # Plan her yolu onu beyan eden EN SON kaleme bağlar ⇒ 2-01'in tek dosyası (doctor.py) 3-01'e geçer,
@@ -2387,36 +2217,59 @@ class AkisTest(AkisTemel):
         return json.loads((self.f.durum_dizini() / "uygulanan.json")
                           .read_text(encoding="utf-8"))
 
+
+class AkisTest(AkisTestTaban):
+    """Z158: `AkisTestTaban` testlerinin 1/3 dilimi (CI parça dengesi; yardımcılar ve hazırlık tabanda)."""
+
+    def test_olc_once_ve_sonra_kaydeder(self):
+        r = self.f.calistir("olc", "--asama", "once")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
+        self.assertTrue(veri["testler"], "en az bir test komutu seçilmeliydi")
+
+    def test_geri_al_hepsi_yerel_degisikligi_korur(self):
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("geri-al", "--hepsi")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n")
+        self.assertIn("doctor YEREL",
+                      (self.f.tuketici / "scripts/doctor.py").read_text(encoding="utf-8"))
+
+    def test_durum_tablo_basar(self):
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("durum")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("scripts/sap_stamp.py", self.cikti(r))
+        self.assertIn("dogrulandi", self.cikti(r))
+
+    def test_kapanis_kabul_ile_cikis_3_ve_gerekce_raporda(self):
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("kapanis", "--kabul", "bilerek yarım bırakıldı")
+        self.assertEqual(r.returncode, 3, self.cikti(r))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("bilerek yarım bırakıldı", rapor)
+
+    def test_kapanis_tamamlanmis_akista_0_ve_uygulanan_json_guncellenir(self):
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))
+        self.assertEqual(u["dosyalar"]["scripts/sap_stamp.py"], "v3")
+        self.assertIn("3-01", u["kalemler"])
+        # kapanış commit'i atıldı
+        son = self.git(self.f.tuketici, "log", "-1", "--format=%s").stdout
+        self.assertTrue(son.startswith("guncelle:"), son)
+
     def test_Z58_plan_devredilen_yolu_ve_sahibini_kaydeder(self):
         plan_k = {k["id"]: k for k in self.f.plan()["kalemler"]}
         self.assertEqual(plan_k["2-01"]["dosyalar"], [], "kurgu: 2-01'in dosyası sonraki kaleme geçmeli")
         self.assertEqual(plan_k["2-01"].get("devredilen"), {"scripts/doctor.py": "3-01"})
         self.assertEqual(plan_k["3-01"].get("devredilen"), {}, "sahip kalemin devrettiği yol yok")
-
-    def test_Z58_kapanis_sahip_kalemde_dosya_ertelendiyse_devreden_kalem_is_yok_DEGIL(self):
-        u = self._kapanis_doctor_ertelendi()
-        kal = u["kalemler"]
-        # Z61 (c): doctor.py 3-01'in KENDİ dosyası ve ertelendi ⇒ sap_stamp.py inse de 3-01 `atlandi`
-        # + `ertelendi` (eskiden `uygulandi`; ertelenen dosya bir daha önerilmiyordu).
-        self.assertEqual((kal["3-01"]["durum"], kal["3-01"].get("neden")), ("atlandi", "ertelendi"),
-                         "kurgu: 3-01'in sap_stamp.py'si indi, doctor.py'si ertelendi")
-        self.assertEqual(u["dosyalar"].get("scripts/sap_stamp.py"), "v3", "inen dosyanın tabanı yazılır")
-        self.assertNotIn("scripts/doctor.py", u["dosyalar"], "kurgu: doctor.py diske İNMEDİ")
-        self.assertEqual((kal["2-01"]["durum"], kal["2-01"].get("neden")), ("atlandi", "ertelendi"),
-                         "2-01'in içeriği inmedi — is-yok sayılırsa bağımlının UYARI'sı kaybolur")
-
-    def test_Z58_kapanis_eski_plan_devredilen_alani_yok_is_yok_DEMEZ(self):
-        """Plan `devredilen` taşımıyorsa (v0.5.4 öncesi motorun planı) dosyasız kalemin iş-yok mu
-        devredilmiş mi olduğu ölçülemez ⇒ fail-closed: `neden` bilinmiyor (null), `is-yok` DEĞİL."""
-        yol = self.f.durum_dizini() / "plan.json"
-        plan = self.f.plan()
-        for kalem in plan["kalemler"]:
-            kalem.pop("devredilen", None)
-        yol.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-        kal = self._kapanis_doctor_ertelendi()["kalemler"]
-        self.assertEqual(kal["2-01"]["durum"], "atlandi")
-        self.assertIn("neden", kal["2-01"], "alan null yazılır: 'bilinmiyor' ≠ alan unutuldu")
-        self.assertIsNone(kal["2-01"]["neden"])
 
     def test_kapanis_kullanicinin_izlenmeyen_dosyalarini_COMMITLEMEZ(self):
         """§1/§2a kapsam ihlali: `kapanis`'in `git add -A`'sı kullanıcının izlenmeyen
@@ -2451,38 +2304,6 @@ class AkisTest(AkisTemel):
         self.assertNotIn("`git add` başarısız", self.cikti(r))
         self.assertNotIn("did not match any files", self.cikti(r))
 
-    def test_kapanis_butunluk_kosmamissa_1(self):
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self._tum_yargilari_kapat()
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        # ⛔ VAKUM ASSERTION onarımı: RAPOR.md "## Bütünlük turu" başlığını HER koşulda basar
-        # ⇒ `assertIn("bütünlük", ...)` ihlal YOKKEN de geçiyordu. Ölçüt `EKSİK:` satırıdır.
-        eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
-        self.assertTrue(any("bütünlük turu koşmadı" in x for x in eksikler), eksikler)
-
-    def test_kapanis_yeni_kirmizi_testte_1(self):
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self._tum_yargilari_kapat()
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-        # sonra-ölçümüne elle yeni kırmızı koy
-        y = self.f.durum_dizini() / "olcum-sonra.json"
-        veri = json.loads(y.read_text(encoding="utf-8"))
-        for t in veri["testler"]:
-            t["cikis"] = 1
-        y.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        # ⛔ VAKUM ASSERTION onarımı: "## Yeni kırmızı testler" başlığı HER koşulda basılır.
-        eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
-        self.assertTrue(any("YENİ kırmızı" in x for x in eksikler), eksikler)
-
     def test_kapanis_ozel_adim_kosmamissa_1(self):
         """config/permissions.json sınıfının özel adımı (install.py) koşmadan kapanmaz."""
         # permissions.json'u V4e'den çıkar: yerelde tabana döndür → V1 olur, özel adım gerekir
@@ -2500,77 +2321,6 @@ class AkisTest(AkisTemel):
         # geçiyordu ⇒ ölçüt `EKSİK:` satırının kendisidir.
         eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
         self.assertTrue(any("özel adım koşmadı" in x for x in eksikler), eksikler)
-
-    def test_kapanis_TEK_eksik_dosya_icin_bile_1(self):
-        """⛔ VAKUM ASSERTION onarımı (gate mutasyonu M1): `kapanis`'in atlanamazlık kuralı
-        tamamen kaldırıldığında `AkisTest` 15/15 YEŞİL kalıyordu.
-
-        Sebep: var olan test `uygula` sonrası kapanış çağırıyordu ve o noktada `eksikler` zaten
-        "bütünlük turu koşmadı" ile DOLUYDU ⇒ beklenen hata, ölçülmek İSTENENDEN önce
-        tetikleniyordu. Burada akışın geri kalanı TAMAM; yalnız TEK dosya `bekliyor`. Kontrol
-        grubu aynı testin içinde: o dosya da kapatılınca aynı akış 0 döner.
-        """
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self._tum_yargilari_kapat(haric="docs/silinecek.md")
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        eksikler = [s for s in self.cikti(r).splitlines() if s.startswith("EKSİK:")]
-        self.assertEqual(len(eksikler), 1, f"tek eksik bekleniyordu: {eksikler}")
-        self.assertIn("docs/silinecek.md", eksikler[0])
-        self.assertIn("bekliyor", eksikler[0])
-
-        # kontrol grubu — eksik kapatılınca AYNI akış 0 döner (yani 1'i üreten şey bu kuraldı)
-        self.assertEqual(
-            self.f.calistir("isaretle", "docs/silinecek.md", "--karar", "yerel").returncode, 0)
-        r2 = self.f.calistir("kapanis")
-        self.assertEqual(r2.returncode, 0, self.cikti(r2))
-
-    def test_kapanis_BIRLESIK_sonucu_KAPANIS_COMMITINE_girer(self):
-        """⛔ SESSİZ VERİ KAYBI kapsayıcısı (BLOCKER-1/4).
-
-        Bugüne dek 146 testin HİÇBİRİ `--karar birlesik` yolunu kapanışa kadar sürmüyordu.
-        Ölçülen kusur: `add_yollari` süzgeci `blob_sha("HEAD", y)` kullanıyordu; `Klon.sil()`in
-        dokunduğu yol (V6 `docs/silinecek2.md`, V1R `docs/tasinacak.md`) index'ten düşer ama
-        HEAD'de DURUR ⇒ süzgeçten geçer ⇒ `git add` `fatal: pathspec … did not match any files`
-        der ve o çağrıda HİÇBİR yolu stage etmez ⇒ birleştirilmiş içerik commit'e GİRMEZ,
-        `kapanis` yine rc=0 döner ("temiz kapandı" yalanı).
-        """
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self.birlesik_isaretle("core/00-temel.md")
-        self._tum_yargilari_kapat(haric="core/00-temel.md")
-        self.ozel_adimlari_kostur()
-        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
-        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-
-        # kontrol grubu: diskte birleşme GERÇEKTEN var (yoksa aşağıdaki ölçüm anlamsız)
-        diskte = (self.f.tuketici / "core/00-temel.md").read_text(encoding="utf-8")
-        self.assertIn("Çekirdek v3", diskte)
-        self.assertIn("son yerel", diskte)
-
-        r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        # ① `git add`in ÇIKIŞI ölçülür
-        self.assertNotIn("did not match any files", self.cikti(r))
-        self.assertNotIn("`git add` başarısız", self.cikti(r))
-        # ② asıl ölçüm: birleştirme sonucu KAPANIŞ COMMİT'İNDE mi
-        head = self.git(self.f.tuketici, "show", "HEAD:core/00-temel.md").stdout
-        self.assertIn("Çekirdek v3", head, "birleştirme sonucu kapanış commit'ine GİRMEDİ")
-        self.assertIn("son yerel", head, "kullanıcının satırı commit'te yok")
-        # ③ commit ile çalışma ağacı ayrışmıyor
-        kirli = self.git(self.f.tuketici, "status", "--porcelain",
-                         "--", "core/00-temel.md").stdout.strip()
-        self.assertEqual(kirli, "", "kapanıştan sonra dosya hâlâ değişmiş görünüyor")
-        # ④ silmeler ve taşımalar da commit'te (`Klon.sil` stage'lemişti)
-        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
-        self.assertNotIn("docs/silinecek2.md", agac, "V6 silmesi kapanış commit'ine girmedi")
-        self.assertNotIn("docs/tasinacak.md", agac, "V1R taşımasının kaynağı commit'te duruyor")
-        self.assertIn("docs/tasindi.md", agac, "V1R taşımasının hedefi commit'te yok")
 
     def test_kapanis_git_add_BASARISIZSA_eksik_olur_ve_1_doner(self):
         """⛔ BLOCKER-2: `git add` başarısızlığı SESSİZ `UYARI:` idi ⇒ `kapanis` 0 dönüyor,
@@ -2626,6 +2376,147 @@ class AkisTest(AkisTemel):
         self.assertFalse((self.f.tuketici / "docs/silinecek2.md").exists())
         self.assertTrue((self.f.tuketici / "skills/cakisan/SKILL.md").exists())
 
+    def test_V4R_birlesik_sonra_yerel_yarim_tasima_uretmez(self):
+        """Bug gate 2026-09-19 üçüncü tur (ölçüldü): aynı sınıf `yerel` kararında — süzgeç `yerel` için
+        yeni yolu da koruyordu; taşıma motor tarafından yapılmışken bu HEAD'de iki yolu da yok ediyordu."""
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.birlesik_isaretle("docs/tasinan2.md")
+        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
+        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "yerel")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        # kontrol grubu: taşıma gerçekten olmuş (eski yol diskte yok, yeni yol izlenmiyor)
+        self.assertFalse((self.f.tuketici / "docs/tasinan2.md").exists())
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        r = self.f.calistir("kapanis")
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
+                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
+
+
+class AkisTest2(AkisTestTaban):
+    """Z158: `AkisTestTaban` testlerinin 2/3 dilimi (CI parça dengesi; yardımcılar ve hazırlık tabanda)."""
+
+    def test_olc_gecersiz_asama_cikis_2(self):
+        self.assertEqual(self.f.calistir("olc", "--asama", "ortada").returncode, 2)
+
+    def test_Z82_geri_al_uygula_sonrasi_elle_duzenlemeyi_yerel_olarak_saklar(self):
+        """Etikette blob'u olan yol `git checkout <etiket> --` ile geri yazılır; uygula'dan SONRA
+        yapılan düzenlemenin hiçbir yerde kopyası yoktur (ne etikette ne yeni ref'te)."""
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        (self.f.tuketici / "LICENSE").write_text("MIT elle duzenlendi\n", encoding="utf-8")
+        r = self.f.calistir("geri-al", "LICENSE")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual((self.f.tuketici / "LICENSE").read_text(encoding="utf-8"), "MIT yerel\n",
+                         "geri-al etiketteki hâli geri yazmalı (davranış değişmez)")
+        yedekler = self._yerel_yedekler()
+        self.assertEqual(yedekler, ["LICENSE.yerel"], self.cikti(r))
+        self.assertEqual((self.f.tuketici / "LICENSE.yerel").read_text(encoding="utf-8"),
+                         "MIT elle duzenlendi\n", "elle düzenleme geri alınamaz biçimde ezildi")
+        self.assertIn("Yedeksiz yerel içerik saklandı: LICENSE.yerel", self.cikti(r))
+
+    # --- §12a KAPANIŞ MUTASYONLARI -------------------------------------------------------------
+    def test_kapanis_bekleyen_dosya_varsa_1(self):
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertIn("KAPANMADI", (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8"))
+
+    def test_ozel_adim_kosar_ve_duruma_yazilir(self):
+        self.ozel_adimlari_kostur()
+        ozel = self.f.durum()["ozel_adimlar"]
+        self.assertTrue(ozel)
+        self.assertTrue(all(v["durum"] in ("kostu", "manuel") for v in ozel.values()), ozel)
+
+    def test_Z58_kapanis_atlandi_kaleme_neden_yazar_ertelendi_ve_is_yok(self):
+        """Z58: 3-05'in üç dosyası da ertelendi ⇒ `neden: ertelendi`. 2-01/2-02'nin dosyaları
+        (doctor.py, 00-temel.md) v3'ün 3-01/3-02'sinde yeniden beyan edildiği için plan onları
+        SONRAKİ kaleme bağlar (komut_plan adım 3) ⇒ plandaki `dosyalar` boş ⇒ `neden: is-yok`.
+        Uygulanmış kalem `neden` taşımaz."""
+        plan_k = {k["id"]: k for k in self.f.plan()["kalemler"]}
+        self.assertEqual(plan_k["2-01"]["dosyalar"], [], "kurgu: 2-01'in dosyası sonraki kaleme geçmeli")
+        self.assertEqual(plan_k["2-02"]["dosyalar"], [], "kurgu: 2-02'nin dosyası sonraki kaleme geçmeli")
+        self.assertEqual(sorted(d["yol"] for d in plan_k["3-05"]["dosyalar"]),
+                         ["docs/logo.png", "kur.cmd", "skills/cakisan/SKILL.md"])
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        ertelenen = ("docs/logo.png", "kur.cmd", "skills/cakisan/SKILL.md")
+        for yol in ("core/00-temel.md", "scripts/doctor.py", "docs/tasinan2.md"):
+            self.assertEqual(self.f.calistir("isaretle", yol, "--karar", "yeni").returncode, 0)
+        self.assertEqual(self.f.calistir("isaretle", "docs/silinecek.md", "--karar", "yerel").returncode, 0)
+        for yol in ertelenen:
+            r = self.f.calistir("isaretle", yol, "--karar", "ertelendi", "--gerekce", "sonra")
+            self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))
+        kal = u["kalemler"]
+        self.assertEqual((kal["3-05"]["durum"], kal["3-05"].get("neden")), ("atlandi", "ertelendi"))
+        self.assertEqual((kal["2-01"]["durum"], kal["2-01"].get("neden")), ("atlandi", "is-yok"))
+        self.assertEqual((kal["2-02"]["durum"], kal["2-02"].get("neden")), ("atlandi", "is-yok"))
+        self.assertEqual(kal["3-01"]["durum"], "uygulandi")
+        self.assertNotIn("neden", kal["3-01"], "uygulanmış kalem neden taşımaz")
+
+    def test_Z58_kapanis_sahip_kalemde_dosya_ertelendiyse_devreden_kalem_is_yok_DEGIL(self):
+        u = self._kapanis_doctor_ertelendi()
+        kal = u["kalemler"]
+        # Z61 (c): doctor.py 3-01'in KENDİ dosyası ve ertelendi ⇒ sap_stamp.py inse de 3-01 `atlandi`
+        # + `ertelendi` (eskiden `uygulandi`; ertelenen dosya bir daha önerilmiyordu).
+        self.assertEqual((kal["3-01"]["durum"], kal["3-01"].get("neden")), ("atlandi", "ertelendi"),
+                         "kurgu: 3-01'in sap_stamp.py'si indi, doctor.py'si ertelendi")
+        self.assertEqual(u["dosyalar"].get("scripts/sap_stamp.py"), "v3", "inen dosyanın tabanı yazılır")
+        self.assertNotIn("scripts/doctor.py", u["dosyalar"], "kurgu: doctor.py diske İNMEDİ")
+        self.assertEqual((kal["2-01"]["durum"], kal["2-01"].get("neden")), ("atlandi", "ertelendi"),
+                         "2-01'in içeriği inmedi — is-yok sayılırsa bağımlının UYARI'sı kaybolur")
+
+    def test_kapanis_butunluk_kosmamissa_1(self):
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        # ⛔ VAKUM ASSERTION onarımı: RAPOR.md "## Bütünlük turu" başlığını HER koşulda basar
+        # ⇒ `assertIn("bütünlük", ...)` ihlal YOKKEN de geçiyordu. Ölçüt `EKSİK:` satırıdır.
+        eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
+        self.assertTrue(any("bütünlük turu koşmadı" in x for x in eksikler), eksikler)
+
+    def test_kapanis_TEK_eksik_dosya_icin_bile_1(self):
+        """⛔ VAKUM ASSERTION onarımı (gate mutasyonu M1): `kapanis`'in atlanamazlık kuralı
+        tamamen kaldırıldığında `AkisTest` 15/15 YEŞİL kalıyordu.
+
+        Sebep: var olan test `uygula` sonrası kapanış çağırıyordu ve o noktada `eksikler` zaten
+        "bütünlük turu koşmadı" ile DOLUYDU ⇒ beklenen hata, ölçülmek İSTENENDEN önce
+        tetikleniyordu. Burada akışın geri kalanı TAMAM; yalnız TEK dosya `bekliyor`. Kontrol
+        grubu aynı testin içinde: o dosya da kapatılınca aynı akış 0 döner.
+        """
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat(haric="docs/silinecek.md")
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        eksikler = [s for s in self.cikti(r).splitlines() if s.startswith("EKSİK:")]
+        self.assertEqual(len(eksikler), 1, f"tek eksik bekleniyordu: {eksikler}")
+        self.assertIn("docs/silinecek.md", eksikler[0])
+        self.assertIn("bekliyor", eksikler[0])
+
+        # kontrol grubu — eksik kapatılınca AYNI akış 0 döner (yani 1'i üreten şey bu kuraldı)
+        self.assertEqual(
+            self.f.calistir("isaretle", "docs/silinecek.md", "--karar", "yerel").returncode, 0)
+        r2 = self.f.calistir("kapanis")
+        self.assertEqual(r2.returncode, 0, self.cikti(r2))
+
     def test_V7_yerel_izlenmeyen_dosya_kapanis_commitine_GIRMEZ(self):
         """M-6 (kullanıcı kararı 2026-09-18, TASARIM §6): `--karar yerel` = "bu dosyaya DOKUNMA".
 
@@ -2657,47 +2548,6 @@ class AkisTest(AkisTemel):
                          once, "`yerel` kararlı dosyanın içeriği değişti")
         # kontrol grubu: aynı kapanışta DİĞER değişiklikler commit'e girdi (süzgeç aşırı değil)
         self.assertNotIn("docs/silinecek2.md", agac, "V6 silmesi kapanış commit'ine girmedi")
-
-    def test_V4R_birlesik_sonra_ertelendi_yarim_tasima_uretmez(self):
-        """Bug gate 2026-09-19 ikinci tur (ölçüldü): "motor yazmadıysa her izlenmeyen yolu koru"
-        süzgeci, `birlesik` ile YENİ yola yazılmış V4R dosyası sonradan `ertelendi` yapılınca yeni yolu
-        commit dışı bırakıyordu; eski yolun silmesi ise stage'liydi ⇒ HEAD'de İKİ yol da yoktu."""
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self.birlesik_isaretle("docs/tasinan2.md")
-        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
-        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "ertelendi", "--gerekce", "vazgectim")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        # kontrol grubu: yeni yol motor tarafından yazıldı ve henüz izlenmiyor
-        self.assertTrue((self.f.tuketici / "docs/tasindi2.md").is_file())
-        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
-        self.ozel_adimlari_kostur()
-        self.f.calistir("olc", "--asama", "sonra")
-        self.f.calistir("butunluk")
-        r = self.f.calistir("kapanis")
-        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
-        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
-                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
-
-    def test_V4R_birlesik_sonra_yerel_yarim_tasima_uretmez(self):
-        """Bug gate 2026-09-19 üçüncü tur (ölçüldü): aynı sınıf `yerel` kararında — süzgeç `yerel` için
-        yeni yolu da koruyordu; taşıma motor tarafından yapılmışken bu HEAD'de iki yolu da yok ediyordu."""
-        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
-        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
-        self.birlesik_isaretle("docs/tasinan2.md")
-        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
-        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "yerel")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        # kontrol grubu: taşıma gerçekten olmuş (eski yol diskte yok, yeni yol izlenmiyor)
-        self.assertFalse((self.f.tuketici / "docs/tasinan2.md").exists())
-        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
-        self.ozel_adimlari_kostur()
-        self.f.calistir("olc", "--asama", "sonra")
-        self.f.calistir("butunluk")
-        r = self.f.calistir("kapanis")
-        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
-        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
-                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
 
     def test_kapanis_COMMIT_BASARISIZSA_eksik_olur_ve_muhur_basilmaz(self):
         """⛔ BLOCKER-3 (kardeş vaka): commit'in kendisi patlarsa da yalnız `UYARI:` basılıyordu.
@@ -2731,6 +2581,168 @@ class AkisTest(AkisTemel):
         r2 = self.f.calistir("kapanis")
         self.assertEqual(r2.returncode, 0, self.cikti(r2))
         self.assertTrue((self.f.durum_dizini() / "uygulanan.json").exists())
+
+
+class AkisTest3(AkisTestTaban):
+    """Z158: `AkisTestTaban` testlerinin 3/3 dilimi (CI parça dengesi; yardımcılar ve hazırlık tabanda)."""
+
+    def test_geri_al_tek_dosya(self):
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.assertTrue((self.f.tuketici / "scripts/sap_stamp.py").exists())
+        r = self.f.calistir("geri-al", "scripts/sap_stamp.py")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertFalse((self.f.tuketici / "scripts/sap_stamp.py").exists(),
+                         "tabanda olmayan dosya geri almada silinmeli")
+
+    def test_Z82_kontrol_geri_al_hepsi_elle_duzenleme_yoksa_yerel_uretmez(self):
+        """Diskteki içerik motorun yazdığı (yeni ref blob'u ya da birleştirme sonucu) ise
+        kurtarılabilir: `.yerel` çöpü üretilmez. Tek beklenen yedek fixture'ın V7 kullanıcı dosyasıdır
+        (izlenmeyen; Z82 öncesinden beri saklanır — `test_geri_al_hepsi_izlenmeyen_kullanici_dosyasini_silmez`)."""
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("geri-al", "--hepsi")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertEqual(self._yerel_yedekler(), ["skills/cakisan/SKILL.md.yerel"], self.cikti(r))
+
+    def test_kapanis_durum_json_elle_dogrulandi_yapilirsa_disk_farkli_1(self):
+        """§6: ajanın 'yaptım' demesi durum değiştirmez — kapanış diskten yeniden doğrular.
+
+        ⚠ Akışın GERİ KALANI tamamlanır (ölçüm + özel adım + bütünlük), yoksa `kapanis` zaten
+        başka bir sebeple 1 döner ve test bu kuralı ölçmemiş olur. Mutasyon M4 ilk hâlinde tam
+        olarak bunu gösterdi: disk doğrulaması kapatıldığı hâlde test YEŞİL kalıyordu.
+        """
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+        # kontrol grubu: bu noktada akış TEMİZ kapanmalı
+        self.assertEqual(self.f.calistir("kapanis").returncode, 0,
+                         "kontrol grubu kırmızıysa asıl ölçüm anlamsız")
+        d = self.f.durum()
+        for k in d["dosyalar"].values():
+            k["durum"] = "dogrulandi"
+        (self.f.durum_dizini() / "durum.json").write_text(
+            json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        # diski boz
+        self.f.yerel_degistir("scripts/sap_stamp.py", "elle bozuldu\n")
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        self.assertIn("scripts/sap_stamp.py", self.cikti(r))
+
+    def test_ozel_adim_bilinmeyen_sinif_cikis_2(self):
+        self.assertEqual(self.f.calistir("ozel-adim", "boyle-bir-sinif-yok").returncode, 2)
+
+    def test_Z58_kapanis_kabul_ile_bekleyen_kalem_neden_kabul(self):
+        """`kapanis --kabul` (kod 3) da mühür basar; dosyası `bekliyor` kalan kalem `is-yok`
+        DEĞİLDİR (yoksa önkoşul uyarısı sessizce kaybolurdu) ⇒ `neden: kabul`."""
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        r = self.f.calistir("kapanis", "--kabul", "bilerek yarım")
+        self.assertEqual(r.returncode, 3, self.cikti(r))
+        kal = json.loads((self.f.durum_dizini() / "uygulanan.json").read_text(encoding="utf-8"))["kalemler"]
+        self.assertEqual(self.f.durum()["dosyalar"]["core/00-temel.md"]["durum"], "bekliyor",
+                         "kurgu: 3-02'nin tek dosyası bekliyor kalmalı")
+        self.assertEqual((kal["3-02"]["durum"], kal["3-02"].get("neden")), ("atlandi", "kabul"))
+        # Z58 bug gate: 2-01'in tek dosyası (doctor.py) 3-01'e devredildi ve orada `bekliyor` kaldı
+        # ⇒ 2-01'in içeriği İNMEDİ ⇒ `kabul` (eskiden "dosyasız" diye `is-yok` deniyordu).
+        self.assertEqual(self.f.durum()["dosyalar"]["scripts/doctor.py"].get("durum", "bekliyor"),
+                         "bekliyor", "kurgu: devredilen doctor.py inmemeli")
+        self.assertEqual(kal["2-01"].get("neden"), "kabul")
+
+    def test_Z58_kapanis_eski_plan_devredilen_alani_yok_is_yok_DEMEZ(self):
+        """Plan `devredilen` taşımıyorsa (v0.5.4 öncesi motorun planı) dosyasız kalemin iş-yok mu
+        devredilmiş mi olduğu ölçülemez ⇒ fail-closed: `neden` bilinmiyor (null), `is-yok` DEĞİL."""
+        yol = self.f.durum_dizini() / "plan.json"
+        plan = self.f.plan()
+        for kalem in plan["kalemler"]:
+            kalem.pop("devredilen", None)
+        yol.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        kal = self._kapanis_doctor_ertelendi()["kalemler"]
+        self.assertEqual(kal["2-01"]["durum"], "atlandi")
+        self.assertIn("neden", kal["2-01"], "alan null yazılır: 'bilinmiyor' ≠ alan unutuldu")
+        self.assertIsNone(kal["2-01"]["neden"])
+
+    def test_kapanis_yeni_kirmizi_testte_1(self):
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self._tum_yargilari_kapat()
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+        # sonra-ölçümüne elle yeni kırmızı koy
+        y = self.f.durum_dizini() / "olcum-sonra.json"
+        veri = json.loads(y.read_text(encoding="utf-8"))
+        for t in veri["testler"]:
+            t["cikis"] = 1
+        y.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 1, self.cikti(r))
+        # ⛔ VAKUM ASSERTION onarımı: "## Yeni kırmızı testler" başlığı HER koşulda basılır.
+        eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
+        self.assertTrue(any("YENİ kırmızı" in x for x in eksikler), eksikler)
+
+    def test_kapanis_BIRLESIK_sonucu_KAPANIS_COMMITINE_girer(self):
+        """⛔ SESSİZ VERİ KAYBI kapsayıcısı (BLOCKER-1/4).
+
+        Bugüne dek 146 testin HİÇBİRİ `--karar birlesik` yolunu kapanışa kadar sürmüyordu.
+        Ölçülen kusur: `add_yollari` süzgeci `blob_sha("HEAD", y)` kullanıyordu; `Klon.sil()`in
+        dokunduğu yol (V6 `docs/silinecek2.md`, V1R `docs/tasinacak.md`) index'ten düşer ama
+        HEAD'de DURUR ⇒ süzgeçten geçer ⇒ `git add` `fatal: pathspec … did not match any files`
+        der ve o çağrıda HİÇBİR yolu stage etmez ⇒ birleştirilmiş içerik commit'e GİRMEZ,
+        `kapanis` yine rc=0 döner ("temiz kapandı" yalanı).
+        """
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.birlesik_isaretle("core/00-temel.md")
+        self._tum_yargilari_kapat(haric="core/00-temel.md")
+        self.ozel_adimlari_kostur()
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        self.assertEqual(self.f.calistir("butunluk").returncode, 0)
+
+        # kontrol grubu: diskte birleşme GERÇEKTEN var (yoksa aşağıdaki ölçüm anlamsız)
+        diskte = (self.f.tuketici / "core/00-temel.md").read_text(encoding="utf-8")
+        self.assertIn("Çekirdek v3", diskte)
+        self.assertIn("son yerel", diskte)
+
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        # ① `git add`in ÇIKIŞI ölçülür
+        self.assertNotIn("did not match any files", self.cikti(r))
+        self.assertNotIn("`git add` başarısız", self.cikti(r))
+        # ② asıl ölçüm: birleştirme sonucu KAPANIŞ COMMİT'İNDE mi
+        head = self.git(self.f.tuketici, "show", "HEAD:core/00-temel.md").stdout
+        self.assertIn("Çekirdek v3", head, "birleştirme sonucu kapanış commit'ine GİRMEDİ")
+        self.assertIn("son yerel", head, "kullanıcının satırı commit'te yok")
+        # ③ commit ile çalışma ağacı ayrışmıyor
+        kirli = self.git(self.f.tuketici, "status", "--porcelain",
+                         "--", "core/00-temel.md").stdout.strip()
+        self.assertEqual(kirli, "", "kapanıştan sonra dosya hâlâ değişmiş görünüyor")
+        # ④ silmeler ve taşımalar da commit'te (`Klon.sil` stage'lemişti)
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertNotIn("docs/silinecek2.md", agac, "V6 silmesi kapanış commit'ine girmedi")
+        self.assertNotIn("docs/tasinacak.md", agac, "V1R taşımasının kaynağı commit'te duruyor")
+        self.assertIn("docs/tasindi.md", agac, "V1R taşımasının hedefi commit'te yok")
+
+    def test_V4R_birlesik_sonra_ertelendi_yarim_tasima_uretmez(self):
+        """Bug gate 2026-09-19 ikinci tur (ölçüldü): "motor yazmadıysa her izlenmeyen yolu koru"
+        süzgeci, `birlesik` ile YENİ yola yazılmış V4R dosyası sonradan `ertelendi` yapılınca yeni yolu
+        commit dışı bırakıyordu; eski yolun silmesi ise stage'liydi ⇒ HEAD'de İKİ yol da yoktu."""
+        self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
+        self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
+        self.birlesik_isaretle("docs/tasinan2.md")
+        self._tum_yargilari_kapat(haric="docs/tasinan2.md")
+        r = self.f.calistir("isaretle", "docs/tasinan2.md", "--karar", "ertelendi", "--gerekce", "vazgectim")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        # kontrol grubu: yeni yol motor tarafından yazıldı ve henüz izlenmiyor
+        self.assertTrue((self.f.tuketici / "docs/tasindi2.md").is_file())
+        self.assertEqual(self.git(self.f.tuketici, "ls-files", "--", "docs/tasindi2.md").stdout.strip(), "")
+        self.ozel_adimlari_kostur()
+        self.f.calistir("olc", "--asama", "sonra")
+        self.f.calistir("butunluk")
+        r = self.f.calistir("kapanis")
+        agac = self.git(self.f.tuketici, "ls-tree", "-r", "--name-only", "HEAD").stdout.split()
+        self.assertTrue("docs/tasindi2.md" in agac or "docs/tasinan2.md" in agac,
+                        f"yarım taşıma: iki yol da HEAD'de yok\n{self.cikti(r)}")
 
     def test_rapor_kapsam_beyani_iceriyor(self):
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)

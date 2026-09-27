@@ -33,7 +33,9 @@ concurrency:
 
 jobs:
   takimlar:
-    name: Testler (${{ matrix.takim }} · Python ${{ matrix.python }})
+    # Ad bicimi `Testler (<takim>[ <k/n>] · Python <x.y>)`: maintenance/yayin_hazirla.py CI_ASGARI_TAKIMLAR
+    # ve `_ci_python` bu adlari okur — degisirse orasi da degisir (test_yayin_hazirla sabitler).
+    name: Testler (${{ matrix.takim }}${{ matrix.parca != '' && format(' {0}', matrix.parca) || '' }} · Python ${{ matrix.python }})
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -58,7 +60,7 @@ jobs:
         # public agacta kosar, CI ise dev agacini olcuyordu; olculdu: gercek public v0.4.0'da
         # 2 test sinifi 9 failure + 8 error veriyordu, CI yesildi. ci-durum `hepsi_yesil` bu
         # kola da baglidir (CI_ASGARI_TAKIMLAR). Paralel kostugu icin bekleme suresi uzamaz.
-        takim: [kok, foundation, kok-public]
+        # (takim listesi asagida `include`de — PARCA notu orada.)
         # TARIHCE — cift surum kolu NEDEN vardi: "su surumden itibaren destekleniyor"
         # iddiasi VARSAYILMASIN, OLCULSUN diye. Ise de yaradi (asagidaki 3.9/3.10 vakalari).
         # BUGUN TEK KOL: gerekce kota, kapsamin gereksizligi DEGIL.
@@ -112,7 +114,35 @@ jobs:
         # ci-durum `hepsi_yesil` diyemez ve o yayinda HERKES yavas tam olcume duser.
         # Hedef (Z25): CI surumu = kullanici surumu — tek sabit surum, kurucu/guncelleme
         # kullaniciyi o surume ceker, ikinci kol anlamsizlasir.
-        python: ['3.12']
+        #
+        # PARCA (2026-09-26, kullanici karari — Z149 asama 1): duvar saatini en uzun is belirliyordu —
+        # kok ve kok-public ~19 dk (olculdu: 1225 test · 1109 sn · 4 paralel is; runner 4 cekirdek, is
+        # ICI paralellik doymus). Takim `run_tests.py --parca k/n` ile n runner'a bolunur: her kume
+        # (modul.Sinif) TAM OLARAK bir parcaya duser (test_run_tests_cli.ParcaKosucu sabitler), denge
+        # tests/parca-agirlik.json'daki olculmus surelerle kurulur (bayatlarsa yalniz denge bozulur).
+        # `skill` kolu (ayni tarih): kok kolundaki kucuk skill takimlari + CI'da HIC kosmayan bes takim
+        # (sap-abapgit-delivery, office-docs/-excel/-slides, sap-gui-scripting) — kok parcalari kisa kalsin.
+        # Maliyet: public repoda Actions ucretsiz; is sayisi 5 -> 11 (Pro eszamanli ust sinir 40).
+        # 3 -> 5 PARCA (2026-09-27, Z158): 3 parcada tavan iki dev sinifti (test_guncelle.AkisTest 726 sn,
+        # test_kur.KurTest 719 sn; bolunmeyen kume). Ikisi de testleri degismeden ucer sinifa bolundu,
+        # agirliklar yeniden olculdu (1231 test, 175 kume). 4 isci LPT benzetimi (olcum 8 iscide, oransal):
+        # 3 parca 931 · 4 → 699 · 5 → 559 · 6 → 534 (taban = en buyuk kume test_guncelle.OneriIsaretleTest).
+        # 6 parca 5'e gore yalniz %5 kazandirip iki is daha ekler => 5. Tavani yeniden dusurmek icin
+        # once en buyuk kume bolunur, sonra parca sayisi artar (parca sayisi tek basina kumeyi bolmez).
+        # Zorunlu kontrol (ruleset) bu adlara DEGIL, asagidaki `CI tamam` isine baglidir.
+        include:
+          - {takim: kok, parca: '1/5', python: '3.12'}
+          - {takim: kok, parca: '2/5', python: '3.12'}
+          - {takim: kok, parca: '3/5', python: '3.12'}
+          - {takim: kok, parca: '4/5', python: '3.12'}
+          - {takim: kok, parca: '5/5', python: '3.12'}
+          - {takim: kok-public, parca: '1/5', python: '3.12'}
+          - {takim: kok-public, parca: '2/5', python: '3.12'}
+          - {takim: kok-public, parca: '3/5', python: '3.12'}
+          - {takim: kok-public, parca: '4/5', python: '3.12'}
+          - {takim: kok-public, parca: '5/5', python: '3.12'}
+          - {takim: foundation, parca: '', python: '3.12'}
+          - {takim: skill, parca: '', python: '3.12'}
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: 'utf-8'
@@ -213,18 +243,18 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "uretilen dosya commit'te yok: $f" }
           }
 
-      - name: Kok takim
+      - name: Kok takim (parca ${{ matrix.parca }})
         if: matrix.takim == 'kok' || matrix.takim == 'kok-public'
-        run: python tests/run_tests.py
+        run: python tests/run_tests.py --parca ${{ matrix.parca }}
 
       - name: sap-code-review takimi
-        if: matrix.takim == 'kok'
+        if: matrix.takim == 'skill'
         run: python -m unittest discover -s skills-sap/sap-code-review/tests -v
 
       # Z49 (2026-09-21): belge skill'lerinin takimlari CI'da HIC kosmuyordu (yalniz tuketici
       # guncellemesinde, harita.json uzerinden). Tarayici testleri varsayilan kapali, indirme yok.
       - name: Belge skill takimlari (sap-fs-ts-docs + sap-ui5-user-guide)
-        if: matrix.takim == 'kok'
+        if: matrix.takim == 'skill'
         run: |
           python skills-sap/sap-fs-ts-docs/tests/run_tests.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -242,8 +272,30 @@ jobs:
       # NEDEN foundation kolu: kok kolu uzun kol (kok takimi 2411 sn, yukaridaki not); foundation
       # kolu (~393 sn) kisa oldugu icin eklenen sure matrisin duvar saatini uzatmaz. Ek bagimlilik yok.
       - name: SAP UI5 fiori takimi
-        if: matrix.takim == 'foundation'
+        if: matrix.takim == 'skill'
         run: python skills-sap/sap-ui5-fiori/tests/run_tests.py
+
+      # 2026-09-26 (kullanici karari): bu bes takim CI'da HIC kosmuyordu (kok takimi yalniz tests/'i
+      # tarar). Office paketleri SABIT surumle kurulur: yeni paket surumu CI'yi kendiliginden kirmasin.
+      # Olculdu (yerel, gecici venv, bu surumlerle): office 45/45 · atlanan 0 — paketsiz makinede
+      # 7 test "paket yok" diye atlaniyordu, yani o 7 test hic bir yerde kosmamisti.
+      - name: On kosul - office paketleri (sabit surum)
+        if: matrix.takim == 'skill'
+        run: python -m pip install --quiet python-docx==1.2.0 python-pptx==1.0.2 openpyxl==3.1.5 Pillow==12.3.0 Markdown==3.11 lxml==6.1.3
+
+      - name: Kalan skill takimlari (abapgit-delivery + office x3 + gui-scripting)
+        if: matrix.takim == 'skill'
+        run: |
+          python skills-sap/sap-abapgit-delivery/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python skills/office-docs/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python skills/office-excel/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python skills/office-slides/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s skills-sap/sap-gui-scripting/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   kurulum:
     name: Kurulum dumani (install + doctor)
@@ -303,3 +355,32 @@ jobs:
         env:
           AXET_SIZINTI_EK: ${{ secrets.AXET_SIZINTI_EK }}
         run: python maintenance/yayin_provasi.py
+
+  # CI TAMAM (2026-09-26, Z149 asama 1) — main ruleset'inin TEK zorunlu kontrolu. NEDEN: zorunlu
+  # kontroller is ADIYLA tutulur; parca sayisi degisince ya da ileride yol filtresi bir isi hic
+  # tetiklemeyince ruleset "expected" bekleyip merge'u kilitlerdi. Tek toplayici is bu baglantiyi keser.
+  # `if: always()` BILINCLI: `!cancelled()` ya da kosulsuz `needs` ile bir is dusunce/iptal olunca bu is
+  # ATLANIR ve GitHub atlanan zorunlu kontrolu GECTI sayar => kirmizi merge olurdu. Burada her durumda
+  # kosar ve sonucu kendisi hukme baglar. Takimlar + kurulum DAIMA `success` olmali (atlanmasi da
+  # basarisizliktir); prova yalniz gelistirme deposunda kosar ⇒ public depoda `skipped` kabul edilir.
+  ci-tamam:
+    name: CI tamam
+    if: always()
+    needs: [takimlar, kurulum, prova]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Tum isler basarili mi
+        env:
+          SONUCLAR: ${{ toJSON(needs) }}
+          GELISTIRME: ${{ github.repository == 'ozgurylmz34/axet' }}
+        run: |
+          echo "$SONUCLAR" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
+          hata=0
+          for is in takimlar kurulum prova; do
+            r=$(echo "$SONUCLAR" | jq -r --arg i "$is" '.[$i].result')
+            if [ "$r" = "success" ]; then continue; fi
+            if [ "$is" = "prova" ] && [ "$r" = "skipped" ] && [ "$GELISTIRME" != "true" ]; then continue; fi
+            echo "KIRMIZI: $is = $r"; hata=1
+          done
+          exit $hata

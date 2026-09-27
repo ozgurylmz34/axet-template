@@ -6,6 +6,36 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.14 — 2026-09-27
+
+### 0.5.14-01 · `adt_revisions` davranış tanımı (BDEF), tablo ve servis tanımında sürüm geçmişini bulur (düzeltme)
+
+- **neden:** Bu obje tiplerinde SAP sürüm bağlantısını `./<ad>/source/main/versions` biçiminde verir; bu biçim obje adresinin EBEVEYNİNE göredir. Araç `./`'yi atıp bağlantıyı objenin altına ekliyordu, ad iki kez yazılıyor ve istek 404 dönüyordu (araç `revisions_feed_failed` hatası veriyordu, sessiz değildi). Artık `./` ile başlayan bağlantı standart göreli adres kuralıyla çözülür; diğer göreli bağlantılar eskisi gibi obje altına eklenir.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/tests/test_lib_regressions.py`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.14-02 · UI5 deploy, canlıdaki uygulamanın anlık görüntüsü yoksa durur; yeni `fetch_ui_source.py anlik-kur` ve ilk deploy sonrası otomatik anlık görüntü (yetenek)
+
+- **neden:** Deploy'un kayma kapısı (canlı, son bilinen hâlden sonra başkası tarafından değişti mi) yalnız uygulamada `.canli/` anlık görüntüsü VARSA ölçüyordu; yoksa ölçmeden geçiyordu ve başkasının canlıdaki değişikliği sessizce ezilebilirdi. Ayrıca repoda doğan uygulama başarılı deploy'dan sonra da anlık görüntü almadığı için korumaya hiç kavuşmuyordu. Artık: `.canli/` yoksa deploy BSP'nin canlıda olup olmadığını salt okuma ile sorar — varsa DURUR (çıkış 1; `fetch_ui_source.py anlik-kur <app>` önerir), iki okuma yolu da 404 derse ilk deploy sayılır ve sürer, ölçülemezse (yetki/ağ/sunucu hatası) DURUR (çıkış 2; okunamadı "yok" sayılmaz). `--anliksiz` kullanıcının canlıyı bilerek ezmesidir ve günlükte ayrı işaretlenir. Başarılı deploy + tam liste doğrulaması anlık görüntüyü kurar ve `.gitignore`'a `.canli/` ekler. `anlik-kur`: yerel build ile canlının tam dosya listesini karşılaştırır, eşitse anlık görüntüyü yazar, farklıysa farkı gösterip hiçbir şey yazmaz (`--kabul` = farkı gördüm). **Davranış değişikliği:** `.canli/`'si olmayan, canlıda zaten duran bir uygulamanın deploy'u artık önce `anlik-kur` ister.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/scripts/_bspkaynak.py`, `skills-sap/sap-ui5-fiori/scripts/deploy_ui.py`, `skills-sap/sap-ui5-fiori/scripts/fetch_ui_source.py`, `skills-sap/sap-ui5-fiori/tests/test_deploy_ui.py`, `skills-sap/sap-ui5-fiori/tests/test_fetch_ui_source.py`, `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py`
+- **gerektirir:** —
+
+### 0.5.14-03 · Test ve CI altyapısı: kök takım ölçülmüş sürelerle parçalara bölünür, iki büyük test sınıfı bölündü, CI tek toplayıcı kontrolle biter (düzeltme)
+
+- **neden:** Kök test takımı CI'da tek işte ~19 dakika sürüyordu. `tests/run_tests.py --parca k/n` takımı sınıf kümelerine göre n parçaya böler (her küme tam olarak bir parçaya düşer; denge `tests/parca-agirlik.json`'daki ölçülmüş sürelerle kurulur, `--agirlik-yaz` bu dosyayı yeniler; bayat dosya yalnız dengeyi bozar, test düşürmez). En uzun iki sınıf (`test_guncelle.AkisTest`, `test_kur.KurTest`, ~12'şer dakika) parça süresinin tavanıydı; testleri değişmeden üçer sınıfa bölündü. CI: kök ve public-düzen kök takımları parçalı koşar, küçük skill takımları ayrı `skill` işinde koşar, `CI tamam` işi hepsinin sonucunu toplar. Tüketici etkisi yok: yalnız test ve CI dosyaları.
+- **dosyalar:** `tests/run_tests.py`, `tests/test_run_tests_cli.py`, `tests/parca-agirlik.json`, `tests/test_yayin_hazirla.py`, `tests/test_guncelle.py`, `tests/test_kur.py`, `.github/workflows/testler.yml`
+- **test:** `python tests/run_tests.py -k run_tests_cli`
+- **gerektirir:** —
+
+### 0.5.14-04 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.13 — 2026-09-26
 
 ### 0.5.13-01 · UI5 uygulamasının kaynağı yerelde yoksa SAP'den indirilir, yerelde birebir doğrulanır ve salt-okur proxy ile çalıştırılır; deploy canlıdaki değişikliği görmeden yazmaz (yetenek)

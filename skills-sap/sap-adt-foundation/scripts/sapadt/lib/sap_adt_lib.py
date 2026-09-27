@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
+from urllib.parse import urljoin
 from urllib3.exceptions import InsecureRequestWarning
 from dotenv import load_dotenv
 
@@ -322,15 +323,21 @@ def select_versions_link(hrefs):
 
 
 def resolve_adt_href(object_url, href):
-    """ADT bağlantı href'ini isteğe hazır biçime çevir: `http(s)://…` aynen, `/…` aynen (sunucu köküne göre),
-    göreli href ise OBJE URL'inin ALTINA eklenir (`<object_url>/<href>`; baştaki `./` atılır)."""
+    """ADT bağlantı href'ini isteğe hazır biçime çevir: `http(s)://…` aynen, `/…` aynen (sunucu köküne göre).
+    Göreli href İKİ biçimlidir (Z159 — canlı ölçüm 2026-09-25, 6 tip, hiçbirinde `xml:base` yok):
+      · `./<obje_adı>/source/main/versions` (BDEF · tablo · SRVD) → EBEVEYN-göreli, RFC 3986 çözümü
+        `urljoin(<obje>, href)` = `<obje>/source/main/versions`. Obje altına eklemek adı iki kez yazar → 404.
+      · diğer göreli (`source/main/versions` · sınıf `includes/main/versions`) → OBJE URL'inin ALTINA
+        (obje = dizin; burada RFC çözümü ebeveyne düşer → 404)."""
     if not href:
         return href
     if href.startswith(("http://", "https://", "/")):
         return href
-    while href.startswith("./"):
-        href = href[2:]
-    return f"{str(object_url).rstrip('/')}/{href}"
+    taban = str(object_url).rstrip("/")
+    if href.startswith("./"):
+        # sondaki `/` soyulur: `…/zdemo_r_ornek/` urljoin'i obje DİZİNİNE çözdürür → ad iki kez
+        return urljoin(taban, href)
+    return f"{taban}/{href}"
 
 
 def retry_on_failure(max_retries=3, delay=1, backoff=2, exceptions=(Exception,)):

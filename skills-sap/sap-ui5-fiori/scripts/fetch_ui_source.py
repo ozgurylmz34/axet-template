@@ -19,6 +19,10 @@ Alt komutlar:
       AĞ YOK. `npm run build` (ya da --no-build ile mevcut dist) → dist ↔ `.canli/dist` tam liste.
   drift <app_klasoru> [--ignore-cert]
       Canlıyı yeniden indirir → `.canli/dist` ile kıyaslar: canlı, anlık görüntüden sonra değişti mi?
+  anlik-kur <app_klasoru> [--no-build] [--kabul] [--ignore-cert]
+      Z160 — kaynağı ZATEN yerelde olan uygulama (repoda doğmuş, `indir` görmemiş) için `.canli/` kurar: yerel
+      build ↔ canlı tam liste; eşitse yazar, farklıysa gösterir ve YAZMAZ (--kabul = kullanıcı canlıyı ezmeyi
+      kabul etti). Canlıda BSP yoksa yazacak bir şey yok. `deploy`, `.canli/` yokken canlıda BSP varsa bunu ister.
   metadata <SERVIS> [--alan AD ...] [--tip ENTITYTYPE] [--app <app_klasoru> | --project-dir <proje> | --url URL --client NNN] [--ignore-cert]
       OData V2 `$metadata`'yı SALT-OKUMA çeker; verilen alanların `<Property …/>` satırını basar (alan var mı,
       tipi, etiketi). `sap-adt-foundation` CLI'de `$metadata` aracı yoktu (foundation-query.md §5).
@@ -267,6 +271,81 @@ def komut_drift(a) -> int:
     return {"AYNI": 0, "DEGISTI": 1}.get(durum, 2)
 
 
+def komut_anlik_kur(a) -> int:
+    """Z160: kaynağı ZATEN yerelde olan (repoda doğmuş / `indir`'siz) uygulama için canlı anlık görüntüsünü kur.
+    Yerel build (dist, deploy `exclude`'ları hariç) ↔ canlı TAM LİSTE: eşitse `.canli/` yazılır (0); farklıysa
+    farklar basılır, hiçbir şey yazılmaz (1) — `--kabul` = kullanıcı farkı gördü ve canlıyı ezmeyi kabul etti (0,
+    anlık görüntü ŞİMDİKİ canlıdır; sonraki deploy o farkı EZER). Canlıda BSP yoksa yazılacak bir şey yok (0)."""
+    import deploy_ui as D
+    app = Path(a.app)
+    kapsam = ("KAPSAM: bakılan — yerel build (dist/, ui5-deploy.yaml `exclude` regex'leriyle dışlananlar hariç) ↔ "
+              "şimdiki canlı BSP tam dosya listesi (preload modül modül · metin satır sonu normalize · ikili ham). "
+              "BAKILMAYANLAR: kaynak haritası sondası (`eslik`) · build'in üretmediği kaynak farkı · sunucu tarafı "
+              "(OData servisi, FLP kataloğu, rol).")
+    if K.anlik_oku(app) is not None:
+        print(f"[FAIL] {app / K.ANLIK_KLASOR} zaten var — üzerine YAZILMAZ; kayma için `drift` kullan. (exit 1)")
+        return 1
+    if (app / K.ANLIK_KLASOR).exists():
+        # Eksik/bozuk görüntü (bilgi.json ya da dist/ yok): deploy onu YOK sayar ve buraya yönlendirir — burada da
+        # reddedilirse çıkmaz olur. Otomatik silinmez (içinde kurtarılacak bir şey olabilir); kullanıcıya gösterilir.
+        print(f"[FAIL] {app / K.ANLIK_KLASOR} VAR ama eksik/bozuk (bilgi.json ya da dist/ yok) — okunamıyor. İçeriğini "
+              "kullanıcıya göster; onaylarsa klasörü silip bu komutu yeniden koş. Hiçbir şey yazılmadı. (exit 2)")
+        return 2
+    ayar = B.deploy_ayari(app) or {}
+    if not ayar.get("url") or not ayar.get("name"):
+        print("[FAIL] ui5-deploy.yaml'da target.url/app.name yok — canlı belirlenemez (exit 2)")
+        print(kapsam.replace("KAPSAM:", "KAPSAM (ÖLÇÜLEMEDİ):", 1))
+        return 2
+    kimlik = _kimlik()
+    if not kimlik:
+        print(kapsam.replace("KAPSAM:", "KAPSAM (ÖLÇÜLEMEDİ — kimlik yok):", 1))
+        return 2
+    var, vnot = K.bsp_canlida_mi(ayar["url"], ayar.get("client", ""), ayar["name"], kimlik, a.ignore_cert)
+    print(f"  canlıda BSP {ayar['name']}: {vnot}")
+    if var is False:
+        print("[OK] canlıda BSP yok — ilk deploy; anlık görüntü gerekmez (deploy sonrası kurulur). Hiçbir şey yazılmadı.")
+        return 0
+    if var is None:
+        print("[FAIL] BSP'nin canlıda olup olmadığı ölçülemedi — hiçbir şey yazılmadı (exit 2)")
+        print(kapsam.replace("KAPSAM:", "KAPSAM (ÖLÇÜLEMEDİ):", 1))
+        return 2
+    if not a.no_build:
+        print(f"  build: {BUILD_KOMUTU} …")
+        rc, out = D.run(BUILD_KOMUTU, app, os.environ.copy())
+        if rc != 0:
+            print(f"[FAIL] build başarısız rc={rc}: {out.strip()[-400:]} — kıyas ÖLÇÜLMEDİ, hiçbir şey yazılmadı (exit 2)")
+            print(kapsam.replace("KAPSAM:", "KAPSAM (ÖLÇÜLEMEDİ — build):", 1))
+            return 2
+    durum, notu, canli = K.tam_liste_olc(app, ayar, kimlik, a.ignore_cert, D.preload_karsilastir)
+    print(f"  yerel dist ↔ canlı: [{durum}] {notu}")
+    if durum == "OLCULEMEDI" or canli is None:
+        print("[FAIL] kıyas ölçülemedi — hiçbir şey yazılmadı (exit 2)")
+        print(kapsam.replace("KAPSAM:", "KAPSAM (ÖLÇÜLEMEDİ):", 1))
+        return 2
+    if durum != "OK" and not a.kabul:
+        print("[FAIL] yerel build ≠ canlı. Fark ya yerelde henüz deploy edilmemiş iştir ya da canlıda YERELDE OLMAYAN "
+              "bir değişikliktir (başkası deploy etmiş). Farkı kullanıcıya göster; otorite kullanıcınındır:\n"
+              "  · canlı doğruysa → `indir` ile YENİ klasöre al, değişikliği oraya taşı\n"
+              "  · yerel doğruysa (canlıyı bilerek ezmek) → aynı komuta --kabul\n"
+              "Hiçbir şey yazılmadı. (exit 1)")
+        print(kapsam)
+        return 1
+    try:
+        K.anlik_yaz(app, canli, {"bsp": ayar["name"], "kaynak": "anlik-kur"
+                                 + (" (--kabul: yerel ≠ canlı, kullanıcı kabul etti)" if durum != "OK" else "")})
+        eklendi = K.gitignore_anlik_ekle(app)
+    except (K.GuvensizYolHatasi, OSError) as exc:
+        kalan = K.yollari_kaldir([app / K.ANLIK_KLASOR])
+        print(f"[FAIL] anlık görüntü yazılamadı ({type(exc).__name__}: {exc})"
+              + (f" — GERİ ALINAMADI, kalan: {kalan}" if kalan else " — yazılanlar geri alındı") + " (exit 2)")
+        return 2
+    print(f"[OK] {K.ANLIK_KLASOR}/ anlık görüntüsü kuruldu ({len(canli)} canlı dosya)"
+          + (f"; .gitignore'a {K.ANLIK_KLASOR}/ eklendi" if eklendi else "")
+          + (". ⚠ --kabul: sonraki deploy canlıdaki farkı EZER." if durum != "OK" else ". Deploy kaymayı buna karşı ölçer."))
+    print(kapsam)
+    return 0
+
+
 def komut_metadata(a) -> int:
     hedef = _hedef(a)
     kimlik = _kimlik()
@@ -326,6 +405,12 @@ def main() -> int:
     p = alt.add_parser("drift", help="canlı, anlık görüntüden sonra değişti mi")
     p.add_argument("app")
     p.add_argument("--ignore-cert", action="store_true")
+    p = alt.add_parser("anlik-kur", help="Z160: kaynağı yerelde olan uygulama için canlı anlık görüntüsünü kur")
+    p.add_argument("app")
+    p.add_argument("--no-build", action="store_true")
+    p.add_argument("--kabul", action="store_true",
+                   help="yerel ≠ canlı olsa da yaz — YALNIZ kullanıcı farkı gördü ve canlıyı ezmeyi kabul ettiyse")
+    p.add_argument("--ignore-cert", action="store_true")
     p = alt.add_parser("metadata", help="OData V2 $metadata'da alan var mı")
     p.add_argument("servis")
     p.add_argument("--alan", action="append")
@@ -336,7 +421,8 @@ def main() -> int:
     p.add_argument("--client")
     p.add_argument("--ignore-cert", action="store_true")
     a = ap.parse_args()
-    return {"indir": komut_indir, "eslik": komut_eslik, "drift": komut_drift, "metadata": komut_metadata}[a.komut](a)
+    return {"indir": komut_indir, "eslik": komut_eslik, "drift": komut_drift, "anlik-kur": komut_anlik_kur,
+            "metadata": komut_metadata}[a.komut](a)
 
 
 if __name__ == "__main__":

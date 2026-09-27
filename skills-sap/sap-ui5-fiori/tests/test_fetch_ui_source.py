@@ -1354,5 +1354,81 @@ class TestSaltOkurProxy(unittest.TestCase):
         self.assertTrue(ok, (kodlar, sap_istek))
 
 
+class TestAnlikKur(unittest.TestCase):
+    """Z160 `anlik-kur`: kaynağı yerelde olan uygulama için `.canli/` — yerel dist ↔ canlı tam liste.
+    Kontrol grubu: eşit → yazılır; negatifler: fark (yazılmaz) · zaten var · canlıda yok · ölçülemez."""
+
+    def _kos(self, sunulan, *ek, kullanici=H.KULLANICI, onceden_anlik=False):
+        with H.SahteSunucu(sunulan, kullanici=kullanici) as srv:
+            app = H.gecici_app(url=srv.url)
+            try:
+                if onceden_anlik:
+                    K.anlik_yaz(app, {"Component-preload.js": H.PRELOAD}, {"bsp": BSP})
+                rc, out = H.kos("fetch_ui_source.py", "anlik-kur", app, "--no-build", *ek, kimlik=True)
+                anlik = K.anlik_oku(app)
+                gi = (app / ".gitignore").read_text(encoding="utf-8") if (app / ".gitignore").is_file() else ""
+                return rc, out, anlik, gi, list(srv.istekler)
+            finally:
+                H.temizle(app)
+
+    def test_esit_yazilir_ve_gitignore(self):
+        rc, out, anlik, gi, _ = self._kos({H.odata_yol(BSP): H.odata_zip({"Component-preload.js": H.PRELOAD})})
+        ok = (rc == 0 and anlik is not None and anlik[0] == {"Component-preload.js": H.PRELOAD}
+              and anlik[1].get("kaynak") == "anlik-kur" and ".canli/" in gi.splitlines() and "KAPSAM" in out)
+        H.kaydet("anlik-kur: yerel dist == canlı → .canli yazılır + .gitignore", "rc=0 yazıldı", f"rc={rc}", ok)
+        self.assertTrue(ok, out)
+
+    def test_fark_yazilmaz(self):
+        canli = {"Component-preload.js": H.PRELOAD, "localService/metadata.xml": b"<x/>"}
+        rc, out, anlik, gi, _ = self._kos({H.odata_yol(BSP): H.odata_zip(canli)})
+        ok = rc == 1 and anlik is None and ".canli" not in gi and "Hiçbir şey yazılmadı" in out
+        H.kaydet("anlik-kur: canlıda yerelde olmayan dosya → yazılmaz", "rc=1 yok", f"rc={rc} anlik={anlik is not None}", ok)
+        self.assertTrue(ok, out)
+
+    def test_fark_kabul_ile_yazilir(self):
+        canli = {"Component-preload.js": H.PRELOAD, "localService/metadata.xml": b"<x/>"}
+        rc, out, anlik, gi, _ = self._kos({H.odata_yol(BSP): H.odata_zip(canli)}, "--kabul")
+        ok = (rc == 0 and anlik is not None and set(anlik[0]) == set(canli) and "--kabul" in anlik[1].get("kaynak", "")
+              and "EZER" in out)
+        H.kaydet("anlik-kur: fark + --kabul → şimdiki canlı yazılır, uyarı", "rc=0 canlı", f"rc={rc}", ok)
+        self.assertTrue(ok, out)
+
+    def test_zaten_var_dokunmaz(self):
+        rc, out, anlik, gi, istek = self._kos({H.odata_yol(BSP): H.odata_zip({"x.js": b"1"})}, onceden_anlik=True)
+        ok = rc == 1 and "YAZILMAZ" in out and anlik[0] == {"Component-preload.js": H.PRELOAD} and istek == []
+        H.kaydet("anlik-kur: .canli zaten var → dokunmaz, ağ yok", "rc=1 istek=0", f"rc={rc} istek={len(istek)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_bozuk_anlik_cikmaz_degil_yol_gosterir(self):
+        """`.canli/` var ama bilgi.json yok → deploy YOK sayar; anlik-kur "zaten var" deyip çıkmaz ÜRETMEZ: rc 2 +
+        silme talimatı, ağ yok, klasöre dokunulmaz."""
+        with H.SahteSunucu({H.odata_yol(BSP): H.odata_zip({"x.js": b"1"})}) as srv:
+            app = H.gecici_app(url=srv.url)
+            try:
+                (app / ".canli" / "dist").mkdir(parents=True)
+                rc, out = H.kos("fetch_ui_source.py", "anlik-kur", app, "--no-build", kimlik=True)
+                kalan = (app / ".canli" / "dist").is_dir()
+                istek = list(srv.istekler)
+            finally:
+                H.temizle(app)
+        ok = rc == 2 and "eksik/bozuk" in out and kalan and istek == []
+        H.kaydet("anlik-kur: bozuk .canli → rc 2 + yol gösterir, dokunmaz", "rc=2 istek=0", f"rc={rc} istek={len(istek)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_canlida_yok_yazmaz(self):
+        rc, out, anlik, gi, istek = self._kos({})
+        ok = rc == 0 and anlik is None and "ilk deploy" in out and len(istek) == 2
+        H.kaydet("anlik-kur: canlıda BSP yok (OData+ADT 404) → yazacak şey yok", "rc=0 yok istek=2",
+                 f"rc={rc} istek={len(istek)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_olculemez_yazmaz(self):
+        """Yetki reddi (401) "yok" SAYILMAZ → ölçülemedi, exit 2."""
+        rc, out, anlik, gi, _ = self._kos({H.odata_yol(BSP): H.odata_zip({"x.js": b"1"})}, kullanici="baska")
+        ok = rc == 2 and anlik is None and "ölçülemedi" in out
+        H.kaydet("anlik-kur: 401 → ölçülemedi, yazılmaz", "rc=2", f"rc={rc}", ok)
+        self.assertTrue(ok, out)
+
+
 if __name__ == "__main__":
     unittest.main()

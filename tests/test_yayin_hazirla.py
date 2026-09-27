@@ -397,9 +397,11 @@ class CiDurumUretTest(unittest.TestCase):
     """
 
     ETIKET = "v9.9.9"
-    YESIL = ("Testler (kok · Python 3.12)\tsuccess\n"
-             "Testler (foundation · Python 3.12)\tsuccess\n"
-             "Testler (kok-public · Python 3.12)\tsuccess\n")
+    # CI adları (Z149 aşama 1, Z158 3 → 5 parça): kök ve kök-public 5 parça + foundation + skill + CI tamam — 13 iş.
+    ADLAR = ([f"Testler (kok {k}/5 · Python 3.12)" for k in range(1, 6)]
+             + [f"Testler (kok-public {k}/5 · Python 3.12)" for k in range(1, 6)]
+             + ["Testler (foundation · Python 3.12)", "Testler (skill · Python 3.12)", "CI tamam"])
+    YESIL = "".join(f"{a}\tsuccess\n" for a in ADLAR)
 
     def modul(self):
         spec = importlib.util.spec_from_file_location("yayin_hazirla_ci", BETIK)
@@ -418,14 +420,14 @@ class CiDurumUretTest(unittest.TestCase):
         m = self.modul()
         y = self._uret(m, self.YESIL)
         self.assertTrue(y["hepsi_yesil"], y)
-        self.assertEqual(len(y["takimlar"]), 3)
+        self.assertEqual(len(y["takimlar"]), len(self.ADLAR))
         self.assertNotIn("not", y)
 
     def test_2_KONTROL_tek_takim_kirmiziysa_FALSE_ve_ADINI_soyler(self):
         m = self.modul()
         y = self._uret(m, self.YESIL.replace("success", "failure", 1))
         self.assertFalse(y["hepsi_yesil"])
-        self.assertIn("Testler (kok · Python 3.12)", y["not"])
+        self.assertIn("Testler (kok 1/5 · Python 3.12)", y["not"])
 
     def test_3_KONTROL_ci_hala_kosuyorsa_FALSE_ve_BEKLE_der(self):
         m = self.modul()
@@ -466,35 +468,29 @@ class CiDurumUretTest(unittest.TestCase):
         Bunu "yeşil olmayan takım" diye yazmak yanlış teşhistir: kod kırılmadı, ölçülmedi.
         """
         m = self.modul()
-        y = self._uret(m, "Testler (kok · Python 3.12)\tfailure\t3\n"
-                          "Testler (foundation · Python 3.12)\tfailure\t2\n"
-                          "Testler (kok-public · Python 3.12)\tfailure\t2\n")
+        y = self._uret(m, "".join(f"{a}\tfailure\t3\n" for a in self.ADLAR))
         self.assertFalse(y["hepsi_yesil"])
         self.assertIn("BASLAMADI", y["not"])
         self.assertNotIn("yesil olmayan", y["not"])
 
     def test_10_KONTROL_uzun_suren_failure_GERCEK_kirmizidir(self):
         m = self.modul()
-        y = self._uret(m, "Testler (kok · Python 3.12)\tfailure\t640\n"
-                          "Testler (foundation · Python 3.12)\tsuccess\t400\n"
-                          "Testler (kok-public · Python 3.12)\tsuccess\t600\n")
+        y = self._uret(m, "".join(f"{a}\t{'failure' if i == 0 else 'success'}\t{640 if i == 0 else 400}\n"
+                                  for i, a in enumerate(self.ADLAR)))
         self.assertFalse(y["hepsi_yesil"])
         self.assertIn("yesil olmayan", y["not"])
-        self.assertIn("Testler (kok · Python 3.12)", y["not"])
+        self.assertIn("Testler (kok 1/5 · Python 3.12)", y["not"])
 
     def test_11_KONTROL_sure_alani_yesil_hukmu_BOZMAZ(self):
         m = self.modul()
-        y = self._uret(m, "Testler (kok · Python 3.12)\tsuccess\t600\n"
-                          "Testler (foundation · Python 3.12)\tsuccess\t400\n"
-                          "Testler (kok-public · Python 3.12)\tsuccess\t600\n")
+        y = self._uret(m, "".join(f"{a}\tsuccess\t600\n" for a in self.ADLAR))
         self.assertTrue(y["hepsi_yesil"], y)
         self.assertEqual({t["sonuc"] for t in y["takimlar"]}, {"success"})
 
     def test_12_KONTROL_public_duzen_kolu_EKSIKSE_FALSE(self):
         """Z27 — tüketici testleri public ağaçta koşar; o kol yoksa CI hükmü eksiktir."""
         m = self.modul()
-        y = self._uret(m, "Testler (kok · Python 3.12)\tsuccess\n"
-                          "Testler (foundation · Python 3.12)\tsuccess\n")
+        y = self._uret(m, "".join(f"{a}\tsuccess\n" for a in self.ADLAR if "kok-public" not in a))
         self.assertFalse(y["hepsi_yesil"])
         self.assertIn("kok-public", y["not"])
 
@@ -502,3 +498,22 @@ class CiDurumUretTest(unittest.TestCase):
         """Kapsam muafiyeti tek kaynaktan gelmeli; unutulursa kalem-diff FAIL verirdi."""
         m = self.modul()
         self.assertIn(m.CI_DURUM_YOLU, m.URETILEN_DOSYALAR)
+
+
+@unittest.skipUnless(BETIK.is_file(), "maintenance/yayin_hazirla.py yok (public sürümde maintenance/ dışlanır)")
+class CiAsgariTakimlarWorkflowIleAyni(unittest.TestCase):
+    """`CI_ASGARI_TAKIMLAR` ↔ `.github/workflows/testler.yml` (Z149 aşama 1). Workflow'da bir iş adı değişir de
+    liste değişmezse `hepsi_yesil` hiç True olamaz (asgari takım "eksik") ⇒ her yayında HERKES yavaş tam ölçüme
+    düşer — sessizce. Ters yön: listede olup workflow'da olmayan ad da aynı sonucu doğurur."""
+
+    def test_adlar_workflow_matrisinden_turetilenle_ayni(self):
+        import re
+        wf = (AXET_HOME / ".github" / "workflows" / "testler.yml").read_text(encoding="utf-8")
+        satirlar = re.findall(r"- \{takim: ([\w-]+), parca: '([^']*)', python: '([^']+)'\}", wf)
+        self.assertGreaterEqual(len(satirlar), 3, "matris include satırları okunamadı — ölçüm anlamsız")
+        self.assertIn("name: CI tamam", wf)
+        beklenen = {f"Testler ({t}{' ' + p if p else ''} · Python {py})" for t, p, py in satirlar} | {"CI tamam"}
+        spec = importlib.util.spec_from_file_location("yayin_hazirla_ad", BETIK)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        self.assertEqual(beklenen, set(m.CI_ASGARI_TAKIMLAR))

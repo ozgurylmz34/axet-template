@@ -324,7 +324,21 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui_local_proxy.py <paket>/ui/
 ### 7.4 Deploy — drift ve tam liste (kendiliğinden)
 - `deploy_ui.py deploy`, uygulamada `.canli/` varsa **kapıdan sonra, build'den önce** canlıyı yeniden indirir ve anlık
   görüntüyle kıyaslar: canlı değişmişse (başkası deploy etmiş) **DURUR** (exit 1, log `drift`) — deploy o değişikliği
-  ezerdi. Ölçülemezse de DURUR (exit 2, `drift_unmeasured`). `.canli/` yoksa ölçmez ve bunu yazar.
+  ezerdi. Ölçülemezse de DURUR (exit 2, `drift_unmeasured`).
+- **`.canli/` YOKSA (Z160 — kaynağı repoda doğmuş / `indir` görmemiş uygulama):** deploy BSP'nin canlıda olup
+  olmadığını sorar (salt GET: OData repo servisi, yedek ADT filestore).
+  · canlıda **var** → **DURUR** (exit 1, log `no_snapshot`): kıyassız deploy, başkasının canlıdaki değişikliğini
+    görmeden ezebilir. Önce `python $F anlik-kur <app>` — yerel build (dist, `exclude`'lar hariç) ↔ canlı tam liste;
+    eşitse `.canli/` yazılır (+ `.gitignore`'a `.canli/`), farklıysa farklar basılır ve **hiçbir şey yazılmaz**
+    (exit 1): fark yerelde henüz deploy edilmemiş iş de olabilir, canlıda yerelde olmayan değişiklik de — **otorite
+    kullanıcınındır**: canlı doğruysa `indir` ile YENİ klasöre al; yerel doğruysa `anlik-kur --kabul`.
+  · canlıda **yok** (OData 404 + ADT 404) → ilk deploy; akış sürer.
+  · **ölçülemedi** (401, 500, ağ) → DURUR (exit 2, `no_snapshot_unmeasured`) — "okunamadı" "yok" sayılmaz.
+  · `deploy --anliksiz` = kullanıcı canlıyı bilerek ezmeyi kabul etti (UYARI basılır, akış sürer).
+  · Anlık görüntü yoksa **başarılı deploy + tam liste OK** onu deploy edilen canlıyla KURAR ⇒ sonraki deploy'lar
+    kayma kapısından geçer. Kurulamazsa UYARI (exit 0; durum deploy öncesiyle aynı).
+  Ölçülmeyen: canlı SAP'de 404 dışı "yok" yanıtı (ör. başka sistem sürümünde 400) — öyleyse kapı exit 2 verir
+  (güvenli yön); ilk deploy'da `--anliksiz` gerekir.
 - Deploy sonrası preload kıyasına ek olarak canlının **tüm dosya listesi** dist ile kıyaslanır (ui5-deploy.yaml
   `exclude` regex'leriyle dışlananlar hariç): fark → exit 1 (`verify_stale_files`); eşitse `.canli/` yeni canlıyla
   güncellenir. Repo servisi okunamazsa UYARI basılır, hüküm preload'a kalır.

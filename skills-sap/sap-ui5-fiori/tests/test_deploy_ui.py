@@ -553,7 +553,7 @@ class TestDeployKapiSurecIci(unittest.TestCase):
         return 0, "build ok\n"
 
     def _kos(self, *, optin: bool, tier=("ADT_SAP_TIER=DEV",), paket_tr=None, canli=CANLI_VARSAYILAN, anlik=None,
-             kontrol=None):
+             kontrol=None, anliksiz=False, kullanici=H.KULLANICI):
         """canli: sahte OData zip'inin dosyaları (None → servis yok, 404) · anlik: `.canli/` anlık görüntüsü
         (None → yok) · kontrol(app): uygulama silinmeden önce çağrılır (anlık görüntü güncellendi mi ölçmek için)."""
         if optin:
@@ -562,7 +562,7 @@ class TestDeployKapiSurecIci(unittest.TestCase):
         sunulan = {_canli_yol(): H.PRELOAD}
         if canli is not None:
             sunulan[H.odata_yol()] = H.odata_zip(canli)
-        with H.SahteSunucu(sunulan) as srv:
+        with H.SahteSunucu(sunulan, kullanici=kullanici) as srv:
             app = H.gecici_app(url=srv.url)
             if paket_tr:
                 _paket_tr(app, *paket_tr)
@@ -570,7 +570,7 @@ class TestDeployKapiSurecIci(unittest.TestCase):
                 K.anlik_yaz(app, anlik, {"bsp": "ZXX001_ORDER"})
             proj = _proje(self.kok, "proje", srv.url, tier=tier)
             a = argparse.Namespace(app=str(app), user_ok=ONAY, ignore_cert=False, sap_write=True, scope="S1",
-                                   reason=GEREKCE, intake=None, project_dir=str(proj))
+                                   reason=GEREKCE, intake=None, project_dir=str(proj), anliksiz=anliksiz)
             try:
                 with mock.patch.object(D, "run", self._sahte_run):
                     rc = D.komut_deploy(a)
@@ -596,9 +596,9 @@ class TestDeployKapiSurecIci(unittest.TestCase):
 
     def test_kapi_acik_dev_akis_calisir(self):
         """KONTROL GRUBU: anahtar açık + DEV + hedef == .conn_adt → build + deploy + canlı doğrulama (rc 0)."""
-        rc, istekler, proj = self._kos(optin=True)
+        rc, istekler, proj = self._kos(optin=True, anlik=CANLI_VARSAYILAN)
         log = _son_log(proj) or {}
-        ok = (rc == 0 and self.cagrilar == [D.BUILD_KOMUTU, D.DEPLOY_KOMUTU] and len(istekler) == 2
+        ok = (rc == 0 and self.cagrilar == [D.BUILD_KOMUTU, D.DEPLOY_KOMUTU] and len(istekler) == 3
               and log.get("tool") == "deploy_ui" and log.get("result") == "ok" and log.get("exit_code") == 0)
         H.kaydet("deploy kapı (süreç içi): açık + DEV → akış çalışır", "rc=0 build+deploy",
                  f"rc={rc} run={len(self.cagrilar)} istek={len(istekler)} log={log.get('result')}", ok)
@@ -606,9 +606,9 @@ class TestDeployKapiSurecIci(unittest.TestCase):
 
     def test_transport_tmp_transportsuz_akis_calisir(self):
         """KONTROL GRUBU (transport): paket `$TMP` + transport satırı yok → kapıdan geçer, build + deploy koşar."""
-        rc, istekler, proj = self._kos(optin=True, paket_tr=("$TMP", None))
+        rc, istekler, proj = self._kos(optin=True, paket_tr=("$TMP", None), anlik=CANLI_VARSAYILAN)
         log = _son_log(proj) or {}
-        ok = (rc == 0 and self.cagrilar == [D.BUILD_KOMUTU, D.DEPLOY_KOMUTU] and len(istekler) == 2
+        ok = (rc == 0 and self.cagrilar == [D.BUILD_KOMUTU, D.DEPLOY_KOMUTU] and len(istekler) == 3
               and log.get("result") == "ok")
         H.kaydet("deploy kapı (süreç içi): $TMP + transport yok → akış çalışır", "rc=0 build+deploy",
                  f"rc={rc} run={len(self.cagrilar)} log={log.get('result')}", ok)
@@ -632,8 +632,8 @@ class TestDeployKapiSurecIci(unittest.TestCase):
     # ── Z144: deploy SONRASI tam liste + deploy ÖNCESİ drift ─────────────────────────────────────
     def test_tam_liste_fark_stale(self):
         """Canlı preload == dist ama canlıda dist'te olmayan dosya var (ör. dışlanan localService) → rc 1."""
-        rc, istekler, proj = self._kos(optin=True, canli={"Component-preload.js": H.PRELOAD,
-                                                          "localService/metadata.xml": b"<x/>"})
+        canli = {"Component-preload.js": H.PRELOAD, "localService/metadata.xml": b"<x/>"}
+        rc, istekler, proj = self._kos(optin=True, canli=canli, anlik=canli)
         log = _son_log(proj) or {}
         ok = rc == 1 and log.get("result") == "verify_stale_files"
         H.kaydet("deploy tam liste: canlıda fazla dosya → STALE", "rc=1 verify_stale_files",
@@ -644,8 +644,9 @@ class TestDeployKapiSurecIci(unittest.TestCase):
         """Repo servisi yok (OData + ADT 404) → tam liste ÖLÇÜLEMEDİ uyarısı; preload OK hükmü korunur (rc 0)."""
         rc, istekler, proj = self._kos(optin=True, canli=None)
         log = _son_log(proj) or {}
-        ok = rc == 0 and log.get("result") == "ok" and len(istekler) == 3
-        H.kaydet("deploy tam liste: servis yok → uyarı, rc 0", "rc=0 istek=3", f"rc={rc} istek={len(istekler)}", ok)
+        # Z160: anlık görüntü yok + BSP canlıda YOK (OData + ADT 404, +2 istek) → ilk deploy, akış sürer
+        ok = rc == 0 and log.get("result") == "ok" and len(istekler) == 5
+        H.kaydet("deploy tam liste: servis yok → uyarı, rc 0", "rc=0 istek=5", f"rc={rc} istek={len(istekler)}", ok)
         self.assertTrue(ok, f"rc={rc} istek={istekler} log={log}")
 
     def test_drift_degisti_build_yok(self):
@@ -751,6 +752,44 @@ class TestDeployKapiSurecIci(unittest.TestCase):
         H.kaydet("deploy: .canli geçici yol kalır → rc 2, kalan listelenir", "rc=2 dist.yeni",
                  f"rc={rc} · {log.get('result')}", ok)
         self.assertTrue(ok, (rc, log, out, durum))
+
+    # ── Z160: anlık görüntü YOK ──────────────────────────────────────────────────────────────────
+    def test_z160_anlik_yok_bsp_canlida_dur(self):
+        """`.canli/` yok + BSP canlıda VAR → build/deploy KOŞMAZ (rc 1, log no_snapshot), yalnız varlık GET'i."""
+        rc, istekler, proj = self._kos(optin=True)
+        log = _son_log(proj) or {}
+        ok = rc == 1 and self.cagrilar == [] and log.get("result") == "no_snapshot" and len(istekler) == 1
+        H.kaydet("deploy Z160: anlık yok + canlıda var → DUR", "rc=1 run=0 no_snapshot",
+                 f"rc={rc} run={len(self.cagrilar)} log={log.get('result')} istek={len(istekler)}", ok)
+        self.assertTrue(ok, f"rc={rc} run={self.cagrilar} istek={istekler} log={log}")
+
+    def test_z160_olculemez_dur(self):
+        """Varlık ölçülemez (401) → "yok" SAYILMAZ → rc 2, log no_snapshot_unmeasured, build yok."""
+        rc, istekler, proj = self._kos(optin=True, kullanici="baska")
+        log = _son_log(proj) or {}
+        ok = rc == 2 and self.cagrilar == [] and log.get("result") == "no_snapshot_unmeasured"
+        H.kaydet("deploy Z160: varlık ölçülemez → DUR", "rc=2 run=0", f"rc={rc} run={len(self.cagrilar)}", ok)
+        self.assertTrue(ok, f"rc={rc} run={self.cagrilar} istek={istekler} log={log}")
+
+    def test_z160_anliksiz_deploy_ve_anlik_kurulur(self):
+        """--anliksiz → akış sürer; başarılı deploy + tam liste OK sonrası `.canli/` KURULUR + .gitignore satırı."""
+        durum = {}
+
+        def kontrol(app):
+            anlik = K.anlik_oku(app)
+            durum["anlik"] = anlik[0] if anlik else None
+            durum["kaynak"] = anlik[1].get("kaynak") if anlik else None
+            g = app / ".gitignore"
+            durum["gi"] = g.read_text(encoding="utf-8").splitlines() if g.is_file() else []
+
+        rc, istekler, proj = self._kos(optin=True, anliksiz=True, kontrol=kontrol)
+        log = _son_log(proj) or {}
+        ok = (rc == 0 and self.cagrilar == [D.BUILD_KOMUTU, D.DEPLOY_KOMUTU] and log.get("result") == "ok+anliksiz"
+              and durum.get("anlik") == CANLI_VARSAYILAN and "ilk" in (durum.get("kaynak") or "")
+              and ".canli/" in durum.get("gi", []))
+        H.kaydet("deploy Z160: --anliksiz → akış + deploy sonrası anlık görüntü kurulur", "rc=0 .canli kuruldu",
+                 f"rc={rc} log={log.get('result')} durum={durum}", ok)
+        self.assertTrue(ok, f"rc={rc} run={self.cagrilar} istek={istekler} log={log} durum={durum}")
 
     def test_transport_z_paket_transport_yok_run_ve_istek_sifir(self):
         rc, istekler, proj = self._kos(optin=True, paket_tr=("ZXX001", None))

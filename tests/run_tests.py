@@ -6,6 +6,8 @@ template klonunun dosyalarına yazmaz: her test geçici dizin + geçici XDG_CONF
     python tests/run_tests.py            # tümü (PARALEL — varsayılan)
     python tests/run_tests.py -k precommit   # ada göre süz
     python tests/run_tests.py -j 1       # sıralı koş (hata ayıklarken)
+    python tests/run_tests.py --parca 2/3   # takımın 3 parçasından 2.'si (CI: her parça ayrı runner)
+    python tests/run_tests.py --agirlik-yaz # tam koşum + küme sürelerini tests/parca-agirlik.json'a yaz
 
 PARALELLİK (2026-09-20). Testler `modul.Sınıf` kümelerine bölünür ve her küme AYRI bir
 işlemde koşar; sonuçlar toplanır. Ölçülen sebep: takım tek işlemde **2411 sn (≈40 dk)**
@@ -113,13 +115,70 @@ def _paralel(kimlikler: list[str], is_sayisi: int) -> tuple[int, dict]:
         kumeler.setdefault(_kume(k), []).append(k)
     # Büyük küme önce: en uzun iş en erken başlasın (duvar saati max(küme) tarafından belirlenir).
     sirali = sorted(kumeler.values(), key=len, reverse=True)
-    toplam: dict = {"test": 0, "failure": 0, "error": 0, "skip": 0, "kirmizilar": []}
+    toplam: dict = {"test": 0, "failure": 0, "error": 0, "skip": 0, "kirmizilar": [], "kume_sn": {}}
     with ThreadPoolExecutor(max_workers=is_sayisi) as havuz:
-        for ozet in havuz.map(_isci_kos, sirali):
+        for ad, sure, ozet in havuz.map(_zamanli_isci, sirali):
             for alan in ("test", "failure", "error", "skip"):
                 toplam[alan] += ozet[alan]
             toplam["kirmizilar"] += ozet["kirmizilar"]
+            toplam["kume_sn"][ad] = sure
     return (0 if not toplam["failure"] and not toplam["error"] else 1), toplam
+
+
+def _zamanli_isci(ids: list[str]) -> tuple[str, float, dict]:
+    """Kümeyi işçide koşar ve duvar süresini ölçer (`--agirlik-yaz` için)."""
+    basla = time.time()
+    ozet = _isci_kos(ids)
+    return _kume(ids[0]), round(time.time() - basla, 1), ozet
+
+
+AGIRLIK_DOSYASI = BURASI / "parca-agirlik.json"
+
+
+def _agirliklar() -> dict[str, float]:
+    """Küme → ölçülmüş duvar süresi (sn). Dosya yoksa/bozuksa boş: yalnız DENGE bozulur, kapsam değil."""
+    try:
+        veri = json.loads(AGIRLIK_DOSYASI.read_text(encoding="utf-8"))
+        return {k: float(v) for k, v in veri.get("kume_sn", {}).items()}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def parcala(kimlikler: list[str], n: int, agirlik: dict[str, float] | None = None) -> list[list[str]]:
+    """Kimlikleri n parçaya böler (CI'da her parça ayrı runner). Dağıtım birimi küme (`modul.Sinif`).
+
+    ⛔ Kapsam değişmezi: her küme TAM OLARAK bir parçaya düşer ⇒ parçaların birleşimi = tüm kimlikler,
+    kesişim = boş (`test_run_tests_cli` sabitler). Ağırlık yalnız dengeyi belirler: bilinmeyen küme
+    (yeni sınıf) bilinenlerin medyanını alır — ağırlık dosyası bayatlasa da hiçbir test düşmez.
+    Belirlenimci: aynı ağaç + aynı ağırlık ⇒ her runner aynı bölmeyi hesaplar (en ağır küme önce, en az
+    yüklü parçaya; eşitlikte küçük parça numarası).
+    """
+    agirlik = agirlik or {}
+    kumeler: dict[str, list[str]] = {}
+    for k in kimlikler:
+        kumeler.setdefault(_kume(k), []).append(k)
+    bilinen = sorted(agirlik[k] for k in kumeler if k in agirlik)
+    varsayilan = bilinen[len(bilinen) // 2] if bilinen else 1.0
+    yuk = [0.0] * n
+    parcalar: list[list[str]] = [[] for _ in range(n)]
+    for ad in sorted(kumeler, key=lambda a: (-agirlik.get(a, varsayilan), a)):
+        i = min(range(n), key=lambda j: (yuk[j], j))
+        parcalar[i] += kumeler[ad]
+        yuk[i] += agirlik.get(ad, varsayilan)
+    return parcalar
+
+
+def _parca(argv: list[str]) -> tuple[int, int] | None:
+    """`--parca k/n` (1 ≤ k ≤ n). Yoksa None."""
+    if "--parca" not in argv:
+        return None
+    i = argv.index("--parca")
+    deger = argv[i + 1] if i + 1 < len(argv) else ""
+    k, _, n = deger.partition("/")
+    if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
+        print("HATA: --parca k/n ister, 1 ≤ k ≤ n (ör. --parca 2/3).", file=sys.stderr)
+        raise SystemExit(2)
+    return int(k), int(n)
 
 
 def _is_sayisi(argv: list[str]) -> int | None:
@@ -149,7 +208,18 @@ def main(argv=None) -> int:
         desen = argv[i + 1]
 
     istenen = _is_sayisi(argv)
+    parca = _parca(argv)
+    agirlik_yaz = "--agirlik-yaz" in argv
+    if agirlik_yaz and (desen or parca or istenen == 1):
+        print("HATA: --agirlik-yaz yalnız TAM ve PARALEL koşumda ölçer (-k / --parca / -j 1 ile kısmi ölçüm "
+              "dosyanın yerine geçemez).", file=sys.stderr)
+        return 2
     kimlikler = _kimlikleri_topla(desen)
+    if parca and kimlikler:
+        tum = len(kimlikler)
+        kimlikler = parcala(kimlikler, parca[1], _agirliklar())[parca[0] - 1]
+        print("PARÇA %d/%d: %d test · %d küme (tüm takım %d test)"
+              % (parca[0], parca[1], len(kimlikler), len({_kume(k) for k in kimlikler}), tum))
     # ⛔ "0 test" hükmü HER İKİ kolda da aynı: sayıyı koşumdan ÖNCE biliyoruz.
     if not kimlikler:
         print("SONUÇ: 0 test · 0 failure · 0 error · 0 skip · 0 sn")
@@ -164,7 +234,8 @@ def main(argv=None) -> int:
     is_sayisi = istenen if istenen else max(1, min(os.cpu_count() or 1, 8, kume_sayisi))
     basla = time.time()
     if is_sayisi == 1:
-        kod, ozet = _sirali(kimlikler if desen else None, desen, sessiz=False)
+        # Süzme (`-k`) ya da parça varsa YALNIZ o kimlikler koşar; ikisi de yoksa keşif (tümü).
+        kod, ozet = _sirali(kimlikler if (desen or parca) else None, desen, sessiz=False)
     else:
         kod, ozet = _paralel(kimlikler, is_sayisi)
         for kirmizi in ozet["kirmizilar"]:
@@ -180,6 +251,13 @@ def main(argv=None) -> int:
     if ozet["test"] == 0:
         print("HATA: HİÇ TEST KOŞMADI — bu 'başarılı' DEĞİLDİR.", file=sys.stderr)
         return 2
+    if agirlik_yaz:
+        AGIRLIK_DOSYASI.write_text(json.dumps({
+            "aciklama": "CI parça dengesi için küme duvar süreleri (sn). Üretim: python tests/run_tests.py "
+                        "--agirlik-yaz. Yalnız DENGEYİ etkiler; bayat/eksik olsa da hiçbir test düşmez.",
+            "is_sayisi": is_sayisi, "kume_sn": dict(sorted(ozet["kume_sn"].items()))},
+            ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        print("AĞIRLIK: %d küme → %s" % (len(ozet["kume_sn"]), AGIRLIK_DOSYASI.name))
     return kod
 
 

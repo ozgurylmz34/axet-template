@@ -506,6 +506,45 @@ def _deploy_haric(rel: str, desenler: list) -> bool:
     return False
 
 
+def _http_kodu(exc: Exception):
+    return getattr(exc, "code", None)
+
+
+def bsp_canlida_mi(taban: str, client: str, bsp: str, kimlik, sertifika_yok_say: bool = False,
+                   get=None) -> tuple[bool | None, str]:
+    """BSP canlıda var mı? (Z160) → (True | False | None, not).
+    False YALNIZ iki yol da (OData repo servisi + ADT filestore) HTTP 404 dediğinde — "okunamadı" "yok" SAYILMAZ;
+    başka her hata (401, 500, ağ, zaman aşımı) → None (ölçülemedi). Salt-okur GET, dosya indirmez."""
+    get = get or B.http_get
+    try:
+        get(_url(taban, ODATA_REPO.format(bsp=bsp), client, {"$format": "json"}), kimlik, sertifika_yok_say)
+        return True, "OData repo servisinde var"
+    except Exception as exc1:  # noqa: BLE001
+        k1 = _http_kodu(exc1)
+    try:
+        get(_url(taban, ADT_FILESTORE.format(oge=urllib.parse.quote(bsp, safe="")), client), kimlik,
+            sertifika_yok_say)
+        return True, f"ADT filestore'da var (OData: {k1 or 'hata'})"
+    except Exception as exc2:  # noqa: BLE001
+        k2 = _http_kodu(exc2)
+    if k1 == 404 and k2 == 404:
+        return False, "canlıda yok (OData 404 + ADT 404)"
+    return None, f"ölçülemedi (OData: {k1 or type(exc1).__name__} · ADT: {k2 or type(exc2).__name__})"
+
+
+def gitignore_anlik_ekle(app: Path) -> bool:
+    """Uygulamanın `.gitignore`'unda `.canli/` yoksa ekler (dosya yoksa yaratır) → eklendi mi.
+    Anlık görüntü git'e girmez; `indir` iskeleti bunu zaten yazar, repoda doğan uygulamada ise satır yoktur."""
+    g = Path(app) / ".gitignore"
+    metin = g.read_text(encoding="utf-8") if g.is_file() else ""
+    if any(s.strip() in (ANLIK_KLASOR, ANLIK_KLASOR + "/", "/" + ANLIK_KLASOR, "/" + ANLIK_KLASOR + "/")
+           for s in metin.splitlines()):
+        return False
+    with g.open("a", encoding="utf-8", newline="\n") as f:
+        f.write(("" if not metin or metin.endswith("\n") else "\n") + ANLIK_KLASOR + "/\n")
+    return True
+
+
 def drift_olc(app: Path, kimlik, sertifika_yok_say: bool = False, get=None) -> tuple[str, str, dict | None]:
     """Canlı, anlık görüntüden (`.canli/`) sonra değişti mi? → (durum, not, canlı dosyalar).
     durum: AYNI · DEGISTI · YOK (anlık görüntü yok — ölçülmedi) · OLCULEMEDI."""

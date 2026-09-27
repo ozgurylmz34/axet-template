@@ -128,5 +128,76 @@ class ParalelKosucu(unittest.TestCase):
         self.assertEqual(govde, ozet)
 
 
+def _kosucu_modulu(ad: str):
+    import importlib.util  # noqa: PLC0415
+    spec = importlib.util.spec_from_file_location(ad, BURASI / "run_tests.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+class ParcaKosucu(unittest.TestCase):
+    """`--parca k/n` (CI'da takım n runner'a bölünür). Hız kazancı KAPSAM kaybıyla ödenmemeli: bir küme
+    hiçbir parçaya düşmezse o testler CI'da HİÇ koşmaz ve CI yeşil görünür — sessiz kapsam daralması."""
+
+    def _dogrula(self, kimlikler, parcalar):
+        birlesim = [k for p in parcalar for k in p]
+        self.assertEqual(sorted(kimlikler), sorted(birlesim), "parçaların birleşimi ≠ tüm takım")
+        self.assertEqual(len(birlesim), len(set(birlesim)), "bir test birden çok parçada")
+        kume_kumeleri = [{k.rsplit(".", 1)[0] for k in p} for p in parcalar]
+        for i, a in enumerate(kume_kumeleri):  # küme bölünmez: aynı sınıfın testleri tek parçada
+            for b in kume_kumeleri[i + 1:]:
+                self.assertFalse(a & b, f"küme iki parçaya bölünmüş: {sorted(a & b)[:3]}")
+
+    def test_gercek_takim_her_n_icin_eksiksiz_ve_ayrik(self) -> None:
+        m = _kosucu_modulu("axet_run_tests_p1")
+        kimlikler = m._kimlikleri_topla(None)
+        self.assertGreater(len(kimlikler), 100, "keşif boş — ölçüm anlamsız")
+        for n in (1, 2, 3, 5):
+            for agirlik in (m._agirliklar(), {}):  # ağırlık dosyası yok/bayat ⇒ yalnız denge bozulur
+                with self.subTest(n=n, agirlikli=bool(agirlik)):
+                    self._dogrula(kimlikler, m.parcala(kimlikler, n, agirlik))
+
+    def test_bilinmeyen_kume_dusmez_ve_belirlenimci(self) -> None:
+        m = _kosucu_modulu("axet_run_tests_p2")
+        kimlikler = [f"test_a.S{i}.test_{j}" for i in range(7) for j in range(3)] + ["test_yeni.Y.test_x"]
+        agirlik = {f"test_a.S{i}": float(10 - i) for i in range(7)}  # `test_yeni.Y` ağırlık dosyasında YOK
+        ilk = m.parcala(kimlikler, 3, agirlik)
+        self._dogrula(kimlikler, ilk)
+        tersten = m.parcala(list(reversed(kimlikler)), 3, agirlik)
+        self.assertEqual([sorted(p) for p in ilk], [sorted(p) for p in tersten],
+                         "girdi sırası bölmeyi değiştirdi — runner'lar farklı bölme hesaplar")
+
+    def test_agirlik_dosyasi_gercek_kumeleri_kapsar(self) -> None:
+        """Bayat dosya kapsam düşürmez ama dengeyi bozar; çok bayatlarsa CI yavaşlar. Eşik: kümelerin %80'i."""
+        m = _kosucu_modulu("axet_run_tests_p3")
+        kumeler = {k.rsplit(".", 1)[0] for k in m._kimlikleri_topla(None)}
+        agirlik = m._agirliklar()
+        self.assertTrue(agirlik, f"{m.AGIRLIK_DOSYASI.name} okunamadı")
+        oran = len(kumeler & set(agirlik)) / len(kumeler)
+        self.assertGreaterEqual(oran, 0.8, f"ağırlık dosyası bayat: kümelerin %{oran * 100:.0f}'i ölçülü — "
+                                "tests/parca-agirlik.json'ı yeniden üret")
+
+    def test_parca_degersiz_cikis_2(self) -> None:
+        for arg in (["--parca"], ["--parca", "0/3"], ["--parca", "4/3"], ["--parca", "a/b"], ["--parca", "2"]):
+            with self.subTest(arg=arg):
+                r = kos(BURASI / "run_tests.py", *arg)
+                self.assertEqual(2, r.returncode, r.stdout[-300:])
+                self.assertIn("--parca k/n ister", r.stderr)
+
+    def test_parca_toplami_parcasiz_kosuma_esit(self) -> None:
+        """Uçtan uca: parçaların SONUÇ sayıları toplamı = parçasız koşum (sıralı kol dahil: -j 1)."""
+        import re as _re
+
+        def sayi(*arg):
+            r = kos(BURASI / "run_tests.py", "-k", "guncelle_harita", *arg)
+            m = _re.search(r"SONUÇ: (\d+) test", r.stdout)
+            self.assertIsNotNone(m, r.stdout[-300:] + r.stderr[-300:])
+            return int(m.group(1))
+
+        tum = sayi()
+        self.assertEqual(tum, sum(sayi("--parca", f"{k}/2", "-j", "1") for k in (1, 2)))
+
+
 if __name__ == "__main__":
     unittest.main()

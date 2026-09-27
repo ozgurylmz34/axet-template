@@ -289,8 +289,14 @@ class LibRegresyon(unittest.TestCase):
             == "/sap/bc/adt/x/main/versions",
             "coz_goreli": resolve_adt_href("/sap/bc/adt/oo/classes/zcl_x", "includes/main/versions")
             == "/sap/bc/adt/oo/classes/zcl_x/includes/main/versions",
-            "coz_nokta": resolve_adt_href("/sap/bc/adt/oo/classes/zcl_x/", "./source/main/versions")
-            == "/sap/bc/adt/oo/classes/zcl_x/source/main/versions",
+            # Z159: `./<ad>/…` canlıda BDEF · tablo · SRVD biçimi (canlı ölçüm 2026-09-25) → EBEVEYN-göreli;
+            # obje URL'i sonda `/` taşısa da ad iki kez yazılmaz.
+            "coz_nokta_bdef": resolve_adt_href("/sap/bc/adt/bo/behaviordefinitions/zdemo_r_ornek",
+                                               "./zdemo_r_ornek/source/main/versions")
+            == "/sap/bc/adt/bo/behaviordefinitions/zdemo_r_ornek/source/main/versions",
+            "coz_nokta_sonda_egik": resolve_adt_href("/sap/bc/adt/ddic/tables/zdemo_tab/",
+                                                     "./zdemo_tab/source/main/versions")
+            == "/sap/bc/adt/ddic/tables/zdemo_tab/source/main/versions",
             "coz_mutlak": resolve_adt_href("/o", "/sap/bc/adt/v") == "/sap/bc/adt/v"
             and resolve_adt_href("/o", "https://h/v") == "https://h/v",
         }

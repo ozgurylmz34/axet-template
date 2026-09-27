@@ -34,12 +34,16 @@ Alt komutlar:
       Fark yalnız preload string'lerindeki kaçışlı \\r\\n ise (içerik modül modül eşit) [OK~] — STALE sayılmaz.
   deploy <app_dir> --user-ok "<kullanıcının onay cümlesi>" --sap-write --scope S0|S1|S2
          [--reason "<tek satır>"] [--intake <.axet-code/intake/..md>] [--project-dir <proje>] [--ignore-cert]
+         [--anliksiz]
       onay + env kimliği kontrolü → SAP YAZMA KAPISI → prepare (build ZORUNLU)
       → `npx --no-install fiori deploy --config ui5-deploy.yaml --yes` → canlı doğrulama (KATI: kaçış farkı da STALE).
       Z144: uygulamada `.canli/` anlık görüntüsü varsa (kaynak `fetch_ui_source.py indir` ile SAP'den alındıysa)
       build'den ÖNCE DRIFT ölçülür — canlı, anlık görüntüden sonra değiştiyse (başkası deploy etti) DURUR (exit 1),
       ölçülemezse DURUR (exit 2). Deploy SONRASI preload'a ek olarak canlının TÜM dosya listesi dist ile kıyaslanır
       (fark → exit 1); eşitse `.canli/` yeni canlıyla güncellenir.
+      Z160: `.canli/` YOKSA BSP'nin canlıda olup olmadığı sorulur — varsa DURUR (exit 1, `no_snapshot`; önce
+      `fetch_ui_source.py anlik-kur <app>`), ölçülemezse DURUR (exit 2); yoksa (OData + ADT 404) ilk deploy'dur.
+      `--anliksiz` = kullanıcı canlıyı bilerek ezmeyi kabul etti. Anlık görüntü yoksa başarılı deploy onu KURAR.
   verify ... --tam
       Preload'a ek olarak canlının tüm dosya listesini dist ile kıyaslar (OData repo servisi; yedek ADT filestore).
 
@@ -501,6 +505,37 @@ def komut_deploy(a) -> int:
               "Deploy KOŞULMADI. (exit 2)")
         logla("drift_unmeasured", 2)
         return 2
+    if drift == "YOK":
+        # Z160: anlık görüntü yok ⇒ kayma ölçülemez. Canlıda BSP VARSA deploy, başkasının canlıdaki değişikliğini
+        # görmeden ezebilir → DUR. Canlıda yoksa (iki yol da 404) ilk deploy'dur, ezilecek bir şey yok.
+        ayar0 = B.deploy_ayari(app) or {}
+        if ayar0.get("url") and ayar0.get("name"):
+            var, vnot = K.bsp_canlida_mi(ayar0["url"], ayar0.get("client", ""), ayar0["name"], kimlik, a.ignore_cert)
+        else:
+            var, vnot = None, "ui5-deploy.yaml'da target.url/app.name yok"
+        print(f"  canlıda BSP: {vnot}")
+        anliksiz = bool(getattr(a, "anliksiz", False))
+        if var is False:
+            print("  ilk deploy (canlıda BSP yok) — kayma kontrolü gerekmez; deploy sonrası anlık görüntü kurulur.")
+        elif anliksiz:
+            print("  [UYARI] --anliksiz: canlı ile kıyaslanmadan deploy ediliyor (kullanıcı kabul etti) — canlıda "
+                  "yerelde olmayan bir değişiklik varsa EZİLİR. Deploy sonrası anlık görüntü kurulur.")
+            asil_logla = logla  # yazma logunda kıyassız deploy AYIRT EDİLİR (denetim izi)
+            logla = lambda kod, cikis: asil_logla(f"{kod}+anliksiz", cikis)  # noqa: E731
+        elif var:
+            print(f"\n[FAIL] {K.ANLIK_KLASOR}/ anlık görüntüsü yok ve BSP canlıda VAR — canlıdaki, yerelde olmayan bir "
+                  "değişiklik bu deploy'la sessizce ezilebilir. Deploy KOŞULMADI, build yapılmadı. Önce:\n"
+                  f"  python \"{Path(__file__).resolve().parent / 'fetch_ui_source.py'}\" anlik-kur \"{app}\"\n"
+                  "  (yerel build ↔ canlı tam liste; eşitse anlık görüntüyü yazar, farkı kullanıcıya gösterir). "
+                  "Canlıyı bilerek ezmek kullanıcının kararıysa: deploy'a --anliksiz. (exit 1)")
+            logla("no_snapshot", 1)
+            return 1
+        else:
+            print(f"\n[FAIL] {K.ANLIK_KLASOR}/ anlık görüntüsü yok ve BSP'nin canlıda olup olmadığı ÖLÇÜLEMEDİ — "
+                  "ilk deploy olduğu kanıtlanmadı. Deploy KOŞULMADI. Bağlantıyı düzeltip yeniden dene ya da "
+                  "kullanıcı kabul ederse --anliksiz. (exit 2)")
+            logla("no_snapshot_unmeasured", 2)
+            return 2
     env = os.environ.copy()
     if a.ignore_cert:
         env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
@@ -535,6 +570,22 @@ def komut_deploy(a) -> int:
             logla("verify_stale_files", 1)
             return 1
         anlik = K.anlik_oku(app)
+        if tdurum == "OK" and anlik is None:
+            # Z160: anlık görüntü yoktu (ilk deploy / --anliksiz / repoda doğan uygulama) → deploy edilen canlıyla KUR;
+            # sonraki deploy'lar kayma kapısından geçer. Kurulamazsa deploy başarısı geri alınmaz (UYARI, exit 0):
+            # durum deploy öncesiyle aynıdır (görüntü yok) ve sonraki deploy canlıyı yeniden sorar.
+            kok = app / K.ANLIK_KLASOR
+            kok_vardi = kok.exists()
+            try:
+                K.anlik_yaz(app, canli, {"bsp": ayar["name"], "kaynak": "deploy sonrası (ilk anlık görüntü)"})
+                eklendi = K.gitignore_anlik_ekle(app)
+                print(f"  {K.ANLIK_KLASOR}/ anlık görüntüsü deploy edilen canlıyla KURULDU (sonraki deploy kaymayı "
+                      "buna karşı ölçer)" + (f"; .gitignore'a {K.ANLIK_KLASOR}/ eklendi." if eklendi else "."))
+            except (K.GuvensizYolHatasi, OSError) as exc:
+                kalan = K.yollari_kaldir([kok]) if not kok_vardi else []
+                print(f"  [UYARI] {K.ANLIK_KLASOR}/ anlık görüntüsü KURULAMADI ({type(exc).__name__}: {exc})"
+                      + (f" — kalan yollar: {kalan}" if kalan else "")
+                      + f" — sonraki deploy öncesi `fetch_ui_source.py anlik-kur \"{app}\"`.")
         if tdurum == "OK" and anlik is not None:
             # Deploy + doğrulama BİTTİ; anlık görüntü yazımı düşerse deploy başarısı geri alınmaz. Çıkış kodu:
             #  · eski görüntü BAYT BAYT yerinde (ölçüldü) → exit 0 + açık UYARI: sonraki drift eskiye göre ölçer ve
@@ -611,6 +662,9 @@ def main() -> int:
     p3.add_argument("--reason", help="tek satır gerekçe (S0/S1)")
     p3.add_argument("--intake", help="proje-göreli intake .md (S2)")
     p3.add_argument("--project-dir", help="proje kökü: sap-project.json + .conn_adt (varsayılan: cwd)")
+    p3.add_argument("--anliksiz", action="store_true",
+                    help="Z160: .canli/ yokken canlıdaki BSP ile kıyaslamadan deploy et — YALNIZ kullanıcı canlıyı "
+                         "bilerek ezmeyi kabul ettiyse (önerilen yol: fetch_ui_source.py anlik-kur)")
     a = ap.parse_args()
     return {"prepare": komut_prepare, "verify": komut_verify, "deploy": komut_deploy}[a.komut](a)
 
