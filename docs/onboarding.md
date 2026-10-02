@@ -187,7 +187,11 @@ SAP GUI otomasyonu gerekiyorsa model script'i yazar, **sen** çalıştırırsın
   `doctor.py`'de FAIL olarak görünür.
 - **Güncelleme:** aXet içinde `%guncelle` — tek güncelleme yolu. Klonu yeni yayına seçmeli taşır, SAP Python
   paketlerini denetler, tarayıcı testini hazırlar. Yeni kurallar bir sonraki oturumda yüklenir. Projeler için
-  `%guncelle-proje`.
+  `%guncelle-proje`. Güncelleme uzun test takımı koşmaz; koşulmayanlar **test borcu** olur (kapanış ve `doctor`
+  söyler).
+- **Testler:** `%testler` — template test takımlarını güncellemeden ayrı, istediğin zaman koşar: varsayılan test
+  borcu, ya da tek takım / hepsi (`%testler` önce takımları ve tahmini süreyi listeler). Kırmızı çıkarsa kaynak
+  dosyayı ve dört seçeneği gösterir; seçimi sen yaparsın, aXet kendi başına düzeltmez.
 
 ## 5. Sorun giderme
 
@@ -272,6 +276,7 @@ python $HOME\axet\scripts\doctor.py --live      # aXet'in çekirdeği fiilen yü
 | Kurulum penceresi aXet, Git ya da Python eksik dedi (çıkış 2) | Listedekileri şirket portalından (Software Center / Company Portal) kur ya da BT'den iste, sonra `aXet-Kur.cmd`'ye **tekrar çift tıkla**. Python en az 3.12 olmalı |
 | Kurulum aracı `PAKETLER: EKSİK` dedi ya da SAP aracı `No module named 'requests'` (ya da `'dotenv'`) diyor | Yukarıdaki "SAP bağlantısının Python paketleri" maddesi: çoğunlukla şirket proxy'si; BT'den pip proxy ayarını iste, sonra aXet'te `%guncelle` yaz |
 | `python` ya da `git` "bulunamadı" diyor ama kurulu | `aXet-Kur.cmd`'ye tekrar çift tıkla: kullanıcı PATH'ine kendisi ekler. Sonra **yeni** pencere / yeni aXet oturumu aç. `yeni-proje.cmd` ve `proje-tamamla.cmd` bu arada `py -3` ile de çalışır |
+| `doctor` ya da güncelleme kapanışı "test borcu" dedi | Hata değil: güncelleme uzun takımları koşmadı. Uygun bir anda aXet'te `%testler` yaz; kırmızı çıkarsa gösterilen dört seçenekten birini seç |
 | Kurulum aracı yeni pencere istedi (çıkış 3) | Pencereyi kapat, `aXet-Kur.cmd`'ye tekrar çift tıkla |
 | Başka bir klonun kayıtlı olduğu uyarısı (çoğunlukla çıkış 4) | Config eski bir klonu da gösteriyor (ör. önceki sürümle `C:\axet`'e kurulmuş). Doctor'daki skill ad çakışması FAIL'leri bundan gelir: skill'leri yeniden adlandırma. Uyarıdaki `--uninstall` komutunu o klon için kendin çalıştır (o klonun `config/sap-write.local` dosyası da silinir), sonra kurulumu tekrar çalıştır. Eski yerde kalmak istersen `kur.cmd -Hedef C:\axet`. Uyarıdaki klon klasörü artık yoksa (silinmiş ya da taşınmış) araç "kayıt bayat" der ve `--uninstall` önermez: sondaki BAYAT KAYIT listesindeki girişleri config dosyasından elle sil (araç config'e kendisi yazmaz), sonra yeni aXet oturumu aç |
 | Kurulum aracı "klon karşılaştırması ÖLÇÜLEMEDİ" dedi | Hedef yol (junction/symlink) Python ile çözülemedi. Config'teki kayıtlı klonun bu klonun kendisi olup olmadığını elle kontrol et; araç bu durumda hiçbir kaydı kaldırmayı önermez |

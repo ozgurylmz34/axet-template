@@ -18,11 +18,14 @@ gerçek `doctor.py`/`install.py` davranışı (fixture'da sahte betikler koşar;
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 BURASI = Path(__file__).resolve().parent
 if str(BURASI) not in sys.path:
@@ -658,6 +661,45 @@ class PlanVakaTest(GuncelleTemel):
         d = [x for k in self.p["kalemler"] for x in k["dosyalar"] if x["yol"] == "kur.cmd"]
         self.assertEqual(len(d), 1)
         self.assertIsNone(d[0]["etkin"])
+
+
+class V4iTest(GuncelleTemel):
+    """Z162 ⓔ① (2026-09-27): yerel değişikliğin TAMAMI yeni sürümde zaten varsa (L ≠ T, L ≠ Y,
+    3-yollu birleşme sonucu = Y) dosya yargı vakası SAYILMAZ — V4i, otomatik alınır.
+
+    Canlı vaka: `sap-dev/SKILL.md` 0.5.13-02'de güncellendi, 0.5.13-03'te yine değişti; klonda
+    ara sürüm duruyordu ⇒ V4t (yargı) ⇒ CI ikamesi kapandı ⇒ tam takımlar yerelde koştu.
+    Kontrol grubu: `senaryolari_uygula`daki `kur.cmd` (yerel ek satır yeni sürümde YOK) V4t kalır
+    (`PlanVakaTest.ALTIN`).
+    """
+
+    # T ile Y'nin ortak değişikliği: `echo v1` → `echo v3`; Y ayrıca `rem bizden` ekler.
+    ARA = "@echo off\r\nrem A\r\nrem B\r\nrem C\r\necho v3\r\nrem D\r\nrem E\r\nrem son\r\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.f.yerel_degistir("kur.cmd", self.ARA)
+        r = self.hazirla_ve_planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+
+    def _disk(self) -> bytes:
+        return (self.f.tuketici / "kur.cmd").read_bytes().replace(b"\r\n", b"\n")
+
+    def test_plan_V4i_ve_uygula_yeni_surumu_alir(self):
+        self.assertEqual(self.f.vakalar().get("kur.cmd"), "V4i")
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("ALINDI: kur.cmd (V4i", self.cikti(r))
+        self.assertEqual(self._disk(), V3_DEGISIM["kur.cmd"].replace("\r\n", "\n").encode())
+
+    def test_plan_sonrasi_degisen_V4i_dosyasina_DOKUNULMAZ(self):
+        self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
+        self.f.yerel_degistir("kur.cmd", "elle degisti\r\n")
+        r = self.f.calistir("uygula", "--otomatik")
+        self.assertNotEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("plan üretildikten sonra değişmiş", self.cikti(r))
+        self.assertEqual(self._disk(), b"elle degisti\n")
 
 
 class PlanKenarTest(GuncelleTemel):
@@ -2221,11 +2263,14 @@ class AkisTestTaban(AkisTemel):
 class AkisTest(AkisTestTaban):
     """Z158: `AkisTestTaban` testlerinin 1/3 dilimi (CI parça dengesi; yardımcılar ve hazırlık tabanda)."""
 
-    def test_olc_once_ve_sonra_kaydeder(self):
+    def test_olc_once_TEST_KOSMAZ_olculmedi_kaydeder(self):
+        """Z162: yargı vakalı fixture'da CI tabanı yok ⇒ önce-ölçüm test KOŞMAZ, 'ölçülmedi' yazar."""
         r = self.f.calistir("olc", "--asama", "once")
         self.assertEqual(r.returncode, 0, self.cikti(r))
         veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertTrue(veri["testler"], "en az bir test komutu seçilmeliydi")
+        self.assertEqual(veri.get("kaynak"), "olculmedi", veri)
+        self.assertEqual(veri["testler"], [])
+        self.assertIn("[ÖLÇÜLMEDİ]", self.cikti(r))
 
     def test_geri_al_hepsi_yerel_degisikligi_korur(self):
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
@@ -2662,24 +2707,44 @@ class AkisTest3(AkisTestTaban):
         self.assertIn("neden", kal["2-01"], "alan null yazılır: 'bilinmiyor' ≠ alan unutuldu")
         self.assertIsNone(kal["2-01"]["neden"])
 
-    def test_kapanis_yeni_kirmizi_testte_1(self):
+    def _kapanisa_kadar(self) -> None:
         self.assertEqual(self.f.calistir("olc", "--asama", "once").returncode, 0)
         self.assertEqual(self.f.calistir("uygula", "--otomatik").returncode, 0)
         self._tum_yargilari_kapat()
         self.ozel_adimlari_kostur()
         self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
         self.assertEqual(self.f.calistir("butunluk").returncode, 0)
-        # sonra-ölçümüne elle yeni kırmızı koy
-        y = self.f.durum_dizini() / "olcum-sonra.json"
-        veri = json.loads(y.read_text(encoding="utf-8"))
-        for t in veri["testler"]:
-            t["cikis"] = 1
-        y.write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
+
+    def test_kapanis_test_borcu_varken_0_ve_KAPANDI_satiri(self):
+        """Z162 ⓒ: test borcu kapanışı DURDURMAZ ama görünür kalır (çıkış satırı + RAPOR.md)."""
+        self._kapanisa_kadar()
+        borc = json.loads((self.f.durum_dizini() / "test-borcu.json").read_text(encoding="utf-8"))
+        self.assertTrue(borc["takimlar"], "yargı vakalı akışta borç yazılmalıydı (fixture)")
         r = self.f.calistir("kapanis")
-        self.assertEqual(r.returncode, 1, self.cikti(r))
-        # ⛔ VAKUM ASSERTION onarımı: "## Yeni kırmızı testler" başlığı HER koşulda basılır.
-        eksikler = [x for x in self.cikti(r).splitlines() if x.startswith("EKSİK:")]
-        self.assertTrue(any("YENİ kırmızı" in x for x in eksikler), eksikler)
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("KAPANDI — test borcu var: %testler", self.cikti(r))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("## Test borcu", rapor)
+        self.assertIn(borc["takimlar"][0]["komut"], rapor)
+        self.assertIn("sonra-ölçüm: ÖLÇÜLMEDİ", rapor)
+        self.assertNotIn("## Yeni kırmızı testler", rapor)
+
+    def test_kapanis_BOZUK_borc_OLCULEMEDI_der(self):
+        self._kapanisa_kadar()
+        (self.f.durum_dizini() / "test-borcu.json").write_text("{bozuk", encoding="utf-8")
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("KAPANDI — test borcu ÖLÇÜLEMEDİ: %testler --hepsi", self.cikti(r))
+        self.assertNotIn("0 takım koşulmadı", self.cikti(r))
+
+    def test_KONTROL_borc_yokken_KAPANDI_test_borcu_satiri_YOK(self):
+        self._kapanisa_kadar()
+        (self.f.durum_dizini() / "test-borcu.json").unlink()
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertNotIn("test borcu var", self.cikti(r))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("## Test borcu\n- yok", rapor)
 
     def test_kapanis_BIRLESIK_sonucu_KAPANIS_COMMITINE_girer(self):
         """⛔ SESSİZ VERİ KAYBI kapsayıcısı (BLOCKER-1/4).
@@ -2964,38 +3029,64 @@ class KapanisKabulVeHookTest(GuncelleTemel):
         self.assertIn("commit'i atılamadı", self._rapor())
 
 
-class OlcumOlculemediTest(GuncelleTemel):
-    """§6 `olc`: "0 koştu (kırmızı olsa bile) · **2 koşturulamadı**" · §7 adım 6: "2 → DUR".
+class Z162OlcTestKosmazTest(GuncelleTemel):
+    """Z162 ⓐ (kullanıcı kararı 2026-09-27): `olc` HİÇBİR koşulda test takımı koşmaz.
 
-    Koşulsuz `return 0`, "ölçülemeyen güncelleme yapılmaz" kuralını mekanik olarak devre dışı
-    bırakıyordu: hiç test koşmadığında da akış "ölçüldü" sayılıp devam ediyordu.
+    Vaka: tek bir yerel artık CI ikamesini kapattı, önce-ölçüm tam takımları yerelde koşturdu
+    (11 dk sonra hâlâ bitmemişti). Artık CI'nın kefil olmadığı ağaçta etkilenen takımlar
+    `test-borcu.json`a yazılır; `%testler` sonradan koşar. Kanıt motorun izidir: fixture'ın
+    `tests/run_tests.py`'si koşarsa bir İZ DOSYASI yazar (kapanış ölçütü ①: akışta tam takım
+    çağrısı 0). Kontrol grubu: aynı betik doğrudan koşturulunca izi yazıyor (betik bozuk değil).
     """
+
+    IZLI = ("import pathlib, sys\npathlib.Path(__file__).resolve().parent.parent.joinpath("
+            "'KOSU_IZI.txt').write_text('kostu')\nprint('SONUÇ: 1 test · 0 failure')\nsys.exit(0)\n")
 
     def setUp(self) -> None:
         super().setUp()
         self.senaryolari_uygula()
+        self.f.yerel_degistir("tests/run_tests.py", self.IZLI)
         self.assertEqual(self.hazirla_ve_planla().returncode, 0)
         self.assertEqual(self.f.calistir("sec", "--hepsi").returncode, 0)
 
-    def test_kontrol_grubu_test_gercekten_kosunca_0(self):
-        r = self.f.calistir("olc", "--asama", "once")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertTrue(any(t["cikis"] is not None for t in veri["testler"]), veri["testler"])
+    def _iz(self) -> Path:
+        return self.f.tuketici / "KOSU_IZI.txt"
 
-    def test_haritada_hic_test_komutu_yoksa_cikis_2(self):
+    def _borc(self) -> dict:
+        return json.loads((self.f.durum_dizini() / "test-borcu.json").read_text(encoding="utf-8"))
+
+    def test_KONTROL_iz_betigi_dogrudan_kosunca_iz_yazar(self):
+        subprocess.run([sys.executable, str(self.f.tuketici / "tests" / "run_tests.py")],
+                       check=True, capture_output=True)
+        self.assertTrue(self._iz().exists(), "kontrol grubu çöktü: iz betiği iz yazmıyor")
+
+    def test_once_ve_sonra_TEST_KOSMAZ_borc_yazar(self):
+        for asama in ("once", "sonra"):
+            r = self.f.calistir("olc", "--asama", asama)
+            self.assertEqual(r.returncode, 0, self.cikti(r))
+            self.assertIn("[ÖLÇÜLMEDİ]", self.cikti(r))
+        self.assertFalse(self._iz().exists(), "olc test takımı KOŞTU (Z162 ihlali)")
+        borc = self._borc()
+        komutlar = [t["komut"] for t in borc["takimlar"]]
+        self.assertIn("python tests/run_tests.py", komutlar)
+        self.assertTrue(all(t["kaynak_yollar"] for t in borc["takimlar"]), borc["takimlar"])
+        self.assertIn("yargı", borc["neden"])
+        self.assertIn("TEST BORCU", self.cikti(r))
+
+    def test_haritada_hic_test_komutu_yoksa_cikis_0_borc_yok(self):
         harita = json.loads(HARITA.read_text(encoding="utf-8"))
         for s in harita["siniflar"]:
             s["test"] = []
         kirpik = self.tmp / "harita-testsiz.json"
         kirpik.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
-        r = self.f.calistir("--harita", str(kirpik), "olc", "--asama", "once")
-        self.assertEqual(r.returncode, 2, self.cikti(r))
-        self.assertIn("ölçülemedi", self.cikti(r).lower())
+        r = self.f.calistir("--harita", str(kirpik), "olc", "--asama", "sonra")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertFalse((self.f.durum_dizini() / "test-borcu.json").exists())
+        self.assertIn("TEST BORCU — yok", self.cikti(r))
 
-    # --- Z16/A: KABLOLAMA — ayıklama `olc` akışında GERÇEKTEN devrede mi? ------------------
+    # --- Z16/A: ayıklama borçta da devrede ----------------------------------------------------
     def _filtreli_harita(self) -> str:
-        """Seçili bir sınıfa, filtresiz komutun `-k`'lı eşini EKLE (ikisi de aynı ölçümde)."""
+        """Seçili bir sınıfa, filtresiz komutun `-k`'lı eşini EKLE."""
         harita = json.loads(HARITA.read_text(encoding="utf-8"))
         eklendi = False
         for s in harita["siniflar"]:
@@ -3010,41 +3101,49 @@ class OlcumOlculemediTest(GuncelleTemel):
         kirpik.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
         return str(kirpik)
 
-    def test_kapsanan_filtreli_komut_OLC_akisinda_kosulmaz(self):
-        r = self.f.calistir("--harita", self._filtreli_harita(), "olc", "--asama", "once")
+    def test_kapsanan_filtreli_komut_BORCA_girmez(self):
+        r = self.f.calistir("--harita", self._filtreli_harita(), "olc", "--asama", "sonra")
         self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertIn("[KAPSANDI]", self.cikti(r),
-                      "ayıklama kablolanmamış: `olc` filtreli komutu yine koşuyor")
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        kimlikler = [x["kimlik"] for x in veri["testler"]]
-        self.assertIn(".::python tests/run_tests.py", kimlikler)
-        self.assertNotIn(".::python tests/run_tests.py -k ornek", kimlikler,
-                         f"kapsanan komut yine ölçüme girdi: {kimlikler}")
+        komutlar = [t["komut"] for t in self._borc()["takimlar"]]
+        self.assertIn("python tests/run_tests.py", komutlar)
+        self.assertNotIn("python tests/run_tests.py -k ornek", komutlar)
 
-    def test_KONTROL_filtresiz_es_yokken_filtreli_komut_KOSULUR(self):
-        """Kontrol grubu: ayıklama ayrım yapıyor mu, yoksa her `-k`'yı mı atıyor?"""
+    def test_KONTROL_filtresiz_es_yokken_filtreli_komut_BORCA_girer(self):
         harita = json.loads(HARITA.read_text(encoding="utf-8"))
         for s in harita["siniflar"]:
             s["test"] = [{"komut": "python tests/run_tests.py -k ornek", "cwd": ".",
                           "on_kosul": None}] if s.get("test") else []
         kirpik = self.tmp / "harita-yalniz-filtreli.json"
         kirpik.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
-        r = self.f.calistir("--harita", str(kirpik), "olc", "--asama", "once")
+        r = self.f.calistir("--harita", str(kirpik), "olc", "--asama", "sonra")
         self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertNotIn("[KAPSANDI]", self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertEqual([x["kimlik"] for x in veri["testler"]],
-                         [".::python tests/run_tests.py -k ornek"])
+        self.assertEqual([t["komut"] for t in self._borc()["takimlar"]],
+                         ["python tests/run_tests.py -k ornek"])
 
-    def test_hicbir_test_betigi_kosturulamazsa_cikis_2(self):
-        for y in ("tests/run_tests.py", "scripts/doctor.py"):
-            (self.f.tuketici / y).unlink()
-        r = self.f.calistir("olc", "--asama", "once")
-        self.assertEqual(r.returncode, 2, self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertTrue(veri["testler"], "kayıt yine de yazılmalı (ölçülemedi ≠ hiç bakılmadı)")
-        self.assertTrue(all(t["cikis"] is None for t in veri["testler"]),
-                        [t for t in veri["testler"] if t["cikis"] is not None])
+    def test_BOZUK_onceki_borc_EZILMEZ_ve_kapanis_OLCULEMEDI_der(self):
+        """Okunamayan borç "borç yok"a çevrilmez: doctor/kapanış sessizleşirdi (ölçülemedi ≠ temiz)."""
+        d = self.f.durum_dizini()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "test-borcu.json").write_text("{bozuk", encoding="utf-8")
+        r = self.f.calistir("olc", "--asama", "sonra")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("[TEST BORCU ÖLÇÜLEMEDİ]", self.cikti(r))
+        self.assertEqual((d / "test-borcu.json").read_text(encoding="utf-8"), "{bozuk")
+        self.assertIn("%testler --hepsi", self.cikti(r))
+
+    def test_onceki_borc_DUSMEZ_birlesir(self):
+        """Önceki güncellemenin koşulmamış takımı yeni turda kaybolmamalı."""
+        self.f.durum_dizini().mkdir(parents=True, exist_ok=True)
+        (self.f.durum_dizini() / "test-borcu.json").write_text(json.dumps({
+            "surum": 1, "ilk_kayit": "2026-01-01T00:00:00+03:00",
+            "takimlar": [{"ad": "eski", "komut": "python skills/eski/tests/run_tests.py", "cwd": ".",
+                          "kaynak_yollar": ["skills/eski/x.py"]}]}), encoding="utf-8")
+        self.assertEqual(self.f.calistir("olc", "--asama", "sonra").returncode, 0)
+        borc = self._borc()
+        komutlar = [t["komut"] for t in borc["takimlar"]]
+        self.assertIn("python skills/eski/tests/run_tests.py", komutlar)
+        self.assertIn("python tests/run_tests.py", komutlar)
+        self.assertEqual(borc["ilk_kayit"], "2026-01-01T00:00:00+03:00")
 
 
 class HazirlaStatusRcTest(GuncelleTemel):
@@ -3181,6 +3280,44 @@ class ButunlukTest(GuncelleTemel):
         r = self.f.calistir("butunluk")
         self.assertIn("YERELDE YOK", self.cikti(r))
         self.assertNotIn("sapma yok", " | ".join(self._guvence()))
+
+    # --- Z162 ⓑ: bütünlük turu süre bütçeli; aşan adım ÖLÇÜLEMEDİ olur, akış DURMAZ ------------
+    def _butunluk_ic(self, **sabitler):
+        """Motoru süreç İÇİNDE koşturur ki süre sabitleri yamalanabilsin (alt süreçte yamanmaz)."""
+        p = str(AXET_HOME / "scripts")
+        if p not in sys.path:
+            sys.path.insert(0, p)
+        import guncelle as g  # noqa: PLC0415
+        b = g.Baglam(g.Klon(self.f.tuketici), g.harita_yukle())
+        out = io.StringIO()
+        yama = mock.patch.multiple(g, **sabitler) if sabitler else contextlib.nullcontext()
+        with yama, contextlib.redirect_stdout(out):
+            rc = g.komut_butunluk(b, argparse.Namespace())
+        veri = json.loads((self.f.durum_dizini() / "butunluk.json").read_text(encoding="utf-8"))
+        return rc, out.getvalue(), {a["ad"]: a for a in veri["adimlar"]}
+
+    def test_Z162_adim_zaman_asiminda_OLCULEMEDI_ve_akis_durmaz(self):
+        self.f.yerel_degistir("scripts/doctor.py", "import time\ntime.sleep(20)\n")
+        rc, out, adim = self._butunluk_ic(BUTUNLUK_ADIM_SN=2)
+        self.assertEqual(rc, 0, out)
+        self.assertIsNone(adim["doctor"]["cikis"], adim["doctor"])
+        self.assertIn("zaman aşımı", adim["doctor"]["not"])
+        # akış durmadı: doctor'dan SONRAKİ adımlar da kayda girdi
+        self.assertEqual(adim["install --dry-run"]["cikis"], 0, adim)
+        self.assertIn("foundation test_static", adim)
+        self.assertIn("ÖLÇÜLEMEDİ", out)
+
+    def test_Z162_butce_dolunca_kalan_adimlar_KOSULMAZ_OLCULEMEDI(self):
+        rc, out, adim = self._butunluk_ic(BUTUNLUK_BUTCE_SN=0)
+        self.assertEqual(rc, 0, out)
+        kosulan = [a for a in adim.values() if a.get("cikis") is not None]
+        self.assertEqual(kosulan, [], "bütçe 0 iken hiçbir adım koşmamalıydı")
+        self.assertIn("bütçesi doldu", adim["install --dry-run"]["not"])
+
+    def test_Z162_KONTROL_varsayilan_butcede_adimlar_KOSAR(self):
+        rc, out, adim = self._butunluk_ic()
+        self.assertEqual(adim["install --dry-run"]["cikis"], 0, out)
+        self.assertEqual(adim["doctor"]["cikis"], 0, out)
 
     def test_kontrol_grubu_sapma_yokken_WARN_URETILMEZ(self):
         """`senaryolari_uygula` config/permissions.json'u v3 ile AYNI yapar (V4e) ⇒ sapma yok.
@@ -3394,20 +3531,25 @@ class OlcKapsamBeyaniTest(GuncelleTemel):
         self.assertIn("KAPSAM BEYANI — bu allowlist YALNIZ `ozel-adim` yüzeyini kapsar", metin)
         self.assertIn("BAKILMAYAN", metin)
 
-    def test_olc_ALLOWLISTTEN_GECMEZ_kapsam_beyani(self):
+    def test_olc_harita_komutunu_KOSMAZ_Z162(self):
+        """Z162'den beri `olc` haritadaki `test[].komut`u HİÇ koşmaz (yalnız borca yazar); harita
+        komutlarını yalnız kullanıcı isteğiyle `scripts/testler.py` koşar. Allowlist asimetrisi
+        bu yüzden artık `olc` için değil `testler.py` için geçerlidir (KAPSAM BEYANI metni)."""
         # ① kontrol grubu: aynı dizge `ozel-adim` yüzeyinde REDDEDİLİR
         ok, sebep = self.g._ozel_adim_izinli_mi("python scripts/olc_isareti.py")
         self.assertFalse(ok, f"kontrol grubu çöktü — dizge allowlist'ten geçti: {sebep}")
-        # ② aynı dizge `olc` yüzeyinde KOŞAR (beyan edilen asimetri)
+        # ② aynı dizge `olc` yüzeyinde de KOŞMAZ — borca yazılır
         h = self._harita_test("python scripts/olc_isareti.py")
         (self.f.tuketici / "scripts" / "olc_isareti.py").write_text(
             "import pathlib\npathlib.Path('OLC_KOSTU.txt').write_text('kostu')\n",
             encoding="utf-8")
-        r = self.f.calistir("--harita", h, "olc", "--asama", "once")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertTrue((self.f.tuketici / "OLC_KOSTU.txt").exists(),
-                        "`olc` haritadaki komutu koşmadı — KAPSAM BEYANI artık YANLIŞ, "
-                        "beyanı güncelle ya da davranışı geri al")
+        for asama in ("once", "sonra"):
+            r = self.f.calistir("--harita", h, "olc", "--asama", asama)
+            self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertFalse((self.f.tuketici / "OLC_KOSTU.txt").exists(),
+                         "`olc` haritadaki komutu KOŞTU — Z162 ihlali")
+        borc = json.loads((self.f.durum_dizini() / "test-borcu.json").read_text(encoding="utf-8"))
+        self.assertIn("python scripts/olc_isareti.py", [t["komut"] for t in borc["takimlar"]])
 
 
 class MotorBagimsizligiTest(GuncelleTemel):
@@ -3783,12 +3925,12 @@ class CiTabaniTest(GuncelleTemel):
 
     ⛔ ÖLÇÜLEN SINIF (hız değil, DOĞRULUK): `once` ve `sonra` aynı testleri koşmuyor.
     `komut_olc` testleri klon kökünde koşar ve `tests/**` güncellemenin parçası olabilir ⇒
-    `once` ESKİ test kodunu, `sonra` YENİ test kodunu ölçer; `yeni_kirmizilar` ikisini komut
-    kimliği bazında karşılaştırır. Testlerin kendisi değişirken "fark = regresyon" çıkarımı
-    kurulamaz. CI ise yeni testleri yeni ürüne karşı temiz ortamda ölçmüştür.
+    `once` ESKİ test kodunu, `sonra` YENİ test kodunu ölçerdi; testlerin kendisi değişirken
+    "fark = regresyon" çıkarımı kurulamaz. CI ise yeni testleri yeni ürüne karşı temiz ortamda
+    ölçmüştür. Z162'den beri ikame yoksa da test KOŞULMAZ: tur `kaynak: olculmedi` yazar.
 
     Kontrol grubu fixture'a gömülü: `senaryolari_uygula()` ÇAĞRILMAZSA yargı vakası yoktur
-    (ikame beklenir), ÇAĞRILIRSA vardır (ölçüm beklenir).
+    (ikame beklenir), ÇAĞRILIRSA vardır ("ölçülmedi" beklenir).
 
     KAPSAM — bakılmayan: gerçek `gh` çağrısı (yayın tarafı ayrı ölçülür) · `sonra` turunun
     süresi · CI kaydının doğruluğu (yayıncı kendi hükmünü beyan eder, bu bir güven sınırıdır).
@@ -3812,7 +3954,9 @@ class CiTabaniTest(GuncelleTemel):
     def _yesil(self) -> dict:
         return {self.ETIKET: {"kaynak_commit": "abc1234", "hepsi_yesil": True,
                               "isletim_sistemi": "windows-latest", "python": ["3.12"],
-                              "takimlar": list(self.YESIL_TAKIMLAR)}}
+                              # derin kopya: testler takım sözlüğünü yerinde bozar (test_4);
+                              # sığ kopya sınıf sabitini kirletip sonraki sınıfları kırmızı yapıyordu
+                              "takimlar": [dict(t) for t in self.YESIL_TAKIMLAR]}}
 
     def _olc_once(self) -> tuple[subprocess.CompletedProcess, dict]:
         self.assertEqual(self.hazirla_ve_planla().returncode, 0)
@@ -3833,38 +3977,39 @@ class CiTabaniTest(GuncelleTemel):
         self.assertIn("KAPSAM", self.cikti(r), "ikame de kapsam beyanı basmalı")
 
     # --- ② KONTROL: ikame OLMAMALI (dördü de fail-safe dalı) --------------------------------
-    def test_2_KONTROL_ci_durumu_YOKKEN_normal_olcer(self):
+    def test_2_KONTROL_ci_durumu_YOKKEN_olculmedi(self):
         r, veri = self._olc_once()
         self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertNotIn("kaynak", veri, "ci-durum.json yokken ikame OLMAMALI")
-        self.assertTrue(any(t["cikis"] is not None for t in veri["testler"]), veri["testler"])
+        self.assertEqual(veri.get("kaynak"), "olculmedi", "ci-durum.json yokken ikame OLMAMALI")
+        self.assertEqual(veri["testler"], [], "Z162: ikame olmasa da test KOŞULMAZ")
+        self.assertIn("CI kaydı", veri.get("neden", ""))
 
     def test_3_KONTROL_hepsi_yesil_False_ise_olcer(self):
         kayit = self._yesil()
         kayit[self.ETIKET]["hepsi_yesil"] = False
         self._ci_yayinla(kayit)
         _r, veri = self._olc_once()
-        self.assertNotIn("kaynak", veri, "hepsi_yesil False iken ikame OLMAMALI")
+        self.assertEqual(veri.get("kaynak"), "olculmedi", "hepsi_yesil False iken ikame OLMAMALI")
 
     def test_4_KONTROL_takimlardan_biri_kirmiziysa_olcer(self):
         kayit = self._yesil()
         kayit[self.ETIKET]["takimlar"][0]["sonuc"] = "failure"
         self._ci_yayinla(kayit)
         _r, veri = self._olc_once()
-        self.assertNotIn("kaynak", veri,
+        self.assertEqual(veri.get("kaynak"), "olculmedi",
                          "hepsi_yesil True olsa BİLE tek kırmızı takım ikameyi engellemeli")
 
     def test_5_KONTROL_baska_etiketin_kaydi_ISE_YARAMAZ(self):
         self._ci_yayinla({"v99": self._yesil()[self.ETIKET]})
         _r, veri = self._olc_once()
-        self.assertNotIn("kaynak", veri, "etiket tutmuyorsa ikame OLMAMALI")
+        self.assertEqual(veri.get("kaynak"), "olculmedi", "etiket tutmuyorsa ikame OLMAMALI")
 
     def test_6_KONTROL_yargi_vakasi_VARSA_yesil_CI_ye_ragmen_olcer(self):
         self._ci_yayinla(self._yesil())
         self.senaryolari_uygula()          # yerel değişiklikler ⇒ yargı vakaları
         _r, veri = self._olc_once()
-        self.assertNotIn("kaynak", veri,
-                         "yerel değişiklik varsa birleşmiş ağaç hiç test edilmemiştir ⇒ ÖLÇ")
+        self.assertEqual(veri.get("kaynak"), "olculmedi",
+                         "yerel değişiklik varsa birleşmiş ağaç hiç test edilmemiştir ⇒ borç")
 
 
 class CiSonrasiTest(GuncelleTemel):
@@ -3922,23 +4067,51 @@ class CiSonrasiTest(GuncelleTemel):
         self.assertIn("sonra-ölçüm: yerelde test KOŞULMADI", rapor)
         self.assertIn("once-ölçüm: yerelde test KOŞULMADI", rapor)
 
-    def test_2_KONTROL_ci_durumu_YOKKEN_olcer(self):
+    def test_2_KONTROL_ci_durumu_YOKKEN_borc(self):
         r, veri = self._akis()
         self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertNotIn("kaynak", veri)
-        self.assertTrue(any(t["cikis"] is not None for t in veri["testler"]), veri["testler"])
+        self.assertEqual(veri.get("kaynak"), "olculmedi")
+        self.assertEqual(veri["testler"], [], "Z162: test KOŞULMAZ")
+        self.assertTrue((self.f.durum_dizini() / "test-borcu.json").exists(), self.cikti(r))
+
+    def test_7_ikamede_ONCEKI_borc_kapanir(self):
+        """Ağaç CI'nın yeşil ölçtüğü yayın ağacının aynısıysa önceki turun borcu karşılanmıştır."""
+        self._ci_yayinla(self._yesil())
+        d = self.f.durum_dizini()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "test-borcu.json").write_text(json.dumps({"surum": 1, "takimlar": [
+            {"ad": "kok", "komut": "python tests/run_tests.py", "cwd": ".", "kaynak_yollar": []}]}),
+            encoding="utf-8")
+        r, veri = self._akis()
+        self.assertEqual(veri.get("kaynak"), "ci", self.cikti(r))
+        self.assertFalse((d / "test-borcu.json").exists(), self.cikti(r))
+        self.assertIn("TEST BORCU KAPANDI", self.cikti(r))
+
+    def test_7b_KONTROL_ikame_yoksa_onceki_borc_KALIR(self):
+        d = self.f.durum_dizini()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "test-borcu.json").write_text(json.dumps({"surum": 1, "takimlar": [
+            {"ad": "eski", "komut": "python skills/eski/tests/run_tests.py", "cwd": ".",
+             "kaynak_yollar": []}]}), encoding="utf-8")
+        self._akis()
+        borc = json.loads((d / "test-borcu.json").read_text(encoding="utf-8"))
+        self.assertIn("python skills/eski/tests/run_tests.py", [t["komut"] for t in borc["takimlar"]])
 
     def test_3_KONTROL_diske_fazla_dosya_girdiyse_olcer(self):
         self._ci_yayinla(self._yesil())
         r, veri = self._akis(bozucu=lambda: (self.f.tuketici / "fazla.md").write_text(
             "yerel\n", encoding="utf-8"))
-        self.assertNotIn("kaynak", veri, "disk ağacı yayından farklıysa ikame OLMAMALI")
-        self.assertIn("FARKLI", self.cikti(r))
+        self.assertEqual(veri.get("kaynak"), "olculmedi",
+                         "disk ağacı yayından farklıysa ikame OLMAMALI")
+        self.assertIn("yerel ağaç CI'da ölçülmedi", self.cikti(r))
+        self.assertIn("fazla.md", self.cikti(r))
+        self.assertTrue(any("fazla.md" in s for s in veri.get("farkli_yollar") or []), veri)
 
     def test_4_KONTROL_uygulama_yapilmadiysa_olcer(self):
         self._ci_yayinla(self._yesil())
         _r, veri = self._akis(uygula=False)
-        self.assertNotIn("kaynak", veri, "ağaç hâlâ eski sürümdeyken ikame OLMAMALI")
+        self.assertEqual(veri.get("kaynak"), "olculmedi",
+                         "ağaç hâlâ eski sürümdeyken ikame OLMAMALI")
 
     def test_5_KONTROL_yargi_vakasi_varsa_olcer(self):
         self._ci_yayinla(self._yesil())
@@ -3948,7 +4121,7 @@ class CiSonrasiTest(GuncelleTemel):
         self.f.calistir("olc", "--asama", "once")
         self.f.calistir("olc", "--asama", "sonra")
         veri = json.loads((self.f.durum_dizini() / "olcum-sonra.json").read_text(encoding="utf-8"))
-        self.assertNotIn("kaynak", veri)
+        self.assertEqual(veri.get("kaynak"), "olculmedi")
 
 
 class CakismaIsaretiTest(unittest.TestCase):
@@ -4045,58 +4218,6 @@ class TopluOkumaTest(GeciciTest):
         self.assertNotEqual(once, k.disk_sha("a.txt"), "yazımdan sonra bayat hash dönmemeli")
 
 
-class CiTabaniKirmiziTest(unittest.TestCase):
-    """Z16 — CI tabanıyla `yeni_kirmizilar` SESSİZ SAHTE-YEŞİL vermemeli.
-
-    CI tabanında `testler` boştur. Eşleme dalı bu durumda hiçbir kimlik bulamaz ve her testi
-    `continue` ile atlardı ⇒ her şey kırmızıyken bile "yeni kırmızı yok" denirdi.
-    """
-
-    def _kur(self, tmp: Path, once: dict, sonra: dict):
-        import guncelle  # noqa: PLC0415
-        d = tmp / ".axet-guncelleme"
-        d.mkdir(parents=True, exist_ok=True)
-        for ad, veri in (("olcum-once.json", once), ("olcum-sonra.json", sonra)):
-            (d / ad).write_text(json.dumps(veri, ensure_ascii=False), encoding="utf-8")
-        klon = guncelle.Klon(tmp)
-        return guncelle.yeni_kirmizilar(klon)
-
-    def test_1_ci_tabani_altinda_kirmizi_YAKALANIR(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as td:
-            yeni = self._kur(
-                Path(td),
-                {"asama": "once", "kaynak": "ci", "testler": []},
-                {"asama": "sonra", "testler": [{"kimlik": ".::python tests/run_tests.py",
-                                                "cikis": 1, "failure": 2}]})
-            self.assertEqual(yeni, [".::python tests/run_tests.py"])
-
-    def test_2_KONTROL_ci_tabani_altinda_hepsi_yesilse_bos(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as td:
-            yeni = self._kur(
-                Path(td),
-                {"asama": "once", "kaynak": "ci", "testler": []},
-                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": 0, "failure": 0}]})
-            self.assertEqual(yeni, [])
-
-    def test_3_KONTROL_olculemedi_yeni_kirmizi_SAYILMAZ(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as td:
-            yeni = self._kur(
-                Path(td),
-                {"asama": "once", "kaynak": "ci", "testler": []},
-                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": None, "failure": None}]})
-            self.assertEqual(yeni, [], "ÖLÇÜLEMEDİ ayrı bir hükümdür, 'yeni kırmızı' değildir")
-
-    def test_4_KONTROL_normal_taban_davranisi_DEGISMEDI(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as td:
-            yeni = self._kur(
-                Path(td),
-                {"asama": "once", "testler": [{"kimlik": "a", "cikis": 0, "failure": 0}]},
-                {"asama": "sonra", "testler": [{"kimlik": "a", "cikis": 1, "failure": 1}]})
-            self.assertEqual(yeni, ["a"])
 class KapsananKomutTest(unittest.TestCase):
     """Z16/A — filtresiz eşi koşarken `-k` filtreli komut TEKRAR koşulmamalı.
 
@@ -4177,73 +4298,6 @@ class KapsananKomutTest(unittest.TestCase):
                            "filtreli komutlar var; hiçbiri düşmediyse ayıklama kablolanmamıştır")
         self.assertTrue(all("-k" in d for d in dusen), f"yalnız filtreli komut düşmeli: {dusen}")
         self.assertEqual(len(kalan) + len(dusen), len(testler))
-class ZamanAsimiTest(unittest.TestCase):
-    """Ölçüm komutu zaman aşımına uğrarsa ÇÖKMEZ, `ÖLÇÜLEMEDİ` yazılır (2026-09-20 vakası).
-
-    Gerçek vaka: bir tüketici klonunda `olc --asama once` 34 dk 50 sn koştu ve
-    `subprocess.TimeoutExpired` yukarı kaçtı ⇒ traceback, `olcum-once.json` HİÇ yazılmadı,
-    35 dakikalık ölçüm çöpe gitti. Kök takımı CI'da 2411 sn sürüyordu, `_run`'ın varsayılanı
-    1800 sn'ydi: ölçüm YAPISAL OLARAK imkânsızdı ve bunu hiçbir test söylemiyordu.
-    """
-
-    def _kur(self, td: str, patlat: bool):
-        import types, subprocess as sp  # noqa: PLC0415
-        import guncelle  # noqa: PLC0415
-        kok = Path(td)
-        (kok / "tests").mkdir(parents=True)
-        (kok / "tests" / "run_tests.py").write_text(
-            "print('ok')\n", encoding="utf-8")
-        klon = guncelle.Klon(kok)
-        klon.durum_dizini.mkdir(parents=True, exist_ok=True)
-        plan = {"yeni_etiket": "v9", "kalemler": [
-            {"id": "9-01", "dosyalar": [{"yol": "tests/test_x.py", "sinif": "test-kok",
-                                         "vaka": "V1"}]}]}
-        (klon.durum_dizini / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
-        (klon.durum_dizini / "secim.json").write_text(
-            json.dumps({"kalemler": ["9-01"]}), encoding="utf-8")
-        harita = {"siniflar": [{"sinif": "test-kok", "glob": ["tests/*"],
-                                "test": [{"komut": "python tests/run_tests.py", "cwd": ".",
-                                          "on_kosul": None}]}]}
-        gercek = guncelle._run
-
-        def sahte(args, cwd, **kw):
-            if patlat and args and str(args[-1]).endswith("run_tests.py"):
-                raise sp.TimeoutExpired(args, kw.get("timeout", 0))
-            return gercek(args, cwd, **kw)
-
-        return guncelle, types.SimpleNamespace(k=klon, harita=harita), sahte
-
-    def test_1_zaman_asimi_COKMEZ_OLCULEMEDI_yazilir(self):
-        import tempfile, unittest.mock as mock  # noqa: PLC0415
-        with tempfile.TemporaryDirectory() as td:
-            g, b, sahte = self._kur(td, patlat=True)
-            with mock.patch.object(g, "_run", sahte):
-                rc = g.komut_olc(b, argparse.Namespace(asama="once"))
-            self.assertEqual(rc, 2, "hiçbir komut ölçülemediyse çıkış 2 olmalı (ÖLÇÜLEMEDİ ≠ temiz)")
-            veri = json.loads((b.k.durum_dizini / "olcum-once.json").read_text(encoding="utf-8"))
-            self.assertTrue(veri["testler"], "kayıt YAZILMALI — çökmede hiç yazılmıyordu")
-            self.assertIsNone(veri["testler"][0]["cikis"])
-            self.assertIn("zaman aşımı", veri["testler"][0]["not"])
-
-    def test_2_KONTROL_zaman_asimi_yokken_normal_olculur(self):
-        import tempfile, unittest.mock as mock  # noqa: PLC0415
-        with tempfile.TemporaryDirectory() as td:
-            g, b, sahte = self._kur(td, patlat=False)
-            with mock.patch.object(g, "_run", sahte):
-                rc = g.komut_olc(b, argparse.Namespace(asama="once"))
-            self.assertEqual(rc, 0, "kontrol grubu kırmızıysa asıl ölçüm anlamsız")
-            veri = json.loads((b.k.durum_dizini / "olcum-once.json").read_text(encoding="utf-8"))
-            self.assertEqual(veri["testler"][0]["cikis"], 0)
-
-    def test_3_olcum_zaman_asimi_kok_takimi_suresini_KAPSAR(self):
-        """Sabitin değeri kanıta bağlı: gözlenen en uzun kök koşumu 2411 sn (CI, 2026-09-20)."""
-        import guncelle  # noqa: PLC0415
-        self.assertGreater(
-            guncelle.OLCUM_ZAMAN_ASIMI, 2411,
-            "OLCUM_ZAMAN_ASIMI gözlenen en uzun kök takımı koşumunu (2411 sn) kapsamıyor — "
-            "ölçüm yapısal olarak imkânsız hâle gelir (2026-09-20 vakası)")
-
-
 class Z54ModulKomutuOlculurTest(GuncelleTemel):
     """⛔ Z54 (2026-09-22, canlı `butunluk.json`): `python -m unittest discover -s X` biçimli ölçüm
     komutları HİÇ koşmuyordu. Üç çağrı yeri `parcalar[1]`i betik yolu sayıp `<kök>/-m` var mı diye
@@ -4251,7 +4305,8 @@ class Z54ModulKomutuOlculurTest(GuncelleTemel):
     harita.json'da aynı biçimde 5 sınıf / 6 test komutu var (skill-test ×2, validator-zincir-map,
     validator-runner, validator, validator-diger-skill).
 
-    Çağrı yerleri ayrı ayrı ölçülür: `olc` (test_2) · `butunluk` (test_3). `ozel-adim` bu biçimi
+    Çağrı yerleri ayrı ayrı ölçülür: `butunluk` (test_3) · `testler.py` (tests/test_testler.py —
+    Z162'den beri harita test komutlarını `olc` değil o koşar). `ozel-adim` bu biçimi
     YAPISAL olarak göremez (`_PY_KOMUT` yalnız `python <yol>.py` çıkarır + allowlist yalnız
     `scripts/install.py`) ⇒ orada kırmızı-önce test kurulamaz; test_4 davranışın DEĞİŞMEDİĞİNİ ölçer.
     KAPSAM — bakılmayan: gerçek sap-code-review takımının içeriği (fixture'da tek sahte test koşar).
@@ -4293,26 +4348,6 @@ class Z54ModulKomutuOlculurTest(GuncelleTemel):
         yol = self.tmp / "harita-z54.json"
         yol.write_text(json.dumps(harita, ensure_ascii=False), encoding="utf-8")
         return str(yol)
-
-    def test_2_olc_modul_komutunu_KOSAR(self):
-        self.f.yerel_degistir("tests/mtest/test_m.py", self.MTEST)
-        komut = "python -m unittest discover -s tests/mtest -t tests/mtest"
-        r = self.f.calistir("--harita", self._harita(komut), "olc", "--asama", "once")
-        self.assertEqual(r.returncode, 0, self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        kayit = [t for t in veri["testler"] if t["kimlik"] == f".::{komut}"]
-        self.assertEqual(len(kayit), 1, veri["testler"])
-        self.assertEqual(kayit[0]["cikis"], 0, kayit[0])
-        self.assertNotIn("-m yok", json.dumps(veri, ensure_ascii=False))
-
-    def test_2b_KONTROL_olc_s_dizini_yoksa_OLCULEMEDI(self):
-        """Ön denetim KÖRLEŞMEDİ: `-s` dizini gerçekten yoksa yine ÖLÇÜLEMEDİ."""
-        komut = "python -m unittest discover -s tests/yok -t tests/yok"
-        r = self.f.calistir("--harita", self._harita(komut), "olc", "--asama", "once")
-        self.assertEqual(r.returncode, 2, self.cikti(r))
-        veri = json.loads((self.f.durum_dizini() / "olcum-once.json").read_text(encoding="utf-8"))
-        self.assertTrue(all(t["cikis"] is None for t in veri["testler"]))
-        self.assertIn("tests/yok yok", json.dumps(veri, ensure_ascii=False))
 
     def test_3_butunluk_sap_code_review_adimi_KOSAR(self):
         self.f.yerel_degistir("skills-sap/sap-code-review/tests/test_m.py", self.MTEST)

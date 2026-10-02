@@ -39,18 +39,18 @@ izlenmez.
 | 3 | Geri dönüş noktası | `guncelle.py hazirla` — **yerel anlık commit** + `guncelle-oncesi-<tarih>` etiketi + `fetch --tags` | 0 (1 + `Klon güncel:` satırı = güncel, hiçbir şey atılmadı → adım 17, BİTİR) | 2 ya da satırsız 1 → DUR (geri alınamayacak bir güncelleme başlatılmaz) |
 | 4 | Plan | `guncelle.py plan` | 0 (1 + `Klon güncel:` satırı = güncel → adım 17, bitir) | 2 ya da satırsız 1 → DUR |
 | 5 | Seçim | plan tablosunu göster → `guncelle.py sec --hepsi` ya da `--kalem/--cikar` | 0 | 2 → tutarsızlığı açıkla, yeniden sor |
-| 6 | Önce-ölçüm | `guncelle.py olc --asama once` | 0 | 2 → DUR (ölçülemeyen güncelleme yapılmaz) |
-| 6b | *(6'nın İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi:** planda **yargı vakası yoksa** ve yayının `guncelle/ci-durum.json` kaydı bu etiket için `hepsi_yesil: true` ise adım 6 **test koşmaz**, tabanı CI hükmünden alır ve `[İKAME]` + `KAPSAM` satırlarını basar. **Bu satırları kullanıcıya AYNEN aktar.** Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) **normal ölçüme döner** — *ölçülemedi ≠ yeşil*. | 0 | — |
-| 6c | *(6 ve 10'un İÇİNDE, otomatik — ayrı komut değil)* **Kapsanan komut ayıklaması:** aynı `cwd`'de hem `python tests/run_tests.py` hem `… -k <desen>` seçilmişse filtreli olan KOŞULMAZ (kapsamı filtresizin öz alt kümesidir) ve `[KAPSANDI] …` satırı basılır. **Bu satırı da kullanıcıya aktar** — atlanan komut sayısı ve adları oradadır. Filtresiz eş yoksa hiçbir şey atlanmaz. | 0 | — |
+| 6 | Önce-ölçüm | `guncelle.py olc --asama once` — **test KOŞMAZ** (Z162): CI hükmü varsa onu taban alır, yoksa `[ÖLÇÜLMEDİ]` satırı basar ve akış sürer | 0 | 2 → kullanım hatası: çıktıyı AYNEN göster, DUR |
+| 6b | *(6'nın İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi:** planda **yargı vakası yoksa** ve yayının `guncelle/ci-durum.json` kaydı bu etiket için `hepsi_yesil: true` ise adım 6 **test koşmaz**, tabanı CI hükmünden alır ve `[İKAME]` + `KAPSAM` satırlarını basar. **Bu satırları kullanıcıya AYNEN aktar.** Her belirsizlikte (kayıt yok · etiket tutmuyor · tek takım kırmızı · CI hâlâ koşuyor) ikame YAPILMAZ ve yine test koşulmaz: `[ÖLÇÜLMEDİ] önce-ölçüm: …` satırı nedeni söyler — *ölçülmedi ≠ yeşil*. | 0 | — |
+| 6c | *(10'un İÇİNDE, otomatik — ayrı komut değil)* **Kapsanan komut ayıklaması:** aynı `cwd`'de hem `python tests/run_tests.py` hem `… -k <desen>` test borcuna girecekse filtreli olan borca YAZILMAZ (kapsamı filtresizin öz alt kümesidir; kaynak yolları filtresiz eşe aktarılır). Filtresiz eş yoksa hiçbir şey ayıklanmaz. | 0 | — |
 | 7 | Otomatik vakalar | `guncelle.py uygula --otomatik`, sonra yazılan her dosyanın plandaki `kart` alanındaki kartları (`V1`/`V2`/… + `sinif-…`) oku ve ek adımlarını uygula | 0 | 1 → `guncelle.py durum` göster, DUR |
 | 8 | Yargı vakaları | her dosya için `guncelle.py kart <KOD>` → **kartın adımlarını uygula** (hangi komutun koşacağını KART söyler) → `guncelle.py isaretle <yol> --karar …` | her biri 0 | kartın DUR koşulu |
 | 9 | Özel adımlar | `guncelle.py ozel-adim <ad>` | 0 | kart talimatı (ör. `install.py --dry-run` hata → `geri-al`) |
-| 10 | Sonra-ölçüm | `guncelle.py olc --asama sonra` | 0 | 2 → DUR |
-| 10b | *(10'un İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi (sonra):** 6b'nin şartları sağlanıyorsa **ve** disk ağacı yayın etiketinin ağacıyla **aynıysa** (plan beyanı değil, diskten ölçülür; karşılaştırma DIŞI: yayın meta dosyaları · gitignore'lu dosyalar · satır sonu farkı) adım 10 **test koşmaz** ve `[İKAME] sonra-ölçüm KOŞULMADI` + `KAPSAM` satırlarını basar. **AYNEN aktar.** Ağaç farklıysa `[ÖLÇ] … FARKLI (N yol: …)` basar ve normal ölçer. Yerel ortamın asgari kontrolü adım 12'de yine koşar. İkame RAPOR.md'ye de yazılır ("yerelde test KOŞULMADI"). | 0 | — |
+| 10 | Sonra-ölçüm | `guncelle.py olc --asama sonra` — **test KOŞMAZ** (Z162). CI'nın kefil olmadığı ağaçta etkilenen takımları **test borcu** olarak `.axet-guncelleme/test-borcu.json`a yazar ve `TEST BORCU — N takım koşulmadı (…)` satırını basar: **AYNEN aktar**, akış sürer (borç kapanışı durdurmaz) | 0 | 2 → kullanım hatası: çıktıyı AYNEN göster, DUR |
+| 10b | *(10'un İÇİNDE, otomatik — ayrı komut değil)* **CI ikamesi (sonra):** 6b'nin şartları sağlanıyorsa **ve** disk ağacı yayın etiketinin ağacıyla **aynıysa** (plan beyanı değil, diskten ölçülür; karşılaştırma DIŞI: yayın meta dosyaları · gitignore'lu dosyalar · satır sonu farkı) adım 10 `[İKAME] sonra-ölçüm KOŞULMADI` + `KAPSAM` satırlarını basar ve önceki güncellemeden kalan test borcu varsa kapatır (`[TEST BORCU KAPANDI]`). **AYNEN aktar.** Ağaç farklıysa `[ÖLÇÜLMEDİ] yerel ağaç CI'da ölçülmedi — N yol: …` basar ve borç yazar (test koşmaz). Yerel ortamın asgari kontrolü adım 12'de yine koşar. İkame RAPOR.md'ye de yazılır ("yerelde test KOŞULMADI"). | 0 | — |
 | 11 | Kritik yol karşılaştırması | `kritik_yol` sınıfı V4 dosyaları: aynı örnekle önce/sonra hüküm | fark açıklanmış | açıklanamayan fark → DUR |
-| 12 | Bütünlük turu | `guncelle.py butunluk` | 0 | 1 → adım 13 |
-| 13 | Düzeltme döngüsü | FAIL'i düzelt → ilgili dosyayı yeniden `isaretle` → `butunluk` | en fazla **2 tur** | 2. turda da FAIL → DUR, üç seçenek sun |
-| 14 | Kapanış | `guncelle.py kapanis` — hükmü verir, `RAPOR.md`'yi üretir ve **kalem commit'ini** atar | 0 | 1 → raporu göster, seçenek sun |
+| 12 | Bütünlük turu | `guncelle.py butunluk` — hızlı yerel kontroller (install --dry-run · doctor · hızlı takımlar); **toplam ≤ 60 sn**, her kontrolün kendi zaman aşımı var. Süreyi aşan kontrol `ÖLÇÜLEMEDİ` yazılır ve akışı durdurmaz | 0 | 1 → adım 13 |
+| 13 | Düzeltme döngüsü | **yalnız bütünlük FAIL'i için** (test borcu buraya girmez): FAIL'i düzelt → ilgili dosyayı yeniden `isaretle` → `butunluk` | en fazla **2 tur** | 2. turda da FAIL → DUR, üç seçenek sun |
+| 14 | Kapanış | `guncelle.py kapanis` — hükmü verir, `RAPOR.md`'yi üretir ve **kalem commit'ini** atar. Test borcu varsa son satır `KAPANDI — test borcu var: %testler (N takım koşulmadı; ölçülmedi ≠ yeşil)` olur (çıkış yine 0): kullanıcıya AYNEN aktar ve takımları **güncellemeden sonra, isterse** `%testler` ile koşabileceğini söyle — kendin koşma | 0 | 1 → raporu göster, seçenek sun |
 | 15 | Son | `RAPOR.md`'yi AYNEN göster; kapat-aç gerekip gerekmediğini `plan.json`'daki `yeniden_baslat` alanı söyler (`null` = gerekmez · `yeni-oturum` = kapat-aç · `install-sonra-yeni-oturum` = önce `install.py`, sonra kapat-aç) | — | — |
 | 16 | Tarayıcı hazırlığı *(otomatik, soru SORMA)* | `python "<klon>/scripts/tarayici_hazirla.py"` — kurulu Chrome/Edge + merkezi `playwright-cli` + `~/.playwright/cli.config.json` + duman testi; idempotent. Betik klonda yoksa (kalem alınmadı) koşma, "tarayıcı hazırlığı: betik yok" de | ilk satır `TARAYICI: HAZIR …` · çıkış daima 0 | `ATLANDI`/`EKSİK` güncellemeyi BOZMAZ: güncelleme yine "tamamlandı"; ilk satırı AYNEN aktar (neyin eksik kaldığını o söyler), yeniden deneme, başka komut önerme. Betik sınırlı sürede döner; çıktıda `TARAYICI:` satırı yoksa bu adım başarısız sayılır ama güncelleme yine devam eder/tamamlanır |
 | 17 | Python paketleri *(otomatik, soru SORMA — **her** `%guncelle`de koşar: klon güncel çıkıp 2/3/4. adımda BİTİRİLSE de, bitirmeden önce)* | `python "<klon>/scripts/install.py" --paketler` — SAP bağlantısının zorunlu Python paketlerini denetler, eksikse kurar (Z102: install.py değişmemiş olsa da). Global config'e, SAP yazma iznine DOKUNMAZ; SAP paketi kapalıysa hiçbir şey kurmaz. Klondaki install.py bu seçeneği tanımıyorsa (eski sürüm: çıkış 2 + `unrecognized arguments`) koşma, "paket denetimi: install.py eski" de | `PAKETLER: TAMAM` / `KURULDU` / `ATLANDI` satırı · çıkış daima 0 | `EKSİK`/`ÖLÇÜLEMEDİ` güncellemeyi BOZMAZ: güncelleme yine "tamamlandı"; `PAKETLER:` satırını ve altındaki `UYARI:` satırını AYNEN aktar (ne yapacağını o söyler), yeniden deneme, başka komut önerme, `BT için elle kurulum komutu` satırını kendin ÇALIŞTIRMA |
@@ -74,7 +74,7 @@ emreder). Planın `kart` alanı hangi kartları okuyacağını dosya başına ya
 guncelle.py kart <KOD>
 ```
 
-Kartlar `guncelle/kartlar/` altındadır: `V1` · `V1R` · `V2` · `V4B` · `V4R` · `V4c` · `V4c+ESIK` · `V4t` · `V5` · `V6` · `V6d` · `V7` · `VTB`.
+Kartlar `guncelle/kartlar/` altındadır: `V1` · `V1R` · `V2` · `V4B` · `V4R` · `V4c` · `V4c+ESIK` · `V4i` · `V4t` · `V5` · `V6` · `V6d` · `V7` · `VTB`.
 Dosyanın sınıfı için ayrıca bir `sinif-<ad>` kartı varsa (aşağıdaki tablo) vaka kartına **ek
 olarak** o da uygulanır — plan her dosyanın `kart` alanında hangilerini okuyacağını yazar.
 
@@ -118,13 +118,14 @@ hangi testlerin koşacağını ve özel adım gerekip gerekmediğini söyler.
 - `.conn_adt` dosyasını okumak ya da içeriğini istemek
 - `install.py --sap-write` · `behavior_manifest.py generate` (ikisi de aXet'e kapalıdır; gerekiyorsa
   kullanıcı KENDİ terminalinde çalıştırır)
-- **akış DIŞINDA test koşmak** — `tests/run_tests.py` (filtreli ya da filtresiz), proje/skill test
-  takımları, kendi seçtiğin herhangi bir test komutu. Hangi testin koşacağına motor karar verir
-  (`olc --asama once|sonra`, `butunluk`); akışın istediği komutlar yukarıdaki tablodadır. Kırmızı ya
-  da şüphe görürsen kendi test koşumunla teşhise girme ve `<TMP>` dışında dizin açma: hükmü
-  `olc --asama sonra` ile bütünlük turu (adım 10-13) verir — onu kullanıcıya AYNEN raporla; bütünlük
-  FAIL'inde adım 13'ün düzeltme döngüsü geçerlidir
-- testsiz "tamam" demek; planda olmayan bir dosyaya dokunmak
+- **güncelleme içinde test takımı koşmak** (Z162) — `tests/run_tests.py` (filtreli ya da filtresiz),
+  `scripts/testler.py`, proje/skill test takımları, kendi seçtiğin herhangi bir test komutu. Güncelleme
+  yalnız bütünlük turunun hızlı kontrollerini koşar (`butunluk`); koşulmayan takımlar **test
+  borcudur** → güncelleme kapandıktan sonra, kullanıcı isterse `%testler`. Kırmızı ya da şüphe
+  görürsen kendi test koşumunla teşhise girme ve `<TMP>` dışında dizin açma: hükmü bütünlük turu
+  (adım 12-13) verir — onu kullanıcıya AYNEN raporla; bütünlük FAIL'inde adım 13'ün düzeltme döngüsü
+  geçerlidir
+- test borcunu söylemeden "tamam" demek; planda olmayan bir dosyaya dokunmak
 - kullanıcı cevap vermeden bir yargı vakasını işaretlemek
 
 ## Geri alma

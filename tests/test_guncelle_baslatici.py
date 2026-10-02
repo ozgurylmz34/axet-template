@@ -328,10 +328,12 @@ class Z95AkisDisiTestYasagiTest(GeciciTest):
     teşhise girdi ve klon dışında kendi dizinini açtı. Neden İKİ yer: GUNCELLE.md her koşuda
     `origin/main`'den okunur ⇒ yayından sonraki İLK `%guncelle`de etkindir; SKILL.md ise klondan yüklenir
     (`install.py` `skills_paths`) ⇒ ancak klon dosyası güncellendikten SONRAKİ turda etkindir.
+    Z162 (2026-09-27) kuralı sıkılaştırdı: güncelleme İÇİNDE hiçbir test takımı koşulmaz (motor da
+    koşmaz); koşulmayan takımlar test borcudur ⇒ madde artık `%testler`i (kapanıştan sonra) anar.
     KAPSAM — bakılmayan: modelin kurala fiilen uyması (canlı `%guncelle` DB izi, Z95ⓑ — lider).
     """
 
-    PARCALAR = ("tests/run_tests.py", "olc --asama sonra", "<TMP>")
+    PARCALAR = ("tests/run_tests.py", "%testler", "<TMP>")
 
     def bolum(self, metin: str, baslik: str) -> str:
         i = metin.find(baslik)
@@ -340,9 +342,10 @@ class Z95AkisDisiTestYasagiTest(GeciciTest):
         return metin[i:j if j > 0 else len(metin)]
 
     def madde(self, bolum: str) -> str:
-        """Bölümde 'DIŞINDA test' diyen madde (alt satırlarıyla) — kural BAŞKA bir maddede sayılmasın."""
+        """Bölümde 'güncelleme içinde test takımı' diyen madde (alt satırlarıyla) — kural BAŞKA bir
+        maddede sayılmasın."""
         maddeler = re.split(r"\n(?=- )", bolum)
-        adaylar = [m for m in maddeler if re.search(r"DIŞINDA test", m)]
+        adaylar = [m for m in maddeler if re.search(r"güncelleme içinde test takımı", m, re.I)]
         self.assertEqual(len(adaylar), 1, f"akış dışı test maddesi tam 1 olmalı: {len(adaylar)}")
         return adaylar[0]
 

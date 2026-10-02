@@ -4,7 +4,7 @@ aXet.code'un Claude Code'a olabildiğince yakın çalışması için ortak kural
 kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullanıcının global aXet config'ini
 bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
 
-> Sürüm: v0.5.14 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.15 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -130,6 +130,11 @@ aXet içinde **`%guncelle`** yaz. Klonu yeni yayına seçmeli olarak taşır (se
 paketlerini denetleyip eksikse kurar ve tarayıcı testini hazırlar. Yeni kurallar ve skill'ler bir sonraki aXet
 oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
 
+Güncelleme uzun test takımı **koşmaz**; yalnız bir dakikayı geçmeyen hızlı kontrolleri koşar. Klonunda yerel
+değişiklik varsa yayının CI sonucu o ağaca kefil olamaz: koşulmayan takımlar **test borcu** olarak kaydedilir,
+kapanış `KAPANDI — test borcu var: %testler` der ve `doctor` borç sürdükçe uyarır. Takımları istediğin zaman
+**`%testler`** ile koşarsın; önce süre tahmini gelir, kırmızı çıkarsa kaynağı ve dört giderme seçeneği gösterilir.
+
 ## Günlük kullanım
 - **Her yeni aXet oturumunu `%basla` ile aç.** Model oturum özetini (`scripts/session_brief.py`) taze çalıştırır,
   kimlik satırını ve özeti yazar (dal ve değişiklikler, template güncelliği, doctor uyarıları, SAP profili, aktif
@@ -153,6 +158,8 @@ oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
 - `%write-skill` — yeni skill yazma
 - `%onboard` — yeni ekip üyesine kurulum ve ilk oturum rehberi
 - `%guncelle` — merkezi klonu yeni template yayınına seçmeli olarak taşı (kendi değişikliklerin korunur)
+- `%testler` — template test takımlarını güncellemeden ayrı koş (test borcu, tek takım ya da hepsi); kırmızıda
+  kaynak + giderme seçenekleri
 - `%guncelle-proje` — açık projenin template kaynaklı dosyalarını (AGENTS.md, denylist, .githooks,
   sap-project.json …) klondaki şablona getir; doctor ya da oturum özeti "proje şablonu eski" dediğinde
 - `%research` — web/doküman araştırması (kaynaklı, aXet'in web araçlarıyla)
@@ -204,7 +211,7 @@ skills/          genel skill'ler            skills-sap/   SAP skill'leri
 memory/          ekip hafızası (indeks + kayıtlar)
 templates/project/  proje iskeleti (+ project-sap/)   templates/package/  new_package.py'nin kurduğu paket iskeleti
 config/          install.py'nin birleştirdiği izin kuralları
-scripts/         install.py · doctor.py · session_brief.py · guncelle.py · guncelle_proje.py · yeni_proje.py
+scripts/         install.py · doctor.py · session_brief.py · guncelle.py · testler.py · guncelle_proje.py · yeni_proje.py
                  new_project.py · new_package.py · conn_sablon.py · tarayici_hazirla.py · sap_stamp.py
                  project_precommit.py · check_package_naming.py · behavior_manifest.py · merge_pr.py
 tests/           template script'lerinin testleri: python tests\run_tests.py (skill testleri skill klasöründe)

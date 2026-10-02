@@ -26,6 +26,12 @@ Kullanım:
 Alt komutlar (§6): onkontrol · hazirla · plan · sec · olc · uygula · oneri · isaretle ·
 ozel-adim · butunluk · geri-al · kapanis · durum · kart
 
+⛔ Z162 (kullanıcı kararı 2026-09-27) — güncelleme TEST TAKIMI KOŞMAZ: `olc` yalnız yayının CI
+hükmünü ve disk↔etiket ağaç karşılaştırmasını kullanır; CI'nın kefil olamadığı ağaçta etkilenen
+takımlar `.axet-guncelleme/test-borcu.json`a yazılır ve kullanıcı isteğiyle sonradan
+`scripts/testler.py` (`%testler`) koşar. `butunluk` süre bütçelidir (`BUTUNLUK_BUTCE_SN`); aşan
+kontrol ÖLÇÜLEMEDİ olur, akışı durdurmaz.
+
 Çıkış kodları alt komut başına değişir; §6 tablosuna birebir uyar.
 """
 from __future__ import annotations
@@ -42,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -99,7 +106,9 @@ ESIK_YEREL_FARK = 0.50
 # §4: işlem gerektirmeyen kodlar — plan bunları LİSTELEMEZ, yalnız sayar (§5 "işlem yok").
 ISLEMSIZ_VAKALAR = {"V0", "V3", "V2e", "V4e", "V5s", "V6x", "VKD"}
 # `uygula --otomatik`'in yazdıkları (§7 adım 7).
-OTOMATIK_VAKALAR = {"V1", "V2", "V5", "V6", "V1R"}
+# V4i (Z162 ⓔ①): L ≠ T ve L ≠ Y, ama 3-yollu birleşme SONUCU Y'nin aynısı — yerel değişikliğin
+# tamamı yeni sürümde zaten var. Y'yi almak hiçbir yerel satırı kaybettirmez ⇒ yargı değil.
+OTOMATIK_VAKALAR = {"V1", "V2", "V5", "V6", "V1R", "V4i"}
 # Yargı isteyen vakalar (§7 adım 8).
 YARGI_VAKALARI = {"V4t", "V4c", "V4c+ESIK", "V4B", "V4R", "V6d", "V7", "VTB"}
 
@@ -760,6 +769,18 @@ def dosya_vakasi(b: Baglam, yol: str, yeniden_ad: dict[str, str]) -> dict:
         kayit["vaka"] = "V4R" if kod == "V4R" else alt
         if kod == "V4R":
             kayit["birlesme"] = alt
+        elif alt != "V4B" and not cakisma and _birlesik == y.replace(b"\r\n", b"\n"):
+            # Z162 ⓔ① (ölçüldü 2026-09-27, müşteri klonu v0.5.11→v0.5.14): klondaki "yerel
+            # değişiklik" bir ara yayının resmî metniydi; yeni sürüm onu aynen içeriyordu. Birleşme
+            # sonucu Y'nin AYNISI ⇒ Y'yi almak hiçbir yerel satırı kaybettirmez, yargı SAHTEDİR —
+            # ama yargı vakası olarak kalması CI ikamesini kapatıp tam takımları yerelde koşturdu.
+            # Eşik dalından ÖNCE değil SONRA bakılır: oran eşiği yalnız birleştirmeye güveni
+            # ölçer; burada birleşmenin sonucu zaten Y'dir. `l_sha` uygula anında yeniden
+            # ölçülür — plan→uygula arasında dosya değiştiyse otomatik yazılmaz.
+            kayit["vaka"] = "V4i"
+            kayit["l_sha"] = l_sha
+            kayit.pop("cakisma", None)
+            kayit.pop("yerel_fark_orani", None)
     return kayit
 
 
@@ -1397,6 +1418,17 @@ def komut_uygula(b: Baglam, args) -> int:
                 if hedef != yol:
                     korunan = _sil_korunarak(k, yol)
                 beklenen = k.blob_sha(b.yeni_ref, hedef)
+            elif kod == "V4i":
+                # "Yerel değişiklik Y'de içerildi" hükmü PLAN anındaki içeriğe aittir. Dosya o
+                # andan beri değiştiyse hüküm geçersiz ⇒ yazma, planı yeniden üretmeyi söyle.
+                if k.disk_sha(yol) != d.get("l_sha"):
+                    raise Dur("dosya plan üretildikten sonra değişmiş — 'yerel değişiklik yeni "
+                              "sürümde içeriliyor' hükmü artık geçersiz; `guncelle.py plan` ile "
+                              "planı yeniden üret.")
+                if _yedeksiz_mi(k, yol):
+                    korunan = _yerel_kopya(k, yol)
+                k.checkout_yol(b.yeni_ref, hedef)
+                beklenen = k.blob_sha(b.yeni_ref, hedef)
             else:
                 k.checkout_yol(b.yeni_ref, hedef)
                 beklenen = k.blob_sha(b.yeni_ref, hedef)
@@ -1425,6 +1457,8 @@ def komut_uygula(b: Baglam, args) -> int:
             print(f"SİLİNDİ: {yol} — template emekliye ayırdı, sende değişmemişti")
         elif kod == "V1R":
             print(f"TAŞINDI: {yol} → {hedef}")
+        elif kod == "V4i":
+            print(f"ALINDI: {hedef} (V4i — yerel değişikliğin tamamı yeni sürümde zaten vardı)")
         else:
             print(f"ALINDI: {hedef} ({kod})")
 
@@ -1726,18 +1760,129 @@ def _betik_yolu(parcalar: list[str]) -> str | None:
     return parcalar[1]
 
 
-_SONUC_DESEN = re.compile(r"(\d+)\s*failure", re.I)
+# ⛔ Z162 (kullanıcı kararı 2026-09-27): güncelleme HİÇBİR koşulda test takımı KOŞMAZ.
+# Vaka (ölçüldü, müşteri klonu v0.5.11→v0.5.14): tek bir yerel artık CI ikamesini kapattı ve
+# önce-ölçüm tam takımları yerelde koşmaya başladı (11 dk sonra hâlâ bitmemişti; sınır 90 dk).
+# Bugünkü hız TEK bir şarta bağlıydı; şart bozulunca güncelleme saatlere çıkıyordu.
+# Yeni sözleşme: `olc` yalnız CI hükmünü ve disk↔etiket ağaç karşılaştırmasını kullanır. CI'nın
+# kefil olamadığı ağaçta test KOŞULMAZ; etkilenen takımlar `test-borcu.json`a yazılır ve
+# kullanıcı isteyince `scripts/testler.py` (`%testler`) koşar. Ölçülmedi ≠ yeşil: RAPOR.md ve
+# doctor borcu görünür tutar.
+TEST_BORCU_DOSYASI = "test-borcu.json"
+TEST_BORCU_SURUMU = 1
+# `ozel-adim`ın tek izinli komutu `install.py --dry-run`dır (saniyeler); güncellemeyi uzun bir
+# alt süreçte bekletmemek için sınır kısa tutulur. Aşım ÖLÇÜLEMEDİ yazılır, çökmez.
+OZEL_ADIM_ZAMAN_ASIMI = 300
 
 
-# Ölçüm komutlarının zaman aşımı. ⛔ `_run`'ın 1800 sn'lik VARSAYILANI burada YETMEZ ve
-# yetmediği ÖLÇÜLDÜ (2026-09-20, gerçek tüketici klonu): kök takımı CI'da 2411 sn sürüyor,
-# yani `once` turu 1800 sn'de **yapısal olarak** zaman aşımına uğruyordu — planında
-# `test-kok`/`bakim-script-kok` sınıfı olan HER tüketicide. Üstelik aşım `TimeoutExpired`
-# olarak yukarı kaçıyor, `komut_olc`'nin "ÖLÇÜLEMEDİ ≠ temiz" koluna HİÇ uğramıyordu:
-# 35 dakikalık ölçüm traceback'le çöküp `olcum-once.json`'u yazmadan ölüyordu.
-# Değer kanıttan türetildi: gözlenen en uzun CI koşumu 2411 sn; yerel makine daha yavaş
-# olabilir ⇒ ~2x pay. Yine de aşılırsa artık ÇÖKMEZ, `ÖLÇÜLEMEDİ` yazılır.
-OLCUM_ZAMAN_ASIMI = 5400
+def takim_adi(komut: str) -> str:
+    """Test komutunun kısa adı (`%testler --takim <ad>`). Komut ↔ ad tek yönlü ve deterministik.
+
+    `python tests/run_tests.py` → `kok` · `… -k install` → `kok:install` ·
+    `python skills-sap/<skill>/tests/run_tests.py` ya da `-m unittest discover -s skills…/<skill>/tests`
+    → `<skill>` · `python scripts/doctor.py --skills` → `doctor:skills`. Tanınmayan biçim → komutun kendisi.
+    """
+    parcalar = komut.split()
+    filtre = None
+    if "-k" in parcalar and parcalar.index("-k") + 1 < len(parcalar):
+        filtre = parcalar[parcalar.index("-k") + 1]
+    yollar = [p.replace("\\", "/") for p in parcalar[1:] if "/" in p or "\\" in p]
+    ad = None
+    for y in yollar:
+        bolum = y.split("/")
+        if bolum[0] in ("skills", "skills-sap") and len(bolum) > 1:
+            ad = bolum[1]
+            break
+        if y == "tests/run_tests.py":
+            ad = "kok"
+            break
+        if y.startswith("scripts/") and y.endswith(".py"):
+            ad = y[len("scripts/"):-3]
+            ek = [p.lstrip("-") for p in parcalar[2:] if p.startswith("--")]
+            if ek:
+                ad += ":" + ":".join(ek)
+            break
+    if ad is None:
+        return komut
+    return f"{ad}:{filtre}" if filtre else ad
+
+
+def etkilenen_takimlar(harita: dict, yollar: list[str]) -> list[dict]:
+    """Yolların sınıflarındaki test komutları — kapsanan filtreli komutlar ayıklanmış hâlde.
+
+    Döner: `{"ad", "komut", "cwd", "kaynak_yollar"}` listesi. `kaynak_yollar` kırmızı bir testin
+    hangi dosyadan geldiğini söyler (`%testler` giderme önerisi buradan kurulur). Ayıklanan
+    filtreli komutun kaynak yolları filtresiz eşine aktarılır — iz kaybolmaz.
+    """
+    takimlar: dict[tuple[str, str], dict] = {}
+    for yol in yollar:
+        for t in (sinif_bul(yol, harita) or {}).get("test", []):
+            anahtar = (t.get("cwd", "."), t["komut"])
+            kayit = takimlar.setdefault(anahtar, {"ad": takim_adi(t["komut"]), "komut": t["komut"],
+                                                  "cwd": t.get("cwd", "."), "kaynak_yollar": []})
+            if yol not in kayit["kaynak_yollar"]:
+                kayit["kaynak_yollar"].append(yol)
+    return _takimlari_ayikla(list(takimlar.values()))
+
+
+def _takimlari_ayikla(takimlar: list[dict]) -> list[dict]:
+    kalan, _dusen = _kapsananlari_ayikla(takimlar)
+    kalan_kimlik = {(t["cwd"], tuple(t["komut"].split())): t for t in kalan}
+    for t in takimlar:
+        if t in kalan:
+            continue
+        es = kalan_kimlik.get((t["cwd"], _taban_argv(t["komut"])))
+        if es is not None:
+            for y in t.get("kaynak_yollar", []):
+                if y not in es["kaynak_yollar"]:
+                    es["kaynak_yollar"].append(y)
+    return sorted(kalan, key=lambda t: t["ad"])
+
+
+def test_borcu_oku(k: Klon) -> dict | None:
+    """`test-borcu.json` — yoksa None. Bozuksa `Dur` DEĞİL, boş-olmayan bir uyarı kaydı döner:
+    okunamayan borç "borç yok" sayılmaz (ölçülemedi ≠ temiz)."""
+    yol = k.durum_dizini / TEST_BORCU_DOSYASI
+    if not yol.is_file():
+        return None
+    try:
+        veri = json.loads(yol.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return {"bozuk": f"{TEST_BORCU_DOSYASI} okunamadı: {e}", "takimlar": []}
+    return veri if isinstance(veri, dict) else {"bozuk": "biçim nesne değil", "takimlar": []}
+
+
+def _test_borcu_yaz(k: Klon, etiket: str | None, neden: str, farkli: list[str] | None,
+                    takimlar: list[dict]) -> dict:
+    """Borcu YAZAR ya da öncekiyle BİRLEŞTİRİR (önceki güncellemenin koşulmamış takımları düşmez)."""
+    onceki = test_borcu_oku(k) or {}
+    eski = [] if onceki.get("bozuk") else (onceki.get("takimlar") or [])
+    birlesik: dict[tuple[str, str], dict] = {}
+    for t in eski + takimlar:
+        anahtar = (t.get("cwd", "."), t["komut"])
+        kayit = birlesik.setdefault(anahtar, {"ad": t.get("ad") or takim_adi(t["komut"]),
+                                              "komut": t["komut"], "cwd": t.get("cwd", "."),
+                                              "kaynak_yollar": []})
+        for y in t.get("kaynak_yollar", []):
+            if y not in kayit["kaynak_yollar"]:
+                kayit["kaynak_yollar"].append(y)
+    veri = {
+        "surum": TEST_BORCU_SURUMU,
+        "ilk_kayit": onceki.get("ilk_kayit") or _simdi(),
+        "zaman": _simdi(),
+        "etiket": etiket,
+        "neden": neden,
+        "farkli_yollar": farkli,
+        "takimlar": _takimlari_ayikla(list(birlesik.values())),
+        "kapsam_disi": ("Bu takımlar güncelleme sırasında KOŞULMADI (Z162). Yeşil oldukları "
+                        "ÖLÇÜLMEDİ — `%testler` (scripts/testler.py) koşana dek borç sayılır."),
+    }
+    _yaz_json(k.durum_dizini / TEST_BORCU_DOSYASI, veri)
+    return veri
+
+
+def _kisalt(liste: list[str], sinir: int = 5) -> str:
+    return ", ".join(liste[:sinir]) + (" …" if len(liste) > sinir else "")
 
 
 def _yargi_gerektiren(plan: dict) -> list[str]:
@@ -1750,40 +1895,50 @@ def _yargi_gerektiren(plan: dict) -> list[str]:
                    for f in kal.get("dosyalar", []) if f.get("vaka") in YARGI_VAKALARI})
 
 
-def _ci_tabani(b: Baglam, plan: dict) -> dict | None:
-    """`once` turunun yerine CI hükmünü koy — KOŞULLAR SAĞLANIYORSA (Z16, 2026-09-20).
-
-    ⛔ NEDEN (hız DEĞİL, doğruluk): `once` ve `sonra` **aynı testleri koşmuyor**. `komut_olc`
-    testleri klon kökünde koşar (`calisma = k.kok / cwd`) ve `tests/**` güncellemenin parçası
-    olabilir ⇒ `once` ESKİ test kodunu, `sonra` YENİ test kodunu ölçer. `yeni_kirmizilar` ise
-    ikisini komut kimliği bazında karşılaştırır. Testlerin kendisi değişirken *"fark =
-    regresyon"* çıkarımı KURULAMAZ. CI ise yeni testleri yeni ürüne karşı temiz ortamda
-    ölçmüştür ⇒ daha iyi bir tabandır.
+def _ci_hukmu(b: Baglam, plan: dict) -> tuple[dict | None, str]:
+    """Etiketin CI kaydı kullanılabilir mi? Döner: (kayıt, neden) — kayıt None ise `neden`
+    NİÇİN kullanılamadığını söyler (kullanıcıya ve test borcuna aynen yazılır).
 
     ⛔ YALNIZ yargı vakası YOKKEN: yerel değişiklik varsa uygulama sonrası ağaç yayınlanan
-    ağaçtan FARKLI olur ve o ağacı hiçbir CI test etmemiştir ⇒ o vakada ölçüm zorunludur.
-
-    ⛔ FAIL-SAFE: her belirsizlikte `None` = normal ölç. Dosya yok (eski yayın), ayrıştırılamadı,
-    etiket tutmadı, yeşil değil → hepsinde ÖLÇ. "Ölçemedim" asla "atlayabilirim" demek değildir.
+    ağaçtan FARKLI olur ve o ağacı hiçbir CI test etmemiştir.
+    ⛔ FAIL-SAFE: her belirsizlikte (kayıt yok, ayrıştırılamadı, etiket tutmadı, yeşil değil) kayıt
+    None döner. Z162'den beri bunun sonucu "yerelde ölç" DEĞİL, "test borcu"dur.
     """
-    if _yargi_gerektiren(plan):
-        return None
+    yargi = _yargi_gerektiren(plan)
+    if yargi:
+        return None, f"planda yargı gerektiren {len(yargi)} yerel değişiklik var ({_kisalt(yargi)})"
     etiket = plan.get("yeni_etiket")
     if not etiket:
-        return None
+        return None, "planda yayın etiketi yok"
     r = b.k.git("show", "origin/main:guncelle/ci-durum.json")
     if r.returncode != 0:
-        return None
+        return None, "yayının CI kaydı (guncelle/ci-durum.json) okunamadı"
     try:
         veri = json.loads(r.stdout)
     except ValueError:
-        return None
+        return None, "yayının CI kaydı (guncelle/ci-durum.json) ayrıştırılamadı"
     kayit = (veri.get("yayinlar") or {}).get(etiket)
-    if not isinstance(kayit, dict) or kayit.get("hepsi_yesil") is not True:
-        return None
+    if not isinstance(kayit, dict):
+        return None, f"{etiket} için CI kaydı yok"
+    if kayit.get("hepsi_yesil") is not True:
+        return None, f"{etiket} CI kaydı 'hepsi yeşil' değil"
     takimlar = kayit.get("takimlar") or []
     if not takimlar or any(t.get("sonuc") != "success" for t in takimlar):
+        return None, f"{etiket} CI kaydında eksik ya da yeşil olmayan takım var"
+    return kayit, ""
+
+
+def _ci_tabani(b: Baglam, plan: dict) -> dict | None:
+    """`once` turunun CI hükmüyle ikamesi — koşullar sağlanıyorsa (Z16, 2026-09-20).
+
+    ⛔ NEDEN (hız DEĞİL, doğruluk): `tests/**` güncellemenin parçası olabilir ⇒ yerel önce/sonra
+    ölçümü ESKİ ve YENİ test kodunu karşılaştırırdı. CI yeni testleri yeni ürüne karşı temiz
+    ortamda ölçmüştür ⇒ daha iyi bir tabandır. Koşullar: `_ci_hukmu`.
+    """
+    kayit, _neden = _ci_hukmu(b, plan)
+    if kayit is None:
         return None
+    etiket = plan["yeni_etiket"]
     return {
         "asama": "once", "zaman": _simdi(), "kaynak": "ci", "testler": [],
         "ci": kayit, "etiket": etiket,
@@ -1793,10 +1948,9 @@ def _ci_tabani(b: Baglam, plan: dict) -> dict | None:
         "kapsam_disi": ("Bu taban YEREL ortamda ölçülmedi — CI ortamında ölçüldü "
                         f"({kayit.get('isletim_sistemi', 'BİLİNMİYOR')} · Python "
                         f"{kayit.get('python', 'BİLİNMİYOR')}). Yerele özgü sapma (yerel ayar, "
-                        "uzun yol, antivirüs, eksik araç) bu tabanda GÖRÜNMEZ; onu `sonra` turu "
-                        "yakalar — `sonra` turu da CI ile ikame edilirse (Z26) yalnız bütünlük "
-                        "turundaki asgari yerel kontrol (install --dry-run · doctor · hızlı "
-                        "takımlar) kalır. Yargı vakası çıksaydı ikame YAPILMAZDI."),
+                        "uzun yol, antivirüs, eksik araç) bu tabanda GÖRÜNMEZ; güncelleme içinde "
+                        "yalnız bütünlük turunun hızlı yerel kontrolleri (install --dry-run · "
+                        "doctor · hızlı takımlar) koşar, tam takımlar `%testler` ile koşulur."),
     }
 
 
@@ -1806,12 +1960,13 @@ def _ci_tabani(b: Baglam, plan: dict) -> dict | None:
 YAYIN_META_YOLLARI = ("CHANGELOG.md", "guncelle/yayinlar.json", "guncelle/ci-durum.json")
 
 
-def _agac_yayinla_ayni(k: Klon, etiket: str) -> tuple[bool, str]:
-    """Diskteki ağaç (izlenmeyen ama yok sayılmayan dosyalar DAHİL) `etiket` ağacının AYNISI mı?
+def _agac_farki(k: Klon, etiket: str) -> list[str] | None:
+    """Diskteki ağaç (izlenmeyen ama yok sayılmayan dosyalar DAHİL) ile `etiket` ağacının farkı.
 
+    Döner: `git diff --name-status` satırları (boş liste = AYNI) · None = ÖLÇÜLEMEDİ.
     Plan beyanı değil DOĞRUDAN ölçüm: geçici bir index'e çalışma ağacı `git add -A` ile alınır
-    ve o index `etiket` ile karşılaştırılır. Asıl index'e dokunulmaz. Her git hatası = "aynı değil"
-    (fail-safe: ölçemediysek ölçüme döneriz). Yalnız `YAYIN_META_YOLLARI` karşılaştırma dışıdır."""
+    ve o index `etiket` ile karşılaştırılır. Asıl index'e dokunulmaz. Yalnız `YAYIN_META_YOLLARI`
+    karşılaştırma dışıdır (gitignore'lu dosyalar ve satır sonu farkı zaten görünmez)."""
     haric = [f":(exclude){y}" for y in YAYIN_META_YOLLARI]
     with tempfile.TemporaryDirectory() as d:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(d) / "index"))
@@ -1819,32 +1974,38 @@ def _agac_yayinla_ayni(k: Klon, etiket: str) -> tuple[bool, str]:
                      ["diff", "--cached", "--name-status", etiket, "--", "."] + haric):
             r = _run(["git", "-C", str(k.kok)] + argv, k.kok, env=env)
             if r.returncode != 0:
-                return False, f"disk ağacı ölçülemedi (git {argv[0]} rc={r.returncode})"
-        fark = [s for s in (r.stdout or "").splitlines() if s.strip()]
-        if fark:
-            return False, (f"disk ağacı {etiket} ağacından FARKLI ({len(fark)} yol: "
-                           + ", ".join(s.replace("\t", " ") for s in fark[:5])
-                           + (" …" if len(fark) > 5 else "") + ")")
+                return None
+    return [s for s in (r.stdout or "").splitlines() if s.strip()]
+
+
+def _fark_yollari(fark: list[str]) -> list[str]:
+    """`--name-status` satırlarındaki yollar (yeniden adlandırmada iki yol da)."""
+    return sorted({y for s in fark for y in s.split("\t")[1:] if y})
+
+
+def _agac_yayinla_ayni(k: Klon, etiket: str) -> tuple[bool, str]:
+    """Diskteki ağaç `etiket` ağacının AYNISI mı? Her git hatası = "aynı değil" (fail-safe)."""
+    fark = _agac_farki(k, etiket)
+    if fark is None:
+        return False, "disk ağacı ölçülemedi (git hatası)"
+    if fark:
+        return False, (f"disk ağacı {etiket} ağacından FARKLI ({len(fark)} yol: "
+                       + _kisalt([s.replace("\t", " ") for s in fark]) + ")")
     return True, (f"disk ağacı {etiket} ağacıyla aynı (geçici index ile ölçüldü; "
                   "gitignore'lu dosyalar ve satır sonu farkı karşılaştırma DIŞI)")
 
 
 def _ci_sonrasi(b: Baglam, plan: dict) -> dict | None:
-    """`sonra` turunun yerine CI hükmünü koy — İKİ şart birden sağlanırsa (Z26, 2026-09-21).
+    """`sonra` turunun CI hükmüyle ikamesi — İKİ şart birden sağlanırsa (Z26, 2026-09-21).
 
-    ⛔ NEDEN: yargı vakası yokken uygulama sonrası ağaç, CI'nin temiz ortamda ÖLÇTÜĞÜ yayın
-    ağacının aynısıdır ⇒ aynı testleri kullanıcının makinesinde yeniden koşmak yeni bilgi
-    üretmez, yalnız dakikalar harcar (ölçüldü: sonra turu ~25-30 dk).
-    Şart 1: `_ci_tabani` koşulları (yargı vakası yok + etiket için CI `hepsi_yesil`).
+    Şart 1: `_ci_hukmu` (yargı vakası yok + etiket için CI `hepsi_yesil`).
     Şart 2: plan beyanına GÜVENİLMEZ — disk ağacı etiket ağacıyla DOĞRUDAN karşılaştırılır.
-    ⛔ FAIL-SAFE: biri tutmazsa `None` = normal ölç.
     """
     taban = _ci_tabani(b, plan)
     if taban is None:
         return None
     ayni, neden = _agac_yayinla_ayni(b.k, taban["etiket"])
     if not ayni:
-        print(f"[ÖLÇ] sonra-ölçüm CI ile ikame EDİLMEDİ — {neden}")
         return None
     return {
         "asama": "sonra", "zaman": _simdi(), "kaynak": "ci", "testler": [],
@@ -1900,122 +2061,90 @@ def _kapsananlari_ayikla(testler: list[dict]) -> tuple[list[dict], list[str]]:
 
 
 def komut_olc(b: Baglam, args) -> int:
+    """Önce/sonra ölçüm turu — Z162'den beri TEST KOŞMAZ.
+
+    `once`: CI tabanı kullanılabiliyorsa ikame (Z16); değilse "ölçülmedi" kaydı. Çıkış 0.
+    `sonra`: CI kaydı yeşil VE disk ağacı etiketin aynısıysa ikame (Z26) — önceki borç da kapanır;
+    değilse etkilenen takımlar `test-borcu.json`a yazılır ve `[ÖLÇÜLMEDİ]` basılır. Çıkış 0.
+    Çıkış 2 yalnız geçersiz `--asama` içindir: "ölçülmedi" artık akışı DURDURMAZ, borç olarak
+    görünür kalır (RAPOR.md · kapanış satırı · doctor WARN).
+    """
     if args.asama not in ("once", "sonra"):
         print("DUR: --asama yalnız `once` ya da `sonra` olabilir.", file=sys.stderr)
         return 2
     k, plan = b.k, plan_oku(b.k)
+    kayit, neden = _ci_hukmu(b, plan)
+    etiket = plan.get("yeni_etiket")
+
     if args.asama == "once":
-        ikame = _ci_tabani(b, plan)
+        ikame = _ci_tabani(b, plan) if kayit is not None else None
         if ikame is not None:
             _yaz_json(k.durum_dizini / "olcum-once.json", ikame)
             print(f"[İKAME] önce-ölçüm KOŞULMADI — taban {ikame['etiket']} CI hükmü. "
                   f"{ikame['gerekce']}")
             print(f"KAPSAM — {ikame['kapsam_disi']}")
             return 0
-    else:
+        _yaz_json(k.durum_dizini / "olcum-once.json", {
+            "asama": "once", "zaman": _simdi(), "kaynak": "olculmedi", "testler": [],
+            "neden": neden})
+        print(f"[ÖLÇÜLMEDİ] önce-ölçüm: CI tabanı kullanılamıyor — {neden}. Güncelleme test "
+              "takımı KOŞMAZ (Z162); etkilenen takımlar sonra-ölçümde test borcuna yazılır, "
+              "güncellemeden sonra `%testler` ile koşulur.")
+        return 0
+
+    fark = _agac_farki(k, etiket) if etiket else None
+    if kayit is not None and fark == []:
         ikame = _ci_sonrasi(b, plan)
         if ikame is not None:
             _yaz_json(k.durum_dizini / "olcum-sonra.json", ikame)
             print(f"[İKAME] sonra-ölçüm KOŞULMADI — {ikame['etiket']} CI hükmü. "
                   f"{ikame['gerekce']}")
             print(f"KAPSAM — {ikame['kapsam_disi']}")
+            onceki = test_borcu_oku(k)
+            if onceki and not onceki.get("bozuk"):
+                # Önceki güncellemenin borcu bir ÖNCEKİ ağaca aitti; ağaç artık CI'nın bütün
+                # takımlarını yeşil ölçtüğü yayın ağacının aynısı ⇒ o borç karşılandı.
+                (k.durum_dizini / TEST_BORCU_DOSYASI).unlink(missing_ok=True)
+                print(f"[TEST BORCU KAPANDI] önceki borç ({len(onceki.get('takimlar') or [])} "
+                      f"takım) — ağaç artık CI'nın yeşil ölçtüğü {ikame['etiket']} ağacının aynısı.")
             return 0
-    testler, gorulen = [], set()
-    for _kid, d in secili_dosyalar(k, plan):
-        sinif = sinif_bul(d["yol"], b.harita)
-        for t in (sinif or {}).get("test", []):
-            anahtar = (t["komut"], t.get("cwd", "."))
-            if anahtar in gorulen:
-                continue
-            gorulen.add(anahtar)
-            testler.append(t)
-    testler, kapsanan = _kapsananlari_ayikla(testler)
-    if kapsanan:
-        print(f"[KAPSANDI] {len(kapsanan)} filtreli komut koşulmadı — aynı cwd'de filtresiz eşi "
-              f"koşuyor, kapsamı onun öz alt kümesi: {', '.join(kapsanan)}")
 
-    env, tmp = _izole_tmp(k)
-    sonuclar = []
-    try:
-        for t in testler:
-            calisma = (k.kok / t.get("cwd", ".")).resolve()
-            kimlik = f"{t.get('cwd', '.')}::{t['komut']}"
-            if not calisma.is_dir():
-                sonuclar.append({"kimlik": kimlik, "cikis": None, "failure": None,
-                                 "not": "ÖLÇÜLEMEDİ — cwd yok ('temiz' DEĞİL)"})
-                continue
-            ilk = _komutu_coz(t["komut"])
-            betik = _betik_yolu(ilk)
-            if betik is not None and not (calisma / betik).exists():
-                sonuclar.append({"kimlik": kimlik, "cikis": None, "failure": None,
-                                 "not": f"ÖLÇÜLEMEDİ — {betik} yok ('temiz' DEĞİL)"})
-                continue
-            try:
-                r = _run(ilk, calisma, env=env, timeout=OLCUM_ZAMAN_ASIMI)
-            except subprocess.TimeoutExpired:
-                # ⛔ ÇÖKME DEĞİL, HÜKÜM: aşım da bir ölçüm sonucudur ve 'temiz' DEĞİLDİR.
-                # Diğer komutlar ölçülmeye devam eder; kayıt yine de diske yazılır.
-                sonuclar.append({"kimlik": kimlik, "cikis": None, "failure": None,
-                                 "not": f"ÖLÇÜLEMEDİ — {OLCUM_ZAMAN_ASIMI} sn zaman aşımı "
-                                        f"('temiz' DEĞİL)"})
-                print(f"[ZAMAN AŞIMI] {kimlik} — {OLCUM_ZAMAN_ASIMI} sn'de bitmedi; "
-                      f"ÖLÇÜLEMEDİ yazıldı, akış durmadı")
-                continue
-            cikti = (r.stdout or "") + (r.stderr or "")
-            m = _SONUC_DESEN.search(cikti)
-            sonuclar.append({"kimlik": kimlik, "cikis": r.returncode,
-                             "failure": int(m.group(1)) if m else None,
-                             "on_kosul": t.get("on_kosul")})
-            print(f"[{'OK ' if r.returncode == 0 else 'RED'}] {kimlik} (rc={r.returncode})")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    _yaz_json(k.durum_dizini / f"olcum-{args.asama}.json",
-              {"asama": args.asama, "zaman": _simdi(), "testler": sonuclar,
-               "kapsam_disi": "Bu ölçüm YALNIZ seçili sınıfların haritada yazılı test "
-                              "komutlarını koşar; koşulamayanlar 'ÖLÇÜLEMEDİ' yazılır."})
-    # §6: "0 koştu (kırmızı olsa bile) · **2 koşturulamadı**" · §7 adım 6: "2 → DUR".
-    # ⛔ Koşulsuz `return 0`, "ölçülemeyen güncelleme yapılmaz" kuralını mekanik olarak devre
-    # dışı bırakıyordu: hem "haritada hiç test komutu yok" hem de "komutların hiçbiri
-    # koşturulamadı" hâllerinde akış "ölçüldü" sayılıp devam ediyordu. ÖLÇÜLEMEDİ ≠ TEMİZ.
-    kosan = [s for s in sonuclar if s.get("cikis") is not None]
-    if kosan:
-        return 0
-    if not sonuclar:
-        print("DUR: seçili sınıfların haritada test komutu YOK — hiçbir şey ÖLÇÜLEMEDİ "
-              "('temiz' DEĞİL, §6 çıkış 2).", file=sys.stderr)
+    nedenler = []
+    if kayit is None:
+        nedenler.append(neden)
+    if fark is None:
+        nedenler.append("disk ağacı yayın etiketiyle karşılaştırılamadı (ÖLÇÜLEMEDİ)")
+    elif fark:
+        nedenler.append(f"yerel ağaç {etiket} ağacından farklı ({len(fark)} yol)")
+    neden_metni = "; ".join(nedenler)
+    yollar = sorted({d.get("yeni_yol") or d["yol"] for _kid, d in secili_dosyalar(k, plan)}
+                    | set(_fark_yollari(fark or [])))
+    takimlar = etkilenen_takimlar(b.harita, yollar)
+    if fark:
+        print(f"[ÖLÇÜLMEDİ] yerel ağaç CI'da ölçülmedi — {len(fark)} yol: "
+              + _kisalt([s.replace("\t", " ") for s in fark]))
     else:
-        print(f"DUR: {len(sonuclar)} test komutunun HİÇBİRİ koşturulamadı — hepsi ÖLÇÜLEMEDİ "
-              f"('temiz' DEĞİL, §6 çıkış 2). Ayrıntı: "
-              + " · ".join(f"{s['kimlik']}: {s.get('not', '—')}" for s in sonuclar[:5]),
-              file=sys.stderr)
-    return 2
-
-
-def yeni_kirmizilar(k: Klon) -> list[str]:
-    once = _oku(k.durum_dizini / "olcum-once.json", None)
-    sonra = _oku(k.durum_dizini / "olcum-sonra.json", None)
-    if once is None or sonra is None:
-        return []
-    if once.get("kaynak") == "ci":
-        # ⛔ CI tabanı = "hepsi yeşil" (`_ci_tabani` bunu `hepsi_yesil` + takım başına
-        # `sonuc == "success"` ile DOĞRULAMADAN bu dosyayı hiç yazmaz). Dolayısıyla `sonra`
-        # turundaki HER kırmızı yenidir. Bu dal olmasaydı `once["testler"]` boş olduğu için
-        # aşağıdaki eşleme hiçbir kimliği bulamaz ve döngü her testi `continue` ile atlardı ⇒
-        # her şey kırmızıyken bile "yeni kırmızı yok" denirdi. Sessiz sahte-yeşil.
-        return [t["kimlik"] for t in sonra["testler"] if t.get("cikis") not in (0, None)]
-    o = {t["kimlik"]: t for t in once["testler"]}
-    yeni = []
-    for t in sonra["testler"]:
-        eski = o.get(t["kimlik"])
-        if eski is None:
-            continue
-        if eski.get("cikis") == 0 and t.get("cikis") not in (0, None):
-            yeni.append(t["kimlik"])
-        elif (eski.get("failure") is not None and t.get("failure") is not None
-              and t["failure"] > eski["failure"]):
-            yeni.append(t["kimlik"])
-    return yeni
+        print(f"[ÖLÇÜLMEDİ] sonra-ölçüm: CI bu ağaca kefil değil — {neden_metni}")
+    onceki = test_borcu_oku(k)
+    if onceki and onceki.get("bozuk"):
+        # Okunamayan önceki borç EZİLMEZ: içindeki takımlar bilinmiyor; üzerine yazmak onu
+        # "borç yok"a çevirir ve doctor/kapanış sessizleşirdi (ölçülemedi ≠ temiz).
+        borc = onceki
+        print(f"[TEST BORCU ÖLÇÜLEMEDİ] {onceki['bozuk']} — kayıt EZİLMEDİ (içindeki takımlar "
+              "bilinmiyor). Güncellemeden sonra `%testler --hepsi` ile tüm takımları koş.")
+    elif takimlar or onceki:
+        borc = _test_borcu_yaz(k, etiket, neden_metni, fark, takimlar)
+        adlar = [t["ad"] for t in borc["takimlar"]]
+        print(f"TEST BORCU — {len(adlar)} takım koşulmadı ({_kisalt(adlar, 8)}). Ölçülmedi ≠ "
+              "yeşil: güncellemeden sonra `%testler` ile koşulur.")
+    else:
+        borc = None
+        print("TEST BORCU — yok: değişen yolların sınıflarında test komutu yok.")
+    _yaz_json(k.durum_dizini / "olcum-sonra.json", {
+        "asama": "sonra", "zaman": _simdi(), "kaynak": "olculmedi", "testler": [],
+        "neden": neden_metni, "farkli_yollar": fark,
+        "test_borcu": [t["ad"] for t in borc["takimlar"]] if borc else []})
+    return 0
 
 
 # =====================================================================================================
@@ -2037,18 +2166,21 @@ _PY_KOMUT = re.compile(r"python\s+[\w./\\-]+\.py[^,;\n]*")
 # BAKILAN: `komut_ozel_adim`ın `harita.json` → `ozel_adim` SERBEST METNİNDEN `_PY_KOMUT` ile
 #   çıkardığı komutlar. Tehdit modeli: bir Türkçe cümlenin içine sıkıştırılan tehlikeli bayrak
 #   göz denetiminden kaçar ve tek bir izinli `guncelle.py` çağrısı içinden koşar.
-# BAKILMAYAN (ve kasıtlı olarak BAKILMAYACAK): `komut_olc`ün `harita.json` → `test[].komut`
-#   listesi ve `komut_butunluk`un motor kaynağına GÖMÜLÜ komutları. Gerekçe — ölçüldü:
+# BAKILMAYAN (ve kasıtlı olarak BAKILMAYACAK): `harita.json` → `test[].komut` listesi ve
+#   `komut_butunluk`un motor kaynağına GÖMÜLÜ komutları. Z162'den (2026-09-27) beri `olc` bu
+#   listeyi HİÇ koşmaz, yalnız test borcuna yazar; listeyi güncellemenin DIŞINDA, kullanıcı
+#   isteğiyle `scripts/testler.py` (`%testler`) koşar. Gerekçe — ölçüldü:
 #   (a) o komutlar serbest metinden ÇIKARILMAZ, yapısal bir listede tek tek durur (gözden
 #       kaçma tehdidi yok, `butunluk`unkiler zaten kodun kendisinde);
-#   (b) `harita_yukle` MOTORUN KENDİ kopyasını okur (K4) — klonunkine hiç bakılmaz;
-#   (c) haritadaki 44 test komutunun çoğu `python -m unittest discover -s ...` ve
+#   (b) `testler.py` KLONUN kendi haritasını okur ve klonun kendi içinde koşar — motorun K4
+#       güvencesi orada yoktur, ama koşulan şey zaten klonun kendi test betikleridir;
+#   (c) haritadaki test komutlarının çoğu `python -m unittest discover -s ...` ve
 #       `python skills-sap/.../tests/run_tests.py` biçimindedir; bunları bu allowlist'ten
-#       geçirmek `olc`u her sınıfta rc=2 (DUR) yapardı — yani ölçüm mekanizmasını kapatırdı;
-#   (d) `olc` zaten KLONDA duran test betiklerini koşar ve o betiklerin İÇERİĞİ motor
-#       tarafından denetlenemez ⇒ komut-dizgesi allowlist'i orada SAHTE GÜVENCE olurdu.
-# `_ozel_adim_izinli_mi` bu yüzden `komut_olc`ten çağrılmaz. Bu satırları silmeden önce
-# `test_olc_ALLOWLISTTEN_GECMEZ_kapsam_beyani` testini oku.
+#       geçirmek her takımı reddederdi — yani ölçüm mekanizmasını kapatırdı;
+#   (d) koşulan şey KLONDA duran test betikleridir ve o betiklerin İÇERİĞİ denetlenemez ⇒
+#       komut-dizgesi allowlist'i orada SAHTE GÜVENCE olurdu.
+# `_ozel_adim_izinli_mi` bu yüzden `testler.py`den çağrılmaz. Bu satırları silmeden önce
+# `test_olc_harita_komutunu_KOSMAZ_Z162` testini oku.
 OZEL_ADIM_IZINLI: dict[str, set[str]] = {
     "scripts/install.py": {"--dry-run"},
 }
@@ -2114,13 +2246,13 @@ def komut_ozel_adim(b: Baglam, args) -> int:
                 print(f"ATLANDI: {komut} (betik yok)")
                 continue
             try:
-                r = _run(parcalar, k.kok, env=env, timeout=OLCUM_ZAMAN_ASIMI)
+                r = _run(parcalar, k.kok, env=env, timeout=OZEL_ADIM_ZAMAN_ASIMI)
             except subprocess.TimeoutExpired:
                 cikislar.append({"komut": komut, "cikis": None,
-                                 "not": f"ÖLÇÜLEMEDİ — {OLCUM_ZAMAN_ASIMI} sn zaman aşımı"})
+                                 "not": f"ÖLÇÜLEMEDİ — {OZEL_ADIM_ZAMAN_ASIMI} sn zaman aşımı"})
                 kayit.update({"durum": "hata", "komutlar": cikislar, "zaman": _simdi()})
                 durum_yaz(k, d)
-                print(f"FAIL özel adım {args.ad}: `{komut}` {OLCUM_ZAMAN_ASIMI} sn'de bitmedi "
+                print(f"FAIL özel adım {args.ad}: `{komut}` {OZEL_ADIM_ZAMAN_ASIMI} sn'de bitmedi "
                       f"(ÖLÇÜLEMEDİ — 'temiz' DEĞİL)", file=sys.stderr)
                 return 1
             print((r.stdout or "") + (r.stderr or ""), end="")
@@ -2150,6 +2282,14 @@ ASGARI_GUVENCE_YOLLARI = [
     "config/permissions.json",
 ]
 
+# Z162 ⓑ: bütünlük turu SÜRE BÜTÇELİDİR — güncelleme içinde koşan tek yerel kontrol budur ve
+# uzun bir takıma dönüşmemelidir. Ölçüldü (2026-10-02, geliştirme klonu): beş kontrol birlikte
+# ~22 sn (install --dry-run 0,2 · doctor 1,2 · doctor --skills 0,2 · sap-code-review 18,2 ·
+# foundation test_static 2,0). Bütçeyi ya da adım sınırını aşan kontrol ÖLÇÜLEMEDİ yazılır ve
+# akışı DURDURMAZ (FAIL değildir; ölçülemedi ≠ temiz — RAPOR.md'de görünür).
+BUTUNLUK_BUTCE_SN = 60
+BUTUNLUK_ADIM_SN = 45
+
 
 def komut_butunluk(b: Baglam, args) -> int:
     k = b.k
@@ -2164,6 +2304,7 @@ def komut_butunluk(b: Baglam, args) -> int:
 
     adimlar: list[dict] = []
     env, tmp = _izole_tmp(k)
+    bitis = time.monotonic() + BUTUNLUK_BUTCE_SN
 
     def kos(ad: str, komut: str, kosul: bool = True) -> None:
         if not kosul:
@@ -2176,12 +2317,19 @@ def komut_butunluk(b: Baglam, args) -> int:
                             "not": f"ÖLÇÜLEMEDİ — {betik} yok ('temiz' DEĞİL)"})
             print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ ({betik} yok)")
             return
+        kalan = int(bitis - time.monotonic())
+        if kalan < 1:
+            adimlar.append({"ad": ad, "cikis": None,
+                            "not": f"ÖLÇÜLEMEDİ — {BUTUNLUK_BUTCE_SN} sn bütünlük bütçesi doldu"})
+            print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ (bütçe doldu, koşulmadı)")
+            return
+        sinir = min(BUTUNLUK_ADIM_SN, kalan)
         try:
-            r = _run(parcalar, k.kok, env=env, timeout=OLCUM_ZAMAN_ASIMI)
+            r = _run(parcalar, k.kok, env=env, timeout=sinir)
         except subprocess.TimeoutExpired:
             adimlar.append({"ad": ad, "cikis": None,
-                            "not": f"ÖLÇÜLEMEDİ — {OLCUM_ZAMAN_ASIMI} sn zaman aşımı"})
-            print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ ({OLCUM_ZAMAN_ASIMI} sn zaman aşımı)")
+                            "not": f"ÖLÇÜLEMEDİ — {sinir} sn zaman aşımı (bütçe)"})
+            print(f"[ ? ] {ad}: ÖLÇÜLEMEDİ ({sinir} sn zaman aşımı; akış durmadı)")
             return
         adimlar.append({"ad": ad, "cikis": r.returncode,
                         "cikti": ((r.stdout or "") + (r.stderr or ""))[-4000:]})
@@ -2612,10 +2760,9 @@ def komut_kapanis(b: Baglam, args) -> int:
         if kosan.get(ad, {}).get("durum") not in ("kostu", "manuel"):
             eksikler.append(f"özel adım koşmadı: {ad} (§7 adım 9)")
 
-    # ölçüm + bütünlük
-    kirmizi = yeni_kirmizilar(k)
-    for t in kirmizi:
-        eksikler.append(f"sonra-ölçümde YENİ kırmızı: {t}")
+    # ölçüm + bütünlük — Z162: güncelleme test takımı koşmaz ⇒ "yeni kırmızı" hükmü yoktur;
+    # CI'nın kefil olmadığı ağaçta koşulmayan takımlar TEST BORCUDUR (eksik değil, görünür kayıt).
+    borc = test_borcu_oku(k)
     butunluk = _oku(k.durum_dizini / "butunluk.json", None)
     # ⛔ K2 (2026-09-20): eskiden BURADA yalnız "dosya var mı" soruluyordu. `durum_dizini`
     # döngüler arası temizlenmediği için ÖNCEKİ turdan kalan `butunluk.json` "bütünlük turu
@@ -2651,15 +2798,28 @@ def komut_kapanis(b: Baglam, args) -> int:
     rapor += satirlar or ["(seçili kalemde dosya yok)"]
     rapor += ["", "## Sayaçlar",
               ", ".join(f"{a}={c}" for a, c in plan["sayaclar"].items()),
-              "", "## Yeni kırmızı testler",
-              ("\n".join(f"- {t}" for t in kirmizi) if kirmizi else "yok")]
-    # Z26 — ikame edilen tur KALICI raporda da görünmeli: "yok", "yerelde 0 test koştu" ile
-    # karışmasın (ölçülemeyen/koşulmayan şey sessizce 'temiz' okunmaz).
+              "", "## Testler (güncelleme içinde test takımı koşulmaz — Z162)"]
+    # Z26 — ikame edilen tur KALICI raporda da görünmeli; Z162 — ikame edilmeyen tur "ölçülmedi"
+    # olarak görünür (ölçülemeyen/koşulmayan şey sessizce 'temiz' okunmaz).
     for asama in ("once", "sonra"):
         o = _oku(k.durum_dizini / f"olcum-{asama}.json", None) or {}
         if o.get("kaynak") == "ci":
             rapor += [f"- {asama}-ölçüm: yerelde test KOŞULMADI — {o.get('etiket')} CI hükmüyle "
                       f"ikame edildi. {o.get('gerekce', '')}"]
+        elif o.get("kaynak") == "olculmedi":
+            rapor += [f"- {asama}-ölçüm: ÖLÇÜLMEDİ — {o.get('neden', '—')}"]
+        else:
+            rapor += [f"- {asama}-ölçüm: kaydı yok"]
+    rapor += ["", "## Test borcu"]
+    if borc and borc.get("bozuk"):
+        rapor += [f"- ÖLÇÜLEMEDİ: {borc['bozuk']} — `%testler --hepsi` ile tüm takımları koş"]
+    elif borc and borc.get("takimlar"):
+        rapor += [f"- {t['ad']} — `{t['komut']}` (kaynak: {_kisalt(t.get('kaynak_yollar') or [], 3)})"
+                  for t in borc["takimlar"]]
+        rapor += ["", "Bu takımlar yeşil DEĞİL, KOŞULMADI. Güncellemeden sonra `%testler` ile koşulur; "
+                      "kırmızı çıkarsa giderme seçenekleri oradan sunulur."]
+    else:
+        rapor += ["- yok"]
     rapor += ["", "## Bütünlük turu"]
     if butunluk:
         rapor += [f"- {a['ad']}: " + ("ÖLÇÜLEMEDİ" if a.get("cikis") is None
@@ -2686,8 +2846,8 @@ def komut_kapanis(b: Baglam, args) -> int:
     if kod == 3:
         rapor += ["", f"## Kullanıcı onaylı açık FAIL ile kapandı\n{args.kabul}"]
     rapor += ["", "KAPSAM — bakılanlar: plandaki seçili dosyaların disk durumu ve çakışma "
-                  "işareti · özel adımların koşumu · önce/sonra ölçümünün YENİ kırmızıları · "
-                  "bütünlük turu çıkışları.",
+                  "işareti · özel adımların koşumu · CI hükmü (ikame) ya da test borcu · "
+                  "bütünlük turunun hızlı kontrolleri (süre bütçeli).",
               "KAPSAM — bakılmayanlar: değişikliğin ANLAMCA doğru olduğu (temiz birleşme yanlış "
               "olabilir) · aXet'in yeni bağlamı fiilen yüklediği · haritada test komutu olmayan "
               "sınıflar · kullanıcının kendi dosyaları (kapsam dışı, VKD) · canlı SAP."]
@@ -2697,6 +2857,12 @@ def komut_kapanis(b: Baglam, args) -> int:
         print("EKSİK: " + e, file=sys.stderr)
 
     print((k.durum_dizini / "RAPOR.md").read_text(encoding="utf-8"))
+    if kod == 0 and borc and borc.get("bozuk"):
+        print("KAPANDI — test borcu ÖLÇÜLEMEDİ: %testler --hepsi (borç kaydı okunamadı; "
+              "ölçülmedi ≠ yeşil)")
+    elif kod == 0 and borc and borc.get("takimlar"):
+        print(f"KAPANDI — test borcu var: %testler "
+              f"({len(borc['takimlar'])} takım koşulmadı; ölçülmedi ≠ yeşil)")
     return kod
 
 

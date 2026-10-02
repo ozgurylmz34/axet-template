@@ -6,6 +6,22 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.15 — 2026-10-02
+
+### 0.5.15-01 · `%guncelle` uzun test takımı koşmaz: koşulmayan takımlar test borcu olur, yeni `%testler` onları sonradan koşar (yetenek)
+
+- **neden:** Klonda tek bir yerel artık yayının CI sonucunu kullanılamaz kılınca güncelleme tam test takımlarını yerelde koşmaya başlıyordu (ölçüldü: 11 dakika sonra hâlâ bitmemişti; aynı güncelleme artık atılınca ~4 dk). Artık güncelleme hiçbir koşulda test takımı koşmaz: CI hükmü ağaca kefilse onu kullanır, değilse etkilenen takımları `.axet-guncelleme/test-borcu.json`a yazar ve `[ÖLÇÜLMEDİ]` der (ölçülmedi ≠ yeşil). Bütünlük turu toplam 60 sn bütçelidir; süreyi aşan kontrol ÖLÇÜLEMEDİ olur, akışı durdurmaz. Kapanış borç varken `KAPANDI — test borcu var: %testler` der (çıkış 0). Yeni `%testler` (`scripts/testler.py`) borcu, tek takımı ya da hepsini düşük öncelikte koşar; önce süre tahmini basar, her kırmızı için kaynak dosya/yayın kalemi ve dört seçenek gösterir (geri al · yayın sürümünü al · `kur.cmd -Sifirla` · `%hata-bildir`), hiçbirini kendisi uygulamaz; yeşil takım borçtan düşer. `doctor` borç sürdükçe WARN verir. Ayrıca: yerel değişikliğin tamamı yeni sürümde zaten varsa dosya artık yargı vakası değil, otomatik V4i vakasıdır. **Davranış değişikliği:** sınıf kartlarındaki "takımı koş" adımları test borcuna yönlendirir.
+- **dosyalar:** `scripts/guncelle.py`, `scripts/testler.py`, `scripts/doctor.py`, `skills/testler/SKILL.md`, `skills/guncelle/SKILL.md`, `GUNCELLE.md`, `guncelle/harita.json`, `guncelle/kartlar/V4c.md`, `guncelle/kartlar/V4i.md`, `guncelle/kartlar/V4t.md`, `guncelle/kartlar/sinif-config-izin.md`, `guncelle/kartlar/sinif-depo-hijyeni.md`, `guncelle/kartlar/sinif-guncelleme-motoru.md`, `guncelle/kartlar/sinif-kesin-yasak-kanonigi.md`, `guncelle/kartlar/sinif-kurulum-araci.md`, `guncelle/kartlar/sinif-kurulum-bakim-scripti.md`, `guncelle/kartlar/sinif-proje-sablonu.md`, `guncelle/kartlar/sinif-skill-scripti.md`, `guncelle/kartlar/sinif-test-fixture.md`, `guncelle/kartlar/sinif-validator-ailesi.md`, `README.md`, `docs/onboarding.md`, `tests/test_guncelle.py`, `tests/test_guncelle_baslatici.py`, `tests/test_testler.py`
+- **test:** `python tests/run_tests.py -k test_guncelle`, `python tests/run_tests.py -k test_testler`
+- **gerektirir:** —
+
+### 0.5.15-02 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.14 — 2026-09-27
 
 ### 0.5.14-01 · `adt_revisions` davranış tanımı (BDEF), tablo ve servis tanımında sürüm geçmişini bulur (düzeltme)

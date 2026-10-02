@@ -68,6 +68,8 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
 6. **Vaka kartları.** Yargı gereken her dosya için kartını `guncelle.py kart <KOD>` ile oku
    (kart da `origin/main`'den gelir). Kartı okumadan o dosyaya dokunma.
 7. **Bitişte** motorun ürettiği `RAPOR.md`'yi AYNEN göster ve gerekiyorsa "aXet'i kapatıp aç" de.
+   Kapanış `KAPANDI — test borcu var: %testler` dediyse bunu da söyle: koşulmayan takımlar yeşil
+   DEĞİLDİR; kullanıcı isterse güncellemeden sonra `%testler` ile koşar (süreyi `%testler` önce söyler).
    `<TMP>` artık gereksizdir; kullanıcıya yolunu söyle, silmesini kendisi seçsin.
 8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md` 16. adım —
    `python "<KLON>/scripts/tarayici_hazirla.py"`. İlk satırı (`TARAYICI: HAZIR|ATLANDI|EKSİK — …`) AYNEN
@@ -86,13 +88,16 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
   bir `--force`, `git clean` · `plan.json`/`durum.json`'u elle düzenlemek · `.conn_adt` okumak ·
   `install.py --sap-write` ve `behavior_manifest.py generate` (ikisi de aXet'e kapalıdır; gerekirse
   kullanıcı KENDİ terminalinde çalıştırır) · planda olmayan bir dosyaya dokunmak.
-- **Akış DIŞINDA test koşma.** `tests/run_tests.py` (filtreli ya da filtresiz), proje/skill test
-  takımları ya da kendi seçtiğin bir test komutu bu akışın parçası DEĞİLDİR: hangi testin koşacağına
-  motor karar verir (`olc --asama once|sonra`, `butunluk`). Kırmızı ya da şüphe görürsen kendi
-  koşumunla teşhise girme, `<TMP>` dışında dizin açma — `olc --asama sonra` ve bütünlük turunun
-  hükmünü kullanıcıya AYNEN raporla. (Ölçüldü: akış dışı test koşumu ~2 dakikalık bir güncellemeyi
-  dakikalarca uzattı ve akışta olmayan bir teşhise sürükledi.)
+- **Güncelleme içinde test takımı koşma (Z162).** `tests/run_tests.py` (filtreli ya da filtresiz),
+  `scripts/testler.py`, proje/skill test takımları ya da kendi seçtiğin bir test komutu bu akışın
+  parçası DEĞİLDİR; motor da takım koşmaz. Güncelleme yalnız bütünlük turunun hızlı kontrollerini
+  koşar (`butunluk`, ≤ 60 sn). CI'nın kefil olmadığı ağaçta koşulmayan takımlar **test borcudur**:
+  kapanış `KAPANDI — test borcu var: %testler` der — bunu AYNEN aktar; kullanıcı isterse takımlar
+  güncellemeden SONRA `%testler` ile koşulur. Kırmızı ya da şüphe görürsen kendi koşumunla teşhise
+  girme, `<TMP>` dışında dizin açma — bütünlük turunun hükmünü AYNEN raporla. (Ölçüldü: akış dışı
+  test koşumu ~2 dakikalık bir güncellemeyi dakikalarca uzattı; yerel bir artık CI ikamesini
+  kapatınca motorun kendi ölçümü 11 dakikada bitmemişti.)
 - **Commit etme, push etme.** Motor kendi commit'lerini kendi git kimliğiyle atar; sen ayrıca
   commit atmazsın. Klon hiçbir zaman push edilmez.
-- Kullanıcı cevap vermeden bir yargı vakasını işaretleme; testsiz "tamam" deme.
+- Kullanıcı cevap vermeden bir yargı vakasını işaretleme; test borcunu söylemeden "tamam" deme.
 - Ölçülen sayıları birimi ve kaynağıyla aktar; bir adım ÖLÇÜLEMEDİYSE "ÖLÇÜLEMEDİ" yaz, "geçti" sayma.

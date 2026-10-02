@@ -15,7 +15,7 @@ Plandaki dosya `config/permissions.json`, `.axetcode-denylist` ya da proje şabl
    KOMUTTUR — `guncelle.py ozel-adim config-izin-kok` → `python scripts/install.py`; bu koşmadan
    kapanış 0 dönmez. `proje-sablon-config` için özel adım MANUEL'dir (`%guncelle-proje`) ve
    `install.py` koşmaz — o satırı kullanıcıya aynen aktarmak yeter.
-3. `python tests/run_tests.py -k install` koş.
+3. Test (`python tests/run_tests.py -k install`): güncelleme içinde KOŞMA (Z162) — CI'nın kefil olmadığı ağaçta bu takım adım 10'da **test borcuna** yazılır; kapanıştan sonra kullanıcı isterse `%testler` koşar.
 4. **Etkinleşme de alt sınıfa göre değişir (yukarıdaki tablo):** `config-izin-kok` için
    (`etkin = install-sonra-yeni-oturum`) kullanıcıya söyle: önce `install.py`, sonra **aXet'i
    kapatıp aç** — izinler oturum başında okunur. `proje-sablon-config` için ayrı bir etkinleşme

@@ -34,9 +34,10 @@ eklemişiz; ikisi de kalmalı.
 Kullanıcı cevap vermeden `isaretle` çalıştırma. Dosyanın sınıfı `validator` ya da `kritik_yol` ise
 akışın 11. adımı (hüküm karşılaştırması) ZORUNLUDUR ve şöyle ÖLÇÜLÜR:
    Kontrol grubu kur: **aynı girdi, önce ve sonra.**
-   - **Fixture'ı olan validator:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k validator_fixtures`
-     — adım 6 (önce-ölçüm) ve adım 10 (sonra-ölçüm) çıktılarını karşılaştır; her validator için
-     `bad` tarafı FAIL, `good` tarafı PASS olmalı ve bu İKİSİNDE DE tutmalı.
+   - **Fixture'ı olan validator:** fixture takımı (`python skills-sap/sap-adt-foundation/tests/run_tests.py -k validator_fixtures`)
+     uzundur ve güncelleme içinde KOŞULMAZ (Z162): takım adım 10'da test borcuna yazılır, her
+     validator için `bad` → FAIL / `good` → PASS kapanıştan sonra `%testler` ile ölçülür. Güncelleme
+     İÇİNDEKİ hüküm karşılaştırmasını bu dosya için de aşağıdaki fixture'sız yöntemle yap.
    - **Fixture'ı olmayan validator:** taban sürümünü `git show <taban>:<yol>` ile geçici bir dosyaya
      al; iki sürümü de AYNI örnek proje kökünde koş. Ortam değişkenini PowerShell'de AYRI
      SATIR olarak ver — `$env:AXET_SAP_PROJECT_DIR = '<kök>'`, sonra `python <validator yolu>`.

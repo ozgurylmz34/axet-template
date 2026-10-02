@@ -2,9 +2,9 @@
  "surum": 1,
  "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
  "yayinlar": {
-  "v0.5.14": {
-   "kaynak_commit": "e34c5d7fa9437a8c152dbc4cdb03d4b895913c69",
-   "olcum_zamani": "2026-09-27T09:44:03",
+  "v0.5.15": {
+   "kaynak_commit": "4e7cd85d629170177c3bf333c9b92e6dc205eaad",
+   "olcum_zamani": "2026-10-02T23:07:05",
    "hepsi_yesil": true,
    "depo": "ozgurylmz34/axet",
    "takimlar": [
@@ -13,19 +13,7 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 2/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (foundation · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Kurulum dumani (install + doctor)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 4/5 · Python 3.12)",
+     "ad": "Testler (kok-public 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -33,15 +21,11 @@
      "sonuc": "success"
     },
     {
+     "ad": "Testler (kok-public 4/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
      "ad": "Testler (kok-public 5/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 3/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -53,11 +37,15 @@
      "sonuc": "success"
     },
     {
+     "ad": "Testler (kok 4/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
      "ad": "Testler (kok 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok-public 1/5 · Python 3.12)",
+     "ad": "Testler (kok 2/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -65,7 +53,19 @@
      "sonuc": "success"
     },
     {
+     "ad": "Testler (kok 3/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (foundation · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
      "ad": "Yayin provasi (guncelle uctan uca)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Kurulum dumani (install + doctor)",
      "sonuc": "success"
     }
    ],

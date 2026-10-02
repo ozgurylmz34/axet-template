@@ -12,7 +12,7 @@ Plandaki dosya bir skill klasörü altındaki `.py`/çalıştırılabilir dosya.
 1. Dosyayı al/birleştir.
 2. Eş dosya olarak skill gövdesi (`SKILL.md`) aynı kalemde mi bak — script'in sözleşmesi orada
    anlatılır; yalnız biri gelirse ikisi ayrışır.
-3. Skill'in kendi test takımını koş (harita `test` alanı: ilgili `tests/run_tests.py`).
+3. Skill'in kendi test takımı (harita `test` alanı: ilgili `tests/run_tests.py`): güncelleme içinde KOŞMA (Z162) — CI'nın kefil olmadığı ağaçta bu takım adım 10'da **test borcuna** yazılır; kapanıştan sonra kullanıcı isterse `%testler` koşar.
 4. Etkinleşme anında: değişiklik bir sonraki çağrıda geçerlidir.
 
 ## DUR

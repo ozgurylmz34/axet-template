@@ -763,6 +763,24 @@ def check_baglam_boyutu(cwd: Path | None, cfg_file: Path | None = None) -> dict:
     return olc
 
 
+def check_test_borcu(klon: Path | None = None) -> None:
+    """Z162: güncelleme koşmadığı test takımlarını `.axet-guncelleme/test-borcu.json`a yazar.
+    Borç VARKEN WARN, yokken hiçbir satır (borçsuz klonda gürültü yok). Okunamayan kayıt da WARN:
+    ölçülemedi ≠ borç yok. Takımları koşmaz — yalnız kaydı okur (doctor hızlı kalır)."""
+    yol = (klon or inst.AXET_HOME) / ".axet-guncelleme" / "test-borcu.json"
+    if not yol.exists():
+        return
+    veri, hata = _json_oku(yol)
+    if hata is not None or not isinstance(veri, dict):
+        add("WARN", f"test borcu ÖLÇÜLEMEDİ: {yol.name} okunamadı ({hata or 'nesne değil'}) — "
+            "%testler --hepsi")
+        return
+    takimlar = [t.get("ad") or t.get("komut") for t in veri.get("takimlar") or [] if isinstance(t, dict)]
+    if takimlar:
+        add("WARN", f"test borcu: {len(takimlar)} takım — %testler ({', '.join(takimlar[:6])}"
+            f"{' …' if len(takimlar) > 6 else ''}; güncellemede koşulmadı, ölçülmedi ≠ yeşil)")
+
+
 def check_template() -> None:
     lines = len(inst.CORE_FILE.read_text(encoding="utf-8").splitlines())
     add("PASS" if lines <= 150 else "WARN", f"çekirdek {lines} satır (hedef ≤ 150)")
@@ -1525,6 +1543,7 @@ def main() -> int:
     else:
         cfg, sap = check_global()
         check_template()
+        check_test_borcu()
         check_project(cwd, sap)
         check_skills(proje, cfg)
         check_baglam_boyutu(cwd)
@@ -1546,6 +1565,7 @@ def main() -> int:
               "denylist davranışı · model seçimi · pre-commit'in fiilen koştuğu (yalnız kablolaması) · "
               "commit'siz validator/kural dosyalarının İÇERİĞİ (yalnız commit'siz oldukları; gitignore'lu olanlar görünmez) · "
               "davranış yüzeyi değişikliğinin içeriği (yalnız onaylı olup olmadığı) · "
+              "test borcundaki takımların sonucu (doctor koşmaz; yalnız `test-borcu.json` kaydını okur — %testler koşar) · "
               "tarayıcı testinin fiilen açıldığı (yalnız kurulum/config durumu okunur; duman testi tarayici_hazirla.py'de) · "
               "SAP Python paketleri yalnız ZORUNLU liste (install.ZORUNLU_PAKETLER) için ve yalnız bu yorumlayıcıda "
               "import edilerek ölçülür — sürüm alt sınırı ve isteğe bağlı skill paketleri (python-docx/pptx, openpyxl, "

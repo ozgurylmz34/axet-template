@@ -17,7 +17,7 @@ Plandaki dosya `templates/project/**`, `templates/project-sap/**` ya da `templat
    sınıfında MANUEL özel adım olarak girer (`guncelle.py ozel-adim proje-sablon-diger` →
    `MANUEL ADIM (...)` satırı; o satırı AYNEN aktar). `proje-sablon-sap-json` ve `paket-sablon`
    alt sınıflarında özel adım YOKTUR — yine de aynı uyarıyı sözlü olarak yap.
-3. Test: `python tests/run_tests.py -k new_project` (paket şablonu için `-k new_package`).
+3. Test (`python tests/run_tests.py -k new_project`; paket şablonu için `-k new_package`): güncelleme içinde KOŞMA (Z162) — CI'nın kefil olmadığı ağaçta bu takım adım 10'da **test borcuna** yazılır; kapanıştan sonra kullanıcı isterse `%testler` koşar.
 4. `templates/package/**` `%guncelle-proje` kapsamı DIŞINDADIR: raporda yalnız bilgi satırı olur.
 
 ## DUR

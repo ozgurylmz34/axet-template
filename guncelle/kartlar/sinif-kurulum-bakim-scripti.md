@@ -14,8 +14,8 @@ Plandaki dosya `scripts/install.py`, `scripts/doctor.py`, `scripts/new_project.p
 1. Dosyayı al/birleştir.
 2. `scripts/install.py` değiştiyse ÖNCE `python scripts/install.py --dry-run` (çıkış 0 olmalı),
    SONRA gerçek `python scripts/install.py` — ikisi de `guncelle.py ozel-adim` ile koşar.
-3. Eş test dosyalarını koş (harita `esler`: ilgili `tests/test_*.py`); pratikte
-   `python tests/run_tests.py`.
+3. Eş test dosyaları (harita `esler`: ilgili `tests/test_*.py`; pratikte
+   `python tests/run_tests.py`): güncelleme içinde KOŞMA (Z162) — CI'nın kefil olmadığı ağaçta bu takım adım 10'da **test borcuna** yazılır; kapanıştan sonra kullanıcı isterse `%testler` koşar.
 4. Etkinleşme: script'ler anında geçerlidir; `install.py` için önce install, sonra kapat-aç.
 
 ## DUR
