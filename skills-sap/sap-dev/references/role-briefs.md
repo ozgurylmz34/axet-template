@@ -39,7 +39,7 @@ SAP'ye yalnız şu CLI ile ve yalnız OKUMA sınıfı araçlarla erişirsin:
   (araç ve sınıf listesi: aynı komut `--list`; çıktısı otoritedir. Uzun/tırnaklı argüman: --args-file <json>)
 OKUMA sınıfı (serbest): ping, adt_get, adt_msgclass_read, adt_search_objects, adt_transport_list, adt_where_used,
   adt_impact_analysis, adt_grep_source, adt_package_contents, adt_atc_check, adt_table_read, adt_sql_query,
-  adt_dump_list, adt_inactive_objects, adt_enhancements, adt_enhancement_read, adt_enhancement_options,
+  adt_dump_list, adt_dump_read, adt_inactive_objects, adt_enhancements, adt_enhancement_read, adt_enhancement_options,
   adt_feature_probe, adt_lock_check, adt_unit_run (YALNIZ allow_risky_tests=false).
 YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, adt_delete, adt_publish_service,
   adt_classrun, adt_domain_create, adt_dtel_create, adt_struct_create, adt_screen_generate,

@@ -2,9 +2,9 @@
  "surum": 1,
  "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
  "yayinlar": {
-  "v0.5.15": {
-   "kaynak_commit": "4e7cd85d629170177c3bf333c9b92e6dc205eaad",
-   "olcum_zamani": "2026-10-02T23:07:05",
+  "v0.5.16": {
+   "kaynak_commit": "4098bf5544b2d7c5f3f96aff78c03c27505c08ad",
+   "olcum_zamani": "2026-10-03T18:07:07",
    "hepsi_yesil": true,
    "depo": "ozgurylmz34/axet",
    "takimlar": [
@@ -13,35 +13,7 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok-public 1/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 3/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 5/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 5/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 2/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 1/5 · Python 3.12)",
+     "ad": "Testler (kok 3/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -49,11 +21,27 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (skill · Python 3.12)",
+     "ad": "Testler (kok-public 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 3/5 · Python 3.12)",
+     "ad": "Testler (kok 1/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 2/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 4/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 3/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 5/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -61,11 +49,23 @@
      "sonuc": "success"
     },
     {
-     "ad": "Yayin provasi (guncelle uctan uca)",
+     "ad": "Testler (kok-public 5/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (skill · Python 3.12)",
      "sonuc": "success"
     },
     {
      "ad": "Kurulum dumani (install + doctor)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 4/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Yayin provasi (guncelle uctan uca)",
      "sonuc": "success"
     }
    ],

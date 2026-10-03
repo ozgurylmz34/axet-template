@@ -71,8 +71,8 @@ class Kapi(unittest.TestCase):
         tools = {t["name"]: t for t in data["result"]["tools"]}
         okuma = sorted(n for n, t in tools.items() if t["class"] == "read")
         yazma = sorted(n for n, t in tools.items() if t["class"] == "write")
-        H.kaydet("1a --list okuma sayısı", "26", str(len(okuma)), len(okuma) == 26)
-        self.assertEqual(len(okuma), 26, okuma)  # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read
+        H.kaydet("1a --list okuma sayısı", "27", str(len(okuma)), len(okuma) == 27)
+        self.assertEqual(len(okuma), 27, okuma)  # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read · Z166: +adt_dump_read
         for ad in ("adt_revisions", "adt_system_info", "adt_object_structure", "sap_doctor", "adt_pretty_print"):
             self.assertEqual((tools[ad]["class"], tools[ad]["available_on"]), ("read", ["all"]), ad)
         tr = tools["adt_textpool_read"]

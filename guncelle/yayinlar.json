@@ -3060,6 +3060,90 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.16",
+   "tarih": "2026-10-03",
+   "kalemler": [
+    {
+     "id": "0.5.16-01",
+     "baslik": "SAP SQL sorgusu: 255 karakteri aşan satır otomatik kırılır — sessiz yanlış sonuç ve anlaşılmaz 400 hatası kapandı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "ADT veri önizleme ucu her SQL satırını 255. karakterde keser. Kesim bir kelimenin ortasına gelirse 400 döner; geçerli bir yere gelirse kırpılmış sorgu SESSİZCE çalışır ve eksik/yanlış veri döner (canlıda ölçüldü: aynı sorgu kırmadan 200 + 0 satır, kırınca doğru 3 satır). `adt_sql_query` ve SQL gönderen diğer iki nokta artık uzun satırı boşluktan kırar; literal, backtick ve yorum bölünmez, sütun-1 `*` yorumu korunur. Kırılamayan satırda (ör. 255'ten uzun tek literal) istek HİÇ gönderilmez, açık hata döner. SAP'nin 400 gövdesi artık kırpılmadan taşınır, gerçek sebep görünür. Belgedeki eski \"5'ten fazla OR → 400\" teşhisi yanlıştı, düzeltildi.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/populate.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py",
+      "skills-sap/sap-adt-foundation/references/foundation-query.md",
+      "skills-sap/sap-adt-foundation/tests/test_sql_satir_kirma.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_sql_satir_kirma",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_populate_hat"
+     ]
+    },
+    {
+     "id": "0.5.16-02",
+     "baslik": "Yeni `adt_dump_read` (ST22 dump okuma) · dump listesinde başka client'ın dump'ları varsayılan gizli · araç gürültüsü etiketi",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Dump listesi yalnız başlık veriyordu; içerik okunamıyordu. `adt_dump_read` tek dump'ı salt-okur getirir: varsayılan yapılandırılmış alanlar, `summary=True` özet bölümleri, `formatted=True` düz metin (bayt tavanlı, kesildiyse `truncated`). Geçersiz kimlik SAP'ye istek atılmadan reddedilir. Aynı sunucuda başka client'ın (ör. test client'ı) dump'ı kişisel veri taşıyabileceği için `adt_dump_list` onları varsayılan GİZLER ve sayar (\"dump yok\" değil); `acknowledge_risk=True` olmadan başka client'ın dump içeriği okunmaz. aXet'in kendi SQL sorgularının ürettiği bilinen dump (`GENERATE_SUBPOOL_DIR_FULL` + veri önizleme sınıfı) `arac_gurultusu` olarak etiketlenir (canlıda: 51 dump'ın 36'sı). Okuma araçları 26 → 27.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/references/foundation-query.md",
+      "skills-sap/sap-adt-foundation/SKILL.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_dump_okuma.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "docs/sap-api-policy.md",
+      "skills-sap/sap-dev/references/role-briefs.md"
+     ],
+     "gerektirir": [
+      "0.5.16-01"
+     ],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_dump_okuma",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_cli_gate"
+     ]
+    },
+    {
+     "id": "0.5.16-03",
+     "baslik": "playwright-cli ile parola/token: `run-code` kodu çıktıda aynen geri basar — sır komut metnine yazılmaz",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "playwright-cli `run-code` çalıştırdığı kodu (ve `--filename` dosyasının içeriğini) çıktıda aynen gösterir; koda yazılan parola ya da token sohbet geçmişine düşer. `run-code` içinde ortam değişkeni de okunamaz. `sap-ui5-fiori` runtime-verification §4.6'ya kural ve güvenli yol eklendi: sır `open` anında geçici bir config + secrets dosyasıyla verilir, form alanına sırrın ADI yazılır, çıktı maskelenir. Ölçüm playwright-cli 0.1.17'de; aXet'in kurduğu 0.1.21'de ölçülmedi (belgede yazıyor).",
+     "dosyalar": [
+      "skills-sap/sap-ui5-fiori/references/runtime-verification.md",
+      "tests/test_sap_skill_bilgi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_sap_skill_bilgi"
+     ]
+    },
+    {
+     "id": "0.5.16-04",
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k readme"
+     ]
+    }
+   ]
   }
  ]
 }

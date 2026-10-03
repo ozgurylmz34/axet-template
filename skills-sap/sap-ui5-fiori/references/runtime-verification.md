@@ -206,6 +206,32 @@ npx playwright-cli -s=c detach       # Chrome'u kapatmaz
 - aXet'in CDP Chrome'unu **kendisinin başlatması ÖLÇÜLMEDİ** (oturum sonunda süreçlerin öldürülmesi nedeniyle sorunlu
   olması beklenir).
 
+**Sırlar (parola / token / auth başlığı) — DEĞER komut metnine yazılmaz**
+Ölçüm (normal kabuk, `@playwright/cli` **0.1.17**, 2026-10-03, yalnız sahte değerlerle). aXet içinde ve aXet'in sabitlediği
+**0.1.21**'de **ÖLÇÜLMEDİ** — davranış sürümle değişebilir, kullanmadan önce sahte değerle yeniden ölç.
+
+| Durum | Sonuç |
+|---|---|
+| `run-code "<kod>"` | Kod `### Ran Playwright code` bloğunda **aynen** geri basılır — koddaki sır çıktıya (ve model geçmişine) düşer |
+| `run-code --filename=<dosya>` | Dosyanın içeriği de **aynen** basılır — sırrı dosyaya taşımak çözüm değil |
+| `run-code` içinde `process.env` | **Yok** (`typeof process` = `undefined`) — sır ortam değişkeninden okunamaz |
+| `--raw run-code` | Kod basılmaz, ama sır yine komut metninde/dosyada durur — **çözüm değil** |
+| `PLAYWRIGHT_MCP_SECRETS_FILE` ile açılmış oturum | Çıktıdaki sır değerleri `<secret>AD</secret>` olarak maskelenir; `fill <ref> AD` değeri yerine koyar |
+
+**Kural:** sır DEĞERİ `run-code`/`fill`/`type`/`eval` metnine ve `--filename` dosyasına yazılmaz. Sır ortam değişkeninden
+gelir ve oturuma **`open` anında** verilir: repo DIŞINDA geçici bir dizine `cli.config.json`
+(`browser.contextOptions.httpCredentials`) + dotenv biçiminde `secrets.env` yazılır, `open --config=<dizin>/cli.config.json`
+`PLAYWRIGHT_MCP_SECRETS_FILE=<dizin>/secrets.env` ile koşulur ve dizin silinir — **yazma + `open` + silme TEK `bash`
+çağrısında** (alt kabuk + `trap 'rm -rf "$D"' EXIT`; değişken ve `trap` çağrılar arasında taşınmaz, bölünürse düz metin
+sır diskte kalır). CLI config ile sırları `open` anında belleğe alır: dosyalar silindikten sonra ayrı çağrıda
+`$PW fill <ref> PW_AUTH_PASS` (sırrın **ADI**) alanı doldurdu, çıktıda değer 0 kez göründü (0.1.17'de ölçüldü).
+- `--config` verildiğinde global `~/.playwright/cli.config.json` ile birleşimi (`--no-sandbox` korunur mu) **ÖLÇÜLMEDİ**
+  — aXet bash'inde `--no-sandbox` gerektiği için (adım 2) geçici config'e de `launchOptions` aynen yazılır.
+- dotenv değeri **tırnakla** yazılır: tırnaksız değer `#`'de kesilir (ölçüldü: `ab#cd` → alan `ab` ile doldu). Değeri
+  İÇERMEDİĞİ tırnağı seç (`'` → `` ` `` → `"`); satır sonu taşıyan ya da üç tırnak türünü de içeren sır bu yolla verilemez.
+- Basic-auth için `httpCredentials` yeterli çıktı. `extraHTTPHeaders` ile elle başlık kurma **ÖLÇÜLMEDİ**.
+- Sızma şüphesinde: çıktıyı redakte et, geçici dosyaları sil, kimlik bilgisinin değiştirilmesini kullanıcıya öner.
+
 **Sınırlar**
 - Tarayıcı oturumu `axet-code run` bitince ölür (ölçüldü: `list` → `(no browsers)`). Aynı `run` içinde ardışık `bash`
   çağrıları arasında yaşar. Etkileşimli TUI oturumundaki ömrü **ÖLÇÜLMEDİ**.

@@ -80,6 +80,9 @@ READ_TOOLS = frozenset({
     "adt_pretty_print",
     # Z39 kalanı (2026-09-26, lider onayı): metin havuzu OKUMA — yalnız GET (kilit/PUT/POST yok; tools/textpool.py)
     "adt_textpool_read",
+    # Z166 (2026-10-03, kullanıcı onayı): tek ST22 dump'ını okur — yalnız GET (tools/query.py);
+    # PII: DEV dışı tier + başka client acknowledge_risk ister (araç içi kapı)
+    "adt_dump_read",
 })
 # Okuma kapısını (`check_read`) ve profil kontrolünü CLI'de ATLAYAN araçlar. `ping` SAP'ye gitmez;
 # `sap_doctor` sap-project.json/.conn_adt eksikliğini TEŞHİS etmek için var — aynı ön koşulları

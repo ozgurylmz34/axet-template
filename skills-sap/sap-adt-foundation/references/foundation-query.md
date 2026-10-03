@@ -40,7 +40,7 @@ aşağıdaki ölçülmüş biçimlerle **tek değişken** değiştirerek daralt:
 
 | # | Belirti | Sebep (ölçülmüş) | Çare |
 |---|---|---|---|
-| 1 | Uzun `IN (...)` ya da 5'ten fazla `OR` → 400 | uzun WHERE | 5'erli parçalara böl, sonuçları birleştir |
+| 1 | Tek satırı 255 karakteri aşan sorgu → 400 **ya da SESSİZ yanlış sonuç** (`ok:true`) | SAP her satırı 255. karakterde keser (token ortası = 400; geçerli sınır = kırpılmış sorgu koşar). Eski "uzun `IN` / çok `OR` → 400" teşhisi bundandı (252 kr tek satırda 13 `OR` → 200) | araç gönderimden önce kendisi kırar (2026-10-03); tek başına 255'i aşan literal/yorum kırılamaz → `SQLSatirKirilamadi`, sorgu gitmez: literali kısalt/böl |
 | 2 | Tahmin edilen kolon adı → 400 | kolon yok | önce küçük `row_limit` ile `SELECT *` → kolonları keşfet, sonra daralt |
 | 3 | `tadir.object`, `seoclass.state` → 400 | bağlama göre anahtar kelime çakışması (aynı turda `e071.object` çalıştı; kapsamı ÖLÇÜLMEDİ) | şüpheli kolonu çıkarıp tekrar ölç |
 | 4 | `SELECT lgnum, COUNT(*) … GROUP BY lgnum` → 400 | başka kolonla aggregate'te alias şart | `COUNT(*) AS cnt` → 200 |
@@ -212,6 +212,13 @@ cli adt_atc_check '{"name":"ZCL_DEMO_CLASS","object_type":"class"}'
 
 ## 6. Kısa dump ve inaktif obje listesi
 - `adt_dump_list` (ST22 muadili): çalışma zamanı 500/dump kök nedeni. Dump kaydı kullanıcı adı taşır → DEV dışında `acknowledge_risk`.
+  Feed aynı sistemin TÜM client'larını taşır: bağlantının client'ından farklı ya da client'ı tespit edilemeyen girdi
+  varsayılan GİZLENİR, sayısı `gizlenen_baska_client` / `gizlenen_client_bilinmeyen` + `notice` ile döner ("dump yok" DEĞİL).
+  `arac_gurultusu: true` = bilinen araç gürültüsü (`GENERATE_SUBPOOL_DIR_FULL` ∧ `CL_ADT_DP_OPEN_SQL_HANDLER`, madde 11) —
+  listede kalır, yalnız etiketlenir.
+- `adt_dump_read` (tek dump'ın içeriği): `dump=<dump_uri>` → hata tipi, istisna, program, kesilen satır; `summary=true` ile
+  "ne oldu / hata analizi / kaynak kesiti / aktif çağrılar"; `formatted=true` tam metin (120-560 KB — `max_bytes` ile kesilir).
+  Önce `adt_dump_list`, sonra `adt_dump_read` — dump kök nedenini SAP GUI'siz okumanın yolu budur.
 - `adt_inactive_objects`: aktive-bekleyen obje listesi. Silinmiş objeler de listede kalabilir (`ioc:deleted` bunu
   söylemez) → araç TADIR `DELFLAG` ile çapraz kontrol eder. `ok:false, error:"tadir_kontrolu_belirsiz"` dalında `count`
   hiç basılmaz; gerçek sayı `confirmed_live_count` ile `confirmed_live_count + unverified_count` arasındadır.

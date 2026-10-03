@@ -218,6 +218,35 @@ class DdicAdOnerisiKuraliTest(unittest.TestCase):
             self.assertIn(parca, kabuk)
 
 
+class PlaywrightSirKuraliTest(unittest.TestCase):
+    """Z167: playwright-cli `run-code` kodu/dosyayı aynen geri basar → sır değeri komut metnine yazılmaz."""
+
+    def setUp(self):
+        md = _oku(SAP / "sap-ui5-fiori" / "references" / "runtime-verification.md")
+        self.b46 = re.search(r"(?ms)^### 4\.6 .*?(?=^## |\Z)", md).group(0)
+        m = re.search(r"(?ms)^\*\*Sırlar .*?(?=^\*\*Sınırlar\*\*)", self.b46)
+        self.assertIsNotNone(m, "§4.6'da **Sırlar …** alt bölümü **Sınırlar**'dan önce yok")
+        self.sir = m.group(0)
+
+    def test_olculen_sizinti_yollari_ve_care(self):
+        for parca in ("### Ran Playwright code", "--filename", "process.env", "--raw run-code",
+                      "PLAYWRIGHT_MCP_SECRETS_FILE", "httpCredentials", "<secret>AD</secret>",
+                      "TEK `bash`", "trap", "tırnak"):
+            with self.subTest(parca=parca):
+                self.assertIn(parca, self.sir)
+
+    def test_surum_siniri_beyan_edilir(self):
+        """Ölçüm 0.1.17'de; aXet'in sabitlediği 0.1.21 ve aXet içi ölçülmedi — beyan düşmesin."""
+        self.assertIn("0.1.17", self.sir)
+        self.assertRegex(self.sir, r"0\.1\.21\*{0,2}'de \*\*ÖLÇÜLMEDİ")
+
+    def test_recete_kod_bloklarinda_run_code_yok(self):
+        bloklar = re.findall(r"(?ms)^\s*```bash\n(.*?)^\s*```", self.b46)
+        self.assertTrue(bloklar)
+        for blok in bloklar:
+            self.assertNotIn("run-code", blok)
+
+
 def _kabuk_blogu(md: str) -> str:
     """`- **Kabuk ortamı:**` satırı + altındaki girintili alt maddeler (Z107: satır maddelere bölündü)."""
     satirlar = md.splitlines()

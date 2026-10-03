@@ -171,8 +171,28 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 ### `adt_dump_list`
 - **Amaç:** ST22 kısa dump listesi.
 - **Argümanlar:** `limit=20` · `from_ts` / `to_ts` (ör. `20260710154122`) · `acknowledge_risk=false`.
-- **Dönüş:** `{ok, count, dumps:[{error_type,program,user,timestamp,title,id,dump_uri}]}`.
-- **Uyarılar:** kullanıcı adı taşır → DEV dışında `acknowledge_risk` (KVKK).
+- **Dönüş:** `{ok, count, dumps:[{error_type,program,user,timestamp,title,id,dump_uri,client,arac_gurultusu,arac_gurultusu_sebep}],
+  taranan, gizlenen_baska_client, gizlenen_client_bilinmeyen, arac_gurultusu_sayisi, baglanti_client, notice?}`.
+- **Uyarılar:** kullanıcı adı taşır → DEV dışında `acknowledge_risk` (KVKK) · feed aynı sistemin TÜM client'larını taşır:
+  bağlantının client'ından farklı ya da client'ı tespit edilemeyen girdi varsayılan GİZLENİR (sayısı + `notice`; "dump yok"
+  DEĞİL), `acknowledge_risk=true` gösterir · `limit` görünen girdiyi sayar · `arac_gurultusu:true` = bilinen araç gürültüsü
+  (`GENERATE_SUBPOOL_DIR_FULL` ∧ `CL_ADT_DP_OPEN_SQL_HANDLER`) — listede kalır, yalnız etiketlenir.
+
+### `adt_dump_read`
+- **Amaç:** tek ST22 dump'ının içeriği (yapılandırılmış).
+- **Argümanlar:** `dump` (`adt_dump_list` çıktısındaki `dump_uri` ya da `id`; ham kimlik de olur) · `summary=false` ·
+  `formatted=false` · `max_bytes=20000` (tavan 200000, taban 1000) · `acknowledge_risk=false`.
+- **Dönüş:** `{ok, id, error_type, exception, program, user, title, datetime_utc, system_date, system_time, client,
+  client_kaynagi, termination:{uri,line}, arac_gurultusu, kapsam, bytes}`; `summary=true` → `summary:{header, what_happened,
+  error_analysis, where_terminated, source_extract ('> ' = kesilen satır), active_calls:[{no,event,program,include,line,uri}],
+  other_sections}`; `formatted=true` → `formatted_text, formatted_total_bytes, formatted_returned_bytes, truncated, max_bytes`.
+  Hata: `dump_bulunamadi` (404 — sessiz boş YOK) · `baska_client_pii` · `gecersiz_dump_kimligi` (HTTP isteği yok) ·
+  `summary_okunamadi` / `formatted_okunamadi` · `http_<kod>`.
+- **Uyarılar:** kullanıcı adı + değişken değerleri taşır → DEV dışında `acknowledge_risk` · client'ı bağlantınınkinden farklı
+  ya da tespit edilemeyen dump `acknowledge_risk` olmadan OKUNMAZ (ack'siz dalda yalnız client tespiti için `/summary`
+  istenebilir, içerik döndürülmez) · `formatted` tam metni 120-560 KB'tır (token tuzağı) — önce varsayılan/özet ·
+  `kapsam` alanı neyin okunduğunu söyler (`formatted OKUNMADI` ⇒ değişken değerleri bakılmadı).
+  Kaynak çekirdekte canlı ölçüldü (DEV, 2026-10-03); aXet'te canlı **ÖLÇÜLMEDİ**.
 
 ### `adt_inactive_objects`
 - **Amaç:** aktive-bekleyen obje listesi.

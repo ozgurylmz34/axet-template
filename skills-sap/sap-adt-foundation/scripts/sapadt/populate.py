@@ -78,7 +78,8 @@ _KIMLIK_HTTP = frozenset({"401"})
 _BILINEN_SAP_ISTISNALARI = frozenset({
     "SAPADTError", "SAPAuthenticationError", "SAPObjectNotFoundError", "SAPObjectExistsError", "SAPLockError",
     "SAPActivationError", "SAPValidationError", "DomainTipBilgisiHatasi", "DomainBulunamadi",
-    "DomainTipBilgisiOlculemedi", "SAPTransportError"})
+    "DomainTipBilgisiOlculemedi", "SAPTransportError",
+    "SQLSatirKirilamadi"})   # Z165: istek GÖNDERİLMEDEN fırlar → SAP'de değişiklik yok, sonuç kesin
 # SIKI desen, yalnız mesajın EN BAŞI: `SAPADTError.__str__` = f"[{status_code}] {message}" (sap_adt_lib.py). Gövdenin
 # içinden gelen "[502]" eşleşmez (test 12b). Yapısal alan yok: `_err_from_exc` status_code taşımıyor (§19.10 açık kalem).
 _HTTP_ONEKI = re.compile(r"^\[(\d{3})\] ")
