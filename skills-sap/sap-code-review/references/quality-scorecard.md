@@ -189,12 +189,13 @@ yok) bilinçli olarak `PASS` **değildir**: "hiç ölçülmedi" demektir.
 
 ```bash
 # aynı işin tüm satırlarını GRUPLA — kabuğa bir kez yaz, her `kaydet` bunu alır
-export AXET_KARNE_KOSUM="$(date -u +%Y%m%dT%H%M%S)-elle"
+# (`date`/`grep` aXet kabuğunda yok — zaman damgası ve sayım python ile)
+export AXET_KARNE_KOSUM="$(python -c "import datetime; print(datetime.datetime.now().strftime('%Y%m%dT%H%M%S'))")-elle"
 
 # bir kapı koştu, kanıtı dosyaya yazıldı
 python -m unittest discover -s skills-sap/sap-code-review/tests > kanit/tests.txt 2>&1
 # test sayısını ELLE yazma — bayatlar; koşumun kendi çıktısından türet:
-N=$(grep -oE "Ran [0-9]+ tests" kanit/tests.txt | grep -oE "[0-9]+")
+N=$(python -c "import re; print(re.search(r'Ran ([0-9]+) tests', open('kanit/tests.txt', encoding='utf-8').read()).group(1))")
 python skills-sap/sap-code-review/scripts/quality_scorecard.py kaydet \
     --kapi "test:skills-sap/sap-code-review/tests" --sonuc pass \
     --artefakt kanit/tests.txt --test-sayisi "$N" \

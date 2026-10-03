@@ -17,7 +17,9 @@ Paketle gelen kendi rehberi `node_modules/@playwright/cli/skills/playwright-cli/
 `npm install -g` önerisi bu template'te **uygulanmaz** (global kurulum yok).
 
 ## 2. Ölçülmüş komutlar
-`PW` = yerel kopya (`<APP>/node_modules/.bin/playwright-cli`, ya da uygulama klasöründe `npx playwright-cli`).
+`PW` = `kd_ortam.py check`'in `KOMUT keşif (PW)` satırı: `node "<klon>/.araclar/playwright-cli/node_modules/@playwright/cli/playwright-cli.js"`
+(projede yerel kurulum varsa onun giriş dosyası). `npx playwright-cli` kullanılmaz: her çağrıda ~2,0 sn açılış, doğrudan
+`node` ~0,5 sn (ölçüldü 2026-10-03, 2 ölçüm); keşif onlarca çağrıdır.
 
 | Komut | Ne yapar | Ölçüm notu |
 |---|---|---|
@@ -27,7 +29,7 @@ Paketle gelen kendi rehberi `node_modules/@playwright/cli/skills/playwright-cli/
 | `$PW -s=kd find "<metin>"` | snapshot'ta metni arar, çevresiyle döner | uzun ağaçta ref bulmak için |
 | `$PW -s=kd click <ref>` | ref'e tıklar | çıktıda karşılık gelen Playwright kodu (`getByRole(...)`) yazılır — senaryoya seçici olarak taşınabilir |
 | `$PW -s=kd --raw eval "<ifade>"` | sayfada JS değerlendirir, yalnız sonucu basar | `location.port`, UI5 kimlikleri |
-| `$PW -s=kd screenshot --filename=<f>.png` | görünür alanın görüntüsü | `--full-page`, `--hires` seçenekleri var |
+| `$PW -s=kd screenshot --filename=<f>.png` | görünür alanın görüntüsü | `--full-page`, `--hires` seçenekleri var. ⛔ KD karesi bununla ÇEKİLMEZ (kareler `capture_kd_screens.js` tek koşusunda); yalnız keşifte takılınca teşhis için |
 | `$PW -s=kd screenshot "<seçici>" --filename=<f>.png` | tek öğenin görüntüsü | seçici ya da ref |
 | `$PW -s=kd close` | oturumu kapatır | `$PW list` → "(no browsers)" ile doğrula |
 

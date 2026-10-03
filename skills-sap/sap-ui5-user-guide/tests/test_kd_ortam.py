@@ -446,6 +446,64 @@ class KdOrtamMerkeziTest(unittest.TestCase):
         self.assertEqual(1, veri["diger"])
 
 
+class KdOrtamKomutTest(unittest.TestCase):
+    """Z169: check, keşif için doğrudan `node <giriş>` ve tek-koşu çekim komutunu basar (npx değil)."""
+
+    def _merkez_binli(self, t):
+        m = os.path.join(t, "merkez")
+        cli = os.path.join(m, "node_modules", "@playwright", "cli")
+        yaz_json(os.path.join(cli, "package.json"), {"version": "0.1.21", "bin": {"playwright-cli": "playwright-cli.js"}})
+        yaz(os.path.join(cli, "playwright-cli.js"), "// sahte giriş")
+        yaz_json(os.path.join(m, "node_modules", "playwright-core", "package.json"), {"version": "1.64.0"})
+        return m
+
+    def test_giris_noktasi_bin_den_ve_dosya_yoksa_none(self):
+        with gecici_dizin() as t:
+            m = self._merkez_binli(t)
+            cli = os.path.join(m, "node_modules", "@playwright", "cli")
+            self.assertEqual(os.path.join(cli, "playwright-cli.js"), kd_ortam.cli_giris_noktasi(cli))
+            os.remove(os.path.join(cli, "playwright-cli.js"))
+            self.assertIsNone(kd_ortam.cli_giris_noktasi(cli))
+            yaz_json(os.path.join(cli, "package.json"), {"version": "0.1.21"})
+            self.assertIsNone(kd_ortam.cli_giris_noktasi(cli))
+        self.assertIsNone(kd_ortam.cli_giris_noktasi(None))
+
+    def test_komutlar_node_ile_ve_senaryo_yolu_ileri_egik(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            os.makedirs(app)
+            m = self._merkez_binli(t)
+            env = dict(temiz_env(t), **{kd_ortam.MERKEZI_ORTAM: m})
+            komutlar = dict(kd_ortam.komut_onerileri(app, env))
+        kesif, cekim = komutlar["keşif (PW)"], komutlar["çekim (tek koşu)"]
+        self.assertTrue(kesif.startswith('node "') and kesif.endswith('/playwright-cli.js"'), kesif)
+        self.assertNotIn("npx", kesif + cekim)
+        self.assertNotIn("\\", kesif + cekim)
+        self.assertIn("PLAYWRIGHT_CORE_PATH=", cekim)
+        self.assertIn('capture_kd_screens.js" "', cekim)
+        self.assertTrue(cekim.endswith('/docs/ekranlar.json"'), cekim)
+
+    def test_cli_yoksa_kesif_komutu_basilmaz(self):
+        with gecici_dizin() as t:
+            app = os.path.join(t, "app")
+            os.makedirs(app)
+            komutlar = dict(kd_ortam.komut_onerileri(app, temiz_env(t)))
+        self.assertEqual({}, komutlar)
+
+    @unittest.skipUnless(WIN, "Chrome yol simülasyonu Windows arama sırasına göre")
+    def test_check_komut_satirlari_ve_tek_kosu_notu(self):
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            env = dict(temiz_env(t), **sahte_chrome_env(t))
+            env[kd_ortam.MERKEZI_ORTAM] = self._merkez_binli(t)
+            with sabit_node("v22.19.0"), markdown_var(True):
+                rc, out, err = call_main(lambda a: kd_ortam.cmd_check(app, env), [])
+        self.assertEqual(0, rc, out + err)
+        self.assertIn("KOMUT çekim (tek koşu)", out)
+        self.assertIn("kare çekimi", out)
+        self.assertIn("Z169", out)
+
+
 class KdOrtamConfigTest(unittest.TestCase):
     def _cfg(self, app):
         return os.path.join(app, ".playwright", "cli.config.json")

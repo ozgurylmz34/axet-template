@@ -48,7 +48,7 @@ geçerli gövdeyle 201 ölçüldü. RAP Generator REST'i ölçülen on-prem sist
 | SRVB yaratma | **araç yok** (`adt_post_shell srvb` → `unsupported_type`; REST yaratma yolu bloke — §3 tarihçesi) | kullanıcı Eclipse ADT'de (açıklama `master_language`'de, tam) |
 | SRVB aktivasyon | `cli adt_activate '{"name":"ZSD001_UI_ORDER_O2","object_type":"srvb"}'` | aktivasyon yanıtı kanonik hükümle okunur (`activationExecuted="true"` + E/A yok); gövde hüküm taşımıyorsa worklist sondası karar verir (layering §7) |
 | Publish (V2) | `cli adt_publish_service '{"name":"ZSD001_UI_ORDER_O2","version":"0001"}'` | hüküm gövdedeki `SEVERITY`'den: `published` `true` / `false` / `null` (= ÖLÇÜLEMEDİ, `ok` yine false) |
-| `$metadata` okuma | **araç yok** | kullanıcı `/sap/opu/odata/sap/<SRVB>/$metadata`'yı tarayıcıda açıp ilgili `EntityType` bloğunu paylaşır; kimlik bilgili script yazılmaz |
+| `$metadata` okuma | ADT aracı yok; salt-okur script: `%sap-ui5-fiori` `scripts/fetch_ui_source.py metadata <SERVIS> --url <URL> --client <NNN> [--alan <Ad> --tip <EntityType>]` (kimlik env → proje `.conn_adt` yalnız aynı sistem → Windows giriş penceresi; deploy-and-local-run §7.5) | script ölçemezse (exit 2) kullanıcı `/sap/opu/odata/sap/<SRVB>/$metadata`'yı tarayıcıda açıp ilgili `EntityType` bloğunu paylaşır; parolası istenmez, kimlik bilgili yeni script yazılmaz |
 | SRVB okuma | yok — SRVB CLI tip tablosunda yok (kod okuması); SRVB için yalnız `adt_activate srvb` ve `adt_publish_service` | durum için `adt_inactive_objects` + publish sonucu |
 
 ## 5. Değişiklik türüne göre ne yapılır

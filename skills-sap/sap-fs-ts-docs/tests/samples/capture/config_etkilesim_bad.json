@@ -1,0 +1,16 @@
+{
+  "url": "http://localhost:8080/index.html",
+  "steps": [
+    {"do": "fill", "value": "x"},
+    {"do": "fill", "selector": "[id$='musteriInput-inner']"},
+    {"do": "fill", "selector": "[id$='musteriInput-inner']", "value": 1001},
+    {"do": "fill", "selector": "", "value": "x"},
+    {"do": "press"},
+    {"do": "press", "key": "  "},
+    {"do": "press", "key": "Enter", "selector": ""},
+    {"do": "scroll_reset", "selector": ""},
+    {"do": "scroll_reset", "ms": -1},
+    {"do": "scroll_reset", "selector": 5},
+    {"do": "shot", "name": "kd-01.png"}
+  ]
+}

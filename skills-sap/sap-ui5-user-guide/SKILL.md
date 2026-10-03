@@ -22,7 +22,8 @@ description: >
 
 > **Özü (kırpılırsa bu kalsın):** ① ÖNCE `kd_ortam.py check` — playwright-cli ve tarayıcı ayarı template kurulumunda
 > OTOMATİK hazırlanır (`<TEMPLATE>/scripts/tarayici_hazirla.py`), tarayıcı **indirme yok** ② veri YALNIZ kurgusal mock ③ sayfa `file:` değil yerel **HTTP**'den, arayüz `?sap-ui-language=tr`
-> ④ çekim senaryosu `ekranlar.json` dosyasındadır (git'e girer), elle tıklama dizisi değildir ⑤ **her kareye `view`
+> ④ çekim senaryosu `ekranlar.json` dosyasındadır (git'e girer); kareler **tek** `node capture_kd_screens.js` koşusuyla
+> çekilir, elle kare kare değil ⑤ **her kareye `view`
 > ile bak** — "çekim OK" görüntünün doğru olduğunu söylemez ⑥ KD yazımı ve HTML/PDF üretimi `%sap-fs-ts-docs`
 > boru hattıyla yapılır, yeniden yazılmaz ⑦ bitti demeden sayılarla doğrula + taze bağlamda bağımsız oku.
 
@@ -48,29 +49,41 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
    proje-düzeyi istisna içindir (`tuzaklar.md` T23). ⛔ `install-browser` / `playwright install` **çalıştırılmaz** (yaklaşık
    1 GB indirir; ölçüldü). Tarayıcı açılmıyorsa DUR ve kullanıcıya sor.
 2. **Mock ortamı.** Uygulamanın `ui5-mock.yaml`'ı **doğru servise** bakıyor mu (manifest `dataSources` ↔ `urlPath`),
-   `metadata.xml` güncel mi → `python $S/mock_veri.py --metadata <metadata.xml> --cikti <mockdata klasörü>` ile
-   kurgusal Türkçe veri (değer yardımı varlıkları dahil) → `npm run start-mock` arka planda, **portu logdan al**.
+   `metadata.xml` güncel mi — değilse `fetch_ui_source.py metadata <SERVIS> --app $APP --kaydet` ile SAP'den
+   **kendin indir** (salt-okur; kimlik env → `.conn_adt` → giriş penceresi; kullanıcıdan tarayıcıda kaydetmesini ya da
+   parola isteme; `metadata.xml`'e elle satır ekleme) → `python $S/mock_veri.py --metadata <metadata.xml> --cikti
+   <mockdata klasörü>` ile kurgusal Türkçe veri (değer yardımı varlıkları dahil; kod/durum alanlarına
+   `--sabit-degerler` ile domain sabit değerleri ya da değer yardımı kodları — `UYARI: kod alanı adayı` satırı boş kalmalı) → `npm run start-mock` arka planda, **portu logdan al**.
    Sunucu yalnız `127.0.0.1`'e bağlanır. Ayrıntı: `references/mock-ortam.md`.
-3. **Keşif.** `playwright-cli -s=<oturum> open <url> --browser chrome` → `snapshot --filename=…` → ekranın
+3. **Keşif.** `$PW -s=<oturum> open <url> --browser chrome` (`$PW` = `kd_ortam.py check`'in `KOMUT keşif (PW)` satırı:
+   doğrudan `node …/playwright-cli.js`, `npx` değil) → `snapshot --filename=…` → ekranın
    erişilebilirlik ağacından seçici ve düğme adlarını çıkar; alt ekranları (diyalog, F4, açılır panel) tek tek aç.
    Freestyle seçici deseni `[id$='--<id>']`; erişilebilir adı olmayan kontrol `Element.registry` + `firePress()` ile.
-   Ekran envanterini (`webapp/view` + `webapp/fragment` → KD bölümü) bu adımda yaz. Ayrıntı: `references/kesif-playwright-cli.md`.
+   Ekran envanterini (`webapp/view` + `webapp/fragment` → KD bölümü) ve **zorunlu alanları** (view'da `required`,
+   i18n hata metni) bu adımda yaz. Keşifte `screenshot` alınmaz — KD karesi değildir. Ayrıntı: `references/kesif-playwright-cli.md`.
 4. **Senaryo.** Keşfin sonucunu `docs/ekranlar.json` dosyasına yaz (biçim: `capture_kd_screens.js` yapılandırması +
    `assert_no_busy` / `assert_text` / `assert_in_viewport` adımları). Bu dosya **git'e girer**: bir sonraki çekim aynı
    senaryoyla tekrarlanır.
-5. **Çekim.** `node $D/capture_kd_screens.js docs/ekranlar.json --dry-run` → sonra gerçek koşum. Özet satırında
-   FAIL 0 olmalı (çıkış 1 = en az bir adım tutmadı; assert adımı tutmayan kare de FAIL'dir).
+5. **Çekim.** `kd_ortam.py check`'in `KOMUT çekim (tek koşu)` satırını önce `--dry-run` ile, sonra çıplak koş: **tüm
+   kareler tek süreçte** çekilir, model yalnız senaryoyu yazar ve sonucu denetler. Özet satırında FAIL 0 olmalı (çıkış 1 =
+   en az bir adım tutmadı; assert adımı tutmayan kare de FAIL'dir). `out_dir` uygulama klasörünün içindedir (ör.
+   `docs/screenshots-ham`), template klonuna kare yazılmaz. Elle kare çekimi yalnız senaryo aracı çalışmıyorsa ve
+   gerekçesi kullanıcıya yazılarak yapılır.
 6. **Görsel kontrol.** Her PNG'yi `view` aracıyla **aç ve bak**; `references/gorsel-kontrol.md` listesini kare kare uygula
    (boş liste, meşgul göstergesi, İngilizce metin, kesik diyalog, anlamsız ya da tutarsız veri, kişisel veri görünümü,
    gereksiz beyaz alan). Bulgu → senaryoyu ya da veriyi düzelt → 5'e dön.
-7. **Yazım.** `%sap-fs-ts-docs` → `references/kd-authoring.md` bölüm yapısı + `templates/KD-template.md` iskeleti;
+7. **Yazım.** Kaynak **daima** `docs/KD-….md`'dir (Markdown kanonik); HTML/PDF ve `webapp/help` kopyası adım 8'de
+   üretilir, HTML'e elle yama yapılmaz. Markdown'ı olmayan eski bir KD güncellenecekse önce bir kerelik Markdown'a
+   çevrilir. `%sap-fs-ts-docs` → `references/kd-authoring.md` bölüm yapısı + `templates/KD-template.md` iskeleti;
    görsel adları `ekranlar.json`'daki `shot` adlarıyla birebir.
    Yazar öz kontrolü: `%sap-fs-ts-docs` → `references/doc-checklist.md` §A.
 8. **Üretim.** `python $D/build_kd_pdf.py <KD.md> <KD.html> --map <eşleme.json> --trim-from <ham klasör> --pdf
    --help-dir $APP/webapp/help` → `.html` + `.pdf` ve uygulama içi yardım kopyası. Ayrıntı (eşleme dosyası, manifest
    biçimi, kırpma): `%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` §B.
 9. **Doğrulama.** `python $D/verify_doc_html.py <KD.html> --expect-images <N> --pdf <KD.pdf>` → ölü bağlantı 0, görsel
-   sayısı = senaryodaki çekim sayısı, PDF sayfa sayısı makul. Sonra `agent` aracıyla **taze bir inceleyici**: brifinge
+   sayısı = senaryodaki çekim sayısı, yer tutucu (`EKRAN GÖRÜNTÜSÜ … eklenecek`, `[GÖRSEL: …]`, `TODO`) 0, PDF sayfa
+   sayısı makul. ⛔ Beklenen görsel sayısı tutmazsa `--expect-images` **düşürülmez**: eksik kare çekilir ya da
+   gerekçesiyle kullanıcıya sorulur. Sonra `agent` aracıyla **taze bir inceleyici**: brifinge
    `%sap-fs-ts-docs` → `references/doc-checklist.md` §E bloğu ve §A metni yapıştırılır, HTML/PDF/PNG yolları verilir.
    BLOCKER varken "bitti" denmez.
 
@@ -105,6 +118,9 @@ Her script başta **KAPSAM** satırı basar (neye bakıp neye bakmadığı); "0 
 - ⛔ **Her yerel sunucu 127.0.0.1'e bağlanır** (`python -m http.server <port> --bind 127.0.0.1`; `ui5 serve`'e
   `--accept-remote-connections` verilmez). Bind'siz sunucu güvenlik duvarı izin penceresi açar, yönetici olmayan
   kullanıcı izin veremez (ölçüldü). Pencere çıkarsa DUR, kullanıcıya bildir.
-- Senaryo elle tıklama dizisi olarak bırakılmaz; `ekranlar.json`'a yazılır ve git'e girer.
+- Senaryo elle tıklama dizisi olarak bırakılmaz; `ekranlar.json`'a yazılır ve git'e girer. Kareler tek senaryo koşusuyla
+  çekilir; `npx` yerine `kd_ortam.py check`'in yazdığı `node` komutları kullanılır.
+- Bir eşik ya da beklenti (görsel sayısı, assert metni) tutmayınca gevşetilmez; gevşetmek gerekiyorsa gerekçesiyle
+  kullanıcıya sorulur ve raporda **ayrı satırda** yazılır. `metadata.xml`'e ya da üretilmiş HTML'e elle yama yapılmaz.
 - "Çekim OK" / "PDF üretildi" mesajı kanıt değildir: her kareye bakılır, HTML/PDF sayılarla doğrulanır, bağımsız okuma yapılır.
 - Kurulum, mock verisi ya da senaryo sorunu çözülünce yeni tuzak `references/tuzaklar.md`'ye önerilir (kullanıcı onayıyla).

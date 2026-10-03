@@ -25,10 +25,12 @@
 | G4 | **Kesik diyalog / açılır pencere** | diyaloğun kenarı, alt düğme çubuğu ya da açılır listenin sonu kadrajda yok | `assert_in_viewport`; viewport'u büyüt ya da öğe seçicili `shot` al |
 | G5 | **Anlamsız ya da tutarsız mock verisi** | "Sample Text", "Item 1", `0000000001`; toplam ≠ kalemlerin toplamı; başlıktaki müşteri ile kalemdeki müşteri farklı; tarih sırası ters | `generateMockData`'nın ürettiği genel değerler kareye girmiş → o varlık için `mock_veri.py` çıktısını kullan ya da elle düzelt; ilişkili alanları eşle |
 | G6 | **Kişisel veri görünümü** | gerçek kişi adı, e-posta, telefon, IBAN, vergi no gibi görünen değer — kurgusal olsa bile gerçek sanılabilecek biçimde | değeri açıkça kurgusal olanla değiştir ("Örnek Müşteri A.Ş.", e-postada `example.invalid` alan adı); kullanıcı adı / oturum bilgisi görünüyorsa kadrajdan çıkar |
-| G7 | **Gereksiz beyaz alan** | kadrajın büyük kısmı boş | `build_kd_pdf.py --trim-from` kırpar; öğe seçicili `shot` tercih et |
+| G7 | **Gereksiz beyaz alan** | kadrajın büyük kısmı boş | `build_kd_pdf.py --trim-from` kırpar (adım 8'de **zorunlu**); öğe seçicili `shot` tercih et |
 | G8 | **Hata / uyarı mesajı** | kırmızı mesaj şeridi, hata diyaloğu, "Servis kullanılamıyor" | mock'ta olmayan fonksiyon/aksiyon çağrısı; kılavuzda anlatılan bir hata değilse diyaloğu kapat ve durumu model verisi enjeksiyonuyla kur (`%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` §A) |
 | G9 | **Yanlış uygulama / yanlış ekran** | başka uygulamanın başlığı, beklenmeyen ekran | paralel mock / port kayması: `expect_port` + `eval "location.port"` (`tuzaklar.md` T4) |
 | G10 | **Durum tutarlılığı** | aç/kapa alanının yalnız bir durumu çekilmiş; seçili satır vurgusu yok | iki durum ayrı kare; seçim gerekiyorsa senaryoda seçim adımı |
+| G12 | **Kod değeri kaynakta yok** | durum/kod kolonundaki değer (ör. rapor kodu, durum kodu) domain sabit değerlerinde ya da değer yardımı listesinde yok | değeri kaynağından al: `mock_veri.py --sabit-degerler` (domain — `adt_get`, ya da VH varlığı); "uygun görünüyor" yetmez, kaynağı tabloya yaz |
+| G13 | **Tanıtım karesi kaydırılmış / seçim düz metin** | liste karesinde ilk kolonlar (belge no, müşteri) yok, tablo sağa kaymış; filtre alanında seçili değer (token/anahtar) yerine düz metin | çekimden önce `scroll_reset`; seçimi değer yardımından yap (F4 → kayıt) ya da `fill` + `press` ile |
 | G11 | **Gezinme izleri** | fare imleci, odak çerçevesi, yarım kalmış tooltip | çekimden önce odağı başka yere al ya da `wait` ile tooltip'in kapanmasını bekle |
 
 ## Sınırlar

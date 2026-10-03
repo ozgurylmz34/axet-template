@@ -132,7 +132,7 @@ bağlantısında (ADT) kullandığı sistem adresi. App generator'ın yazdığı
 - lokal çalıştırmada kimlik doğru olsa bile **sonsuz kullanıcı/parola popup'ı** (401 döngüsü) üretebilir,
 - deploy'da yanlış sistemin repository'sine/transport'una gider.
 
-Yeni uygulama üretilince ilk iş: `grep -n "url:" ui5*.yaml` → hepsi aynı kanonik host mu? Kaynak ekipte iki ayrı
+Yeni uygulama üretilince ilk iş: `rg -n "url:" --max-depth 1 --glob "ui5*.yaml"` → hepsi aynı kanonik host mu? Kaynak ekipte iki ayrı
 turda (bir deploy, bir lokal çalıştırma) yaşandı.
 
 ## 7. `index.html` — bootstrap

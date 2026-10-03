@@ -445,7 +445,7 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/check_ui_odata_refs.py --app 
 - `i18n/i18n.properties` = İngilizce (varsayılan), `i18n/i18n_tr.properties` = Türkçe; manifest
   `supportedLocales ["", "tr"]`, `fallbackLocale ""`.
 - **Etiket/metin değişikliği ve yeni anahtar HER İKİ dosyada.** `language=tr` ile TR dosyası yüklenir ve varsayılanı
-  ezer → yalnız birini değiştirmek TR'de eski metni bırakır. `grep -n "<key>" webapp/i18n/i18n*.properties` →
+  ezer → yalnız birini değiştirmek TR'de eski metni bırakır. `rg -n "<key>" webapp/i18n --glob "i18n*.properties"` →
   bulunan tüm dosyalar. Sonra kullanıcıya **hard refresh (Ctrl+F5)** (bundle önbelleklenir).
 - TR dosyası kısmi olabilir: eksik anahtar varsayılana düşer; varsayılan ASCII-translit ise kullanıcı diyakritiksiz metin
   görür (kaynakta silme onayı "Secili 1 kalem silinsin mi?" çıktı; aynı yerde bir yazım hatası altı inceleme turunda

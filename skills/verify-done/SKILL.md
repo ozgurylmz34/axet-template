@@ -18,6 +18,10 @@ Bir işi bitirdiğini söylemeden, başarı raporlamadan ya da commit önermeden
 7. **Ertelenenleri açıkça yaz.** Yapılamayan ya da sonraya bırakılan her alt madde raporda görünür olmalı.
 8. **Eylem beyanını çıktıyla göster.** "Commit edildi / push edildi / aktive edildi"yi komut çıktısı olmadan
    (`git log -1 --oneline`, push çıktısı, sistemden okuma) rapora yazma; koşulmadıysa "koşulmadı" de.
+9. **Her "tamam / doğru / temiz" beyanının yanına dayandığı ölçümü yaz** (komut ya da `dosya:satır` + sonuç). Şunlar
+   beyanın içinde eritilmez, raporda **ayrı satırda** durur: elle yama (araç ya da sistem çıktısı yerine elle eklenen/düzeltilen
+   satır — kaynağıyla), düşürülen eşik ya da beklenti (eski → yeni değer ve neden), atlanan kontrol. Kapsamı daraltılmış
+   bir beyan "temiz" değildir: "N kontrolden M'i, beklenti X→Y düşürülerek geçti" yaz.
 
 **Değişiklik birden çok katmanı ya da kardeş uygulamayı kesiyorsa** (silme/iptal, yetki, audit alanı, mesaj biçimi, kilit):
 işe başlarken ve "tamam" demeden önce `references/cok-katmanli-degisiklik.md` — kullanıcı gözünden kabul ölçütü, önce
@@ -27,6 +31,7 @@ envanter, hata sınıfının tüm yüzeyde taranması, toplu kapsam kararı, des
 ```
 Yapılan: <madde madde>
 Doğrulama: <komut> → <sonuç / sayı>
+Elle yama / düşürülen eşik: <dosya:satır · eski → yeni · neden | yok>
 Yapılmayan / ertelenen: <madde + neden>
 Açık soru: <varsa>
 Kural değişikliği: <dosya: eski → yeni · onay var/yok | yok>

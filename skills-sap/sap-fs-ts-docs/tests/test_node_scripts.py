@@ -69,7 +69,11 @@ class BrowserPdfTest(unittest.TestCase):
             r = run_py("build_doc_pdf.py", os.path.join(TEMPLATES, "KD-template.md"), html, "--pdf-out", pdf, timeout=300)
             self.assertEqual(0, r.returncode, r.stdout + r.stderr)
             v = run_py("verify_doc_html.py", html, "--pdf", pdf, "--min-pdf-links", "14")
-            self.assertEqual(0, v.returncode, v.stdout)
+            # Şablon ham derlenir → `[GÖRSEL: …]` yer tutucuları BULGU'dur (Z172, çıkış 1). Bu testin ölçtüğü PDF
+            # bağlantılarıdır: yer tutucu dışında bulgu olmamalı.
+            self.assertIn(v.returncode, (0, 1), v.stdout + v.stderr)
+            bulgular = [ln for ln in v.stdout.splitlines() if ln.startswith("BULGU:")]
+            self.assertEqual([], [b for b in bulgular if not b.startswith("BULGU: YER TUTUCU")], v.stdout)
             self.assertIn("bağlantı ek açıklaması 14", v.stdout)
 
 

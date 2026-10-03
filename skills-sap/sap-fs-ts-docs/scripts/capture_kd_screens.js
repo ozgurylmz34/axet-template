@@ -11,6 +11,8 @@
  *     "channel": "chrome", "expect_port": 8080,
  *     "steps": [ {"do":"goto","url":"..."}, {"do":"wait_ui5","ms":1500}, {"do":"wait","ms":800} | {"do":"wait","selector":"..."},
  *                {"do":"click","selector":"..."}, {"do":"eval","script":"..."},
+ *                {"do":"fill","selector":"...","value":"..."}, {"do":"press","key":"Enter","selector":"..."},
+ *                {"do":"scroll_reset","selector":"...","ms":300},
  *                {"do":"set_model","view_pattern":"Create","model":"viewModel","data":{...} | "data_file":"x.json","merge":true},
  *                {"do":"assert_no_busy","timeout":10000},
  *                {"do":"assert_text","text":"Siparişler","selector":"..."},   // selector yoksa tüm sayfa
@@ -18,6 +20,31 @@
  *                {"do":"shot","name":"kd-01.png","selector":"...","full_page":false,"optional":false} ] }
  * Göreli yollar (out_dir, data_file) yapılandırma dosyasının klasörüne göre çözülür.
  * Kanal: cfg.channel → PDF_BROWSER_CHANNEL → "chrome" (sistem Chrome'u; tarayıcı İNDİRİLMEZ). "chromium" = paketli.
+ * playwright-core arama sırası (ilk bulunan kazanır; hangisi olduğu çıktıda `playwright-core: … (kaynak: …)` satırıyla
+ * basılır): ① PLAYWRIGHT_CORE_PATH ② merkezi kurulum — AXET_MERKEZI_ARAC verilmişse o dizin, yoksa
+ * <klon>/.araclar/playwright-cli (<klon> = bu dosyanın 3 üst dizini: scripts → sap-fs-ts-docs → skills-sap → kök;
+ * kurulumu `scripts/tarayici_hazirla.py` yapar), altında node_modules/playwright-core ya da
+ * node_modules/@playwright/cli/node_modules/playwright-core ③ npm global (APPDATA, npm_config_prefix)
+ * ④ require.resolve. Ortam değişkeni vermeden `node capture_kd_screens.js <senaryo>` merkezi kurulumu bulur.
+ *
+ * Etkileşim adımları:
+ *   fill          `selector`'ın ilk öğesine `value` (metin) yazılır (Playwright locator.fill: önce temizler, input
+ *                 olayı üretir). UI5 sap.m.Input'ta hedef iç <input>'tur (ör. "[id$='musteriInput-inner']").
+ *                 Değer yardımı/öneri listesinden SEÇİM yapılacaksa fill tek başına yetmez: ardından `press`
+ *                 (Enter / ArrowDown) ya da öneri satırına `click` gerekir — düz metin seçili değer değildir.
+ *   press         `key` (Playwright tuş adı: "Enter", "Tab", "ArrowDown", "Control+A" …). `selector` verilirse o
+ *                 öğenin ilk eşleşenine odaklanıp basılır; verilmezse odaktaki öğeye (page.keyboard).
+ *   scroll_reset  Kaydırma konumunu başa alır (tanıtım karesi tablonun BAŞINDAN çekilsin). `selector` verilirse
+ *                 eşleşen TÜM öğeler ve alt ağaçları, verilmezse belgenin tamamı taranır. Yöntem: kapsamdaki her
+ *                 öğenin scrollLeft/scrollTop'u okunur, sıfır olmayan 0'a yazılır — overflow türüne ve UI5 sınıf
+ *                 adına bakılmaz, çünkü UI5 ızgara tablosu (sap.ui.table) içeriği programla kaydırır: yatayda
+ *                 ayrı kaydırma çubuğu öğesinin (-hsb) 'scroll' olayı .sapUiTableCtrlScr / .sapUiTableColHdrScr
+ *                 alanlarının scrollLeft'ini eşitler (openui5 sap/ui/table/extensions/Scrolling.js,
+ *                 HorizontalScrollingHelper.onScrollbarScroll); dikeyde -vsb 'scroll' olayı ilk görünür satırı
+ *                 kaydırma konumundan yeniden hesaplar (VerticalScrollingHelper.onScrollbarScroll). Hepsi aynı
+ *                 anda 0'a çekildiği için eşitleme tutarlı kalır. Sonra `ms` (vars. 300) beklenir ve kapsam yeniden
+ *                 ölçülür: hâlâ kaydırılmış öğe varsa (uygulama konumu geri yazdı) adım FAIL. `selector` hiçbir
+ *                 öğeyle eşleşmezse FAIL. Bakılmayanlar: shadow DOM içi, iframe içi, CSS transform ile kaydırma.
  *
  * Doğrulama adımları (tutmazsa adım FAIL, zorunlu adımda koşu durur → çıkış 1):
  *   assert_no_busy     UI5 meşgul göstergesi açık değil. `timeout` (vars. 10000 ms) içinde kapanmazsa FAIL.
@@ -44,7 +71,8 @@ const os = require("os");
 console.log("KAPSAM (SCOPE): capture_kd_screens — yapılandırmadaki adımları koşar ve her çekimi OK/FAIL listeler. " +
   "Bakılmayanlar: görüntüdeki verinin temizliği (DOC-KD-01), alt ekran kapsamı (DOC-KD-03), görüntü içeriği → elle inceleme.");
 
-const INSTALL = "playwright-core bulunamadı. Kurulum: proje klasöründe `npm install playwright-core` ya da " +
+const INSTALL = "playwright-core bulunamadı. Merkezi kurulum (<klon>/.araclar/playwright-cli) aXet kurulumu ve " +
+  "%guncelle ile yapılır (scripts/tarayici_hazirla.py); ya da proje klasöründe `npm install playwright-core` ya da " +
   "PLAYWRIGHT_CORE_PATH ile mevcut bir playwright-core klasörünü göster.";
 
 const STEP_RULES = {
@@ -63,6 +91,14 @@ const STEP_RULES = {
     || "assert_text: boş olmayan text gerekli (selector isteğe bağlı, metin)",
   assert_in_viewport: s => (typeof s.selector === "string" && s.selector !== "")
     || "assert_in_viewport: selector gerekli",
+  fill: s => (typeof s.selector === "string" && s.selector !== "" && typeof s.value === "string")
+    || "fill: selector ve value (metin; sayıyı tırnakla yaz) gerekli",
+  press: s => (typeof s.key === "string" && s.key.trim() !== ""
+    && (s.selector === undefined || (typeof s.selector === "string" && s.selector !== "")))
+    || "press: boş olmayan key gerekli (selector isteğe bağlı, metin)",
+  scroll_reset: s => ((s.selector === undefined || (typeof s.selector === "string" && s.selector !== ""))
+    && (s.ms === undefined || (typeof s.ms === "number" && s.ms >= 0)))
+    || "scroll_reset: selector verilirse boş olmayan metin, ms verilirse 0 ya da pozitif sayı olmalı",
 };
 
 const ASSERT_STEPS = new Set(["assert_no_busy", "assert_text", "assert_in_viewport"]);
@@ -100,9 +136,34 @@ function busyProbe() {
   return out;
 }
 
+// Tarayıcıda koşar: kapsamdaki kaydırılmış öğeleri ölçer, `sifirla` true ise 0'a yazar. null → selector eşleşmedi.
+// Yöntem ve gerekçe: dosya başındaki "scroll_reset" açıklaması.
+function scrollProbe({ selector, sifirla }) {
+  const kokler = selector ? Array.from(document.querySelectorAll(selector)) : [document.documentElement];
+  if (!kokler.length) return null;
+  const kume = new Set();
+  kokler.forEach(k => { kume.add(k); k.querySelectorAll("*").forEach(e => kume.add(e)); });
+  if (!selector && document.scrollingElement) kume.add(document.scrollingElement);
+  const kayik = [];
+  kume.forEach(el => {
+    if (el.scrollLeft !== 0 || el.scrollTop !== 0) {
+      kayik.push((el.id || el.tagName.toLowerCase()) + "(" + Math.round(el.scrollLeft) + "," + Math.round(el.scrollTop) + ")");
+      if (sifirla) { el.scrollLeft = 0; el.scrollTop = 0; }
+    }
+  });
+  return { taranan: kume.size, kayik };
+}
+
+// <klon> = bu dosyanın 3 üst dizini: scripts → sap-fs-ts-docs → skills-sap → kök.
+const KLON = path.resolve(__dirname, "..", "..", "..");
+
 function resolvePlaywrightCore() {
   const cands = [];
-  if (process.env.PLAYWRIGHT_CORE_PATH) cands.push(process.env.PLAYWRIGHT_CORE_PATH);
+  if (process.env.PLAYWRIGHT_CORE_PATH) cands.push([process.env.PLAYWRIGHT_CORE_PATH, "PLAYWRIGHT_CORE_PATH"]);
+  const merkez = process.env.AXET_MERKEZI_ARAC || path.join(KLON, ".araclar", "playwright-cli");
+  const mk = process.env.AXET_MERKEZI_ARAC ? "merkezi kurulum (AXET_MERKEZI_ARAC)" : "merkezi kurulum (klon .araclar/playwright-cli)";
+  cands.push([path.join(merkez, "node_modules", "playwright-core"), mk]);
+  cands.push([path.join(merkez, "node_modules", "@playwright", "cli", "node_modules", "playwright-core"), mk]);
   const roots = [];
   if (process.env.APPDATA) roots.push(path.join(process.env.APPDATA, "npm", "node_modules"));
   roots.push(path.join(os.homedir(), "AppData", "Roaming", "npm", "node_modules"));
@@ -111,13 +172,14 @@ function resolvePlaywrightCore() {
     roots.push(path.join(process.env.npm_config_prefix, "lib", "node_modules"));
   }
   for (const r of roots) {
-    cands.push(path.join(r, "playwright-core"));
-    cands.push(path.join(r, "@playwright", "cli", "node_modules", "playwright-core"));
-    cands.push(path.join(r, "playwright", "node_modules", "playwright-core"));
+    cands.push([path.join(r, "playwright-core"), "npm global"]);
+    cands.push([path.join(r, "@playwright", "cli", "node_modules", "playwright-core"), "npm global"]);
+    cands.push([path.join(r, "playwright", "node_modules", "playwright-core"), "npm global"]);
   }
-  for (const c of cands) if (c && fs.existsSync(path.join(c, "package.json"))) return c;
+  for (const [c, kaynak] of cands) if (c && fs.existsSync(path.join(c, "package.json"))) return { yol: c, kaynak };
   for (const name of ["playwright-core", "playwright"]) {
-    try { return path.dirname(require.resolve(name + "/package.json")); } catch (e) { /* sıradaki */ }
+    try { return { yol: path.dirname(require.resolve(name + "/package.json")), kaynak: "require.resolve " + name }; }
+    catch (e) { /* sıradaki */ }
   }
   return null;
 }
@@ -164,6 +226,25 @@ async function runStep(page, s, base, outDir, cfg) {
     case "eval":
       await page.evaluate(s.script);
       return;
+    case "fill":
+      await page.locator(s.selector).first().fill(s.value, { timeout: s.timeout || 30000 });
+      return;
+    case "press":
+      if (s.selector) await page.locator(s.selector).first().press(s.key, { timeout: s.timeout || 30000 });
+      else await page.keyboard.press(s.key);
+      return;
+    case "scroll_reset": {
+      const ilk = await page.evaluate(scrollProbe, { selector: s.selector || null, sifirla: true });
+      if (ilk === null) throw new Error("scroll_reset: öğe yok: " + s.selector);
+      await page.waitForTimeout(s.ms === undefined ? 300 : s.ms);
+      const son = await page.evaluate(scrollProbe, { selector: s.selector || null, sifirla: false });
+      if (son === null) throw new Error("scroll_reset: öğe sıfırlamadan sonra kayboldu: " + s.selector);
+      if (son.kayik.length) {
+        throw new Error("scroll_reset: " + son.kayik.length + " öğe hâlâ kaydırılmış (uygulama konumu geri yazdı?) — " +
+          son.kayik.slice(0, 5).join("; ") + (son.kayik.length > 5 ? " …" : ""));
+      }
+      return;
+    }
     case "set_model": {
       const data = s.data !== undefined ? s.data : JSON.parse(fs.readFileSync(path.resolve(base, s.data_file), "utf8"));
       const n = await page.evaluate(({ pattern, model, data, merge }) => {
@@ -255,7 +336,8 @@ async function main(argv) {
   }
   const pw = resolvePlaywrightCore();
   if (!pw) { console.error("HATA: " + INSTALL); return 2; }
-  const { chromium } = require(pw);
+  console.log("playwright-core: " + pw.yol + " (kaynak: " + pw.kaynak + ")");
+  const { chromium } = require(pw.yol);
   const outDir = path.resolve(base, cfg.out_dir || "screenshots");
   fs.mkdirSync(outDir, { recursive: true });
   const channel = cfg.channel || process.env.PDF_BROWSER_CHANNEL || "chrome";

@@ -1430,5 +1430,374 @@ class TestAnlikKur(unittest.TestCase):
         self.assertTrue(ok, out)
 
 
+# ───────────────────────── Z168: metadata --kaydet + kimlik sırası (env → .conn_adt → pencere) ─────────────────────────
+
+F = _modul("fetch_ui_source_t", "fetch_ui_source.py")
+MD_SERVIS = "ZXX001_UI_ORDER_O2"
+MD_YOL = f"/sap/opu/odata/sap/{MD_SERVIS}/$metadata"
+MD1 = TestMetadataTipKapsamli.META
+MD2 = MD1.replace(b'sap:label="Belge"/>', b'sap:label="Belge"/><Property Name="YeniAlan" Type="Edm.String"/>')
+GIRIS_HTML = b"<!DOCTYPE html><html><head><title>Logon</title></head><body><form>&nbsp;</form></body></html>"
+GIRIS_XHTML = (b'<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Logon</title></head>'
+               b'<body><form action="/sap/bc/x"><input name="sap-user"/></form></body></html>')
+CONN_KULLANICI, CONN_PAROLA = "connkul", "conn#Parola!9"  # SAHTE .conn_adt kimliği — gerçek değil
+
+
+def _manifest(kaynaklar: dict) -> str:
+    return json.dumps({"sap.app": {"id": "zxx001.order", "dataSources": kaynaklar}})
+
+
+def _app_kur(kok: Path, kaynaklar: dict | None = None, mock_yaml: str | None = None) -> Path:
+    app = kok / "order_app"
+    (app / "webapp").mkdir(parents=True)
+    kaynaklar = kaynaklar if kaynaklar is not None else {
+        "mainService": {"uri": f"/sap/opu/odata/sap/{MD_SERVIS}/", "type": "OData", "settings": {"odataVersion": "2.0"}}}
+    (app / "webapp" / "manifest.json").write_text(_manifest(kaynaklar), encoding="utf-8")
+    if mock_yaml is not None:
+        (app / "ui5-mock.yaml").write_text(mock_yaml, encoding="utf-8")
+    return app
+
+
+def _conn_yaz(proje: Path, url: str, kullanici: str = CONN_KULLANICI, parola: str = CONN_PAROLA) -> None:
+    proje.mkdir(parents=True, exist_ok=True)
+    (proje / ".conn_adt").write_text(f"ADT_SAP_URL={url}\nADT_SAP_CLIENT=100\nADT_SAP_USER={kullanici}\n"
+                                     f"ADT_SAP_PASSWORD={parola}\nADT_SAP_TIER=DEV\n", encoding="utf-8")
+
+
+class TestMetadataKaydet(unittest.TestCase):
+    """C1 — `metadata --kaydet`: tam yanıt bayt bayt yazılır, önce/sonra özeti, EDMX olmayan yanıt yazılmaz."""
+
+    def setUp(self):
+        self.kok = Path(tempfile.mkdtemp(prefix="ui5md_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.kok, ignore_errors=True)
+
+    def test_md_kaydet_yeni_ustune_ve_ayni(self):
+        app = _app_kur(self.kok)
+        hedef = app / "webapp" / "localService" / "mainService" / "metadata.xml"
+        cikti = []
+        for govde in (MD1, MD2, MD2):
+            with H.SahteSunucu({MD_YOL: govde}) as srv:
+                cikti.append(H.kos("fetch_ui_source.py", "metadata", MD_SERVIS, "--kaydet", "--app", app,
+                                   "--url", srv.url, "--client", "100", "--alan", "YeniAlan", "--tip", "SiparisType",
+                                   kimlik=True))
+            if govde is MD1:
+                ilk = hedef.read_bytes() if hedef.is_file() else None
+        (rc1, o1), (rc2, o2), (rc3, o3) = cikti
+        ok = (ilk == MD1 and rc1 == 1 and "dosya yoktu" in o1 and "[YOK] YeniAlan" in o1
+              and "kimlik: env" in o1 and "varsayılan (mainService)" in o1
+              and hedef.read_bytes() == MD2 and rc2 == 0 and "Property +1 eklenen / -0 kalkan" in o2
+              and "+ SiparisType.YeniAlan" in o2 and "[VAR] SiparisType.YeniAlan" in o2
+              and rc3 == 0 and "bayt bayt aynı" in o3 and not list(hedef.parent.glob("*.yeni"))
+              and all(H.PAROLA not in o for o in (o1, o2, o3)))
+        H.kaydet("metadata --kaydet: yeni → üstüne (+1 Property) → aynı (yazmaz)", "rc 1/0/0",
+                 f"rc {rc1}/{rc2}/{rc3}", ok)
+        self.assertTrue(ok, o1 + o2 + o3)
+
+    def test_md_html_reddi(self):
+        """Giriş sayfası: XML değil (HTML) ya da XML olarak ayrışan XHTML → exit 2, dosya YOK; --alan ile de "alan yok"
+        (exit 1) hükmü verilmez (XHTML 0 EntityType'ı yanlış negatif üretiyordu)."""
+        app = _app_kur(self.kok)
+        hedef = app / "webapp" / "localService" / "mainService" / "metadata.xml"
+        sonuc = []
+        for govde in (GIRIS_HTML, GIRIS_XHTML):
+            with H.SahteSunucu({MD_YOL: govde}) as srv:
+                sonuc.append(H.kos("fetch_ui_source.py", "metadata", MD_SERVIS, "--kaydet", "--app", app,
+                                   "--url", srv.url, "--client", "100", kimlik=True))
+                sonuc.append(H.kos("fetch_ui_source.py", "metadata", MD_SERVIS, "--alan", "Vbeln",
+                                   "--url", srv.url, "--client", "100", kimlik=True))
+        ok = (all(rc == 2 and "EDMX değil" in o for rc, o in sonuc) and not hedef.exists()
+              and "dosya YAZILMADI" in sonuc[0][1] and "kök <html>" in sonuc[2][1]
+              and not any("[YOK]" in o for _, o in sonuc))
+        H.kaydet("metadata: HTML/XHTML giriş sayfası → exit 2, dosya yok, alan hükmü yok", "4×rc=2",
+                 str([rc for rc, _ in sonuc]), ok)
+        self.assertTrue(ok, "\n".join(o for _, o in sonuc))
+
+    def test_md_kayit_yolu_sirasi(self):
+        """① ui5-mock.yaml metadataPath ② manifest localUri ③ mainService varsayılanı ④ başka servis → yazmaz;
+        ①≠② → UYARI; türetilen yol uygulama dışına çıkamaz; açık yol aynen."""
+        import argparse
+        mock_yaml = ("server:\n  customMiddleware:\n    - name: sap-fe-mockserver\n      configuration:\n"
+                     "        services:\n          - urlPath: '/sap/opu/odata/sap/ZBASKA_SRV'\n"
+                     "            metadataPath: './webapp/localService/baska/metadata.xml'\n"
+                     f"          - urlPath: '/sap/opu/odata/sap/{MD_SERVIS}'\n"
+                     "            metadataPath: './webapp/localService/mock/metadata.xml'\n")
+        ana = {"uri": f"/sap/opu/odata/sap/{MD_SERVIS}/", "settings": {"localUri": "localService/lu/metadata.xml"}}
+        vh = {"uri": "/sap/opu/odata/sap/ZVH_SRV/", "settings": {}}
+        durumlar = {
+            "mock+localUri farklı": ({"mainService": ana}, mock_yaml, MD_SERVIS),
+            "yalnız localUri": ({"mainService": ana}, None, MD_SERVIS),
+            "mainService varsayılan": ({"mainService": {"uri": f"/sap/opu/odata/sap/{MD_SERVIS}/"}}, None, MD_SERVIS),
+            "vh localUri yok": ({"mainService": ana, "vhService": vh}, None, "ZVH_SRV"),
+            "manifest'te yok": ({"mainService": ana}, None, "ZYOK_SRV"),
+            "dışarı kaçan localUri": ({"mainService": {"uri": f"/sap/opu/odata/sap/{MD_SERVIS}/",
+                                                       "settings": {"localUri": "../../../kacis.xml"}}}, None, MD_SERVIS),
+        }
+        sonuc = {}
+        for i, (ad, (ks, my, servis)) in enumerate(durumlar.items()):
+            app = _app_kur(self.kok / str(i), ks, my)
+            yol, notlar = F._kayit_yolu(argparse.Namespace(kaydet="", app=str(app)), servis)
+            sonuc[ad] = (yol.relative_to(app.resolve()).as_posix() if yol else None, " ".join(notlar))
+        acik, _ = F._kayit_yolu(argparse.Namespace(kaydet=str(self.kok / "x.xml"), app=None), MD_SERVIS)
+        yolsuz, nt = F._kayit_yolu(argparse.Namespace(kaydet="", app=None), MD_SERVIS)
+        ok = (sonuc["mock+localUri farklı"][0] == "webapp/localService/mock/metadata.xml"
+              and "[UYARI]" in sonuc["mock+localUri farklı"][1]
+              and sonuc["yalnız localUri"] == ("webapp/localService/lu/metadata.xml", sonuc["yalnız localUri"][1])
+              and "[UYARI]" not in sonuc["yalnız localUri"][1]
+              and sonuc["mainService varsayılan"][0] == "webapp/localService/mainService/metadata.xml"
+              and sonuc["vh localUri yok"][0] is None and "vhService" in sonuc["vh localUri yok"][1]
+              and sonuc["manifest'te yok"][0] is None
+              and sonuc["dışarı kaçan localUri"][0] is None and "DIŞINDA" in sonuc["dışarı kaçan localUri"][1]
+              and acik == self.kok / "x.xml" and yolsuz is None and "--app" in nt[0])
+        H.kaydet("metadata --kaydet yol sırası ①–④ + uyarı + kaçış reddi", "6 kol", str(sonuc), ok)
+        self.assertTrue(ok, sonuc)
+
+
+class TestMetadataKimlikSirasi(unittest.TestCase):
+    """C2 — kimlik sırası env → .conn_adt (yalnız aynı sistem) → pencere. Süreç İÇİNDE koşar: pencere fonksiyonu mock'tur,
+    GERÇEK pencere açılmaz. Her kolda sahte parolaların çıktıda geçmediği ölçülür."""
+
+    def setUp(self):
+        self.kok = Path(tempfile.mkdtemp(prefix="ui5mdk_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.kok, ignore_errors=True)
+
+    def _kos(self, argv, env_kimlik=False, pencere=None):
+        import contextlib
+        import io
+        import os
+        from unittest import mock
+        cagri = []
+
+        def sahte_pencere(servis, url, client, calistir=None):
+            cagri.append(servis)
+            return (pencere, None) if pencere else (None, "test: pencere kapalı")
+
+        env = {k: v for k, v in os.environ.items()
+               if k.upper() not in {"FIORI_TOOLS_USER", "FIORI_TOOLS_PASSWORD", "AXET_SAP_PROJECT_DIR",
+                                    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ADT_SAP_USER", "ADT_SAP_PASSWORD"}}
+        env.update(http_proxy="http://127.0.0.1:9", https_proxy="http://127.0.0.1:9", no_proxy="*")
+        if env_kimlik:
+            env.update(FIORI_TOOLS_USER=H.KULLANICI, FIORI_TOOLS_PASSWORD=H.PAROLA)
+        o, e = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(F, "_pencere_kimlik", sahte_pencere), \
+                contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+            rc = F.main(["metadata", MD_SERVIS, *map(str, argv)])
+        return rc, o.getvalue() + e.getvalue(), cagri
+
+    @staticmethod
+    def _sizinti(out: str) -> bool:
+        return any(s in out for s in (H.PAROLA, CONN_PAROLA))
+
+    def test_md_kimlik_env_once(self):
+        """env varken .conn_adt (yanlış kimlikli) ve pencere hiç kullanılmaz."""
+        with H.SahteSunucu({MD_YOL: MD1}) as srv:
+            _conn_yaz(self.kok, srv.url, "yanlis", "yanlis-parola")
+            rc, out, cagri = self._kos(["--project-dir", self.kok], env_kimlik=True)
+        ok = rc == 0 and "kimlik: env" in out and not cagri and not self._sizinti(out) and "yanlis-parola" not in out
+        H.kaydet("metadata kimlik ①: env önce", "rc=0 env pencere=0", f"rc={rc} pencere={len(cagri)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_md_kimlik_conn_adt(self):
+        """env yok → .conn_adt (hedef .conn_adt'nin kendi sistemi) kullanılır, pencere açılmaz."""
+        with H.SahteSunucu({MD_YOL: MD1}, kullanici=CONN_KULLANICI, parola=CONN_PAROLA) as srv:
+            _conn_yaz(self.kok, srv.url + "/")  # sondaki `/` aynı sistem sayılır
+            rc, out, cagri = self._kos(["--project-dir", self.kok])
+        ok = rc == 0 and "kimlik: .conn_adt" in out and not cagri and not self._sizinti(out)
+        H.kaydet("metadata kimlik ②: .conn_adt", "rc=0 .conn_adt pencere=0", f"rc={rc} pencere={len(cagri)}", ok)
+        self.assertTrue(ok, out)
+
+    def _kos_sertifika(self, conn_ssl=None, env_ssl=None):
+        """http_get'i yakalar: hangi ignore_cert değeriyle çağrıldı (sahte sunucu HTTP; SSL'i gerçekten ölçmez)."""
+        import os
+        from unittest import mock
+        gorulen = []
+
+        def sahte_get(url, kimlik, ignore_cert):
+            gorulen.append(ignore_cert)
+            return MD1.encode("utf-8") if isinstance(MD1, str) else MD1
+        _conn_yaz(self.kok, "https://sap.ornek.invalid:44300/")
+        if conn_ssl is not None:
+            with open(self.kok / ".conn_adt", "a", encoding="utf-8") as fh:
+                fh.write(f"\nADT_SAP_SSL_VERIFY={conn_ssl}\n")
+        ek = {"ADT_SAP_SSL_VERIFY": env_ssl} if env_ssl is not None else {}
+        with mock.patch.object(F.B, "http_get", sahte_get), mock.patch.dict(os.environ, ek):
+            if env_ssl is None:
+                os.environ.pop("ADT_SAP_SSL_VERIFY", None)
+            rc, out, _ = self._kos(["--project-dir", self.kok])
+        return rc, out, gorulen
+
+    def test_md_conn_adt_sertifika_adt_kurali(self):
+        """.conn_adt kolu ADT kütüphanesinin kuralını izler: ayar yok/false → doğrulama kapalı; true → açık; env > dosya."""
+        rc, out, g = self._kos_sertifika()
+        self.assertEqual((0, [True]), (rc, g), out)
+        self.assertIn("sertifika doğrulaması: kapalı", out)
+        rc, out, g = self._kos_sertifika(conn_ssl="true")
+        self.assertEqual((0, [False]), (rc, g), out)
+        self.assertNotIn("sertifika doğrulaması: kapalı", out)
+        rc, out, g = self._kos_sertifika(conn_ssl="true", env_ssl="false")
+        self.assertEqual((0, [True]), (rc, g), out)
+        # dotenv biçimleri: satır sonu yorumu · export · tekrar eden anahtarda son kazanır → doğrulama AÇIK kalır
+        for bicim in ("true  # yorum", "false\nexport ADT_SAP_SSL_VERIFY=true", "false\nADT_SAP_SSL_VERIFY=true"):
+            rc, out, g = self._kos_sertifika(conn_ssl=bicim)
+            self.assertEqual((0, [False]), (rc, g), (bicim, out))
+
+    def test_yonlendirme_baska_hosta_kimlik_tasimaz(self):
+        """302 başka hosta (127.0.0.1 → 127.0.0.2) → Authorization düşer; aynı köken yönlendirmesinde korunur."""
+        import http.server
+        import threading
+        gorulen = []
+
+        class H2(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                gorulen.append((self.server.server_address[0], self.path, "Authorization" in self.headers))
+                if self.path == "/baska":
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.2:{hedef.server_address[1]}/son")
+                elif self.path == "/ayni":
+                    self.send_response(302)
+                    self.send_header("Location", "/son")
+                else:
+                    self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+            def log_message(self, *a):
+                pass
+        try:
+            hedef = http.server.HTTPServer(("127.0.0.2", 0), H2)
+        except OSError as exc:
+            self.skipTest(f"127.0.0.2 bağlanamadı: {exc}")
+        kaynak = http.server.HTTPServer(("127.0.0.1", 0), H2)
+        for s in (hedef, kaynak):
+            threading.Thread(target=s.serve_forever, daemon=True).start()
+        try:
+            F.B.http_get(f"http://127.0.0.1:{kaynak.server_address[1]}/baska", ("u", "p"))
+            F.B.http_get(f"http://127.0.0.1:{kaynak.server_address[1]}/ayni", ("u", "p"))
+        finally:
+            for s in (hedef, kaynak):
+                s.shutdown()
+                s.server_close()
+        self.assertEqual([("127.0.0.1", "/baska", True), ("127.0.0.2", "/son", False),
+                          ("127.0.0.1", "/ayni", True), ("127.0.0.1", "/son", True)], gorulen)
+
+    def test_sistem_anahtari_gecersiz_port_traceback_vermez(self):
+        self.assertNotEqual(F._sistem_anahtari("https://h:abc", "100"), F._sistem_anahtari("https://h", "100"))
+
+    def test_md_ag_hatasi_host_maskelenir(self):
+        import urllib.error
+        from unittest import mock
+
+        def hata(url, kimlik, ignore_cert):
+            raise urllib.error.URLError("certificate is not valid for 'SAPHOST01.SAP.ORNEK.COM.TR'. (_ssl.c:1010)")
+        _conn_yaz(self.kok, "https://sap.ornek.invalid:44300/", )
+        with mock.patch.object(F.B, "http_get", hata):
+            rc, out, _ = self._kos(["--project-dir", self.kok])
+        self.assertEqual(2, rc, out)
+        self.assertNotIn("SAPHOST01", out)
+        self.assertIn("<host>", out)
+        self.assertIn("_ssl.c", out)
+
+    def test_md_kimlik_baska_host(self):
+        """--url .conn_adt'den BAŞKA bir sistem → .conn_adt parolası oraya GÖNDERİLMEZ, pencereye geçilir."""
+        with H.SahteSunucu({MD_YOL: MD1}) as srv:
+            _conn_yaz(self.kok, "http://127.0.0.1:9")
+            rc, out, cagri = self._kos(["--project-dir", self.kok, "--url", srv.url, "--client", "100"],
+                                       pencere=(H.KULLANICI, H.PAROLA))
+        ok = (rc == 0 and "kimlik: pencere" in out and cagri == [MD_SERVIS] and "başka sisteme gönderilmez" in out
+              and not self._sizinti(out))
+        H.kaydet("metadata kimlik: başka host → .conn_adt kullanılmadı → pencere", "rc=0 pencere=1",
+                 f"rc={rc} pencere={len(cagri)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_md_kimlik_hicbiri(self):
+        """env yok · .conn_adt yok · pencere iptal → exit 2, SAP'ye istek YOK."""
+        with H.SahteSunucu({MD_YOL: MD1}) as srv:
+            rc, out, cagri = self._kos(["--project-dir", self.kok / "bos", "--url", srv.url, "--client", "100"])
+            istek = list(srv.istekler)
+        ok = rc == 2 and "[FAIL] kimlik yok" in out and cagri == [MD_SERVIS] and not istek and ".conn_adt yok" in out
+        H.kaydet("metadata kimlik: hiçbiri → exit 2, istek 0", "rc=2 istek=0", f"rc={rc} istek={len(istek)}", ok)
+        self.assertTrue(ok, out)
+
+    def test_md_kimlik_401_sizdirmaz(self):
+        """Pencereden gelen kimlik sunucuca reddedilir (401) → exit 2; parola çıktıda yok."""
+        with H.SahteSunucu({MD_YOL: MD1}) as srv:
+            rc, out, _ = self._kos(["--project-dir", self.kok / "bos", "--url", srv.url, "--client", "100"],
+                                   pencere=("baska", CONN_PAROLA))
+        ok = rc == 2 and "okunamadı" in out and not self._sizinti(out) and "kimlik: pencere" in out
+        H.kaydet("metadata kimlik: 401 → exit 2, parola çıktıda yok", "rc=2", f"rc={rc}", ok)
+        self.assertTrue(ok, out)
+
+
+class TestPencereKimlik(unittest.TestCase):
+    """`_pencere_kimlik`: PowerShell çağrısı SAHTE (`calistir`) — gerçek pencere açılmaz. Sır yalnız stdout borusunda
+    base64 gelir; komut satırında, neden metninde (iptal / bozuk yanıt / zaman aşımı) GEÇMEZ."""
+    SIR = "gizli!parola ğüş"
+
+    def _kos(self, sahte, ps=("C:/Windows/powershell.exe", None)):
+        from unittest import mock
+        cagri = []
+
+        def calistir(komut, **kw):
+            cagri.append((komut, kw))
+            return sahte(komut, **kw)
+
+        with mock.patch.object(F, "_powershell_yolu", lambda: ps):
+            sonuc = F._pencere_kimlik(MD_SERVIS, "http://127.0.0.1:1", "100", calistir=calistir)
+        return sonuc, cagri
+
+    @staticmethod
+    def _b64(s: str) -> str:
+        import base64
+        return base64.b64encode(s.encode("utf-8")).decode()
+
+    def test_pencere_basari_ve_komut_satiri(self):
+        import base64
+        import subprocess
+        yanit = f"{self._b64('demo')} {self._b64(self.SIR)}".encode()
+        (k, neden), cagri = self._kos(lambda komut, **kw: subprocess.CompletedProcess(komut, 0, yanit, b""))
+        komut, kw = cagri[0]
+        betik = base64.b64decode(komut[komut.index("-EncodedCommand") + 1]).decode("utf-16-le")
+        ok = (k == ("demo", self.SIR) and neden is None and "Get-Credential" in betik
+              and MD_SERVIS not in betik and MD_SERVIS in kw.get("env", {}).get(F._PS_MESAJ_ENV, "")
+              and all(self.SIR not in x for x in komut) and kw.get("stdin") == subprocess.DEVNULL
+              and kw.get("capture_output") is True and "-NoProfile" in komut)
+        H.kaydet("pencere: base64 boru → kimlik; parola komut satırında yok", "ok", str(ok), ok)
+        self.assertTrue(ok, (k, neden, komut))
+
+    def test_pencere_iptal_bozuk_zaman_asimi_sizdirmaz(self):
+        import subprocess
+        sir_b = self.SIR.encode("utf-8")
+
+        def iptal(komut, **kw):
+            return subprocess.CompletedProcess(komut, 1, f"{self._b64('demo')} {self._b64(self.SIR)}".encode(),
+                                               b"Get-Credential: " + sir_b)
+
+        def bozuk(komut, **kw):
+            return subprocess.CompletedProcess(komut, 0, b"demo " + sir_b, b"")
+
+        def zaman(komut, **kw):
+            raise subprocess.TimeoutExpired(komut, 300, output=sir_b)
+
+        def bos(komut, **kw):
+            return subprocess.CompletedProcess(komut, 0, f"{self._b64('demo')} ".encode(), b"")
+
+        sonuc = {ad: self._kos(f)[0] for ad, f in (("iptal", iptal), ("bozuk", bozuk), ("zaman", zaman), ("bos", bos))}
+        windows_degil, cagri = self._kos(lambda *a, **k: None, ps=(None, "Windows değil — giriş penceresi yok"))
+        # Sırrın HER biçimi aranır: düz, ASCII parçası (repr/kaçış ASCII dışını gizler — mutasyon M4 bunu gösterdi),
+        # stdout'taki base64'ü.
+        yasak = (self.SIR, "gizli!parola", "ğüş", self._b64(self.SIR))
+        ok = (all(k is None for k, _ in sonuc.values())
+              and all(y not in n for _, n in sonuc.values() for y in yasak)
+              and "rc=1" in sonuc["iptal"][1] and "zaman" not in sonuc["iptal"][1]
+              and "300 sn" in sonuc["zaman"][1] and windows_degil == (None, "Windows değil — giriş penceresi yok")
+              and not cagri)
+        H.kaydet("pencere: iptal/bozuk/zaman aşımı/boş → None, neden metninde sır yok", "ok", str(sonuc), ok)
+        self.assertTrue(ok, sonuc)
+
+
 if __name__ == "__main__":
     unittest.main()

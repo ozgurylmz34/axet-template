@@ -190,7 +190,7 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/deploy_ui.py verify <app_mutl
 
 | Belirti | Sebep | Çözüm |
 |---|---|---|
-| `400 "Type of file X is unknown"` (Application Index) | `dist`'e BSP repository'nin tanımadığı dosya karışmış: araç/editör önbelleği gibi **gizli stray dosya**, ya da `.svg`/`.woff` | Stray'i sil + `builder.resources.excludes: /<klasör>/**` + görev `exclude: /<klasör>/`. Logo/ikon inline SVG ya da base64. `prepare` ikisini de listeler. Gerçek hatayı ayrıntılı çıktıda ara: `… --yes --verbose 2>&1 \| grep -i unknown` |
+| `400 "Type of file X is unknown"` (Application Index) | `dist`'e BSP repository'nin tanımadığı dosya karışmış: araç/editör önbelleği gibi **gizli stray dosya**, ya da `.svg`/`.woff` | Stray'i sil + `builder.resources.excludes: /<klasör>/**` + görev `exclude: /<klasör>/`. Logo/ikon inline SVG ya da base64. `prepare` ikisini de listeler. Gerçek hatayı ayrıntılı çıktıda ara: `… --yes --verbose 2>&1 \| rg -i unknown` |
 | Lokal çalışıyor, deploy 400 | Lokal sunucu her uzantıyı sunar; BSP yükleme sınıflandırır | aynı |
 | "Deployment Successful" ama canlıda eski | `dist` bayat | `deploy_ui.py` akışı; `verify` → `STALE` |
 | 401 | CLI argümanıyla kimlik / `\r` / kilitli kullanıcı | §3.3 / §1.1 (b) — tekrar tekrar deneme yapma |
@@ -354,6 +354,21 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui_local_proxy.py <paket>/ui/
   salt okuma çeker, XML olarak ayrıştırır, alanı **yalnız verilen EntityType'ta** arar (tip-kapsamlı; belge geneli arama
   `SAP__Signature` gibi altyapı tiplerinden yanlış pozitif verir). `--tip` verilmezse alanın bulunduğu her tipi listeler.
 - Kapsam: yalnız metadata metni; verinin dolu gelmesi ayrıca ölçülür.
+- **Bayat `metadata.xml` (Z168):** `python $F metadata <SERVIS> --kaydet --app <app>` tam `$metadata`'yı SAP yanıtı
+  olarak bayt bayt yazar; önce/sonra boyutu, EntityType/Property sayısını ve eklenen/kalkan alanları basar. Yol sırası:
+  `ui5-mock.yaml` `metadataPath` → manifest `settings.localUri` → (yalnız `mainService` ise)
+  `webapp/localService/mainService/metadata.xml`; hiçbiri yoksa yazmaz, `--kaydet <yol>` verilir. Yanıt EDMX değilse
+  (giriş sayfası) exit 2 — "ölçüm yok", "alan yok" değil. Annotation dosyaları ve mock verisi bu komutla güncellenmez.
+- **Kimlik (yalnız bu salt-okur `metadata` komutu):** env `FIORI_TOOLS_USER/PASSWORD` → proje `.conn_adt` (yalnız hedef
+  URL + client `.conn_adt`'ninkiyle aynıysa; başka sisteme o kimlik gönderilmez) → Windows giriş penceresi
+  (`Get-Credential`; parola çıktıya, log'a, komut satırına girmez). Çıktıda yalnız kaynak adı yazılır
+  (`kimlik: env|.conn_adt|pencere`). Kullanıcıdan tarayıcıda kaydetmesi ya da parolası **istenmez** (`ask_user`
+  cevapları log'a düz metin düşer). `indir`/`drift`/`anlik-kur` ve deploy kimliği değişmedi (yalnız env).
+- **Sertifika (`.conn_adt` kolu):** ADT kanalıyla aynı kural — `ADT_SAP_SSL_VERIFY` (env > `.conn_adt`) true/1/yes değilse
+  doğrulama **kapalı**dır ve çıktıda `sertifika doğrulaması: kapalı …` satırı basılır; açmak için `.conn_adt`'ye
+  `ADT_SAP_SSL_VERIFY=true`. Yönlendirme host/şema/port değiştirirse `Authorization` düşürülür (kimlik başka sisteme gitmez).
+- `metadata.xml`'e elle satır eklenmez; zorunlu kalırsa kullanıcıya "elle yamandı, SAP çıktısı değil" denir ve commit'ten
+  önce `--kaydet` çıktısıyla değiştirilir.
 
 ### 7.6 Ölçülmeyenler
 - Fiori Elements uygulamaları · TypeScript uygulamalar · `-dbg` üretmeyen/özel build · farklı ui5-tooling sürümüyle

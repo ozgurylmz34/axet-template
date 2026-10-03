@@ -5,7 +5,15 @@ Kontroller (DOC-KD-11 / DOC-KD-15 / DOC-KD-16'nın ölçülebilen kısmı):
   1. Ölü iç bağlantı : {href="#x"} \\ ({id="x"} ∪ {<a name="x">}) — küme kıyası, sayı değil.
   2. Ham Mermaid     : `language-mermaid` sınıfı ya da <pre>/<code> içinde çıplak diyagram anahtar sözcüğü.
   3. Görseller       : <img> sayısı (--expect-images ile kıyas) ve yerel görsel dosyalarının varlığı.
-  4. PDF (--pdf)     : dosya var mı, %PDF başlığı, boyut, yaklaşık sayfa ve bağlantı ek açıklaması sayısı.
+  4. Yer tutucu      : görünür metinde (kod blokları DAHİL) unutulmuş yer tutucu — kalıplar YER_TUTUCULAR sabitinde,
+                       KAPSAM satırı o listeden türetilir. Her kalıp eşleşmesi BULGU'dur (çıkış 1).
+                       Kod blokları neden dahil: KD şablonu görsel yer tutucusunu kod bloğu olarak yazar
+                       (```[GÖRSEL: …]```); build_kd_pdf eşlemesi o bloğu görselle değiştirmezse blok HTML'de
+                       <pre> olarak okuyucuya görünür kalır. Taranmayanlar: <script>/<style> içeriği, HTML yorumları,
+                       öznitelik değerleri (alt, title …).
+                       `[Açık Konu]` meşru doküman işaretidir (karar bekleyen nokta) → BULGU DEĞİL; sayısı ayrı
+                       BİLGİ satırında basılır.
+  5. PDF (--pdf)     : dosya var mı, %PDF başlığı, boyut, yaklaşık sayfa ve bağlantı ek açıklaması sayısı.
 
 Kullanım:
     python verify_doc_html.py <doküman.html> [--expect-images N] [--pdf <doküman.pdf>] [--min-pdf-links N]
@@ -24,10 +32,34 @@ for _s in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# Unutulmuş yer tutucu kalıpları — TEK liste: tarama (YER_TUTUCU_RX) ve KAPSAM satırı (SCOPE) buradan türetilir.
+# (ad, düzenli ifade). Sıra önemlidir: aynı konumda ilk eşleşen kalıp kazanır, eşleşen metin bir kez sayılır
+# (ör. "[EKRAN GÖRÜNTÜSÜ — Faz-2'de eklenecek]" üç kalıba da uyar ama 1 bulgu olur).
+YER_TUTUCULAR = (
+    ("[EKRAN GÖRÜNTÜSÜ …]", r"(?i:\[\s*EKRAN\s+GÖRÜNTÜSÜ\b[^\]\n]*\])"),
+    ("[GÖRSEL: …]", r"\[\s*GÖRSEL\s*:[^\]\n]*\]"),
+    ("EKRAN GÖRÜNTÜSÜ … eklenecek", r"(?i:EKRAN\s+GÖRÜNTÜSÜ[^\n]{0,80}?\beklenecek\b)"),
+    ("Faz-N'de eklenecek", r"(?i:\bFaz[- ]?\d+\s*['’]?\s*(?:de|da|te|ta)\s+eklenecek\b)"),
+    ("[AÇIKLAMA YAZILMADI]", r"\[AÇIKLAMA YAZILMADI\]"),  # build_kd_pdf.ACIKLAMA_YOK işaretinin metni
+    ("TODO", r"\bTODO\b"),
+    ("TBD", r"\bTBD\b"),
+    ("FIXME", r"\bFIXME\b"),
+)
+YER_TUTUCU_RX = re.compile("|".join("(?P<k%d>%s)" % (i, rx) for i, (_, rx) in enumerate(YER_TUTUCULAR)))
+ACIK_KONU_RX = re.compile(r"\[Açık Konu(?:[:\s][^\]\n]*)?\]")
+# Görünür metin taranırken içeriği atlanan öğeler (tarayıcı göstermez).
+GORUNMEZ_ETIKETLER = ("script", "style", "template", "noscript")
+# Bu etiketler metni bölmez (satır içi); diğerleri satır sonu sayılır → bitişik bloklar tek kelimeye kaynamaz.
+SATIR_ICI = frozenset(("a", "abbr", "b", "bdi", "bdo", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark", "q", "s",
+                       "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "wbr", "font"))
+
 SCOPE = ("KAPSAM (SCOPE): verify_doc_html — bakılanlar: iç bağlantı hedefleri (id ∪ a name), ham Mermaid sızıntısı (HTML), "
-         "<img> sayısı ve yerel dosya varlığı, PDF varlığı/boyutu/yaklaşık bağlantı sayısı. Bakılmayanlar: görselin "
+         "<img> sayısı ve yerel dosya varlığı, görünür metinde (kod blokları dahil) yer tutucu kalıpları: "
+         + " · ".join(ad for ad, _ in YER_TUTUCULAR)
+         + " ([Açık Konu] yalnız sayılır, BİLGİ), PDF varlığı/boyutu/yaklaşık bağlantı sayısı. Bakılmayanlar: görselin "
          "tarayıcıda gerçekten yüklenmesi (naturalWidth), görüntüdeki verinin temizliği, alt ekran kapsamı, PDF metnindeki "
-         "ham diyagram kodu, dış bağlantılar, içerik doğruluğu.")
+         "ham diyagram kodu ve yer tutucular, <script>/<style>/yorum/öznitelik (alt, title) içindeki yer tutucular, "
+         "listede olmayan yer tutucu biçimleri, dış bağlantılar, içerik doğruluğu.")
 
 MERMAID_WORDS = re.compile(r"^\s*(flowchart|graph\s+(TD|TB|BT|LR|RL)|sequenceDiagram|classDiagram|stateDiagram(-v2)?|"
                            r"erDiagram|gantt|pie|journey|mindmap|timeline)\b")
@@ -41,9 +73,15 @@ class _Collector(HTMLParser):
         self._pre_depth = 0
         self._buf = []
         self.pre_texts = []
+        self._gizli = 0
+        self.gorunur = []
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
+        if tag in GORUNMEZ_ETIKETLER:
+            self._gizli += 1
+        if tag not in SATIR_ICI:
+            self.gorunur.append("\n")
         if a.get("id"):
             self.ids.add(a["id"])
         if tag == "a":
@@ -62,6 +100,10 @@ class _Collector(HTMLParser):
             self._pre_depth += 1
 
     def handle_endtag(self, tag):
+        if tag in GORUNMEZ_ETIKETLER and self._gizli:
+            self._gizli -= 1
+        if tag not in SATIR_ICI:
+            self.gorunur.append("\n")
         if tag in ("pre", "code") and self._pre_depth:
             self._pre_depth -= 1
             if self._pre_depth == 0:
@@ -70,6 +112,17 @@ class _Collector(HTMLParser):
     def handle_data(self, data):
         if self._pre_depth:
             self._buf.append(data)
+        if not self._gizli:
+            self.gorunur.append(data)
+
+
+def yer_tutucu_tara(metin):
+    """Döner: ({kalıp adı: [eşleşen metin, ...]}, [Açık Konu] sayısı). Eşleşmeler çakışmaz (tek birleşik ifade)."""
+    bulunan = {}
+    for m in YER_TUTUCU_RX.finditer(metin):
+        ad = YER_TUTUCULAR[int(m.lastgroup[1:])][0]
+        bulunan.setdefault(ad, []).append(" ".join(m.group(0).split()))
+    return bulunan, len(ACIK_KONU_RX.findall(metin))
 
 
 def check_html(html_path, expect_images=None):
@@ -98,9 +151,16 @@ def check_html(html_path, expect_images=None):
         findings.append("EKSİK GÖRSEL DOSYASI: %s" % m)
     if expect_images is not None and len(c.imgs) != expect_images:
         findings.append("GÖRSEL SAYISI: beklenen %d, bulunan %d" % (expect_images, len(c.imgs)))
+    yer_tutucu, acik_konu = yer_tutucu_tara("".join(c.gorunur))
+    for ad, ornekler in yer_tutucu.items():
+        tekil = list(dict.fromkeys(ornekler))
+        findings.append("YER TUTUCU (%s): %d kez — %s%s" % (
+            ad, len(ornekler), " | ".join("«%s»" % o for o in tekil[:3]),
+            (" …(+%d farklı)" % (len(tekil) - 3)) if len(tekil) > 3 else ""))
     stats = {"internal_links": len(c.hrefs), "unique_targets": len(set(c.hrefs)), "ids": len(c.ids),
              "a_names": len(c.names), "dead": len(dead), "img": len(c.imgs), "missing_img": len(missing),
-             "raw_mermaid": c.mermaid_class + raw_mermaid}
+             "raw_mermaid": c.mermaid_class + raw_mermaid,
+             "placeholder": sum(len(v) for v in yer_tutucu.values()), "acik_konu": acik_konu}
     return findings, stats
 
 
@@ -141,7 +201,11 @@ def main(argv):
         print("ÖLÇÜLEMEDİ: HTML okunamadı: %s — bu 'temiz' anlamına gelmez." % exc, file=sys.stderr)
         return 2
     print("HTML: iç bağlantı %(internal_links)d (tekil hedef %(unique_targets)d) · id %(ids)d · a-name %(a_names)d · "
-          "ölü %(dead)d · img %(img)d · eksik görsel %(missing_img)d · ham mermaid %(raw_mermaid)d" % stats)
+          "ölü %(dead)d · img %(img)d · eksik görsel %(missing_img)d · ham mermaid %(raw_mermaid)d · "
+          "yer tutucu %(placeholder)d" % stats)
+    if stats["acik_konu"]:
+        print("BİLGİ: [Açık Konu] işareti %d kez — meşru karar-bekleyen-nokta işaretidir, BULGU sayılmaz; "
+              "yayından önce kapatılıp kapatılmayacağı doküman sahibinin kararıdır." % stats["acik_konu"])
     if a.pdf:
         pf, ps = check_pdf(a.pdf, stats["internal_links"], a.min_pdf_links)
         findings += pf

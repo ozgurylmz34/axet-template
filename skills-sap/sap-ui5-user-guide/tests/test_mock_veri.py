@@ -403,5 +403,156 @@ class DavranisTest(_Temel):
         self.assertTrue(all(len(a) <= 1 for a in anahtarlar))
 
 
+def uyari_alanlari(out):
+    """'UYARI: kod alanı adayı ...' satırlarındaki Set.Alan adları."""
+    return {m.group(1) for m in re.finditer(r"^UYARI: kod alanı adayı, sabit değer verilmedi: (\S+) ", out, re.M)}
+
+
+class SabitDegerTest(_Temel):
+    """--sabit-degerler: kod alanına yalnız verilen (kurgusal) kodlar yazılır; hatalı girdi → çıkış 2."""
+
+    def json_yaz(self, ad, veri):
+        yol = os.path.join(self.tmp, ad)
+        with open(yol, "w", encoding="utf-8") as fh:
+            json.dump(veri, fh, ensure_ascii=False)
+        return yol
+
+    def test_anahtar_olmayan_alan_listeden_ve_oteki_alanlar_degismez(self):
+        kodlar = {"KQ1", "KQ2", "KQ3"}
+        cikti, out = self.uret(V4, "--adet", "8", "--tohum", "5", "--sabit-degerler", "Order.OverallStatus=KQ1,KQ2,KQ3",
+                               cikti=os.path.join(self.tmp, "s"))
+        taban, _ = self.uret(V4, "--adet", "8", "--tohum", "5", cikti=os.path.join(self.tmp, "t"))
+        _, bas = oku(cikti, "Order")
+        _, bas0 = oku(taban, "Order")
+        self.assertEqual(8, len(bas))
+        self.assertTrue({r["OverallStatus"] for r in bas} <= kodlar, [r["OverallStatus"] for r in bas])
+        self.assertGreater(len({r["OverallStatus"] for r in bas}), 1, "tohuma bağlı seçim tek değere çökmemeli")
+        for r, r0 in zip(bas, bas0):  # yalnız hedef alan değişir; setin rastgele akışı bozulmaz
+            self.assertEqual({k: v for k, v in r0.items() if k != "OverallStatus"},
+                             {k: v for k, v in r.items() if k != "OverallStatus"})
+        for ad in ("Item", "Customer", "ZBC000_I_StatusVH"):
+            self.assertEqual(oku(taban, ad)[0], oku(cikti, ad)[0], ad)
+        self.assertIn("SABİT DEĞERLER (1): Order.OverallStatus (3 değer)", out)
+        tekrar, _ = self.uret(V4, "--adet", "8", "--tohum", "5", "--sabit-degerler", "Order.OverallStatus=KQ1,KQ2,KQ3",
+                              cikti=os.path.join(self.tmp, "s2"))
+        self.assertEqual(oku(cikti, "Order")[0], oku(tekrar, "Order")[0], "aynı tohum → aynı çıktı")
+
+    def test_vh_anahtari_sirali_kisitli_ve_ana_alan_tutarli(self):
+        cikti, out = self.uret(V2_RAP, "--adet", "6", "--sabit-degerler", "ZBC000_I_StatusVH.Status=Q,R,S")
+        _, durum = oku(cikti, "ZBC000_I_StatusVH")
+        _, bas = oku(cikti, "Order")
+        self.assertEqual(["Q", "R", "S"], [r["Status"] for r in durum])
+        self.assertIn("ZBC000_I_StatusVH: 6 → 3 (Status sabit değer sayısı)", out)
+        self.assertTrue({r["OverallStatus"] for r in bas} <= {"Q", "R", "S"})
+        uyari = uyari_alanlari(out)
+        self.assertNotIn("ZBC000_I_StatusVH.Status", uyari)
+        self.assertNotIn("Order.OverallStatus", uyari, "kaynağına sabit değer verilen alan uyarı vermez")
+
+    def test_vh_kaynagi_listede_degilse_listeden_yazilir_ve_not_duser(self):
+        yol = self.json_yaz("kodlar.json", [{"value": "X", "text": "Kurgu X"}, "Y", "Y"])
+        cikti, out = self.uret(V2_RAP, "--sabit-degerler", "Order.OverallStatus=@" + yol)
+        _, bas = oku(cikti, "Order")
+        self.assertTrue({r["OverallStatus"] for r in bas} <= {"X", "Y"})
+        self.assertIn("SABİT DEĞERLER (1): Order.OverallStatus (2 değer)", out)  # yinelenen Y bir kez
+        self.assertIn("Order.OverallStatus: ilişki/değer yardımından gelen değer sabit listede yoktu", out)
+        self.assertIn("ZBC000_I_StatusVH.Status", out.split("sabit listede yoktu", 1)[1].splitlines()[0])
+
+    def test_kalem_anahtari_kalem_sirasiyla(self):
+        cikti, _ = self.uret(V2, "--adet", "2", "--alt-adet", "3",
+                             "--sabit-degerler", "SalesOrderItemSet.ItemNo=P1,P2,P3")
+        _, kal = oku(cikti, "SalesOrderItemSet")
+        self.assertEqual(6, len(kal))
+        for s in {r["SalesOrder"] for r in kal}:
+            self.assertEqual(["P1", "P2", "P3"], [r["ItemNo"] for r in kal if r["SalesOrder"] == s])
+
+    def test_atlanan_sette_uygulanmadi_notu(self):
+        cikti, _ = self.uret(V2)
+        _, out = self.uret(V2, "--sabit-degerler", "SalesOrderSet.Status=Q", cikti=cikti)
+        self.assertIn("SalesOrderSet.Status: sabit değer UYGULANMADI — dosya atlandı", out)
+
+    def test_hatali_girdi_cikis_2_ve_dosya_yazilmaz(self):
+        bozuk = os.path.join(self.tmp, "bozuk.json")
+        with open(bozuk, "w", encoding="utf-8") as fh:
+            fh.write("[\"Q\",")
+        vakalar = {
+            "Yok.Status=Q": "bilinmeyen EntitySet",
+            "SalesOrderSet.Yok=Q": "bilinmeyen özellik",
+            "SalesOrderSet.Status=QQ": "MaxLength 1 aşılıyor",
+            "SalesOrderSet.TotalAmount=1": "yalnız Edm.String",
+            "SalesOrderSetStatus=Q": "biçimi",
+            "SalesOrderSet.Status": "biçimi",
+            "SalesOrderSet.Status=Q,,R": "boş değer",
+            "SalesOrderSet.Status=@" + os.path.join(self.tmp, "yok.json"): "dosya okunamadı",
+            "SalesOrderSet.Status=@" + bozuk: "JSON ayrıştırılamadı",
+            "SalesOrderSet.Status=@" + self.json_yaz("nesne.json", {"value": "Q"}): "dizi olmalı",
+            "SalesOrderSet.Status=@" + self.json_yaz("sayi.json", ["Q", 7]): "string ya da",
+            "SalesOrderSet.Status=@" + self.json_yaz("bos.json", []): "değer listesi boş",
+        }
+        for ifade, beklenen in vakalar.items():
+            with self.subTest(ifade=ifade):
+                hedef = os.path.join(self.tmp, "x")
+                rc, out, err = calistir(["--metadata", V2, "--cikti", hedef, "--sabit-degerler", ifade])
+                self.assertEqual(2, rc, err)
+                self.assertIn("HATA", err)
+                self.assertIn(beklenen, err)
+                self.assertFalse(os.path.exists(hedef), "hata durumunda dosya yazılmamalı")
+        rc, _, err = calistir(["--metadata", V2, "--cikti", os.path.join(self.tmp, "x"),
+                               "--sabit-degerler", "SalesOrderSet.Status=Q",
+                               "--sabit-degerler", "SalesOrderSet.Status=R"])
+        self.assertEqual(2, rc)
+        self.assertIn("iki kez", err)
+
+
+class KodAlaniAdayiTest(_Temel):
+    """B2 ipucu: bilinen doğru-pozitif VE doğru-negatif ile kalibre; çıkış kodu değişmez."""
+
+    def test_v2_rap_dogru_pozitif_ve_dogru_negatif(self):
+        _, out = self.uret(V2_RAP)
+        self.assertEqual({"ZBC000_I_StatusVH.Status", "Order.OverallStatus"}, uyari_alanlari(out))
+        for negatif in ("Order.Note", "ZBC000_I_StatusVH.StatusText", "Order.CustomerID", "Order.CreatedBy",
+                        "Order.CurrencyCode", "Item.Product", "Item.QuantityUnit", "Order.OrderID"):
+            self.assertNotIn(negatif, uyari_alanlari(out))
+        satir = [s for s in out.splitlines() if "Order.OverallStatus" in s and s.startswith("UYARI")][0]
+        self.assertIn("sabit-liste işareti", satir)          # sap:value-list="fixed-values"
+        self.assertIn("değerin kaynağı: ZBC000_I_StatusVH.Status", satir)
+
+    def test_uyarilar_ciktinin_sonunda_kapsamdan_sonra(self):
+        _, out = self.uret(V2)
+        satirlar = out.strip().splitlines()
+        self.assertEqual({"SalesOrderSet.Status"}, uyari_alanlari(out))
+        self.assertTrue(satirlar[-1].startswith("UYARI: kod alanı adayı"), satirlar[-1])
+        self.assertTrue(satirlar[-2].startswith("KAPSAM (SCOPE)"), satirlar[-2])
+        self.assertIn("domain sabit değerlerini ve değer tablolarını OKUMAZ", satirlar[-2])
+
+    def test_v4_uzun_durum_adi_ve_para_kodu_haric(self):
+        _, out = self.uret(V4)
+        self.assertEqual({"Order.OverallStatus", "ZBC000_I_StatusVH.Status"}, uyari_alanlari(out))
+
+    def test_v4_value_list_with_fixed_values_isareti(self):
+        with open(V4, encoding="utf-8") as fh:
+            metin = fh.read()
+        hedef = '<Annotations Target="SAP__self.OrderType/OverallStatus">'
+        self.assertIn(hedef, metin)
+        ek = ('<Annotations Target="SAP__self.OrderType/City">'
+              '<Annotation Term="SAP__common.ValueListWithFixedValues"/></Annotations>')
+        meta = os.path.join(self.tmp, "sabitli.xml")
+        with open(meta, "w", encoding="utf-8") as fh:
+            fh.write(metin.replace(hedef, ek + hedef))
+        _, out = self.uret(meta, cikti=os.path.join(self.tmp, "a"))
+        self.assertIn("Order.City", uyari_alanlari(out))  # ML40, adı kod değil: yalnız işaretle aday
+        _, out0 = self.uret(V4, cikti=os.path.join(self.tmp, "b"))
+        self.assertNotIn("Order.City", uyari_alanlari(out0))  # kontrol: işaretsiz City aday değil
+        with open(meta, "w", encoding="utf-8") as fh:
+            fh.write(metin.replace(hedef, ek.replace("/>", ' Bool="false"/>') + hedef))
+        _, out1 = self.uret(meta, cikti=os.path.join(self.tmp, "c"))
+        self.assertNotIn("Order.City", uyari_alanlari(out1))
+
+    def test_sabit_verilen_alan_uyari_vermez_cikis_0(self):
+        rc, out, _ = calistir(["--metadata", V2, "--cikti", os.path.join(self.tmp, "d"),
+                               "--sabit-degerler", "SalesOrderSet.Status=Q"])
+        self.assertEqual(0, rc)
+        self.assertEqual(set(), uyari_alanlari(out))
+
+
 if __name__ == "__main__":
     unittest.main()

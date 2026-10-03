@@ -3,7 +3,36 @@
 
 Kullanım:
     python mock_veri.py --metadata webapp/localService/<srv>/metadata.xml \\
-                        --cikti webapp/localService/<srv>/data [--adet 5] [--alt-adet 3] [--tohum S] [--zorla]
+                        --cikti webapp/localService/<srv>/data [--adet 5] [--alt-adet 3] [--tohum S] [--zorla] \\
+                        [--sabit-degerler <EntitySet>.<Özellik>=<değerler>] ...
+
+--sabit-degerler (isteğe bağlı, tekrarlanabilir) — kod/durum alanına yalnız sistemde VAR olan değerleri yazdırmak için:
+    --sabit-degerler OrderSet.ReportType=K01,K02,K03        virgüllü liste (boşluklar kırpılır)
+    --sabit-degerler OrderSet.ReportType=@kodlar.json       '@' + JSON dosya yolu (göreli yol çalışma klasörüne göre)
+  JSON dosyası bir DİZİdir; öğe ya string (`["K01", "K02"]`) ya da `value` anahtarlı nesne
+  (`[{"value": "K01", "text": "Birinci"}]` — `text` okunmaz). Boş string yalnız JSON ile verilebilir; virgül ya da
+  '@' ile başlayan değer de JSON ile verilir. Yinelenen değer bir kez sayılır (ilk görülme sırası korunur).
+  Değerler kaynağından alınır (domain sabit değerleri: `adt_get` domain · değer tablosu / VH seti) — araç değerlerin
+  sistemde var olduğunu DOĞRULAMAZ, yalnız biçim sınırlarını denetler.
+  Davranış: anahtar OLMAYAN alanda değer listeden tohuma bağlı (Set+Alan başına ayrı rastgele akış) seçilir; o setin
+  öbür alanları bayraksız koşumla AYNI kalır. Anahtar alanda değerler sırayla atanır (kayıt i → değer i; belge-kalem
+  setinde kalem sırası); bağımsız sette kayıt sayısı değer sayısıyla sınırlanır (SAYI KISITLANDI). Alan değeri bir
+  ilişkiden/değer yardımından gelir ve listede DEĞİLSE listeden seçilen değer yazılır ve NOT düşer (üst/VH setine de
+  aynı değerleri verin). Hata (çıkış 2, dosya yazılmaz): biçim bozuk, bilinmeyen EntitySet ya da özellik, aynı alan iki
+  kez, Edm.String olmayan alan, MaxLength'i aşan değer (kırpma YOK), boş liste, okunamayan/bozuk JSON.
+
+Kod alanı adayı uyarısı: üretilen setlerde sabit değer verilmemiş ama kod/durum alanına benzeyen Edm.String alanlar
+çıktının SONUNDA `UYARI: kod alanı adayı, sabit değer verilmedi: Set.Alan (...)` satırlarıyla listelenir; çıkış kodu
+değişmez. Aday ölçütü (biri yeter; ② ve ③ para/birim/ülke/e-posta/telefon/kimlik/kullanıcı/şehir/adres/tarih
+sınıfı alanlara uygulanmaz — araç onlara anlamlı standart değer yazar; ① açık işaret olduğu için her alanda sayılır):
+  ① V2 `sap:value-list="fixed-values"` ya da V4 `Common.ValueListWithFixedValues` — servis alanı açıkça sabit küçük
+    liste (açılır liste) olarak işaretlemiş;
+  ② ad Code/Kod/Kodu/Status/Durum/Durumu/Type/Tip/Tipi/Tur/Turu/Category/Kategori ile BİTER ve MaxLength ≤ 10 —
+    domain sabit değerli alanlar kısa CHAR'dır; 10'dan uzun "...Code" alanları çoğunlukla serbest anahtar/numaradır;
+  ③ `sap:display-format="UpperCase"` ve MaxLength ≤ 4 — örneklerde UpperCase + 10/12/18 uzunluk müşteri/kullanıcı/
+    ürün numarasıydı (sabit değer DEĞİL), 1 uzunluk durum koduydu; eşik ikisinin arasında.
+  Değeri bir ilişkiden/değer yardımından gelen alanda kaynak ("değer X.Y'den gelir") yazılır; kaynağa sabit değer
+  verildiyse uyarı düşmez. İpucu domain sabit değerlerini ya da değer tablosunu OKUMAZ.
 
 Ne yapar:
   - EntityContainer'daki her EntitySet için `<cikti>/<EntitySet>.json` (JSON dizi, UTF-8, BOM yok) yazar.
@@ -34,10 +63,13 @@ Ne yapar:
 KAPSAM (SCOPE): yalnız metadata dosyasının kendisine bakar. Bakmadıkları (her koşumda da basılır):
 function import / action / function, harici annotation dosyaları, ValueListReferences (başka servis),
 karmaşık/enum/koleksiyon tipli alanlar, akış (Edm.Stream) ve ikili (Edm.Binary) alanlar, draft kopya
-(IsActiveEntity=false) kayıtları, kalem içi miktar×fiyat tutarlılığı, mevcut (atlanan) dosyaların içerik doğruluğu.
+(IsActiveEntity=false) kayıtları, kalem içi miktar×fiyat tutarlılığı, mevcut (atlanan) dosyaların içerik doğruluğu,
+domain sabit değerleri / değer tabloları (kod alanı adayı ipucu yalnız metadata işaretlerine bakar; --sabit-degerler
+ile verilen değerlerin sistemde var olduğu doğrulanmaz).
 
-Çıkış: 0 başarılı (atlanan dosya olsa bile; rapora bakın) · 2 kullanım/girdi hatası (dosya yok, bozuk XML,
-Edmx değil, EntityContainer yok) · 1 iç tutarlılık hatası (üretilen değer bir sınırı aştı — hata bildirin).
+Çıkış: 0 başarılı (atlanan dosya ya da UYARI olsa bile; rapora bakın) · 2 kullanım/girdi hatası (dosya yok, bozuk
+XML, Edmx değil, EntityContainer yok, geçersiz --sabit-degerler) · 1 iç tutarlılık hatası (üretilen değer bir
+sınırı aştı — hata bildirin).
 """
 import argparse
 import datetime
@@ -165,6 +197,7 @@ class Model:
         self.iliskiler = []        # [{"alt", "ust", "ciftler": [(alt_alan, ust_alan)], "tur": kalem|arama}]
         self.degeryardimi = {}     # (tip, alan) → {"koleksiyon", "ciftler": [(yerel, vh_alan)]}
         self.vl_isaretli = []      # V2 sap:value-list alanları (tip, alan)
+        self.sabit_listeli = set()  # (tip, alan): V2 sap:value-list="fixed-values" · V4 ValueListWithFixedValues
         self.asetler = {}          # V2 Association tam adı → [{rol: EntitySet}]
         self.bakilmayan = []       # ["FunctionImport ReleaseOrder", ...]
         self.notlar = []
@@ -227,6 +260,8 @@ def metadata_oku(yol):
                 for a in _cocuklar(p, "Annotation"):
                     if _terim_sonu(_nitelik(a, "Term")) == "Label" and _nitelik(a, "String"):
                         etiket = _nitelik(a, "String")
+                    elif _sabit_liste_isareti(a):
+                        m.sabit_listeli.add((tam, ad))
                 ml = _nitelik(p, "MaxLength")
                 alanlar.append(Alan(ad, _tam_ad(_nitelik(p, "Type"), None, takma), _sayi(ml),
                                     _sayi(_nitelik(p, "Precision")), _nitelik(p, "Scale"),
@@ -234,6 +269,8 @@ def metadata_oku(yol):
                                     _nitelik(p, "display-format")))
                 if _nitelik(p, "value-list"):
                     m.vl_isaretli.append((tam, ad))
+                    if _nitelik(p, "value-list") == "fixed-values":
+                        m.sabit_listeli.add((tam, ad))
             gezinmeler = []
             for n in _cocuklar(et, "NavigationProperty"):
                 gezinmeler.append({
@@ -296,6 +333,8 @@ def metadata_oku(yol):
                 vl = _degeryardimi_oku(a)
                 if vl:
                     m.degeryardimi[(tip, alan)] = vl
+            elif _sabit_liste_isareti(a):
+                m.sabit_listeli.add((tip, alan))
             elif terim in ("ValueListReferences", "ValueListMapping"):
                 m.bakilmayan.append("%s %s/%s (başka servis)" % (terim, m.tipler.get(tip, {}).get("ad", tip), alan))
 
@@ -315,6 +354,13 @@ def _hedef_coz(hedef, m, kapsayici_ad, takma):
             if s["ad"] == parcalar[1]:
                 return s["tip"], parcalar[2]
     return None
+
+
+def _sabit_liste_isareti(ann):
+    """V4 `Common.ValueListWithFixedValues` (Bool yoksa ya da true ise) — alan sabit küçük liste olarak işaretli."""
+    if _terim_sonu(_nitelik(ann, "Term")) != "ValueListWithFixedValues":
+        return False
+    return (_nitelik(ann, "Bool") or "true").lower() != "false"
 
 
 def _degeryardimi_oku(ann):
@@ -433,6 +479,113 @@ def vh_setleri(m):
     return sonuc
 
 
+# ---------------------------------------------------------------- --sabit-degerler ve kod alanı adayı ipucu
+def _sabit_dosya_oku(yol, ifade):
+    try:
+        with open(yol, encoding="utf-8-sig") as fh:
+            veri = json.load(fh)
+    except OSError as exc:
+        raise GirdiHatasi("--sabit-degerler %s: dosya okunamadı: %s" % (ifade, exc))
+    except ValueError as exc:
+        raise GirdiHatasi("--sabit-degerler %s: JSON ayrıştırılamadı (%s): %s" % (ifade, yol, exc))
+    if not isinstance(veri, list):
+        raise GirdiHatasi("--sabit-degerler %s: JSON bir dizi olmalı (%s)" % (ifade, yol))
+    degerler = []
+    for i, oge in enumerate(veri, 1):
+        if isinstance(oge, dict) and "value" in oge:
+            oge = oge["value"]
+        if not isinstance(oge, str):
+            raise GirdiHatasi("--sabit-degerler %s: %d. öğe string ya da {\"value\": string} değil: %r"
+                              % (ifade, i, oge))
+        degerler.append(oge)
+    return degerler
+
+
+def sabit_degerleri_coz(m, ifadeler):
+    """['Set.Alan=A,B' | 'Set.Alan=@dosya.json', ...] → {(set, alan): [değer, ...]}; geçersizse GirdiHatasi."""
+    set_tip = {s["ad"]: s["tip"] for s in m.setler}
+    sonuc = {}
+    for ifade in ifadeler or []:
+        sol, esit, sag = ifade.partition("=")
+        set_ad, nokta, alan_ad = sol.strip().partition(".")
+        if not esit or not nokta or not set_ad or not alan_ad:
+            raise GirdiHatasi("--sabit-degerler biçimi <EntitySet>.<Özellik>=<değerler> olmalı: %r" % ifade)
+        if set_ad not in set_tip:
+            raise GirdiHatasi("--sabit-degerler %s: bilinmeyen EntitySet %r (metadata'daki setler: %s)"
+                              % (ifade, set_ad, ", ".join(sorted(set_tip)) or "-"))
+        alanlar = {a.ad: a for a in m.tipler.get(set_tip[set_ad], {}).get("alanlar", [])}
+        if alan_ad not in alanlar:
+            raise GirdiHatasi("--sabit-degerler %s: %s setinde bilinmeyen özellik %r (özellikler: %s)"
+                              % (ifade, set_ad, alan_ad, ", ".join(alanlar) or "-"))
+        if (set_ad, alan_ad) in sonuc:
+            raise GirdiHatasi("--sabit-degerler %s.%s iki kez verildi — tek ifadede birleştirin" % (set_ad, alan_ad))
+        alan = alanlar[alan_ad]
+        if alan.tip != "Edm.String":
+            raise GirdiHatasi("--sabit-degerler %s.%s: yalnız Edm.String alan desteklenir (alan tipi %s)"
+                              % (set_ad, alan_ad, alan.tip))
+        sag = sag.strip()
+        if sag.startswith("@"):
+            ham = _sabit_dosya_oku(sag[1:], ifade)
+        else:
+            ham = [d.strip() for d in sag.split(",")]
+            if any(not d for d in ham):
+                raise GirdiHatasi("--sabit-degerler %s: boş değer (boş string gerekiyorsa JSON dosyası kullanın)"
+                                  % ifade)
+        degerler = []
+        for d in ham:
+            if d not in degerler:
+                degerler.append(d)
+        if not degerler:
+            raise GirdiHatasi("--sabit-degerler %s: değer listesi boş" % ifade)
+        asan = [d for d in degerler if alan.maxlen is not None and len(d) > alan.maxlen]
+        if asan:
+            raise GirdiHatasi("--sabit-degerler %s.%s: MaxLength %d aşılıyor (kırpılmaz): %s"
+                              % (set_ad, alan_ad, alan.maxlen, ", ".join(repr(d) for d in asan)))
+        sonuc[(set_ad, alan_ad)] = degerler
+    return sonuc
+
+
+R_KOD_SONEK = re.compile(r"(code|kod|kodu|status|durum|durumu|type|tip|tipi|tur|turu|category|kategori)$")
+KOD_SONEK_MAXLEN = 10      # ② ad soneki + MaxLength ≤ 10
+BUYUK_HARF_MAXLEN = 4      # ③ UpperCase + MaxLength ≤ 4
+KOD_DISI_SINIFLAR = {"para", "birim", "ulke", "eposta", "telefon", "kimlik", "kullanici", "sehir", "adres", "tarih"}
+
+
+def _deger_kaynaklari(m, set_ad, set_tipi, alan_ad):
+    """Alanın değerini dolduran ilişki/değer yardımı kaynakları: [(Set, Alan)]."""
+    kaynak = [(r["ust"], u) for r in m.iliskiler if r["alt"] == set_ad for a, u in r["ciftler"] if a == alan_ad]
+    kaynak += [(v["koleksiyon"], vh) for (t, _), v in sorted(m.degeryardimi.items()) if t == set_tipi
+               for yerel, vh in v["ciftler"] if yerel == alan_ad]
+    return kaynak
+
+
+def kod_alani_adaylari(m, set_adlari, sabit):
+    """Sabit değer verilmemiş kod/durum alanı adayları: [(Set, Alan, [işaret], [(kaynak Set, Alan)])]."""
+    set_tip = {s["ad"]: s["tip"] for s in m.setler}
+    sonuc = []
+    for set_ad in set_adlari:
+        for a in m.tipler[set_tip[set_ad]]["alanlar"]:
+            if a.tip != "Edm.String" or (set_ad, a.ad) in sabit:
+                continue
+            isaret = []
+            if (set_tip[set_ad], a.ad) in m.sabit_listeli:
+                isaret.append("sabit-liste işareti")
+            # ②/③ ad-biçim ipuçları para/birim/... sınıflarında uygulanmaz; ① açık işaret yine sayılır
+            if (_metin_sinifi(a.ad) or _metin_sinifi(a.etiket)) not in KOD_DISI_SINIFLAR:
+                if R_KOD_SONEK.search(_katla(a.ad)) and a.maxlen is not None and a.maxlen <= KOD_SONEK_MAXLEN:
+                    isaret.append("ad soneki, MaxLength=%d" % a.maxlen)
+                if ((a.bicim or "").lower() == "uppercase" and a.maxlen is not None
+                        and a.maxlen <= BUYUK_HARF_MAXLEN):
+                    isaret.append("UpperCase, MaxLength=%d" % a.maxlen)
+            if not isaret:
+                continue
+            kaynak = _deger_kaynaklari(m, set_ad, set_tip[set_ad], a.ad)
+            if any(k in sabit for k in kaynak):
+                continue
+            sonuc.append((set_ad, a.ad, isaret, kaynak))
+    return sonuc
+
+
 # ---------------------------------------------------------------- değer üretimi
 def _kes(metin, ml):
     if ml is None or len(metin) <= ml:
@@ -548,11 +701,13 @@ def _sabit_uzunluk_sahte(ml, n, varsayilan):
 
 
 class Uretici:
-    def __init__(self, model, tohum, adet, alt_adet):
+    def __init__(self, model, tohum, adet, alt_adet, sabit=None):
         self.m = model
         self.tohum = str(tohum)
         self.adet = adet
         self.alt_adet = alt_adet
+        self.sabit = sabit or {}   # (set, alan) → [değer] (--sabit-degerler)
+        self.sabit_notlari = []
         self.havuz = {}            # set adı → kayıtlar (üretilen ya da mevcut dosyadan)
         self.tanınmayan = []       # "Set.Alan (tip)"
         self.kesilen = []          # "Set.Alan" (ValueList/FK değeri MaxLength'e kesildi)
@@ -617,12 +772,22 @@ class Uretici:
             sayi = len(ust_kayitlar) * self.alt_adet
         else:
             sayi = self.adet
+        sabit = {alan: d for (s, alan), d in self.sabit.items() if s == ad}
+        sabit_rng = {alan: random.Random("%s|%s|%s|sabit" % (self.tohum, ad, alan)) for alan in sorted(sabit)}
+        for a in alanlar:
+            if a.ad in sabit and a.anahtar and not kalem and len(sabit[a.ad]) < sayi:
+                self.kisitli.append("%s: %d → %d (%s sabit değer sayısı)" % (ad, sayi, len(sabit[a.ad]), a.ad))
+                sayi = len(sabit[a.ad])
         for a in alanlar:
             if a.anahtar and not any(a.ad == x for r in iliskiler for x, _ in r["ciftler"]):
                 kap = _kapasite(a)
                 if kap is not None and kap < sayi and a.tip != "Edm.Boolean":
                     self.kisitli.append("%s: %d → %d (%s anahtar kapasitesi)" % (ad, sayi, kap, a.ad))
                     sayi = kap
+        for a in alanlar:
+            if a.ad in sabit and a.anahtar and not kalem and sayi < len(sabit[a.ad]):
+                self.sabit_notlari.append("%s.%s: %d sabit değerin yalnız ilk %d'i kullanıldı (anahtar; --adet %d)"
+                                          % (ad, a.ad, len(sabit[a.ad]), sayi, self.adet))
 
         kayitlar = []
         for i in range(sayi):
@@ -657,6 +822,15 @@ class Uretici:
                     continue
                 if a.ad in dolu:
                     deger = dolu[a.ad]
+                    if a.ad in sabit and deger not in sabit[a.ad]:
+                        kayit[a.ad] = self._sabit_sec(sabit[a.ad], sabit_rng[a.ad], a, i, grup_sira, kalem)
+                        not_ = ("%s.%s: ilişki/değer yardımından gelen değer sabit listede yoktu → listeden yazıldı "
+                                "(kaynak sete de aynı değerleri verin: %s)"
+                                % (ad, a.ad, ", ".join("%s.%s" % k for k in _deger_kaynaklari(
+                                    self.m, ad, set_bilgi["tip"], a.ad)) or "-"))
+                        if not_ not in self.sabit_notlari:
+                            self.sabit_notlari.append(not_)
+                        continue
                     if isinstance(deger, str) and a.maxlen is not None and len(deger) > a.maxlen:
                         deger = _kes(deger, a.maxlen)
                         not_ = "%s.%s" % (ad, a.ad)
@@ -670,6 +844,8 @@ class Uretici:
                     if etiket not in self.tanınmayan:
                         self.tanınmayan.append(etiket)
                     continue
+                if a.ad in sabit:  # _deger yine çağrıldı: setin rastgele akışı bayraksız koşumla aynı kalır
+                    deger = self._sabit_sec(sabit[a.ad], sabit_rng[a.ad], a, i, grup_sira, kalem)
                 kayit[a.ad] = deger
             kayitlar.append(kayit)
 
@@ -685,6 +861,13 @@ class Uretici:
         if len(temiz) != len(kayitlar):
             self.yinelenen.append("%s: %d yinelenen anahtar atıldı" % (ad, len(kayitlar) - len(temiz)))
         return temiz
+
+    @staticmethod
+    def _sabit_sec(degerler, rng, alan, i, grup_sira, kalem):
+        """Anahtarda sırayla (kalem setinde kalem sırasıyla), anahtar olmayan alanda tohuma bağlı seçim."""
+        if alan.anahtar:
+            return degerler[((grup_sira - 1) if kalem else i) % len(degerler)]
+        return degerler[rng.randrange(len(degerler))]
 
     def toplamlari_uygula(self, uretilen):
         for t in self.toplamlar:
@@ -904,18 +1087,22 @@ def main(argv=None):
     ap.add_argument("--alt-adet", type=int, default=3, help="belge-kalem ilişkisinde üst kayıt başına kalem (3)")
     ap.add_argument("--tohum", default=VARSAYILAN_TOHUM, help="rastgelelik tohumu; aynı tohum → aynı çıktı")
     ap.add_argument("--zorla", action="store_true", help="mevcut <EntitySet>.json dosyalarını ez")
+    ap.add_argument("--sabit-degerler", action="append", default=[], metavar="SET.OZELLIK=DEGERLER",
+                    help="kod alanına yalnız bu değerler yazılır: A,B,C ya da @dosya.json (tekrarlanabilir; "
+                         "ayrıntı: modül açıklaması)")
     args = ap.parse_args(argv)
     if args.adet < 1 or args.alt_adet < 1:
         print("HATA: --adet ve --alt-adet en az 1 olmalı.", file=sys.stderr)
         return 2
     try:
         m = metadata_oku(args.metadata)
+        sabit = sabit_degerleri_coz(m, args.sabit_degerler)
     except GirdiHatasi as exc:
         print("HATA: %s" % exc, file=sys.stderr)
         return 2
 
     set_bilgi = {s["ad"]: s for s in m.setler}
-    u = Uretici(m, args.tohum, args.adet, args.alt_adet)
+    u = Uretici(m, args.tohum, args.adet, args.alt_adet, sabit)
     sira, donguler = uretim_sirasi(m)
     uretilen, atlanan, draft_admin, hatalar = {}, [], [], []
     for ad in sira:
@@ -988,13 +1175,32 @@ def main(argv=None):
         print("DÖNGÜLÜ bağımlılık (kırıldı): %s" % "; ".join(donguler))
     for n in m.notlar:
         print("NOT: %s" % n)
+    if sabit:
+        print("SABİT DEĞERLER (%d): %s" % (len(sabit), ", ".join(
+            "%s.%s (%d değer)" % (s, a, len(d)) for (s, a), d in sorted(sabit.items()))))
+    for (s, a) in sorted(sabit):
+        if s in atlanan:
+            print("NOT: %s.%s: sabit değer UYGULANMADI — dosya atlandı (mevcut, --zorla yok)" % (s, a))
+        elif s in draft_admin:
+            print("NOT: %s.%s: sabit değer UYGULANMADI — draft yönetim seti üretilmez" % (s, a))
+        elif s not in uretilen:
+            print("NOT: %s.%s: sabit değer UYGULANMADI — set üretilmedi" % (s, a))
+    for n in u.sabit_notlari:
+        print("NOT: %s" % n)
     print("TANINMAYAN tipler (alan JSON'a yazılmadı) (%d): %s" % (len(u.tanınmayan), ", ".join(u.tanınmayan) or "-"))
     print("KAPSAM (SCOPE) — bakılmayanlar: function import / action / function (%d: %s); harici annotation "
           "dosyaları; ValueListReferences (başka servis); karmaşık/enum/koleksiyon/akış/ikili tipli alanlar; "
           "gezinme (navigation) alanları JSON'a yazılmaz; draft kopya kayıtları (yalnız aktif kayıt); kalem içi "
           "miktar×fiyat tutarlılığı; atlanan dosyaların içerik doğruluğu. Toplam kuralı yalnız belge-kalem "
-          "ilişkisinde Total/Toplam/Sum adlı ondalık alan için kurulur."
+          "ilişkisinde Total/Toplam/Sum adlı ondalık alan için kurulur. Kod alanı adayı ipucu yalnız metadata "
+          "işaretlerine bakar (ad soneki + MaxLength, sap:display-format=UpperCase, sap:value-list=fixed-values / "
+          "Common.ValueListWithFixedValues); domain sabit değerlerini ve değer tablolarını OKUMAZ (kaynak: adt_get "
+          "domain · değer yardımı seti) ve --sabit-degerler değerlerinin sistemde var olduğunu doğrulamaz."
           % (len(m.bakilmayan), ", ".join(m.bakilmayan) or "-"))
+    for s, a, isaret, kaynak in kod_alani_adaylari(m, [x for x in sira if x in uretilen], sabit):
+        print("UYARI: kod alanı adayı, sabit değer verilmedi: %s.%s (%s%s)"
+              % (s, a, "; ".join(isaret),
+                 ("; değerin kaynağı: %s" % ", ".join("%s.%s" % k for k in kaynak)) if kaynak else ""))
     return 0
 
 

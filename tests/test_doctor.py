@@ -1437,6 +1437,21 @@ class CekirdekMetniTest(GeciciTest):
             self.assertIn(parca, bolum, f"§11 istisnasında eksik: {parca}")
         self.assertIn("Başka hiçbir dış içerik", bolum)
 
+    def _bolum(self, baslik):
+        i = self.metin.find(baslik)
+        self.assertGreaterEqual(i, 0, f"bölüm yok: {baslik}")
+        j = self.metin.find("\n## ", i + 1)
+        return self.metin[i:j if j > 0 else len(self.metin)]
+
+    def test_kd_turu_kurallari_yerinde(self):
+        """KD canlı turu (2026-10-03) kuralları: Z74② (§7) · Z176① (§11) · Z177 + Z179 (§4)."""
+        self.assertIn("Yalnız dosya okumak için alt ajan açma", self._bolum("## 7. Alt görev devri"))
+        self.assertRegex(self._bolum("## 11. Güvenlik"), r"Sırrı .*`ask_user` ile ASLA isteme")
+        dort = self._bolum("## 4. İş akışı")
+        self.assertIn("boş ya da yer tutucu istem", dort)
+        self.assertIn("düşürülen eşik", dort)
+        self.assertIn("**ayrı satırda**", dort)
+
 
 class GitKimlikTest(GeciciTest):
     """Z84: git kimliği (user.name/user.email) tanımsızsa: bulunulan repoda remote varsa WARN, yoksa INFO. Ölçülen vaka:

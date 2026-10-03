@@ -1,0 +1,13 @@
+{
+  "url": "http://localhost:8080/index.html?sap-ui-language=tr",
+  "steps": [
+    {"do": "wait_ui5"},
+    {"do": "scroll_reset"},
+    {"do": "scroll_reset", "selector": "[id$='table']", "ms": 0},
+    {"do": "fill", "selector": "[id$='musteriInput-inner']", "value": "Kurgu Ticaret A.Ş."},
+    {"do": "fill", "selector": "[id$='notInput-inner']", "value": ""},
+    {"do": "press", "key": "Enter"},
+    {"do": "press", "key": "ArrowDown", "selector": "[id$='musteriInput-inner']"},
+    {"do": "shot", "name": "kd-03-liste-grid.png"}
+  ]
+}

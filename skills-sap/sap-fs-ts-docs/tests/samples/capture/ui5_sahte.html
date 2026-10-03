@@ -74,6 +74,48 @@
     if (durum === "m-busy-gizli") m.style.display = "none";
     document.getElementById("ust").appendChild(m);
   }
+  // capture_kd_screens scroll_reset: kaydırılmış kapsayıcılar. #grid-hsb / #grid-icerik UI5 ızgara tablosunun
+  // yatay kaydırma desenini taklit eder: içerik overflow:hidden, ayrı kaydırma çubuğunun 'scroll' olayı içeriği eşitler.
+  if (durum === "kaydirma" || durum === "kaydirma-inat") {
+    var kutu = function (id, ovf) {
+      var d = document.createElement("div");
+      d.id = id;
+      d.style.cssText = "width:200px;height:60px;overflow:" + ovf + ";";
+      d.innerHTML = '<div style="width:2000px;height:400px;">' + id + '</div>';
+      document.body.appendChild(d);
+      return d;
+    };
+    var genis = kutu("genis", "auto");
+    var hsb = kutu("grid-hsb", "scroll");
+    var icerik = kutu("grid-icerik", "hidden");
+    hsb.addEventListener("scroll", function () { icerik.scrollLeft = hsb.scrollLeft; });
+    genis.scrollLeft = 500; genis.scrollTop = 100;
+    hsb.scrollLeft = 700; icerik.scrollLeft = 700;
+    window.scrollTo(0, 300);
+    if (durum === "kaydirma-inat") {
+      genis.addEventListener("scroll", function () { if (genis.scrollLeft !== 400) genis.scrollLeft = 400; });
+    }
+    var rapor = document.createElement("div");
+    rapor.id = "kaydirma-durum";
+    document.getElementById("ust").appendChild(rapor);
+    setInterval(function () {
+      rapor.textContent = "genis=" + genis.scrollLeft + "," + genis.scrollTop + " hsb=" + hsb.scrollLeft +
+        " icerik=" + icerik.scrollLeft + " sayfa=" + Math.round(window.scrollY);
+    }, 50);
+  }
+  // capture_kd_screens fill / press: girilen değer ve basılan tuş görünür metne yansır.
+  if (durum === "etkilesim") {
+    var alan = document.createElement("div");
+    alan.innerHTML = '<input id="musteri-inner"><input id="ikinci"><div id="yansima"></div><div id="tus"></div>';
+    document.getElementById("ust").appendChild(alan);
+    ["musteri-inner", "ikinci"].forEach(function (id) {
+      var g = document.getElementById(id);
+      g.addEventListener("input", function () { document.getElementById("yansima").textContent = "deger:" + g.value; });
+      g.addEventListener("keydown", function (e) {
+        document.getElementById("tus").textContent = "tus:" + e.key + "@" + e.target.id;
+      });
+    });
+  }
   if (durum === "yerel-kapanir") {
     setTimeout(function () {
       tabloMesgul = false;

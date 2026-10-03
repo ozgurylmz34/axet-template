@@ -23,21 +23,46 @@ Alt komutlar:
       Z160 — kaynağı ZATEN yerelde olan uygulama (repoda doğmuş, `indir` görmemiş) için `.canli/` kurar: yerel
       build ↔ canlı tam liste; eşitse yazar, farklıysa gösterir ve YAZMAZ (--kabul = kullanıcı canlıyı ezmeyi
       kabul etti). Canlıda BSP yoksa yazacak bir şey yok. `deploy`, `.canli/` yokken canlıda BSP varsa bunu ister.
-  metadata <SERVIS> [--alan AD ...] [--tip ENTITYTYPE] [--app <app_klasoru> | --project-dir <proje> | --url URL --client NNN] [--ignore-cert]
+  metadata <SERVIS> [--kaydet [<yol>]] [--alan AD ...] [--tip ENTITYTYPE] [--app <app_klasoru>] [--project-dir <proje>]
+           [--url URL --client NNN] [--ignore-cert]
       OData V2 `$metadata`'yı SALT-OKUMA çeker; verilen alanların `<Property …/>` satırını basar (alan var mı,
-      tipi, etiketi). `sap-adt-foundation` CLI'de `$metadata` aracı yoktu (foundation-query.md §5).
+      tipi, etiketi). `sap-adt-foundation` CLI'de `$metadata` aracı yoktu (foundation-query.md §5). Yanıtın kökü
+      `Edmx` değilse (ör. giriş sayfası HTML/XHTML) ölçüm yoktur (exit 2) — "alan yok" hükmü verilmez.
+      --kaydet (Z168): yanıtı BAYT BAYT dosyaya yazar (elle satır eklenmez — dosya SAP çıktısıdır). Yol verilmezse
+        --app gerekir ve yol şu sırayla bulunur: ① `ui5-mock.yaml` `services[].urlPath`'i bu servis olan girdinin
+        `metadataPath`'i (mock sunucunun fiilen okuduğu dosya; uygulama köküne göre) ② `webapp/manifest.json`
+        `sap.app.dataSources`'ta `uri`'si bu servis olan girdinin `settings.localUri`'si (webapp'e göre) ③ o girdi
+        `mainService` ise `webapp/localService/mainService/metadata.xml` ④ hiçbiri değilse YAZMAZ (exit 2; açık yol
+        ver — başka servisin metadata'sı mainService dosyasını ezmesin). ① ile ② farklıysa ① yazılır + UYARI.
+        Türetilen yol uygulama klasörünün dışına çıkamaz. Dosya varsa üzerine yazılır; önce/sonra boyut, EntityType
+        ve Property sayısı ile eklenen/kalkan Property'ler basılır (bayt bayt aynıysa yazılmaz).
+      Kimlik sırası (YALNIZ bu salt-okur komut — kullanıcı kararı 2026-10-03): ① env FIORI_TOOLS_USER/PASSWORD
+        ② proje kökündeki `.conn_adt` ADT_SAP_USER/ADT_SAP_PASSWORD (sap_adt_cli ile aynı ayrıştırma: python-dotenv;
+        YALNIZ hedef URL+client `.conn_adt` ADT_SAP_URL+ADT_SAP_CLIENT ile aynıysa — kimlik başka sisteme
+        gönderilmez) ③ Windows giriş penceresi (Windows PowerShell 5.1 `Get-Credential`; parola süreç içi borudan
+        base64 gelir — komut satırına, çıktıya, log'a, hata mesajına GİRMEZ). Kullanılan kaynak `kimlik: env|.conn_adt|
+        pencere` satırıyla basılır (değer basılmaz). Windows kimlik deposunda saklama YOK.
+      Sertifika (yalnız ② `.conn_adt` kolu): ADT kanalıyla aynı kural — `ADT_SAP_SSL_VERIFY` (env > `.conn_adt`)
+        true/1/yes değilse doğrulama KAPALI (`sertifika doğrulaması: kapalı …` satırı basılır); açmak için
+        `.conn_adt`'ye `ADT_SAP_SSL_VERIFY=true`. Yönlendirme host/şema/port değiştirirse `Authorization` düşürülür
+        (kimlik başka sisteme gitmez).
 
-Kimlik: env FIORI_TOOLS_USER / FIORI_TOOLS_PASSWORD (script basmaz, dosyadan okumaz).
+Kimlik (indir/drift/anlik-kur): env FIORI_TOOLS_USER / FIORI_TOOLS_PASSWORD (script basmaz, dosyadan okumaz).
 Çıkış: 0 tamam/eşit · 1 fark/ihlal · 2 ölçüm yok (kimlik yok, canlı okunamadı, anlık görüntü yok, `eslik`te
 build başarısız / dist yok)
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import urllib.parse
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -346,24 +371,330 @@ def komut_anlik_kur(a) -> int:
     return 0
 
 
+# ───────────────────────── metadata: kimlik sırası (Z168 — YALNIZ bu salt-okur komut) ─────────────────────────
+
+PENCERE_ZAMAN_ASIMI = 300  # kullanıcının pencereyi doldurma süresi (sn)
+
+# Windows PowerShell 5.1 betiği: Get-Credential GUI penceresi (pwsh 7 konsolda sorar — o yüzden powershell.exe).
+# Kullanıcı adı + parola UTF-8 → base64 olarak YALNIZ stdout borusuna yazılır (konsol kod sayfası ASCII dışı parolayı
+# bozmasın); stderr'e / komut satırına sır girmez. Betik `-EncodedCommand` ile geçer (tırnak/boş değişken tuzağı yok).
+# Pencere mesajı betiğe GÖMÜLMEZ, ortam değişkeniyle geçer: servis/URL argv'den ya da uygulamanın `ui5-deploy.yaml`'ından
+# gelir ve PowerShell tipografik tırnakları (U+2018…U+201B) da dizge sonu sayar — gömülürse kod enjeksiyonu (bug-gate 2026-10-03).
+_PS_MESAJ_ENV = "AXET_PENCERE_MESAJ"
+_PS_BETIK = """$ErrorActionPreference = 'Stop'
+$c = Get-Credential -Message $env:AXET_PENCERE_MESAJ
+if ($null -eq $c) { exit 3 }
+$n = $c.GetNetworkCredential()
+$e = [System.Text.Encoding]::UTF8
+[Console]::Out.Write([Convert]::ToBase64String($e.GetBytes($n.UserName)) + ' ' + [Convert]::ToBase64String($e.GetBytes($n.Password)))
+"""
+
+
+def _sistem_anahtari(url: str, client: str) -> tuple:
+    """URL + client → karşılaştırma anahtarı (şema/host küçük harf, varsayılan port, sondaki `/` yok)."""
+    u = urllib.parse.urlsplit((url or "").strip())
+    sema = u.scheme.lower()
+    try:
+        port = u.port or {"http": 80, "https": 443}.get(sema)
+    except ValueError:  # geçersiz port: traceback yerine eşleşmeyen anahtar (güvenli yön)
+        port = "geçersiz:" + u.netloc
+    return sema, (u.hostname or "").lower(), port, u.path.rstrip("/"), (client or "").strip()
+
+
+def _conn_kimlik(proj, url: str, client: str):
+    """② `.conn_adt` kimliği → ((kullanıcı, parola), None) | (None, neden). Değer BASILMAZ.
+    Kimlik YALNIZ hedef sistem `.conn_adt`'nin kendi sistemiyse kullanılır: `--url` ya da `ui5-deploy.yaml` başka bir
+    host gösteriyorsa `.conn_adt` parolası oraya gönderilmez."""
+    try:
+        if str(FOUNDATION_SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(FOUNDATION_SCRIPTS))
+        from sapadt.project import conn_file_values, conn_path
+    except Exception as exc:  # noqa: BLE001
+        return None, f"sap-adt-foundation yüklenemedi ({type(exc).__name__})"
+    yol = conn_path(proj)
+    if not yol.is_file():
+        return None, ".conn_adt yok"
+    sayi = {k: len(conn_file_values(k, proj)) for k in ("ADT_SAP_USER", "ADT_SAP_PASSWORD", "ADT_SAP_URL")}
+    if any(n != 1 for n in sayi.values()):
+        return None, ".conn_adt'de " + " / ".join(f"{k} {n}" for k, n in sayi.items()) + " kez var (1 bekleniyor)"
+    clientlar = conn_file_values("ADT_SAP_CLIENT", proj)
+    if len(clientlar) > 1:
+        return None, f".conn_adt'de ADT_SAP_CLIENT {len(clientlar)} kez var (en çok 1)"
+    if _sistem_anahtari(url, client) != _sistem_anahtari(conn_file_values("ADT_SAP_URL", proj)[0],
+                                                          clientlar[0] if clientlar else ""):
+        return None, ("hedef URL/client .conn_adt ADT_SAP_URL/ADT_SAP_CLIENT ile aynı değil — .conn_adt kimliği "
+                      "başka sisteme gönderilmez")
+    # Değer: sap_adt_cli ile AYNI ayrıştırıcı (python-dotenv `load_dotenv` — tırnak/`export`/satır sonu yorumu).
+    # dotenv yoksa ham `ANAHTAR=değer` (tam anahtar eşleşmesi).
+    try:
+        from dotenv import dotenv_values
+        d = dotenv_values(yol)
+        kullanici, parola = d.get("ADT_SAP_USER"), d.get("ADT_SAP_PASSWORD")
+    except ImportError:
+        kullanici = conn_file_values("ADT_SAP_USER", proj)[0]
+        parola = conn_file_values("ADT_SAP_PASSWORD", proj)[0]
+    kullanici = (kullanici or "").replace("\r", "").strip()
+    parola = (parola or "").rstrip("\r\n")
+    if not kullanici or not parola:
+        return None, ".conn_adt ADT_SAP_USER/ADT_SAP_PASSWORD boş"
+    return (kullanici, parola), None
+
+
+_DOGRU = ("true", "1", "yes")
+_HOST_DESENI = re.compile(r"(?i)\b(?:[a-z0-9-]+\.){2,}[a-z0-9-]+\b")  # en az 3 parçalı ad / IPv4
+
+
+def _conn_ssl_dogrula(proj) -> bool:
+    """`.conn_adt` kolunda sertifika doğrulaması: sap-adt-foundation ADT kütüphanesiyle AYNI kural — env
+    `ADT_SAP_SSL_VERIFY` (varsa) > `.conn_adt` değeri > varsayılan KAPALI (`sap_adt_lib.py`: verify yalnız true/1/yes).
+    Aynı sisteme ADT kanalı bağlanırken bu komutun sertifika yüzünden düşmemesi için (ölçüldü 2026-10-03: ADT çalışıyor,
+    metadata `CERTIFICATE_VERIFY_FAILED` hostname mismatch).
+    Değer ADT kütüphanesiyle AYNI ayrıştırıcıdan okunur (python-dotenv: satır sonu yorumu, `export`, tekrar eden
+    anahtarda son kazanır); ham satır okuması bu üç durumda doğrulamayı yanlışlıkla KAPATIYORDU (bug-gate 2026-10-03)."""
+    deger = os.environ.get("ADT_SAP_SSL_VERIFY")
+    if deger is None:
+        try:
+            if str(FOUNDATION_SCRIPTS) not in sys.path:
+                sys.path.insert(0, str(FOUNDATION_SCRIPTS))
+            from sapadt.project import conn_file_values, conn_path
+            try:
+                from dotenv import dotenv_values
+                deger = dotenv_values(conn_path(proj)).get("ADT_SAP_SSL_VERIFY") or "false"
+            except ImportError:
+                degerler = conn_file_values("ADT_SAP_SSL_VERIFY", proj)
+                deger = degerler[-1] if degerler else "false"
+        except Exception:  # noqa: BLE001
+            deger = "false"
+    return deger.strip().strip("'\"").lower() in _DOGRU
+
+
+def _host_maskele(metin: str) -> str:
+    """Ağ hatası metnindeki host adı / IP'yi gizler (SSL hata metni host adını içerir — ölçüldü)."""
+    return _HOST_DESENI.sub("<host>", metin)
+
+
+def _powershell_yolu() -> tuple[str | None, str | None]:
+    """Windows PowerShell 5.1 (`powershell.exe`) yolu — Get-Credential GUI penceresi yalnız onda (pwsh 7 konsolda sorar)."""
+    if os.name != "nt":
+        return None, "Windows değil — giriş penceresi yok"
+    ps = shutil.which("powershell.exe")
+    return (ps, None) if ps else (None, "powershell.exe (Windows PowerShell 5.1) bulunamadı")
+
+
+def _pencere_kimlik(servis: str, url: str, client: str, calistir=None):
+    """③ Windows giriş penceresi → ((kullanıcı, parola), None) | (None, neden). Neden metninde sır YOK: PowerShell'in
+    stdout'u (sırrı taşıyan tek kanal) ve stderr'i hiçbir koşulda basılmaz; yalnız çıkış kodu söylenir."""
+    ps, neden = _powershell_yolu()
+    if not ps:
+        return None, neden
+    mesaj = f"SAP kullanıcı adı ve parolası — {servis} $metadata salt-okuma ({url} client {client or '-'})"
+    komut = [ps, "-NoProfile", "-NoLogo", "-EncodedCommand", base64.b64encode(_PS_BETIK.encode("utf-16-le")).decode()]
+    try:
+        p = (calistir or subprocess.run)(komut, capture_output=True, stdin=subprocess.DEVNULL,
+                                         timeout=PENCERE_ZAMAN_ASIMI, env={**os.environ, _PS_MESAJ_ENV: mesaj})
+    except subprocess.TimeoutExpired:
+        return None, f"giriş penceresi {PENCERE_ZAMAN_ASIMI} sn içinde doldurulmadı"
+    except OSError as exc:
+        return None, f"giriş penceresi açılamadı ({type(exc).__name__})"
+    if p.returncode != 0:
+        return None, f"giriş penceresi iptal edildi ya da açılamadı (rc={p.returncode})"
+    try:
+        k64, p64 = (p.stdout or b"").decode("ascii").strip().split(" ")
+        kullanici = base64.b64decode(k64, validate=True).decode("utf-8").strip().lstrip("\\")
+        parola = base64.b64decode(p64, validate=True).decode("utf-8")
+    except Exception as exc:  # noqa: BLE001 — içerik sır taşıyabilir: yalnız tür adı
+        return None, f"giriş penceresi yanıtı beklenen biçimde değil ({type(exc).__name__})"
+    if not kullanici or not parola:
+        return None, "giriş penceresinde kullanıcı adı ya da parola boş bırakıldı"
+    return (kullanici, parola), None
+
+
+def _metadata_kimlik(a, url: str, client: str):
+    """Sıra: env → `.conn_adt` (yalnız aynı sistem) → pencere. → ((kullanıcı, parola), kaynak) | (None, None)."""
+    k = B.env_kimlik()
+    if k:
+        return k, "env"
+    k, conn_neden = _conn_kimlik(getattr(a, "project_dir", None), url, client)
+    if k:
+        return k, ".conn_adt"
+    print(f"  .conn_adt kimliği kullanılmadı: {conn_neden}")
+    k, pencere_neden = _pencere_kimlik(a.servis.strip(), url, client)
+    if k:
+        return k, "pencere"
+    print(f"[FAIL] kimlik yok — env {B.ENV_KULLANICI}/{B.ENV_PAROLA} set değil · .conn_adt: {conn_neden} · "
+          f"pencere: {pencere_neden}. Model parola İSTEMEZ (sohbet/log'a düşer). (exit 2)")
+    return None, None
+
+
+# ───────────────────────── metadata: EDMX denetimi + kaydetme (Z168) ─────────────────────────
+
+def _edmx_tipleri(ham: bytes) -> dict:
+    """Kökü `Edmx` olan belge → {EntityType: {Property: öznitelikler}}; değilse ValueError (kök adı mesajda).
+    XHTML giriş sayfası XML olarak ayrışabilir ve 0 EntityType verir — bu "alan yok" DEĞİL, ölçüm yok demektir."""
+    kok = ET.fromstring(ham)
+    ad = kok.tag.rsplit("}", 1)[-1]
+    if ad != "Edmx":
+        raise ValueError(f"kök <{ad[:40]}> — Edmx değil")
+    return K.metadata_tipleri(ham)
+
+
+def _servis_eslesir(yol: str, servis: str) -> bool:
+    son = (yol or "").strip().rstrip("/").rsplit("/", 1)[-1]
+    return bool(son) and son.upper() == servis.upper()
+
+
+def _uygulama_ici(app: Path, yol: Path) -> Path | None:
+    try:
+        r = yol.resolve()
+        r.relative_to(app.resolve())
+        return r
+    except (ValueError, OSError):
+        return None
+
+
+def _kayit_yolu(a, servis: str) -> tuple[Path | None, list[str]]:
+    """--kaydet hedefi → (yol, notlar) | (None, [neden]). Sıra docstring'de (①–④)."""
+    if isinstance(a.kaydet, str) and a.kaydet.strip():
+        return Path(a.kaydet.strip()), ["yol: --kaydet ile verildi"]
+    if not a.app:
+        return None, ["--kaydet yol almadıysa --app <app_klasoru> gerekir (ya da --kaydet <yol>)"]
+    app = Path(a.app)
+    notlar: list[str] = []
+    mock = None
+    mock_dosya = app / "ui5-mock.yaml"
+    if mock_dosya.is_file():
+        sk, _ = B.yaml_duzlestir(mock_dosya.read_text(encoding="utf-8-sig", errors="replace"))
+        for k, v in sk.items():
+            if k.endswith(".urlPath") and _servis_eslesir(v, servis):
+                mp = sk.get(k[: -len("urlPath")] + "metadataPath", "")
+                if mp:
+                    mock = (app / mp, mp)
+                    break
+    man = None
+    ds_ad = None
+    man_dosya = app / "webapp" / "manifest.json"
+    if man_dosya.is_file():
+        try:
+            kaynaklar = (json.loads(man_dosya.read_text(encoding="utf-8-sig")).get("sap.app") or {}).get("dataSources")
+        except (ValueError, AttributeError) as exc:
+            return None, [f"webapp/manifest.json okunamadı ({type(exc).__name__}) — --kaydet <yol> ver"]
+        for ad, ds in (kaynaklar or {}).items():
+            if isinstance(ds, dict) and _servis_eslesir(ds.get("uri", ""), servis):
+                ds_ad = ad
+                lu = (ds.get("settings") or {}).get("localUri") if isinstance(ds.get("settings"), dict) else None
+                if isinstance(lu, str) and lu.strip():
+                    man = (app / "webapp" / lu.strip().lstrip("/"), lu.strip())
+                break
+    if mock:
+        secilen, kaynak = mock[0], f"ui5-mock.yaml metadataPath ({mock[1]})"
+        if man and _uygulama_ici(app, man[0]) != _uygulama_ici(app, mock[0]):
+            notlar.append(f"[UYARI] manifest {ds_ad}.settings.localUri ({man[1]}) ui5-mock.yaml metadataPath'ten "
+                          "FARKLI — mock sunucunun okuduğu dosya yazılıyor; localUri'yi eşleyin ya da --kaydet <yol>")
+    elif man:
+        secilen, kaynak = man[0], f"manifest {ds_ad}.settings.localUri ({man[1]})"
+    elif ds_ad == "mainService":
+        secilen, kaynak = app / "webapp" / "localService" / "mainService" / "metadata.xml", "varsayılan (mainService)"
+    else:
+        neden = (f"servis manifest'te '{ds_ad}' dataSource'u — localUri yok ve mainService değil" if ds_ad
+                 else "servis ne ui5-mock.yaml'da ne manifest dataSources'ta")
+        return None, [f"yol türetilemedi: {neden}. Başka servisin dosyası ezilmesin diye YAZILMADI — --kaydet <yol> ver"]
+    r = _uygulama_ici(app, secilen)
+    if r is None:
+        return None, [f"türetilen yol uygulama klasörünün DIŞINDA ({kaynak}) — YAZILMADI; --kaydet <yol> ver"]
+    return r, [f"yol: {kaynak}"] + notlar
+
+
+def _ozellikler(tipler: dict) -> set:
+    return {(t, p) for t, alanlar in tipler.items() for p in alanlar}
+
+
+def _kaydet(yol: Path, ham: bytes, tipler: dict) -> bool:
+    """Atomik yaz + önce/sonra özeti. Bayt bayt aynıysa yazmaz. Hata → False (basıldı)."""
+    eski_ham = None
+    if yol.is_file():
+        try:
+            eski_ham = yol.read_bytes()
+        except OSError as exc:
+            print(f"[FAIL] mevcut {yol} okunamadı ({type(exc).__name__}) — üzerine YAZILMADI (exit 2)")
+            return False
+    if eski_ham == ham:
+        print(f"  kaydet: {yol} zaten bayt bayt aynı ({len(ham)} bayt) — yazılmadı, değişiklik yok")
+        return True
+    try:
+        yol.parent.mkdir(parents=True, exist_ok=True)
+        gecici = yol.with_name(yol.name + ".yeni")
+        gecici.write_bytes(ham)
+        os.replace(gecici, yol)
+    except OSError as exc:
+        print(f"[FAIL] {yol} yazılamadı ({type(exc).__name__}: {exc}) (exit 2)")
+        return False
+    yeni = _ozellikler(tipler)
+    sonra = f"{len(ham)} bayt, EntityType {len(tipler)}, Property {len(yeni)}"
+    if eski_ham is None:
+        print(f"  [KAYDEDİLDİ] {yol} — önce: dosya yoktu · sonra: {sonra}")
+        return True
+    try:
+        eski_t = _edmx_tipleri(eski_ham)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [KAYDEDİLDİ] {yol} — önce: {len(eski_ham)} bayt, ayrıştırılamadı ({type(exc).__name__}; "
+              f"karşılaştırma yok) · sonra: {sonra}")
+        return True
+    eski = _ozellikler(eski_t)
+    eklenen, kalkan = sorted(yeni - eski), sorted(eski - yeni)
+    et_ek, et_kalk = sorted(set(tipler) - set(eski_t)), sorted(set(eski_t) - set(tipler))
+    print(f"  [KAYDEDİLDİ] {yol} — önce: {len(eski_ham)} bayt, EntityType {len(eski_t)}, Property {len(eski)} · "
+          f"sonra: {sonra}")
+    print(f"    Property +{len(eklenen)} eklenen / -{len(kalkan)} kalkan · EntityType +{len(et_ek)} / -{len(et_kalk)}")
+    for isaret, liste in (("+", eklenen), ("-", kalkan)):
+        for t, p in liste[:20]:
+            print(f"    {isaret} {t}.{p}")
+        if len(liste) > 20:
+            print(f"    … {isaret}{len(liste) - 20} daha")
+    for isaret, liste in (("+", et_ek), ("-", et_kalk)):
+        for t in liste[:20]:
+            print(f"    {isaret} EntityType {t}")
+    return True
+
+
 def komut_metadata(a) -> int:
     hedef = _hedef(a)
-    kimlik = _kimlik()
-    if not hedef or not kimlik:
+    if not hedef:
         return 2
     url, client = hedef
     servis = a.servis.strip()
+    kayit_yolu = None
+    if a.kaydet is not None:  # yol sorunu ağdan ÖNCE söylensin (kimlik/pencere boşuna istenmesin)
+        kayit_yolu, notlar = _kayit_yolu(a, servis)
+        if kayit_yolu is None:
+            print(f"[FAIL] --kaydet: {notlar[0]} (exit 2)")
+            return 2
+        for n in notlar:
+            print(f"  {n}")
+    kimlik, kaynak = _metadata_kimlik(a, url, client)
+    if not kimlik:
+        return 2
+    print(f"  kimlik: {kaynak}")
+    sertifika_yok = a.ignore_cert
+    if kaynak == ".conn_adt" and not sertifika_yok and not _conn_ssl_dogrula(getattr(a, "project_dir", None)):
+        sertifika_yok = True
+        print("  sertifika doğrulaması: kapalı (.conn_adt ADT_SAP_SSL_VERIFY ≠ true — ADT kanalıyla aynı kural)")
     try:
-        ham = B.http_get(K._url(url, f"/sap/opu/odata/sap/{servis}/$metadata", client), kimlik, a.ignore_cert)
+        ham = B.http_get(K._url(url, f"/sap/opu/odata/sap/{servis}/$metadata", client), kimlik, sertifika_yok)
     except Exception as exc:  # noqa: BLE001
-        print(f"[FAIL] $metadata okunamadı ({type(exc).__name__} {getattr(exc, 'code', '')}) — ölçüm yok (exit 2)")
+        neden = getattr(exc, "reason", "")  # URLError: ağ sebebi (DNS/SSL); host adı maskelenir, kimlik içermez
+        print(f"[FAIL] $metadata okunamadı ({type(exc).__name__} {getattr(exc, 'code', '')}"
+              f"{(' · ' + _host_maskele(str(neden))) if neden else ''}) — ölçüm yok (exit 2)")
         return 2
     try:
-        tipler = K.metadata_tipleri(ham)
-    except Exception as exc:  # noqa: BLE001 — XML değil (ör. giriş sayfası)
-        print(f"[FAIL] $metadata ayrıştırılamadı ({type(exc).__name__}) — ölçüm yok (exit 2)")
+        tipler = _edmx_tipleri(ham)
+    except Exception as exc:  # noqa: BLE001 — XML değil ya da kök Edmx değil (ör. giriş sayfası)
+        neden = str(exc) if isinstance(exc, ValueError) and "Edmx" in str(exc) else type(exc).__name__
+        print(f"[FAIL] $metadata yanıtı EDMX değil ({neden}; giriş/hata sayfası olabilir) — ölçüm yok"
+              + (", dosya YAZILMADI" if kayit_yolu else "") + " (exit 2)")
         return 2
     print(f"  {servis} $metadata: {len(ham)} bayt, EntityType {len(tipler)}")
+    if kayit_yolu is not None and not _kaydet(kayit_yolu, ham, tipler):
+        return 2
     if a.tip and a.tip not in tipler:
         print(f"[FAIL] EntityType '{a.tip}' yok. Var olanlar: {', '.join(sorted(tipler)) or '-'} (exit 2)")
         return 2
@@ -380,11 +711,13 @@ def komut_metadata(a) -> int:
     if a.alan and not a.tip:
         print("  NOT: --tip verilmedi — alanın UYGULAMANIN KULLANDIĞI EntityType'ta olduğunu hükme bağlamak için "
               "--tip <EntityType> ver (başka tipteki aynı adlı alan yanlış pozitif verir).")
-    print("KAPSAM: yalnız $metadata metni; verinin dolu gelmesi ayrıca ölçülür (entity okuması / SQL).")
+    print("KAPSAM: yalnız $metadata metni; verinin dolu gelmesi ayrıca ölçülür (entity okuması / SQL)."
+          + (" Kaydedilen dosya SAP yanıtıdır (bayt bayt); annotation dosyaları (ANNO_MDL) ve mock veri "
+             "(mockdataPath) GÜNCELLENMEDİ." if kayit_yolu is not None else ""))
     return 1 if eksik else 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     for akis in (sys.stdout, sys.stderr):
         try:
             akis.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -411,8 +744,11 @@ def main() -> int:
     p.add_argument("--kabul", action="store_true",
                    help="yerel ≠ canlı olsa da yaz — YALNIZ kullanıcı farkı gördü ve canlıyı ezmeyi kabul ettiyse")
     p.add_argument("--ignore-cert", action="store_true")
-    p = alt.add_parser("metadata", help="OData V2 $metadata'da alan var mı")
+    p = alt.add_parser("metadata", help="OData V2 $metadata'da alan var mı / tam $metadata'yı kaydet")
     p.add_argument("servis")
+    p.add_argument("--kaydet", nargs="?", const="", default=None, metavar="YOL",
+                   help="tam $metadata'yı yaz; YOL yoksa --app'ten türetilir (ui5-mock.yaml → manifest localUri → "
+                        "mainService varsayılanı)")
     p.add_argument("--alan", action="append")
     p.add_argument("--tip", help="EntityType adı — alan aramasını bu tiple sınırla (önerilir)")
     p.add_argument("--app")
@@ -420,7 +756,7 @@ def main() -> int:
     p.add_argument("--url")
     p.add_argument("--client")
     p.add_argument("--ignore-cert", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     return {"indir": komut_indir, "eslik": komut_eslik, "drift": komut_drift, "anlik-kur": komut_anlik_kur,
             "metadata": komut_metadata}[a.komut](a)
 

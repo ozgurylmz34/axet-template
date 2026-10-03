@@ -6,6 +6,43 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.17 — 2026-10-03
+
+### ★ 0.5.17-01 · OData `$metadata`: `--kaydet` ile uygulamanın `metadata.xml`'i SAP yanıtıyla yenilenir · kimlik env → `.conn_adt` → giriş penceresi · yönlendirmede kimlik başka sunucuya gitmez (yetenek)
+
+- **neden:** KD turunda bayat `metadata.xml`'e elle satır eklendi ve kullanıcıdan tarayıcıda kaydetmesi istendi. `fetch_ui_source.py metadata <SERVIS> --kaydet --app <app>` artık tam `$metadata`'yı bayt bayt yazar (yol: `ui5-mock.yaml` → manifest `localUri` → mainService; önce/sonra alan farkı basılır; yanıt EDMX değilse yazmaz, exit 2). Bu salt-okur komutun kimliği sırayla env `FIORI_TOOLS_*`, proje `.conn_adt` (yalnız aynı URL + client; başka sisteme gönderilmez) ve Windows giriş penceresinden gelir; parola çıktıya, komut satırına ya da log'a girmez. `.conn_adt` kolunda sertifika kuralı ADT kanalıyla aynıdır (`ADT_SAP_SSL_VERIFY`). Kritik işaretli, çünkü ortak HTTP yardımcısı da düzeltildi: SAP isteği başka bir sunucuya yönlendirirse `Authorization` artık oraya taşınmaz (önceden `indir`/`drift` dahil taşınıyordu). `indir`/`drift`/`anlik-kur`/deploy kimliği değişmedi (yalnız env). Belgeler (`sap-ui5-fiori` SKILL ve §7.5, foundation-query §5, `sap-rap` service-publish) eski "kullanıcıdan tarayıcıda kaydetmesini iste" talimatından arındırıldı.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/scripts/fetch_ui_source.py`, `skills-sap/sap-ui5-fiori/scripts/_bspnet.py`, `skills-sap/sap-ui5-fiori/tests/test_fetch_ui_source.py`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-adt-foundation/references/foundation-query.md`, `skills-sap/sap-rap/references/service-publish.md`
+- **test:** `python skills-sap/sap-ui5-fiori/tests/run_tests.py -k test_fetch_ui_source`
+- **gerektirir:** —
+
+### 0.5.17-02 · KD ekran çekimi: `fill` / `press` / `scroll_reset` adımları, merkezi playwright-core'u kendisi bulur · KD'de yer tutucu kalırsa doğrulama HATA verir (yetenek)
+
+- **neden:** KD turunda seçim alanına düz metin yazılıp "seçildi" sanıldı, tanıtım karesi kaydırılmış konumda çekildi ve çekim betiği merkezi kurulumu bulamadığı için projeye ayrıca `playwright-core` kurmak gerekti. `capture_kd_screens.js` artık `fill`, `press` ve `scroll_reset` adımlarını destekler (dry-run zorunlu alanları denetler); playwright-core'u env > klonun merkezi kurulumu > npm global sırasıyla bulur ve kullandığı kaynağı basar. Ayrıca KD 2 yer tutucuyla teslim edilmişti: `verify_doc_html.py` `[EKRAN GÖRÜNTÜSÜ …]`, `[GÖRSEL: …]`, "… eklenecek", TODO/TBD/FIXME gibi kalıpları artık HATA sayar (`[Açık Konu]` meşru, sayılır); yeni denetim maddesi DOC-KD-17.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/scripts/capture_kd_screens.js`, `skills-sap/sap-fs-ts-docs/scripts/verify_doc_html.py`, `skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md`, `skills-sap/sap-fs-ts-docs/references/doc-checklist.md`, `skills-sap/sap-fs-ts-docs/tests/samples/capture/config_etkilesim_bad.json`, `skills-sap/sap-fs-ts-docs/tests/samples/capture/config_etkilesim_ok.json`, `skills-sap/sap-fs-ts-docs/tests/samples/capture/ui5_sahte.html`, `skills-sap/sap-fs-ts-docs/tests/samples/html/temiz_kd.html`, `skills-sap/sap-fs-ts-docs/tests/samples/html/yer_tutucu.html`, `skills-sap/sap-fs-ts-docs/tests/test_build_verify.py`, `skills-sap/sap-fs-ts-docs/tests/test_capture_assert.py`, `skills-sap/sap-fs-ts-docs/tests/test_node_scripts.py`, `README.md`
+- **test:** `python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_build_verify`, `python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_capture_assert`, `python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_node_scripts`
+- **gerektirir:** —
+
+### 0.5.17-03 · UI5 kullanıcı kılavuzu akışı: tek koşu çekim komutu hazır gelir · mock veride gerçek kod değerleri (`--sabit-degerler`) · akış belgeleri hız ve doğruluk dersleriyle güncellendi (yetenek)
+
+- **neden:** KD turu ~1 saat sürdü; kare başına ayrı tarayıcı açıldı, `npx` her çağrıda ~2 sn ekledi, kareler klon klasörüne yazıldı ve mock veride sistemde olmayan kod değerleri göründü. `kd_ortam.py check` artık keşif ve tek koşu çekim komutlarını `node` ile hazır basar (`KOMUT` satırları). `mock_veri.py --sabit-degerler Set.Alan=A,B|@dosya.json` kod alanlarına gerçek değerleri verir (MaxLength aşımı reddedilir); beslenmemiş kod alanı adayları `UYARI: kod alanı adayı` satırıyla listelenir. Akış belgeleri: metadata `--kaydet`, keşifte ekran görüntüsü yok, tek koşu çekim, `out_dir` uygulama içinde, Markdown kanonik, beklenen görsel sayısı düşürülmez (G7/G12/G13, T24/T25).
+- **dosyalar:** `skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py`, `skills-sap/sap-ui5-user-guide/scripts/mock_veri.py`, `skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_mock_veri.py`, `skills-sap/sap-ui5-user-guide/SKILL.md`, `skills-sap/sap-ui5-user-guide/references/akis.md`, `skills-sap/sap-ui5-user-guide/references/gorsel-kontrol.md`, `skills-sap/sap-ui5-user-guide/references/kesif-playwright-cli.md`, `skills-sap/sap-ui5-user-guide/references/mock-ortam.md`, `skills-sap/sap-ui5-user-guide/references/tuzaklar.md`
+- **test:** `python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_kd_ortam`, `python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_mock_veri`
+- **gerektirir:** `0.5.17-01`, `0.5.17-02`
+
+### 0.5.17-04 · Çekirdek AXET-CORE-0.9.0: "bitti" demeden ölç · sır `ask_user` ile istenmez · dosya okumak için alt ajan yok · örneklerde bash yerine `rg`/python · KD'nin yeri (kural)
+
+- **neden:** KD turunda model ölçmeden "tamam" dedi, elle yamayı ve düşürülen beklentiyi raporlamadı, kullanıcıdan parolasını `ask_user` ile istedi (cevap log'a düz metin düşer) ve yalnız dosya okumak için alt ajan açtı (alt ajanın izin sorusu ekranda görünmüyor). Çekirdek §4/§7/§11 bu dersleri taşır; `verify-done` raporuna "elle yama / düşürülen eşik" satırı eklendi. Skill örneklerindeki bash komutları (Windows'ta izin sorusu çıkaran) `rg`/python ile değiştirildi. README ve SAP skill listesi KD'nin nerede olduğunu (`%sap-fs-ts-docs` + `%sap-ui5-user-guide`) açıkça söyler. aXet'i yeniden açınca ilk satır `AXET-CORE-0.9.0` gösterir.
+- **dosyalar:** `core/00-temel.md`, `skills/verify-done/SKILL.md`, `tests/test_doctor.py`, `skills-sap/sap-code-review/references/checklist-common.md`, `skills-sap/sap-code-review/references/quality-scorecard.md`, `skills-sap/sap-ui5-fiori/references/app-skeleton.md`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-user-guide/references/mock-ortam.md`, `skills-sap/sap-fs-ts-docs/SKILL.md`, `skills-sap/README.md`, `README.md`
+- **test:** `python tests/run_tests.py -k test_doctor`
+- **gerektirir:** —
+
+### 0.5.17-05 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.16 — 2026-10-03
 
 ### 0.5.16-01 · SAP SQL sorgusu: 255 karakteri aşan satır otomatik kırılır — sessiz yanlış sonuç ve anlaşılmaz 400 hatası kapandı (düzeltme)

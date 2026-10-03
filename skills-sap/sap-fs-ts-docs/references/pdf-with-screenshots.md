@@ -9,7 +9,7 @@
 |---|---|---|
 | Python `markdown` | `build_doc_pdf.py`, `build_kd_pdf.py` | `python -m pip install markdown` |
 | Python `Pillow` | yalnız `build_kd_pdf.py` görsel kırpma (`--trim-from`) | `python -m pip install Pillow` |
-| Node.js + `playwright-core` | `html_to_pdf.js`, `capture_kd_screens.js` | proje klasöründe `npm install playwright-core` ya da `PLAYWRIGHT_CORE_PATH` ile mevcut kuruluma yönlendir |
+| Node.js + `playwright-core` | `html_to_pdf.js`, `capture_kd_screens.js` | `capture_kd_screens.js` template klonunun merkezi kurulumunu (`<klon>/.araclar/playwright-cli`) kendisi bulur; sıra env `PLAYWRIGHT_CORE_PATH` > merkezi klon > npm global > `require.resolve`, kullanılan kaynak `playwright-core: … (kaynak: …)` satırında basılır. Başka kurulum için `PLAYWRIGHT_CORE_PATH` |
 | Chrome (sistem kurulumu) | PDF ve ekran çekimi (varsayılan kanal `chrome`; tarayıcı indirilmez) — marp slaytı Edge kuruluysa Edge'i kullanır | sistemde kurulu olmalı; `DOC_TOOLS_BROWSER` / `PDF_BROWSER_CHANNEL` ile değiştirilir (ör. `msedge`) |
 | `mmdc` (Mermaid CLI) | yalnız Markdown'da ```` ```mermaid ```` bloğu varsa | `npm i -g @mermaid-js/mermaid-cli` |
 | `marp` | yalnız eğitim slaytı | `npm i -g @marp-team/marp-cli` |
@@ -52,7 +52,12 @@ Durum: `python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/doc_tools.py check`.
 ```
 Adımlar: `goto` · `wait_ui5` · `wait` (`ms` ya da `selector`) · `click` · `eval` · `set_model` (görünüm adı deseni + model adı +
 `data` ya da `data_file`) · `assert_no_busy` (açık meşgul göstergesi yok) · `assert_text` (`text`, isteğe bağlı `selector`) ·
-`assert_in_viewport` (`selector` görünür alanda) · `shot` (`selector` ya da tam sayfa; `optional:true` başarısızlığı durdurmaz).
+`assert_in_viewport` (`selector` görünür alanda) · `fill` (`selector`, `value`) · `press` (`key`, isteğe bağlı `selector`) ·
+`scroll_reset` (isteğe bağlı `selector`, `ms`: kapsamdaki kaydırılmış öğeleri başa alır, bekler, yeniden ölçer; uygulama konumu
+geri yazarsa FAIL) · `shot` (`selector` ya da tam sayfa; `optional:true` başarısızlığı durdurmaz). `--dry-run` yeni adımların
+zorunlu alanlarını da denetler (eksikse çıkış 2). Seçim alanına `fill` ile düz metin yazmak **seçim değildir**: değer yardımı
+ya da öneri listesinden `press` (Enter/ArrowDown) veya öneri satırına `click` ile seçilir, ardından `assert_text` ile
+seçili değer doğrulanır.
 Tutmayan `assert_*` adımı FAIL sayılır. Script sonunda her çekimi
 `OK/FAIL` listeler ve **FAIL varsa çıkış 1** verir. Seçiciler `[id$='--<id>']` biçiminde yeniden çizime dayanıklıdır; kimliksiz
 paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.

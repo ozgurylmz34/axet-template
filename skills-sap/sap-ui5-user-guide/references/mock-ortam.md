@@ -64,14 +64,18 @@ server:
   yüklendi ama kaynak kökünü yanlış hesapladı (`…/sap-ui-core.js/sap/ui/core/library.js` 404), sayfa boş · proxy
   `directLoad: true` → servis edilen `index.html`'deki bu `src`'yi DEĞİŞTİRMEDİ · tam patch (`/1.120.50/resources`)
   çalıştı ama CDN o patch'i silince sessizce İngilizceye düşme riski taşır (`%sap-ui5-fiori` → `app-skeleton.md` §7 ②).
-- Kontrol: `grep -n "backend:" ui5-mock.yaml` → boş olmalı · `kd_ortam.py check` `backend:` satırını ve eşlemenin biçimini (path + `pathReplace: /resources`) METİN olarak denetler; `url`'nin doğru CDN olduğuna ve yolun gerçekten 200 döndüğüne bakmaz → §6 curl.
+- Kontrol: `rg -n "backend:" ui5-mock.yaml` → boş olmalı · `kd_ortam.py check` `backend:` satırını ve eşlemenin biçimini (path + `pathReplace: /resources`) METİN olarak denetler; `url`'nin doğru CDN olduğuna ve yolun gerçekten 200 döndüğüne bakmaz → §6 curl.
 
 Servis kontrolleri (sırayla):
 1. `urlPath` = `manifest.json` → `sap.app.dataSources.mainService.uri` (sondaki `/` dahil birebir). Kopyalanmış
    uygulamalarda eski servise bakması sık görülür → hiçbir istek mock'a düşmez ya da yanlış veri gelir.
 2. `metadata.xml` **güncel** servisin metadata'sı mı: uygulamanın bağladığı entity set adları dosyada var mı
-   (`grep 'EntitySet Name=' metadata.xml`). Dosya bayatlar (`%sap-ui5-fiori` → `references/app-skeleton.md` §11);
-   güncel metadata'yı geliştirici tarayıcıdan kaydeder — bu akış SAP'ye bağlanmaz.
+   (`rg 'EntitySet Name=' metadata.xml`). Dosya bayatlar (`%sap-ui5-fiori` → `references/app-skeleton.md` §11);
+   güncel metadata'yı **sen indirirsin** (salt-okur, tek komut):
+   `python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/fetch_ui_source.py metadata <SERVIS> --app <APP> --kaydet`.
+   Kimlik env → `.conn_adt` (aynı sunucu + client) → Windows giriş penceresi; kullanıcıdan tarayıcıda kaydetmesi ya da
+   parola **istenmez**. Dosyaya elle `<Property>` satırı eklenmez (SAP çıktısı gibi git'e girer). Mock sunucusunun
+   kendisi SAP'ye bağlanmaz.
 3. `mockdataPath` klasörü var mı. Yoksa `mock_veri.py --cikti` o klasörü hedefler.
 4. `generateMockData: true` elle/`mock_veri.py` ile doldurulmayan varlıklar için genel veri üretir ("Sample Text",
    "Item 1" türü — core-concepts). Bu değerler **kareye girmemeli** (`gorsel-kontrol.md` G5): kareye giren her
@@ -89,7 +93,17 @@ Servis kontrolleri (sırayla):
   her EntitySet için kurgusal Türkçe veri üretir: anahtarlar tekil, `ReferentialConstraint` varsa yabancı anahtarlar
   tutarlı, aynı `--tohum` aynı veriyi verir, var olan dosya `--zorla` olmadan ezilmez (elle düzeltilmiş dosya korunur).
   Üretilen veri **gözden geçirilir**: iş anlamı taşıyan alanlar (durum kodu, birim, para birimi) uygulamanın beklediği
-  değerlerle eşleşmeli; eşleşmeyen değer ekranda boş metin ya da hata olarak görünür.
+  değerlerle eşleşmeli; eşleşmeyen değer ekranda boş metin ya da hata olarak görünür. Kod alanlarına değer
+  `--sabit-degerler <EntitySet>.<Alan>=<A,B,C>` ile verilir; değerler domain sabit değerlerinden (`adt_get` domain) ya
+  da değer yardımı varlığının kodlarından alınır, uydurulmaz (ölçüldü 2026-10-03: domain'de olmayan kod KD karesine
+  girdi). Biçim: `=K1,K2` ya da `=@kodlar.json` (JSON dizisi; öğe string ya da `{"value": ...}`). Araç MaxLength'i aşan
+  değeri reddeder (çıkış 2, kırpmaz) ama değerin **sistemde var olduğunu doğrulamaz** — kaynağı sen okursun. Değer bir
+  değer yardımı setinden geliyorsa sabit değer **VH setinin anahtarına** verilir (`<VHSet>.<Anahtar>=...`): ana alan
+  değerini oradan alır; yalnız ana alana verilirse değer yine listeden yazılır ama raporda NOT düşer ve VH ile tutarsız
+  kalır. Kod metni (`KOD=Metin`) henüz desteklenmez: VH'nin metin alanı aracın kendi sözlüğünden gelir — karede
+  görünüyorsa elle düzelt (Z180). Sabit değer verilmemiş kod alanı adayları (fixed-values işareti · `Code`/`Status`/
+  `Kod`… soneki + kısa MaxLength · UpperCase + MaxLength ≤ 4) raporun sonunda `UYARI: kod alanı adayı` satırıyla
+  listelenir; her biri ya beslenir ya da neden kod olmadığı yazılır. Uyarı çıkış kodunu değiştirmez.
 - Üretilen biçim: V2 tarihleri `/Date(<ms>)/`; `Edm.Decimal` JSON'a **sayı** olarak yazılır (V2 sunucusu string
   döndürür — ekranda biçim farkı görülürse değeri string'e çevir). Araç, `MaxLength`'e sığmadığı için kestiği
   değer yardımı / yabancı anahtar değerlerini raporda **KESİLEN** satırında `Set.Alan` olarak listeler — o alanları

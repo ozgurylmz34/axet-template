@@ -4,7 +4,8 @@
 > `APP=<paket>/ui/<app>` (freestyle V2 uygulaması; içinde `package.json`, `webapp/`, `ui5-mock.yaml`) ·
 > `UI=<paket>/ui` (npm workspace kökü; `node_modules` burada — `%sap-ui5-fiori` → `references/app-skeleton.md` §2) ·
 > `PW=` playwright-cli: merkezi kurulum `node "<TEMPLATE>/.araclar/playwright-cli/node_modules/@playwright/cli/playwright-cli.js"`
-> (`C:/…` biçiminde; yolu `kd_ortam.py check` yazar; projede yerel kurulum varsa o önce gelir).
+> (`C:/…` biçiminde; tam komutu `kd_ortam.py check` `KOMUT keşif (PW)` satırında yazar; projede yerel kurulum varsa o
+> önce gelir). `npx playwright-cli` kullanılmaz: her çağrıda ~2,0 sn açılış, doğrudan `node` ~0,5 sn (ölçüldü 2026-10-03).
 > Hedef uygulama `%sap-ui5-fiori` ile kurulmuş freestyle SAPUI5 + OData V2 uygulamasıdır; Fiori elements kapsam dışıdır.
 > Her adımın **çıkış ölçütü** tutmadan sonrakine geçilmez. Takılınca önce `tuzaklar.md`.
 
@@ -46,13 +47,23 @@ python $S/kd_ortam.py check --proje $APP
 ## 2. Mock ortamı
 Ayrıntı `mock-ortam.md`'de. Kısa sıra:
 1. `manifest.json` → `sap.app.dataSources.<ad>.uri` ile `ui5-mock.yaml` → `services[].urlPath` **aynı mı**. Değilse düzelt.
-2. `metadataPath`'teki `metadata.xml` güncel servisin mi (entity set adları uygulamanın kullandıklarıyla aynı mı).
+2. `metadataPath`'teki `metadata.xml` güncel servisin mi (entity set adları ve alanlar uygulamanın kullandıklarıyla
+   aynı mı). Değilse SAP'den kendin indir (salt-okur):
+   ```
+   python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/fetch_ui_source.py metadata <SERVIS> --app $APP --kaydet
+   ```
+   Kimlik sırası: env `FIORI_TOOLS_USER/PASSWORD` → proje `.conn_adt` (yalnız aynı sunucu + client için) → Windows giriş
+   penceresi. ⛔ Kullanıcıdan tarayıcıda kaydetmesi ya da parolası **istenmez** (`ask_user` cevapları log'a düz metin
+   yazılır); `metadata.xml`'e elle satır **eklenmez**. İndirme olmuyorsa DUR, çıktıyı kullanıcıya göster.
 3. Kurgusal veri:
    ```
    python $S/mock_veri.py --metadata <metadata.xml> --cikti <mockdataPath> [--adet 8] [--tohum 1]
    ```
    Her EntitySet için `<EntitySet>.json`; değer yardımı varlıkları dahil; aynı tohum aynı veriyi verir; var olan
-   dosyayı `--zorla` olmadan ezmez (elle düzeltilmiş veri korunur).
+   dosyayı `--zorla` olmadan ezmez (elle düzeltilmiş veri korunur). Kod/durum alanları için
+   `--sabit-degerler <EntitySet>.<Alan>=<A,B,C>` (değerler domain sabit değerlerinden — `adt_get` domain — ya da değer
+   yardımı varlığının kodlarından; **uydurulmaz**). Çıktıdaki `UYARI: kod alanı adayı` satırlarının her biri ya bu
+   bayrakla beslenir ya da neden gerekmediği yazılır.
 4. Mock'u **arka planda** başlat: `npm run start-mock` (uygulama klasöründe; bin workspace kökünden çözülür).
    Portu **logdan** oku; varsayma. İskeletteki script `fiori run ... --open ...` biçimindedir; `--open` kullanıcının
    varsayılan tarayıcısında pencere açması beklenir (bu turda ölçülmedi) — çekim buna bağlı değildir, script kullanıcı onayı olmadan değiştirilmez.
@@ -69,7 +80,7 @@ Ayrıntı `mock-ortam.md`'de. Kısa sıra:
    mu; bootstrap `sap-ui-core.js` ve `cldr/tr.json` **200** mü (Git Bash'te `/sap/...` argümanı için
    `MSYS_NO_PATHCONV=1`).
 - **Çıkış ölçütü:** ana entity set ve her F4 varlığı en az bir kayıt döndürüyor; iki bootstrap dosyası 200; log'da
-  metadata/mockdata hatası yok.
+  metadata/mockdata hatası yok; kareye girecek her kod alanının değeri kaynağıyla (domain / VH) eşleşiyor.
 
 ## 3. Keşif (playwright-cli)
 Ayrıntı ve ölçülmüş komutlar `kesif-playwright-cli.md`'de.
@@ -84,6 +95,9 @@ $PW -s=kd close
   `index.html` önerilir — `%sap-ui5-fiori` → `references/app-skeleton.md` §4). Script'teki yolu oku, tahmin etme.
 - Freestyle ekranda kimliksiz ya da pasif kontrol: `Element.registry` ile bul → `firePress()` /
   `fireValueHelpRequest()` (`%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` §A madde 5).
+- Keşif **metinle** yapılır (`snapshot`); `screenshot` ile kare çekilmez — kareler adım 5'te tek koşuda çekilir.
+- Zorunlu alanları (view'da `required="true"`, zorunlu alan i18n metni) envantere yaz; senaryoda `fill` ile doldurulur,
+  deneme-yanılmayla aşılmaz.
 - Ekran envanteri çıkar: `webapp/view/*.xml` + `webapp/fragment/*.xml` (diyalog, değer yardımı, seçim penceresi);
   liste ekranında grid araçları (sıralama, filtre, kolonlar, varyant, Excel —
   `%sap-ui5-fiori` → `references/list-grid-alv.md`). Her giriş bir KD bölümüne eşlenir (DOC-KD-03).
@@ -123,6 +137,12 @@ Biçim `capture_kd_screens.js` yapılandırmasıdır (alan listesi `%sap-fs-ts-d
 ```
 - `assert_text`'e mock verisinden **bilinen bir değer** yaz: liste boş gelirse çekim FAIL olur, boş kare KD'ye girmez.
 - `expect_port` + `channel: "chrome"` her senaryoda yazılır (paralel mock ve tarayıcı seçimi tuzakları).
+- `out_dir` uygulama klasörünün içinde göreli yazılır (`screenshots-ham`, senaryo dosyasına göre); template klonuna kare
+  yazılmaz.
+- Liste/tablo karesinden önce `{"do": "scroll_reset"}`: tanıtım karesi tablonun **başını** (ilk kolonlar) gösterir.
+  Seçim alanına `fill` ile düz metin yazmak **seçim değildir**: değer yardımı ya da öneri listesinden `press`
+  (Enter/ArrowDown) veya öneri satırına `click` ile seçilir, sonra `assert_text` ile seçili değer doğrulanır. Adım biçimleri:
+  `%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` §A.
 - Aç/kapa alanları iki durumda çekilir (kapalı + açık); her alt ekran ayrı `shot`.
 - ⚠ Bu üç adımın `capture_kd_screens.js`'teki uygulaması ayrı bir iş kalemidir; yoksa `--dry-run` "bilinmeyen do=…"
   der. O durumda DUR, adımı silerek geçme — araç sürümünü kullanıcıya bildir.
@@ -133,8 +153,12 @@ Biçim `capture_kd_screens.js` yapılandırmasıdır (alan listesi `%sap-fs-ts-d
 node $D/capture_kd_screens.js $APP/docs/ekranlar.json --dry-run
 node $D/capture_kd_screens.js $APP/docs/ekranlar.json
 ```
-- `playwright-core` bulunamazsa `PLAYWRIGHT_CORE_PATH=<yol>` ile göster: merkezi kurulumda
-  `<TEMPLATE>/.araclar/playwright-cli/node_modules/playwright-core` (yolu `kd_ortam.py check` yazar).
+- Tam komutu `kd_ortam.py check` `KOMUT çekim (tek koşu)` satırında verir. **Tüm kareler bu tek koşuda** çekilir;
+  playwright-cli ile kare kare çekim yapılmaz (ölçüldü 2026-10-03: elle çekimde kare başına ~10 araç çağrısı, ~1 dk;
+  hedef 11 kare ≤ 3 dk). Elle çekim yalnız araç çalışmıyorsa, gerekçesi kullanıcıya yazılarak.
+- `capture_kd_screens.js` merkezi kurulumu (`<TEMPLATE>/.araclar/playwright-cli`) kendisi bulur; hangisini kullandığını
+  `playwright-core: … (kaynak: …)` satırı söyler. `KOMUT` satırındaki `PLAYWRIGHT_CORE_PATH`, çekimin `check`'in
+  raporladığı kurulumu (projede yerel kurulum varsa o) kullanmasını sabitler.
 - Mock veri değiştiyse önce mock'u yeniden başlat (veri açılışta okunur).
 - **Çıkış ölçütü:** son satır `ÖZET: M OK, 0 FAIL`, çıkış 0, `out_dir`'de M adet PNG.
 
@@ -144,6 +168,9 @@ Her PNG `view` aracıyla açılır; `gorsel-kontrol.md` listesi kare kare uygula
 - **Çıkış ölçütü:** her kare "bakıldı" ve bulgusuz; tablo KD dosyasının yanında (`docs/kd-gorsel-kontrol.md`) durur.
 
 ## 7. Yazım
+- Kaynak **daima** `$APP/docs/KD-….md`'dir. HTML/PDF/yardım kopyası adım 8'de üretilir; üretilmiş HTML'e elle yama
+  yapılmaz. Markdown kaynağı olmayan eski bir KD güncellenecekse önce bir kerelik Markdown'a çevrilir (kullanıcıya
+  söylenir), sonra bu akış izlenir.
 - İskelet `%sap-fs-ts-docs` → `templates/KD-template.md`; bölüm kuralları `%sap-fs-ts-docs` → `references/kd-authoring.md`.
 - Adım 3'teki ekran envanterinin her satırı bir bölüm; her bölümde görsel, adım adım akış, alan/buton tablosu.
 - Görseller KD'ye `build_kd_pdf.py` eşleme dosyasıyla girer; eşleme dosyasındaki `img` adları `ekranlar.json`'daki
@@ -165,6 +192,8 @@ python $D/build_kd_pdf.py $APP/docs/<KD>.md $APP/docs/<KD>.html --map $APP/docs/
 python $D/verify_doc_html.py $APP/docs/<KD>.html --expect-images <M> --pdf $APP/docs/<KD>.pdf
 ```
 - `<M>` = senaryodaki `shot` sayısı (eşleme dosyası bir kareyi iki kez kullanıyorsa ona göre).
+- ⛔ `--expect-images` tutmazsa **düşürülmez**: eksik kare senaryoya eklenip çekilir ya da gerekçesiyle kullanıcıya
+  sorulur. Yer tutucu bulgusu (`EKRAN GÖRÜNTÜSÜ … eklenecek`, `[GÖRSEL: …]`, `TODO`) bulgudur, KD teslim edilmez.
 - Çıktıda: ölü içindekiler bağlantısı 0 · ham Mermaid 0 · görsel sayısı = M · PDF baytı ve yaklaşık sayfa sayısı
   (görsel başına kabaca 50-100 KB; sayfa sayısı bölüm sayısıyla orantılı). "ÖLÇÜLEMEDİ" satırı temiz demek değildir.
 - **Bağımsız okuma:** `agent` aracıyla taze bir inceleyici; brifinge `%sap-fs-ts-docs` → `references/doc-checklist.md`

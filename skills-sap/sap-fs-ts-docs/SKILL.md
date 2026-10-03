@@ -14,6 +14,10 @@ description: >
 
 # SAP dokümanları — FS, TS, KD
 
+> **KD (kullanıcı kılavuzu) bu skill'dedir:** skill adı yalnız FS/TS'i anar (atıflar bozulmasın diye korunur) ama KD
+> kuralları (`references/kd-authoring.md`), şablonu (`templates/KD-template.md`) ve HTML/PDF üretimi buradadır.
+> Freestyle UI5 (OData V2) uygulamasının mock veriyle ekran çekimi: `%sap-ui5-user-guide` (KD'yi bu şablonla yazar).
+
 > **Profil:** FS ve KD profilden bağımsızdır. TS'in önerdiği çözüm seviyesi ve obje tipleri `sap_profile`'a göre sınırlıdır
 > (`references/ts-authoring.md` profil bölümü).
 

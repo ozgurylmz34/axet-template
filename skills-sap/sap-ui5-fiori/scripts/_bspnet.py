@@ -25,6 +25,7 @@ import os
 import re
 import ssl
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -170,6 +171,26 @@ def bsp_url(ayar: dict, rel: str) -> str:
     return f"{ayar['url'].rstrip('/')}/sap/bc/ui5_ui5/sap/{ayar['name'].lower()}/{rel}?{q}"
 
 
+def _koken(url: str) -> tuple:
+    u = urllib.parse.urlsplit(url)
+    try:
+        port = u.port
+    except ValueError:
+        port = u.netloc
+    return u.scheme.lower(), (u.hostname or "").lower(), port or {"http": 80, "https": 443}.get(u.scheme.lower())
+
+
+class _KimlikKoruyanYonlendirme(urllib.request.HTTPRedirectHandler):
+    """urllib Basic `Authorization`'ı yönlendirmede başka hosta da taşır (ölçüldü: 127.0.0.1 → 127.0.0.2 302).
+    Köken (şema + host + port) değişirse başlık düşürülür — `requests` ile aynı ilke; kimlik başka sisteme gitmez."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        yeni = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if yeni is not None and _koken(req.full_url) != _koken(yeni.full_url):
+            yeni.remove_header("Authorization")
+        return yeni
+
+
 def http_get(url: str, kimlik: tuple[str, str] | None, sertifika_yok_say: bool = False,
              zaman: int = ZAMAN_ASIMI) -> bytes:
     """Salt-okuma GET: no-cache + identity encoding + (varsa) Basic auth. Hata istisna olarak döner."""
@@ -183,5 +204,6 @@ def http_get(url: str, kimlik: tuple[str, str] | None, sertifika_yok_say: bool =
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(url, headers=basliklar)
-    with urllib.request.urlopen(req, context=ctx, timeout=zaman) as r:
+    isleyiciler = [_KimlikKoruyanYonlendirme()] + ([urllib.request.HTTPSHandler(context=ctx)] if ctx else [])
+    with urllib.request.build_opener(*isleyiciler).open(req, timeout=zaman) as r:
         return r.read()

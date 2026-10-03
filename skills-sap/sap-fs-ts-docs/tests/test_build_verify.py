@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """build_doc_pdf.py + verify_doc_html.py + doc_tools.py (tarayıcısız kısımlar)."""
 import importlib.util
+import json
 import os
 import sys
 import tempfile
@@ -160,6 +161,91 @@ class VerifyHtmlTest(unittest.TestCase):
             self.assertTrue(f)
             f, _ = vdh.check_pdf(os.path.join(tmp, "yok.pdf"), internal_links=0)
             self.assertTrue(f[0].startswith("PDF YOK"))
+
+
+class YerTutucuTest(unittest.TestCase):
+    """Z172: görünür metinde unutulmuş yer tutucu = BULGU; [Açık Konu] = BİLGİ. Tarayıcı iki yönlü kalibre edilir:
+    bilinen doğru-pozitif (yer_tutucu.html, şablon ham derlemesi) ve doğru-negatif (temiz_kd.html, eşlenmiş demo KD)."""
+
+    def test_dogru_pozitif_her_kalip_ve_sayi(self):
+        findings, stats = vdh.check_html(sample("html", "yer_tutucu.html"))
+        metin = "\n".join(findings)
+        beklenen = {"[EKRAN GÖRÜNTÜSÜ …]": 2, "[GÖRSEL: …]": 1, "EKRAN GÖRÜNTÜSÜ … eklenecek": 1,
+                    "Faz-N'de eklenecek": 1, "[AÇIKLAMA YAZILMADI]": 1, "TODO": 1, "TBD": 1, "FIXME": 1}
+        for ad, n in beklenen.items():
+            self.assertIn("YER TUTUCU (%s): %d kez" % (ad, n), metin)
+        # script/style/yorum/öznitelik içindekiler taranmaz; aynı metin birden çok kalıba uysa da bir kez sayılır
+        self.assertEqual(9, stats["placeholder"])
+        self.assertEqual(0, stats["acik_konu"])
+
+    def test_her_kalip_ornekte_temsil_ediliyor(self):
+        """Kalıp listesine eklenen her öğe doğru-pozitif örnekte en az bir kez yakalanmalı (kalibrasyonsuz kalıp olmaz)."""
+        findings, _ = vdh.check_html(sample("html", "yer_tutucu.html"))
+        metin = "\n".join(findings)
+        for ad, _rx in vdh.YER_TUTUCULAR:
+            self.assertIn("YER TUTUCU (%s)" % ad, metin)
+
+    def test_dogru_negatif_temiz_kd_acik_konu_bilgi(self):
+        findings, stats = vdh.check_html(sample("html", "temiz_kd.html"))
+        self.assertEqual([], findings)
+        self.assertEqual(0, stats["placeholder"])
+        self.assertEqual(2, stats["acik_konu"])
+
+    def test_cli_bulgu_exit_1_ve_kapsam_listeden(self):
+        r = run_py("verify_doc_html.py", sample("html", "yer_tutucu.html"), "--expect-images", "1")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("BULGU: YER TUTUCU ([EKRAN GÖRÜNTÜSÜ …]): 2 kez", r.stdout)
+        self.assertIn("yer tutucu 9", r.stdout)
+        kapsam = next(ln for ln in r.stdout.splitlines() if ln.startswith("KAPSAM (SCOPE)"))
+        for ad, _rx in vdh.YER_TUTUCULAR:
+            self.assertIn(ad, kapsam)
+        self.assertIn("[Açık Konu]", kapsam)
+
+    def test_cli_acik_konu_bilgi_exit_0(self):
+        r = run_py("verify_doc_html.py", sample("html", "temiz_kd.html"), "--expect-images", "1")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("BİLGİ: [Açık Konu] işareti 2 kez", r.stdout)
+        self.assertNotIn("BULGU:", r.stdout)
+
+    def test_build_kd_pdf_isareti_ile_esli(self):
+        """build_kd_pdf'in eksik açıklama işareti değişirse tarayıcı körleşmesin."""
+        import build_kd_pdf
+        bulunan, _ = vdh.yer_tutucu_tara(build_kd_pdf.ACIKLAMA_YOK.strip("*"))
+        self.assertIn("[AÇIKLAMA YAZILMADI]", bulunan)
+
+
+@unittest.skipUnless(HAS_MARKDOWN, "python markdown kurulu değil (python -m pip install markdown)")
+class YerTutucuUretimHattiTest(unittest.TestCase):
+    """Gerçek üretim hattından geçen HTML ile kalibrasyon (elle yazılmış örnek değil)."""
+
+    def test_sablon_ham_derleme_gorsel_yer_tutuculari_bulgu(self):
+        with open(os.path.join(TEMPLATES, "KD-template.md"), encoding="utf-8") as fh:
+            beklenen = fh.read().count("[GÖRSEL:")
+        self.assertGreater(beklenen, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            html = os.path.join(tmp, "KD-XX-001_Sablon.html")
+            with mock.patch.object(doc_tools, "resolve_cli", return_value=None):
+                call_main(build_doc_pdf.main, [os.path.join(TEMPLATES, "KD-template.md"), html])
+            findings, _ = vdh.check_html(html)
+        self.assertIn("YER TUTUCU ([GÖRSEL: …]): %d kez" % beklenen, "\n".join(findings))
+
+    def test_eslenmis_demo_kd_temiz_eksik_aciklama_bulgu(self):
+        import build_kd_pdf
+        with open(sample("kd", "KD-XX-001_Demo.md"), encoding="utf-8") as fh:
+            md = fh.read()
+        with open(sample("kd", "map.json"), encoding="utf-8") as fh:
+            esleme = json.load(fh)
+        temiz, eksik, _ = build_kd_pdf.apply_map(md, esleme)
+        self.assertEqual([], eksik)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "k.md")
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(temiz + "\n## 6. Adım\n" + build_kd_pdf.ACIKLAMA_YOK + "\n")
+            html = os.path.join(tmp, "KD-XX-001_Demo.html")
+            call_main(lambda a: build_doc_pdf.build(*a), [src, html])
+            findings, stats = vdh.check_html(html)
+        self.assertEqual(1, stats["placeholder"], findings)
+        self.assertIn("YER TUTUCU ([AÇIKLAMA YAZILMADI]): 1 kez", "\n".join(findings))
 
 
 if __name__ == "__main__":

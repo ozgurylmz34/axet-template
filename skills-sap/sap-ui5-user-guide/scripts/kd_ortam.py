@@ -8,6 +8,9 @@ Alt komutlar:
         start-mock'un `--config` yaml'ında `backend:` satırı olmaması, webapp/index.html'in mutlak bootstrap
         yolunun yaml'ın `ui5:` path'lerinde eşli olması, yaml'daki bilinen custom middleware'lerin paket adlarının
         uygulama devDependencies'inde bulunması).
+        Tamam olan bileşenler için keşif (`node <playwright-cli.js>`) ve tek-koşu çekim
+        (`node capture_kd_screens.js <APP>/docs/ekranlar.json`) KOMUT satırlarını basar (Z169: `npx` açılışı ~2,0 sn,
+        doğrudan `node` ~0,5 sn — ölçüldü 2026-10-03; kareler tek senaryo koşusunda çekilir).
         Eksik olan için kurulum KOMUTUNU yazar, KENDİSİ KURMAZ. start-mock komutundaki host/bind bayraklarını
         raporlar (değiştirmez). Yerel sunucular 127.0.0.1'e bağlanmalı: 0.0.0.0'ı dinleyen süreç şirket
         makinesinde güvenlik duvarı izni ister.
@@ -97,7 +100,9 @@ KAPSAM_CHECK = ("KAPSAM (SCOPE): kd_ortam check — bakılanlar: node sürümü,
                 "Bakılmayanlar: Chrome'un gerçekten açılabildiği (config sonrası "
                 "`playwright-cli open` ile ölçülür), mock sunucunun ayağa kalktığı ve bootstrap yolunun gerçekten 200 "
                 "döndüğü (mock-ortam.md §6 curl), yaml'ın geçerli YAML olduğu, eşlemedeki `url`'nin doğru CDN olduğu, blok metin (`|`) içindeki `backend:` satırının yanlış alarm vermesi, workspace glob'larının `!` dışlamaları, tablodaki iki ad dışındaki custom "
-                "middleware'ler, index.html dışındaki HTML'ler, mock veri dosyaları, npm ağ/proxy erişimi, global config'in diğer anahtarlarının etkisi (yalnız uyarılır)."
+                "middleware'ler, index.html dışındaki HTML'ler, mock veri dosyaları, npm ağ/proxy erişimi, global config'in diğer anahtarlarının etkisi (yalnız uyarılır), "
+                "KOMUT satırlarındaki komutların gerçekten çalıştığı (yalnız dosya yollarının varlığına bakılır) ve "
+                "senaryo dosyasının (docs/ekranlar.json) var olduğu."
                 % MOCKSERVER_PAKET)
 KAPSAM_CONFIG = ("KAPSAM (SCOPE): kd_ortam config — yalnız <proje>/.playwright/cli.config.json dosyasının browser "
                  "anahtarlarına bakar. Bakılmayanlar: `playwright-cli open --browser <x>` bayrağı kanalı EZER "
@@ -192,6 +197,48 @@ def playwright_core_yolu(proje, env=None):
         if os.path.isfile(os.path.join(aday, "package.json")):
             return aday
     return None
+
+
+CAPTURE_BETIGI = os.path.join(_KLON, "skills-sap", "sap-fs-ts-docs", "scripts", "capture_kd_screens.js")
+SENARYO_GORELI = os.path.join("docs", "ekranlar.json")
+TEK_KOSU_NOTU = ("KD kareleri YALNIZ yukarıdaki tek çekim koşusuyla alınır (senaryo: docs/ekranlar.json); keşifte "
+                 "`screenshot` ile kare çekilmez, `npx playwright-cli` kullanılmaz (Z169).")
+
+
+def _ileri(yol):
+    return yol.replace("\\", "/")
+
+
+def cli_giris_noktasi(cli_dizin):
+    """@playwright/cli package.json `bin` → `node` ile doğrudan çağrılacak giriş dosyası; yoksa None.
+
+    `npx playwright-cli` her çağrıda ~2,0 sn açılış harcar, `node <giriş>` ~0,5 sn (ölçüldü 2026-10-03, 2 ölçüm)."""
+    if not cli_dizin:
+        return None
+    try:
+        with open(os.path.join(cli_dizin, "package.json"), encoding="utf-8") as fh:
+            bin_ = json.load(fh).get("bin")
+    except Exception:
+        return None
+    if isinstance(bin_, dict):
+        bin_ = bin_.get("playwright-cli") or next(iter(bin_.values()), None)
+    if not isinstance(bin_, str) or not bin_.strip():
+        return None
+    yol = os.path.normpath(os.path.join(cli_dizin, bin_))
+    return yol if os.path.isfile(yol) else None
+
+
+def komut_onerileri(proje, env=None):
+    """[(ad, komut)] — yalnız yolu diskte bulunan bileşenler için; komutun çalıştığını ÖLÇMEZ."""
+    satirlar = []
+    giris = cli_giris_noktasi(playwright_cli_yolu(proje, env)[0])
+    if giris:
+        satirlar.append(("keşif (PW)", 'node "%s"' % _ileri(giris)))
+    core = playwright_core_yolu(proje, env)
+    if core and os.path.isfile(CAPTURE_BETIGI):
+        satirlar.append(("çekim (tek koşu)", 'PLAYWRIGHT_CORE_PATH="%s" node "%s" "%s"'
+                         % (_ileri(core), _ileri(CAPTURE_BETIGI), _ileri(os.path.join(proje, SENARYO_GORELI)))))
+    return satirlar
 
 
 def package_json_oku(proje):
@@ -513,6 +560,11 @@ def cmd_check(proje, env=None):
     _cikti("  %-5s %-26s %s" % ("UYARI" if uzak else "BİLGİ", "start-mock host/bind", host_ozet))
     for b in mock_yaml_denetle(proje, pj)[1]:
         _cikti("  %-5s %-26s %s" % ("BİLGİ", "mock yaml", b))
+    komutlar = komut_onerileri(proje, env)
+    for ad, komut in komutlar:
+        _cikti("  %-5s %-26s %s" % ("KOMUT", ad, komut))
+    if komutlar:
+        _cikti("  %-5s %-26s %s" % ("BİLGİ", "kare çekimi", TEK_KOSU_NOTU))
     for u in filter(None, [global_config_uyarisi(env)] + ortam_uyarilari(env)):
         _cikti("  UYARI " + u)
     _cikti(BIND_NOTU)

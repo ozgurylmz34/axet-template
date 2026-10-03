@@ -18,8 +18,13 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | `sap-ui5-fiori` | UI5 freestyle (OData V2) ve Fiori elements ekranları: iskelet, grid/ALV paritesi, filtre, value-help, lokal çalıştırma, yalnız SAP'de duran uygulamanın kaynağını indirme + salt-okur yerel test, runtime doğrulama, BSP deploy (kullanıcı OK'u sonrası) |
 | `sap-gui-scripting` | Veri yalnız SAP GUI ekranında görünüyorsa (ALV, tablo kontrolü, ekran alanı): model script yazar, geliştirici çalıştırır (ecc, s4_private) |
 | `sap-abapgit-delivery` | Değişikliği abapGit ZIP olarak hazırla (kesin yasak + Yasak B taramasıyla); içe aktarımı geliştirici yapar |
-| `sap-fs-ts-docs` | FS/TS/KD yazımı ve incelemesi, izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü PDF, TS öncesi canlı teyit turu |
-| `sap-ui5-user-guide` | Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (KD): yalnız mock veri, Chrome'a sabit playwright-cli keşfi, çekim senaryosu, kare kare görsel kontrol, HTML + PDF |
+| `sap-fs-ts-docs` | FS/TS/**KD (kullanıcı kılavuzu)** yazımı ve incelemesi — KD kuralları (`references/kd-authoring.md`) ve şablonu (`templates/KD-template.md`) burada; izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü HTML/PDF, TS öncesi canlı teyit turu |
+| `sap-ui5-user-guide` | Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (KD): yalnız mock veri, Chrome'a sabit playwright-cli keşfi, çekim senaryosu, kare kare görsel kontrol; KD metni ve HTML + PDF `sap-fs-ts-docs` hattıyla |
+
+**KD (kullanıcı kılavuzu) nerede?** Adı yalnız FS/TS'i ansa da KD'nin yazım kuralları, şablonu ve HTML/PDF üretimi
+`sap-fs-ts-docs`'tadır (ad, mevcut atıflar bozulmasın diye korunur). Freestyle UI5 (OData V2) uygulamasında mock veriyle
+ekran çekimi `sap-ui5-user-guide`'dadır ve KD'yi yine `sap-fs-ts-docs` şablonuyla yazar. Klasik GUI ekranı (Dynpro/ALV)
+için KD: `sap-fs-ts-docs` + `sap-classic-abap`.
 
 aXet.code yerel MCP yapılandırmasını yok sayar (ölçüldü). SAP işlemleri bu yüzden MCP ile değil,
 `sap-adt-foundation` skill'indeki Python CLI ile yapılır.
