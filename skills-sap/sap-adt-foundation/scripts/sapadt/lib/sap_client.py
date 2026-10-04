@@ -5,6 +5,7 @@ SAP ABAP Development Client
 Unified OOP interface for all SAP ADT operations
 """
 import os
+import re
 import sys
 import io
 import xml.etree.ElementTree as ET
@@ -45,9 +46,28 @@ from object_types import (
     get_type_description,
     supports_creation
 )
+import requests
 
 
 SAP_HATA_GOVDE_SINIRI = 500
+
+# Z190 (2026-10-04): classrun 200-dışı yanıt / POST sırasında istisna → SAP'de KOŞMUŞ
+# OLABİLİR. Araç bu durumda POST'u TEKRARLAMAZ; çağıran da kör tekrar yapmamalı.
+_CLASSRUN_KOSMUS_OLABILIR = {
+    'code': 'classrun_islenmis_olabilir',   # hints.KOD_KURALLARI → K-28
+    'yeniden_denenmedi': True,
+    'islenmis_olabilir': True,
+    'uyari': (
+        "SAP'de kosmus olabilir — yan etkili sinifi (mail, tablo yazimi) tekrar "
+        "kosmadan once etkisini kontrol et (SOST/SOOD, ilgili tablo, ST22). "
+        "Arac bu yaniti yeniden denemedi."
+    ),
+}
+
+# Bayat-oturum imzası (2026-07-31 ölçümü): "Class X does not implement if_oo_adt_classrun~main!".
+# Gevşek alt metin ('does not implement') sınıfın KENDİ çıktısında geçebilir ⇒ koşmuş sınıf ikinci
+# kez koşardı (Z190 gate bulgusu). Oturum sıfırlama, ok ve teşhis yalnız bu tam imzaya bakar.
+_CLASSRUN_BAYAT_IMZA = re.compile(r"does not implement\s+if_oo_adt_classrun~main", re.IGNORECASE)
 
 
 def sap_hata_govdesi(exc) -> Optional[Dict[str, Any]]:
@@ -1820,17 +1840,27 @@ class SAPClient:
 
         Returns:
             {ok, class, output, status} — output = console (out->write) çıktısı.
+            200-dışı yanıtta ya da POST sırasında istisnada (bağlantı kurma
+            zaman aşımı hariç) ek alanlar: `yeniden_denenmedi`, `islenmis_olabilir`,
+            `uyari` — SAP'de koşmuş olabilir, araç TEKRAR POST ETMEZ (Z190).
         """
-        url = f"{self.adt_client.url}/sap/bc/adt/oo/classrun/{class_name.lower()}"
+        # Önek `_build_session`'daki TEKRARSIZ adapter mount'uyla aynı kaynaktan (Z190).
+        url = f"{self.adt_client._classrun_onek()}{class_name.lower()}"
         # Standart ADT header'ları ŞART (Authorization + sap-client + stateful
         # session + X-CSRF-Token). Bare {'Accept':...} dict'i _get_headers()'ı
         # atlatır → soğuk session'da SAP sınıf bağlamını bulamayıp sahte
         # "does not implement if_oo_adt_classrun~main" döndürebilir. Accept override.
         base_headers = self.adt_client._get_headers(accept_type='text/plain')
 
+        # Z190: istisna POST sırasında mı doğdu? (yan etki şerhi yalnız o zaman anlamlı)
+        durum = {'post_icinde': False}
+
         def _post(headers):
-            return self.adt_client._request_with_csrf_retry(
+            durum['post_icinde'] = True
+            yanit = self.adt_client._request_with_csrf_retry(
                 'post', url, headers=dict(headers))
+            durum['post_icinde'] = False
+            return yanit
 
         try:
             r = _post(base_headers)
@@ -1844,7 +1874,15 @@ class SAPClient:
             #    kalır. Çare RESET: yeni session = yeni sap-contextid = güncel load.
             #    Kanıt: taze süreçte aynı çağrı ANINDA çalıştı (tam konsol çıktısıyla).
             #    Aynı desen jfilak/sapcli d223ed3c: activate() -> new_session() -> execute().
-            if r.status_code != 200 or 'does not implement' in body.lower():
+            # ⛔ Z190 (2026-10-04): tekrar YALNIZ bu imzada — 200 + "does not implement".
+            #    Eskiden koşul `status_code != 200 or ...` idi: 500/4xx'te de ikinci POST
+            #    atılıyordu. classrun ABAP KODU ÇALIŞTIRIR; 200-dışı yanıt "koşmadı"
+            #    demek DEĞİLDİR (sınıf mail atıp sonra dump'lamış olabilir) ⇒ yan etki
+            #    iki kez (kaynak çekirdek PDF/ADS kılavuzu §4: "mail iki kez gider").
+            #    Bayat-oturum imzası 200 gövdesidir (yukarıdaki 2026-07-31 ölçümü);
+            #    200-dışı yanıtın bayat oturumdan geldiğine dair kanıt yok.
+            #    Kilit: tests/test_classrun_tek_post.py.
+            if r.status_code == 200 and _CLASSRUN_BAYAT_IMZA.search(body):
                 self.adt_client.new_session()
                 # Header'lar eski session'dan türetilmişti (auth + CSRF) → yeniden al.
                 base_headers = self.adt_client._get_headers(accept_type='text/plain')
@@ -1855,7 +1893,7 @@ class SAPClient:
                 body = r.content.decode('utf-8')
             except Exception:
                 body = r.text or ''
-            ok = r.status_code == 200 and 'does not implement' not in body.lower()
+            ok = r.status_code == 200 and not _CLASSRUN_BAYAT_IMZA.search(body)
 
             # TEŞHİS (2026-07-31 kök-fix ile YENİDEN YAZILDI).
             # Buraya yalnız session-RESET'li retry de başarısız olunca gelinir.
@@ -1869,7 +1907,8 @@ class SAPClient:
             #   1. Sınıf AKTİVE EDİLMEMİŞ → aktif sürüm boş kabuk → mesaj DOĞRU.
             #   2. Bayat oturum (başka süreçte aktive edildi) → yukarıdaki reset çözer.
             #   3. Sınıf gerçekten arayüzü implemente etmiyor.
-            if not ok and 'does not implement' in body.lower():
+            # Teşhis yalnız 200 gövdesinde: 200-dışı yanıt aşağıda 'koşmuş olabilir' işaretini alır.
+            if r.status_code == 200 and _CLASSRUN_BAYAT_IMZA.search(body):
                 diag = self._diagnose_classrun_binding(class_name)
                 if not diag.get('structurally_valid'):
                     # AKTİF sürümde arayüz yok → mesaj DOĞRU, tooling sorunu DEĞİL.
@@ -1919,14 +1958,22 @@ class SAPClient:
                         f"ne diyor, ayni cagri TAZE BIR SURECTE calisiyor mu."
                     ),
                 }
-            return {
+            sonuc = {
                 'ok': ok,
                 'class': class_name,
                 'status': r.status_code,
                 'output': body,
             }
+            if r.status_code != 200:
+                sonuc.update(_CLASSRUN_KOSMUS_OLABILIR)
+            return sonuc
         except Exception as e:
-            return {'ok': False, 'class': class_name, 'error': str(e)}
+            sonuc = {'ok': False, 'class': class_name, 'error': str(e)}
+            # Bağlantı KURULAMADIYSA (ConnectTimeout) istek SAP'ye gitmemiştir; diğer
+            # her istisnada (okuma zaman aşımı, bağlantı kopması) SAP koşmuş olabilir.
+            if durum['post_icinde'] and not isinstance(e, requests.exceptions.ConnectTimeout):
+                sonuc.update(_CLASSRUN_KOSMUS_OLABILIR)
+            return sonuc
 
     def _diagnose_classrun_binding(self, class_name: str) -> Dict[str, Any]:
         """classrun 'does not implement' teşhisi.

@@ -49,7 +49,8 @@ Uygulamada açılan **her** alt ekran — diyalog/açılır pencere, popover, de
 adımı — KD'de **kendi görüntüsü + ne işe yaradığı + alan/kolon ve buton işlevleriyle** yer alır. Yalnız ana sayfaları anlatıp
 modal pencereleri atlamak eksik KD'dir.
 **Yöntem:** önce ekran envanteri çıkarılır (UI5: `webapp/view/*.xml` + `webapp/fragment/*.xml` içindeki `Dialog`/`Popover`/
-`SelectDialog`/`ValueHelpDialog`; klasik: çağrılan ekran numaraları ve açılır pencereler) → her biri KD'de bir bölüme eşlenir →
+`SelectDialog`/`ValueHelpDialog` + JS kodunda açılan `MessageBox.confirm/warning/error/show` ve kodla kurulan `Dialog` — bunlar
+view/fragment'te görünmez; klasik: çağrılan ekran numaraları ve açılır pencereler) → her biri KD'de bir bölüme eşlenir →
 eşleme tablosu inceleme kanıtı olarak saklanır.
 
 ### 4.2 Bölüm 4-A — liste/tablo ekranı araçları
@@ -116,7 +117,8 @@ yeniden deploy ister; deploy kullanıcı yerel testte onay verdikten sonra yapı
 [ ] Ekran tanıtımı işaretli görüntüyle
 [ ] TÜM görüntüler temiz örnek veriyle; gerçek/kirli kayıt yok
 [ ] Grid varsa Bölüm 4-A var
-[ ] TÜM alt ekranlar ayrı bölüm + görüntü + işlevle; ekran envanteri eşleme tablosu hazır
+[ ] TÜM alt ekranlar ayrı bölüm + görüntü + işlevle; ekran envanteri eşleme tablosu hazır (koddan açılan MessageBox dahil)
+[ ] Şekil numaraları belgede yukarıdan aşağı 1, 2, 3 … diye artıyor
 [ ] Her tipik görev adım adım + görüntü
 [ ] Alan rehberi: ne / biçim / zorunlu + NEDEN / otomatik
 [ ] HER buton ve olay tetikleyen işlem arka plan sonucuyla

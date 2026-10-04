@@ -1401,6 +1401,12 @@ class SAPADTClient:
 
         return 'onprem'
 
+    def _classrun_onek(self) -> str:
+        """classrun uç noktasının URL öneki — `_build_session` mount'u ve
+        `SAPClient.run_classrun` URL'si AYNI kaynaktan türer (önek kayarsa tekrarsız
+        adapter sessizce devreden çıkar; requests en uzun eşleşen öneki seçer)."""
+        return f"{self.url}/sap/bc/adt/oo/classrun/"
+
     def _build_session(self) -> requests.Session:
         """Yeni bir `requests.Session` kur (pooling + auth + ADT default header'ları).
 
@@ -1437,6 +1443,22 @@ class SAPADTClient:
         )
         sess.mount('https://', _adapter)
         sess.mount('http://', _adapter)
+        # Z190 (2026-10-04): classrun POST'u SAP'de ABAP KODU ÇALIŞTIRIR (mail, tablo
+        # yazımı). Yukarıdaki adapter 502/503/504'te ve OKUMA ZAMAN AŞIMINDA POST'u
+        # 3 kez daha gönderir — yerel sahte sunucuyla ölçüldü: 504 → 4 POST, okuma
+        # zaman aşımı → 4 POST. İlk istek SAP'de koşmuş olabilir ⇒ yan etki 4 kez.
+        # Bu önek için yalnız BAĞLANTI kurma tekrarı açık (istek henüz gitmemiştir);
+        # okuma/durum tekrarı KAPALI. `new_session()` de bu fonksiyonu çağırdığı için
+        # bayat-oturum dalındaki ikinci POST da bu adapter'dan geçer.
+        # Kilit: tests/test_classrun_tek_post.py · kaynak çekirdek kuralı: PDF/ADS kılavuzu §4.
+        sess.mount(self._classrun_onek(), HTTPAdapter(
+            pool_connections=1,
+            pool_maxsize=4,
+            max_retries=_Retry(
+                total=2, connect=2, read=False, status=0, other=False,
+                status_forcelist=(), raise_on_status=False,
+            ),
+        ))
         sess.headers.update({'Accept-Encoding': 'gzip, deflate'})
 
         # Set initial headers with auth from provider

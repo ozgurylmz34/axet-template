@@ -890,6 +890,59 @@ class SkillEnvanteriTest(GeciciTest):
         self.assertIsNone(doctor.manifest_yolu(env={}))
 
 
+class SikilastirilmisAllowDoctorTest(GeciciTest):
+    """Z182 bug gate LOW-1: şablonun izin veren kuralını (skill `*`=allow) kullanıcı sıkılaştırdıysa doctor bunu
+    eksik/ezme saymaz (install.py o kararı korur); kontrol grubu: eksik kural WARN, şablon deny'ını gevşeten proje FAIL."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.cfg = self.xdg / "axet-code" / "axet-code.json"
+        self.cfg.parent.mkdir(parents=True, exist_ok=True)
+        y = mock.patch.object(doctor.inst, "config_path", return_value=self.cfg)
+        y.start()
+        self.addCleanup(y.stop)
+
+    def global_kos(self, skill) -> list[str]:
+        cfg: dict = {}
+        doctor.inst.apply_ours(cfg, doctor.inst.load_rules(), False)
+        if skill is None:
+            del cfg["permissions"]["rules"]["skill"]
+        else:
+            cfg["permissions"]["rules"]["skill"] = skill
+        self.cfg.write_text(json.dumps(cfg), encoding="utf-8")
+        doctor.results.clear()
+        doctor.check_global()
+        return [f"[{s}] {m}" for s, m in doctor.results]
+
+    def proje_kos(self, rules: dict) -> list[str]:
+        d = self.tmp / "p"
+        d.mkdir(exist_ok=True)
+        (d / ".axet-code.json").write_text(json.dumps({"permissions": {"rules": rules}}), encoding="utf-8")
+        doctor.results.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            doctor.check_project(d, False)
+        return [f"[{s}] {m}" for s, m in doctor.results]
+
+    def test_global_sikilastirma_warn_degil_info(self):
+        s = self.global_kos({"*": "ask"})
+        self.assertFalse([x for x in s if x.startswith("[WARN]") and "eksik/farklı izin kuralı" in x], "\n".join(s))
+        self.assertTrue([x for x in s if x.startswith("[INFO]") and "sıkılaştırılmış" in x and "skill:*" in x], "\n".join(s))
+
+    def test_global_KONTROL_eksik_kural_warn(self):
+        s = self.global_kos(None)
+        self.assertTrue([x for x in s if x.startswith("[WARN]") and "eksik/farklı izin kuralı" in x and "skill:*" in x],
+                        "\n".join(s))
+
+    def test_proje_sikilastirma_fail_degil(self):
+        s = self.proje_kos({"skill": {"*": "deny"}})
+        self.assertTrue([x for x in s if x.startswith("[PASS]") and "şablon izin kurallarını ezmiyor" in x], "\n".join(s))
+
+    def test_proje_KONTROL_sablon_denyini_gevseten_fail(self):
+        desen = next(p for p, k in doctor.inst.load_rules()["bash"].items() if k == "deny")
+        s = self.proje_kos({"bash": {desen: "allow"}})
+        self.assertTrue([x for x in s if x.startswith("[FAIL]") and "EZİYOR" in x], "\n".join(s))
+
+
 class BozukConfigTest(GeciciTest):
     """Bulgu 3: bozuk global/proje config traceback vermez; FAIL/ÖLÇÜLEMEDİ satırına dönüşür (in-process)."""
 

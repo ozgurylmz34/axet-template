@@ -46,6 +46,7 @@ MEMORY-ID: AXET-TEAM-MEMORY
 - [Paylaşılan modülün desenini yeniden türetme](feedback_paylasilan-modulun-desenini-yeniden-turetme.md) — tek seferlik script'te paylaşılan modülü kullan/yorumunu oku; aynı girdide kör iki katman redundans değil
 - [Kabuk heredoc Türkçe/kaçış bozulması](feedback_bash-heredoc-turkce-kacis.md) — heredoc/`python -c` Türkçe ve `\` kaçışını bozabilir; `write` ile yaz, dosyayı yeniden okuyarak doğrula (aXet bash'inde ölçülmedi)
 - [Asılı CI koşusu: PR kapat/aç](feedback_github-actions-asili-kosu-pr-kapat-ac.md) — queued + 0 job saatlerce → `run_attempt`/`updated_at` ölç, PR'ı kapatıp hemen aç
+- ["Bu ortamda normal" hükmünden önce hata metnini oku](feedback_ortam-normal-hukmu-hata-metnini-oku.md) — "test sisteminde çalışmaz" bir sebep iddiası; kodu/sayacı değil tam hata metnini oku, aynı ortamda başarılı örnek ara
 
 ## Referanslar (reference)
 

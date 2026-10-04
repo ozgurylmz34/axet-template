@@ -8,8 +8,8 @@ description: >
   SE61 help. Triggers: "klasik rapor", "ALV raporu", "program yaz", "include'lara böl", "sınıf push
   400", "fonksiyon modülü", "dynpro ekranı", "GUI status", "mail gönder", "Adobe form", "F1 yardımı".
   Do not use for RAP, CDS or ABAP Cloud objects, SEGW or classic OData (use sap-odata-backend), UI5,
-  triaging a new request (use sap-intake-triage first) or generic ADT read and push (use
-  sap-adt-foundation).
+  PDF output without a form object ("form objesi olmadan PDF"; use sap-pdf-output), triaging a new
+  request (use sap-intake-triage first) or generic ADT read and push (use sap-adt-foundation).
 ---
 
 # Klasik ABAP — sınıf, program, FM, rapor/ALV, Dynpro, e-posta, form
@@ -25,8 +25,9 @@ description: >
 - Klasik rapor / ALV liste, seçim ekranı, Dynpro ekranı, GUI status, başlık çubuğu işi.
 - ABAP'ten e-posta, Adobe Forms driver programı, klasik F1/SE61 kullanıcı yardımı.
 - Sınıf push'unda satır numarasız 400, FM imzası/`TABLES`, `00256`/`00264` gibi klasik hatalar.
-- **Kullanma:** RAP/CDS/ABAP Cloud · SEGW/klasik OData backend (`%sap-odata-backend`) · UI5 · yeni talebin ilk
-  ele alınışı (`%sap-intake-triage`) · tek başına okuma/indirme/aktivasyon sorusu (`%sap-adt-foundation`).
+- **Kullanma:** RAP/CDS/ABAP Cloud · SEGW/klasik OData backend (`%sap-odata-backend`) · UI5 · form objesi olmadan
+  PDF (`%sap-pdf-output`) · yeni talebin ilk ele alınışı (`%sap-intake-triage`) · tek başına okuma/indirme/aktivasyon
+  sorusu (`%sap-adt-foundation`).
 
 ## How to use this skill
 
@@ -95,12 +96,15 @@ description: >
 
 ### 6. E-posta
 - **Önce oku:** `references/email.md` (§7 kontrol listesi).
-- **Kullanıcıdan:** alıcı bakım tablosu, konu/gövde metni, ek biçimi. Test gönderimi dışa dönük iştir → onay.
-- **Yap:** gönderen `sy-uname`/`'B'`, satır içi stil, 255 parça, `commit_work`. **Doğrula:** SOST'ta çıkış kullanıcıya kontrol ettirilir.
+- **Kullanıcıdan:** **gönderen politikası** (relay teknik adres istiyor mu — email §1), alıcı bakım tablosu, konu/gövde
+  metni, ek biçimi. Test gönderimi dışa dönük iştir → onay; "test sisteminden çıkmaz" varsayılmaz.
+- **Yap:** gönderen `sy-uname`/`'B'` ya da zorunlu teknik adres, satır içi stil, 255 parça, `commit_work`. PDF eki: SFP formu
+  varsa `forms-f1-help.md` §A.2, form objesi yoksa `%sap-pdf-output`. **Doğrula:** SOST/SOES'te çıkış (718/812) kullanıcıya kontrol ettirilir.
 
 ### 7. Adobe Forms / F1 yardımı
 - **Önce oku:** `references/forms-f1-help.md`.
 - **Form:** layout + interface geliştiricinin SFP işi; model interface spesifikasyonu + driver program (`FP_*`) yazar.
+  Form objesi olmadan PDF (Yol D, yalnız kullanıcının açık seçimiyle, yasal çıktı değil) → `forms-f1-help.md` §A.4 + `%sap-pdf-output`.
 - **F1:** ITF (≤ 72 karakter satır, `U1` başlık), RE fihrist + TX detay, `DOCU_UPDATE` çağıran Z koşucu `adt_classrun` ile
   (yazma sınıfı → onay). **Doğrula:** `DOCU_GET` geri okuma + kullanıcı F1 testi.
 
@@ -113,8 +117,8 @@ description: >
 | `references/alv-report.md` | template-first kararı, SALV ↔ ALV grid, field catalog kararı, satır kimliği, navigasyon, split/upcast |
 | `references/dynpro-gui-status.md` | yol seçimi, elle tarif, `RPY_DYNPRO_*` / `RS_CUA_INTERNAL_*` reçetesi, donör, container değerleri, doğrulama |
 | `references/dynpro-dialog-fields.md` | DDIC'e bağlı alanlar, etiket kuralı, F4 dört mekanizma, SHLP sınırı, çok turlu CUA tuzakları |
-| `references/email.md` | `SO_DOCUMENT_SEND_API1` / `CL_BCS`, HTML tuzakları, Excel eki, kontrol listesi |
-| `references/forms-f1-help.md` | Adobe Forms iş bölümü + driver + kontrol listesi; F1/SE61 ITF standardı ve üretimi |
+| `references/email.md` | gönderen politikası + SOST/SOES teşhisi, `SO_DOCUMENT_SEND_API1` / `CL_BCS`, HTML tuzakları, Excel eki, RAP'tan ayrı LUW, kontrol listesi |
+| `references/forms-f1-help.md` | Adobe Forms iş bölümü + driver + kontrol listesi, Yol D özeti; F1/SE61 ITF standardı ve üretimi |
 | `references/checklists.md` | klasik dialog programı ön kontrol listesi (5 faz) |
 | `references/known-errors-classic.md` | belirti → dosya/bölüm indeksi |
 | `references/screen-gen-kit.md` | ekran üreteci kiti: 16 parametre, `EV_RC` bantları + `nav_remap=ON` sinyali, dört şablonun üreteç çağrıları, hangi şablondan başla, kite özgü tuzaklar, kaynaktan fark |

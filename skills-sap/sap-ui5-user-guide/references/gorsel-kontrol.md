@@ -5,7 +5,10 @@
 > `assert_*` adımları bir kısmını çekim anında yakalar; geri kalanı ancak görüntüye bakarak görülür.
 
 ## Yöntem
-1. Her PNG'yi `view` aracıyla aç (toplu bakma yok: kare başına bir çağrı). Modelin "baktım" beyanı değil, `view`
+1. Her PNG'yi `view` aracıyla aç (toplu bakma yok: kare başına bir çağrı; **bir mesajda tek `view`** — 2026-10-04'te oturum
+   `400 … tool_use ids were found without tool_result blocks` ile kullanılamaz oldu ve hatanın gösterdiği çağrı aynı
+   mesajdaki iki paralel görsel `view`'unun ikincisiydi; aynı desen o turda iki kez hatasız da geçti, yani tetikleyen
+   koşul DOĞRULANMADI (motor kusuru, Z187) — önlem olarak sırayla aç). Modelin "baktım" beyanı değil, `view`
    çağrısının kendisi kanıttır.
 2. Aşağıdaki listeyi kare kare uygula; sonucu `docs/kd-gorsel-kontrol.md` tablosuna yaz:
 

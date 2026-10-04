@@ -29,7 +29,8 @@ kapsam sayımı `config/permissions.json` içindeki `_aciklama` alanındadır; b
   (komut çalıştı), uzun `deny` kısa `allow`'u ezdi. ⚠ **Eşitlikte sonuç tutarsız çıktı:** eşit uzunlukta iki
   allow/deny çiftinde kazanan değişti (anahtar sırasıyla — ya da alfabetik sırayla; ikisi ayırt EDİLEMEDİ),
   yani eşitlikte kazananı karar türü belirlemiyor ve sonuç nondeterministik olabilir. **Pratik kural: eşit
-  uzunlukta desen yazma.** Statik dosyada (`config/permissions.json`) `allow` deseni yoktur; `install.py` klon yoluna
+  uzunlukta desen yazma.** Statik dosyada (`config/permissions.json`) **bash** `allow` deseni yoktur (tek statik `allow`
+  `skill` alanındadır — aşağıda "Skill okuma izni"); `install.py` klon yoluna
   bağlı iki **jokersiz, birebir** `allow` üretir (aşağıda "Açılış özeti komutu"). Uzunluk testi ask **ve** allow ↔ deny
   çiftlerini denetler; üretilen jokersiz allow'lar bu kuraldan bilinçli muaftır, joker girerse muafiyet düşer
   (`tests/test_install.py::uretilen_izin_ihlalleri`).
@@ -145,8 +146,16 @@ kapsam sayımı `config/permissions.json` içindeki `_aciklama` alanındadır; b
   ÇALIŞTI): `npm run -s "deploy"`, `npm rum "deploy"`, `npm urn "deploy"`, `npm urn -s deploy`, `npm rum --silent deploy`,
   `npm run-script 'deploy'`. yarn/bun tırnaklı biçimler (`yarn "deploy"`, `yarn run "deploy"`, `bun run "deploy"`) de desensiz;
   araç kurulu olmadığı için script'i çalıştırdıkları DOĞRULANAMADI. Hepsi testte "hâlâ açık" diye kilitli.
+- **Skill okuma izni — `skill` alanında `*`=allow (Z182, 2026-10-04, kullanıcı onayı).** aXet "oturum boyu izin ver"
+  onayını skill adına değil dosyanın **klasörüne** bağlıyor: aynı skill'in `SKILL.md`'si, `references/`'ı, `templates/`'i
+  ayrı ayrı soruluyordu (bir KD turunda 4 soru). Kural skill dosyalarının **okunmasına** izin verir (soru ekranında kalktığı ilk
+  canlı oturumda log'dan doğrulanacak); skill keşfi proje ve marketplace skill köklerini de bulduğu için onları da
+  kapsaması beklenir — ölçülen yalnız `skills_paths`. **Yazma kapsam dışıdır (ölçüldü):** skill klasörüne `edit`/`write` `edit` alanından
+  geçer ve oradaki kurala uyar; bash ve skill dışı okumalar eskisi gibi sorar. Kendi config'inde `skill` için `"*": "ask"`
+  ya da `"deny"` yazdıysan `install.py` onu korur ve uyarır. Ayrıntı ve ölçüm: `config/permissions.json` `_aciklama`
+  "SKILL OKUMA İZNİ".
 - **Açılış özeti komutu — üretilen `allow` kuralları (Z12 2026-09-20 · Z140 2026-09-26, kullanıcı onayı).** Şablonun
-  tek `allow` kaynağı `install.py` `session_brief_allow()`dur: klon yolundan `python "<klon>/scripts/session_brief.py"`
+  **bash** alanındaki tek `allow` kaynağı `install.py` `session_brief_allow()`dur (statik `skill` allow'u ayrı — yukarıda): klon yolundan `python "<klon>/scripts/session_brief.py"`
   (çıplak; `%basla` ve çekirdek §0) ile `python "<klon>/scripts/session_brief.py" --no-fetch` (`%gun-sonu`,
   `%onboard`) desenlerini **jokersiz** üretir; yol makineye bağlı olduğu için statik dosyada durmazlar. Güvenlik
   dayanağı jokersizliktir: desen komut metninin tamamına uyduğundan yalnız o tek metne uyar; zincire uzatılmış metin

@@ -2,7 +2,8 @@
 
 > Kaynak: ekibin klasik dialog oluşturma kontrol listesi (manuel ön kontrol). Klasik dialog için otomatik inceleme
 > kuralı sınırlıdır → bu liste yazmaya başlamadan ve push öncesi **elle** geçilir; bitince `%code-review` ve `%verify-done`.
-> Adobe Forms kontrol listesi: `forms-f1-help.md` §A.3 · e-posta: `email.md` §7.
+> Adobe Forms kontrol listesi: `forms-f1-help.md` §A.3 (form objesi olmadan PDF — Yol D: §A.4 + `%sap-pdf-output`) ·
+> e-posta: `email.md` §7.
 > `templates/` altındaki şablonlar bilerek tek gövdedir; CLC-07 gerçek programlar içindir.
 
 ## Faz 1 — Yapı (kod yazmadan)

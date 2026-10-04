@@ -402,8 +402,11 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 ### `adt_classrun`
 - **Amaç:** `IF_OO_ADT_CLASSRUN` sınıfını çalıştırmak (F9 muadili). Kod çalıştırır, yazma yapabilir.
 - **Argüman:** `name` (Z/Y).
-- **Dönüş:** `{ok, class, status, output}`.
-- **Uyarılar:** ⚠ `ok:true` çıktının güncel olduğunu kanıtlamaz (bayat oturum vakası) → çıktıda yeni koda özgü imza ara ·
+- **Dönüş:** `{ok, class, status, output}` · 200 dışı yanıtta / zaman aşımında ek: `islenmis_olabilir`, `yeniden_denenmedi`,
+  `code: classrun_islenmis_olabilir`, `uyari`.
+- **Uyarılar:** ⛔ 200 dışı yanıt / zaman aşımı = sınıf **koşmuş olabilir**; araç POST'u tekrarlamaz, sen de yan etkili
+  sınıfı (mail, tablo yazımı) etkisini kontrol etmeden (SOST/SOOD, tablo) yeniden koşma (K-28) ·
+  ⚠ `ok:true` çıktının güncel olduğunu kanıtlamaz (bayat oturum vakası) → çıktıda yeni koda özgü imza ara ·
   "does not implement" = aktive edilmemiş ya da bayat oturum; taze adla yeniden yaratma YANLIŞ (K-13) ·
   dialog context FM'leri çalıştıramaz (`400 Session Timed Out`, K-14).
 

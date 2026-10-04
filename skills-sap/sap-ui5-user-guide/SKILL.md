@@ -61,7 +61,7 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
    doğrudan `node …/playwright-cli.js`, `npx` değil) → `snapshot --filename=…` → ekranın
    erişilebilirlik ağacından seçici ve düğme adlarını çıkar; alt ekranları (diyalog, F4, açılır panel) tek tek aç.
    Freestyle seçici deseni `[id$='--<id>']`; erişilebilir adı olmayan kontrol `Element.registry` + `firePress()` ile.
-   Ekran envanterini (`webapp/view` + `webapp/fragment` → KD bölümü) ve **zorunlu alanları** (view'da `required`,
+   Ekran envanterini (`webapp/view` + `webapp/fragment` + JS'te koddan açılan `MessageBox.*` / `new Dialog` pencereleri → KD bölümü) ve **zorunlu alanları** (view'da `required`,
    i18n hata metni) bu adımda yaz. Keşifte `screenshot` alınmaz — KD karesi değildir. Ayrıntı: `references/kesif-playwright-cli.md`.
 4. **Senaryo.** Keşfin sonucunu `docs/ekranlar.json` dosyasına yaz (biçim: `capture_kd_screens.js` yapılandırması +
    `assert_no_busy` / `assert_text` / `assert_in_viewport` adımları). Bu dosya **git'e girer**: bir sonraki çekim aynı
@@ -71,7 +71,7 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
    en az bir adım tutmadı; assert adımı tutmayan kare de FAIL'dir). `out_dir` uygulama klasörünün içindedir (ör.
    `docs/screenshots-ham`), template klonuna kare yazılmaz. Elle kare çekimi yalnız senaryo aracı çalışmıyorsa ve
    gerekçesi kullanıcıya yazılarak yapılır.
-6. **Görsel kontrol.** Her PNG'yi `view` aracıyla **aç ve bak**; `references/gorsel-kontrol.md` listesini kare kare uygula
+6. **Görsel kontrol.** Her PNG'yi `view` aracıyla **aç ve bak** (bir mesajda tek `view`, paralel değil); `references/gorsel-kontrol.md` listesini kare kare uygula
    (boş liste, meşgul göstergesi, İngilizce metin, kesik diyalog, anlamsız ya da tutarsız veri, kişisel veri görünümü,
    gereksiz beyaz alan). Bulgu → senaryoyu ya da veriyi düzelt → 5'e dön.
 7. **Yazım.** Kaynak **daima** `docs/KD-….md`'dir (Markdown kanonik); HTML/PDF ve `webapp/help` kopyası adım 8'de

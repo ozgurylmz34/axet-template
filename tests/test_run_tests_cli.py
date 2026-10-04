@@ -23,6 +23,7 @@ KOSUCULAR = [
     BURASI / "run_tests.py",
     AXET / "skills-sap" / "sap-fs-ts-docs" / "tests" / "run_tests.py",
     AXET / "skills-sap" / "sap-ui5-user-guide" / "tests" / "run_tests.py",
+    AXET / "skills-sap" / "sap-pdf-output" / "tests" / "run_tests.py",
     AXET / "skills-sap" / "sap-ui5-fiori" / "tests" / "run_tests.py",
     AXET / "skills-sap" / "sap-adt-foundation" / "tests" / "run_tests.py",
 ]

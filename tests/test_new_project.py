@@ -100,6 +100,23 @@ class NewProjectTest(GeciciTest):
         r = self.git(d, "check-ignore", "-q", "conn/README.md", kontrol=False)
         self.assertEqual(r.returncode, 1, "conn/README.md git'e kapalı görünüyor — test varsayımı geçersiz")
 
+    def test_proje_hafizasi_git_e_acik(self):
+        """Proje hafızası (.axet-code/memory) PROJE reposunda izlenir; ayrı bir hafıza git'i gerekmez.
+
+        Çekirdek karşılığı (kaynak çekirdek, F4): orada hafıza proje dışında git'siz doğuyordu ve gün sonu
+        push'u yedeksiz tek kopyaya düşüyordu. aXet'te bu sınıfı kapatan tek şey `.axet-code/.gitignore`'daki
+        `!memory/**` istisnasıdır: kalkarsa hafıza sessizce git dışına düşer (`*` her şeyi saklar)."""
+        d = self.proje()
+        for rel in (".axet-code/memory/MEMORY.md", ".axet-code/memory/project_is-listesi.md"):
+            self.assertTrue((d / rel).is_file(), rel)
+            r = self.git(d, "check-ignore", "-q", rel, kontrol=False)
+            self.assertEqual(r.returncode, 1, f"{rel} git'e kapalı — proje hafızası yedeksiz kalır")
+        # kontrol grubu: `.axet-code/` altındaki başka bir dosya gerçekten saklanıyor (`*` etkin; yukarıdaki
+        # rc=1 "hiçbir şey ignore edilmiyor" yüzünden çıkmış olamaz)
+        (d / ".axet-code" / "baska.txt").write_text("x", encoding="utf-8")
+        r = self.git(d, "check-ignore", "-q", ".axet-code/baska.txt", kontrol=False)
+        self.assertEqual(r.returncode, 0, ".axet-code/baska.txt ignore edilmedi — kontrol grubu geçersiz")
+
     def test_sap_sonraki_adimlar_profil_alanlarini_soyler(self):
         d = self.tmp / "sap"
         d.mkdir()

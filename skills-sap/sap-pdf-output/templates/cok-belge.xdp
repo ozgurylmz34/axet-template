@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- aXet sap-pdf-output ŞABLONU — çok belge → tek PDF. SAP'de render EDİLMEDİ (aXet'te ölçülmedi). DOC sarmalayıcı,
+     kırılım öğeleri ve sayfa no olayı/betiği çekirdekte canlı render edilen şablonla (S/4 private 2025, 5 belge) aynı
+     biçimde; belge içeriği tek-belge.xdp'den (sabit metin `draw`/`value`/`text` yazımı aXet'in, çekirdekte örneği yok). Belge içi "Sayfa n / N"de N > 1 dalı çekirdekte de ÖLÇÜLMEDİ.
+     Veri: cok-belge-veri.xml -->
+<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">
+<template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">
+<subform name="data" layout="tb" locale="tr_TR" restoreState="auto">
+ <pageSet>
+  <pageArea name="A4" id="A4">
+   <contentArea name="CA" x="9mm" y="8mm" w="192mm" h="281mm"/>
+   <medium stock="a4" short="210mm" long="297mm"/>
+   <field name="SAYFA" x="9mm" y="289.5mm" w="192mm" h="4mm"><ui><textEdit/></ui>
+    <font typeface="Arial" size="7pt"/><bind match="none"/>
+    <event activity="ready" ref="$layout">
+     <script contentType="application/x-javascript">
+var cur = xfa.layout.page(this);
+var txt = "Sayfa " + cur + " / " + xfa.layout.pageCount();
+try {
+var docs = xfa.resolveNodes("xfa.form.data.DOC[*]");
+for (var i = 0; i &lt; docs.length; i++) {
+var ilk = xfa.layout.page(docs.item(i));
+var n = xfa.layout.pageSpan(docs.item(i));
+if (cur &gt;= ilk &amp;&amp; cur &lt; ilk + n) { txt = "Sayfa " + (cur - ilk + 1) + " / " + n; break; }
+}
+} catch (e) { }
+this.rawValue = txt;
+     </script>
+    </event>
+   </field>
+  </pageArea>
+ </pageSet>
+ <!-- BELGE: her DOC bir kopya; ilki kırılım almaz, sonrakiler yeni sayfadan. İçerideki bütün bağlar GÖRELİ ($.…) -->
+ <subform name="DOC" layout="tb" w="192mm">
+  <occur min="1" max="-1"/>
+  <bind match="dataRef" ref="$record.DOC[*]"/>
+  <breakBefore targetType="auto"/>
+  <event activity="initialize">
+   <script contentType="application/x-javascript">if (this.index &gt; 0) { this.breakBefore.targetType = "pageArea"; }</script>
+  </event>
+  <!-- BAŞLIK: tb kapsayıcı, satırlar adsız lr-tb (adsız subform veri bağlamını değiştirmez) -->
+  <subform name="HDR" layout="tb" w="192mm">
+   <bind match="dataRef" ref="$.HDR"/>
+   <subform layout="lr-tb" w="192mm">
+    <draw w="120mm" h="8mm"><ui><textEdit/></ui><value><text>SEVKİYAT BELGESİ</text></value>
+     <font typeface="Arial" size="14pt" weight="bold"/></draw>
+    <field name="BELGE_NO" w="71mm" h="8mm"><ui><textEdit/></ui>
+     <font typeface="Arial" size="11pt" weight="bold"/><bind match="dataRef" ref="$.BELGE_NO"/></field>
+   </subform>
+   <subform layout="lr-tb" w="192mm">
+    <draw w="25mm" h="5mm"><ui><textEdit/></ui><value><text>Tarih</text></value><font typeface="Arial" size="8pt"/></draw>
+    <field name="TARIH" w="70mm" h="5mm"><ui><textEdit/></ui>
+     <font typeface="Arial" size="8pt"/><bind match="dataRef" ref="$.TARIH"/></field>
+    <draw w="25mm" h="5mm"><ui><textEdit/></ui><value><text>Müşteri</text></value><font typeface="Arial" size="8pt"/></draw>
+    <field name="MUSTERI" w="71mm" minH="5mm"><ui><textEdit multiLine="1"/></ui>
+     <font typeface="Arial" size="8pt"/><bind match="dataRef" ref="$.MUSTERI"/></field>
+   </subform>
+   <subform layout="lr-tb" w="192mm">
+    <field name="BARKOD" w="60mm" h="12mm">
+     <ui><barcode type="code3Of9" dataLength="10" moduleWidth="0.25mm" wideNarrowRatio="3.0" textLocation="none" checksum="none"/></ui>
+     <bind match="dataRef" ref="$.BELGE_NO"/></field>
+   </subform>
+   <subform layout="lr-tb" w="192mm">
+    <field name="BARKOD_NO" w="60mm" h="4mm"><ui><textEdit/></ui>
+     <font typeface="Arial" size="7pt"/><bind match="dataRef" ref="$.BELGE_NO"/></field>
+   </subform>
+  </subform>
+  <!-- KALEMLER: başlık satırı (TH) + tekrarlı satır (ROW). Kolon toplamı 191 mm / kapsayıcı 192 mm (AF-XDP-03) -->
+  <subform name="ITEMS" layout="tb" w="192mm">
+   <bind match="dataRef" ref="$.ITEMS"/>
+   <subform name="TH" layout="lr-tb" w="192mm">
+    <bind match="none"/>
+    <draw w="10mm" h="5mm"><ui><textEdit/></ui><value><text>SIRA</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+    <draw w="30mm" h="5mm"><ui><textEdit/></ui><value><text>MALZEME</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+    <draw w="80mm" h="5mm"><ui><textEdit/></ui><value><text>TANIM</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+    <draw w="25mm" h="5mm"><ui><textEdit/></ui><value><text>MİKTAR</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+    <draw w="16mm" h="5mm"><ui><textEdit/></ui><value><text>BİRİM</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+    <draw w="30mm" h="5mm"><ui><textEdit/></ui><value><text>AÇIKLAMA</text></value><font typeface="Arial" size="7pt" weight="bold"/></draw>
+   </subform>
+   <subform name="ROW" layout="lr-tb" w="192mm">
+    <occur min="0" max="-1"/>
+    <bind match="dataRef" ref="$.ROW[*]"/>
+    <field name="POSNR" w="10mm" minH="5mm"><ui><textEdit/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.POSNR"/></field>
+    <field name="MATNR" w="30mm" minH="5mm"><ui><textEdit multiLine="1"/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.MATNR"/></field>
+    <field name="MAKTX" w="80mm" minH="5mm"><ui><textEdit multiLine="1"/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.MAKTX"/></field>
+    <field name="MIKTAR" w="25mm" minH="5mm"><ui><textEdit/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.MIKTAR"/></field>
+    <field name="BIRIM" w="16mm" minH="5mm"><ui><textEdit/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.BIRIM"/></field>
+    <field name="ACIKLAMA" w="30mm" minH="5mm"><ui><textEdit multiLine="1"/></ui><font typeface="Arial" size="7.5pt"/><bind match="dataRef" ref="$.ACIKLAMA"/></field>
+   </subform>
+  </subform>
+  <subform name="TOPLAM" layout="lr-tb" w="192mm">
+   <bind match="dataRef" ref="$.TOPLAM"/>
+   <draw w="120mm" h="5mm"><ui><textEdit/></ui><value><text>Toplam miktar</text></value><font typeface="Arial" size="8pt" weight="bold"/></draw>
+   <field name="MIKTAR" w="25mm" h="5mm"><ui><textEdit/></ui><font typeface="Arial" size="8pt" weight="bold"/><bind match="dataRef" ref="$.MIKTAR"/></field>
+   <field name="KALEM_SAYISI" w="46mm" h="5mm"><ui><textEdit/></ui><font typeface="Arial" size="8pt"/><bind match="dataRef" ref="$.KALEM_SAYISI"/></field>
+  </subform>
+ </subform>
+</subform>
+</template>
+<config xmlns="http://www.xfa.org/schema/xci/3.0/">
+ <present><destination>pdf</destination><pdf><fontInfo/><version>1.7</version></pdf></present>
+</config>
+</xdp:xdp>

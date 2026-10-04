@@ -20,6 +20,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | `sap-abapgit-delivery` | Değişikliği abapGit ZIP olarak hazırla (kesin yasak + Yasak B taramasıyla); içe aktarımı geliştirici yapar |
 | `sap-fs-ts-docs` | FS/TS/**KD (kullanıcı kılavuzu)** yazımı ve incelemesi — KD kuralları (`references/kd-authoring.md`) ve şablonu (`templates/KD-template.md`) burada; izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü HTML/PDF, TS öncesi canlı teyit turu |
 | `sap-ui5-user-guide` | Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (KD): yalnız mock veri, Chrome'a sabit playwright-cli keşfi, çekim senaryosu, kare kare görsel kontrol; KD metni ve HTML + PDF `sap-fs-ts-docs` hattıyla |
+| `sap-pdf-output` | SFP form objesi olmadan ABAP'ten PDF (yalnız `s4_private`): AI'ın yazdığı XFA XDP + `CL_FP_ADS_UTIL=>RENDER_PDF`, çok belge → tek PDF, CL_BCS mail eki; XDP denetçisi, bağlama simülasyonlu XDP → ABAP üreticisi, deneme sınıfı + base64 çözücü. SFP form, NAST/OM, yasal çıktı `sap-classic-abap`'ta |
 
 **KD (kullanıcı kılavuzu) nerede?** Adı yalnız FS/TS'i ansa da KD'nin yazım kuralları, şablonu ve HTML/PDF üretimi
 `sap-fs-ts-docs`'tadır (ad, mevcut atıflar bozulmasın diye korunur). Freestyle UI5 (OData V2) uygulamasında mock veriyle

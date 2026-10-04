@@ -85,10 +85,11 @@ paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.
    ```json
    {
      "fences": {"Liste ekranı": [{"img": "kd-01-liste.png", "caption": "Şekil 1 — Liste ekranı …"}]},
-     "after_heading": {"### 5.6 Toplu ekleme": [{"img": "kd-06-toplu.png", "caption": "Şekil 6 — …"}]},
+     "after_heading": {"### 5.6 Toplu ekleme": [{"img": "kd-06-toplu.png", "caption": "Şekil 4 — …"}]},
      "strip_circled_numbers": true
    }
    ```
+   `caption`'daki "Şekil N" belgedeki sırayla artar (kare numarası `kd-NN` değil; araya giren kareden sonra yeniden numarala).
    `fences`: içinde anahtar geçen kod bloğu tamamen görsel(ler)le değişir; bulunamayan anahtar raporlanır. `after_heading`: görsel
    başlığın hemen altına bir kez eklenir (tekrar koşumda eklenmez). Temizlenen Markdown `--write-clean` verilirse kaynağa geri yazılır.
 3b. **Markdown yerine manifest** (`build_kd_pdf.py --manifest`, biçim B): KD adımları makine tarafından

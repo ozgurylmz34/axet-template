@@ -43,15 +43,35 @@ CALL FUNCTION 'FP_JOB_CLOSE'.
 ### A.3 Kurallar ve kontrol listesi
 | ID | Kontrol | Önem |
 |---|---|---|
-| AF-DIV-01 | Layout + interface **geliştiricinin** SAP GUI işi; model bunları yazmaz, tarif eder | BLOCKER |
+| AF-DIV-01 | Layout + interface **geliştiricinin** SAP GUI işi; model bunları yazmaz, tarif eder. **İstisna:** kullanıcının açıkça seçtiği **Yol D** (form objesi yok, model XDP yazar — §A.4); bu satır SFP form objesi içindir | BLOCKER |
 | AF-DIV-02 | Model: driver program + interface **spesifikasyonu** (alan/tip listesi) | BLOCKER |
 | AF-IF-01 | **Interface = sözleşme:** driver'ın geçtiği parametreler ↔ SFP interface birebir (ad/tip). Spesifikasyon netleşmeden driver yazılmaz | BLOCKER |
 | AF-DRV-01 | `FP_JOB_OPEN` → `FP_FUNCTION_MODULE_NAME` → çağrı → `FP_JOB_CLOSE`; `ls_outputparams` / `ls_docparams` | WARNING |
 | AF-DRV-02 | Dil/ülke `ls_docparams-langu` (proje dili), `-country`. Yasal çıktı (e-İrsaliye/e-Fatura) → SAP Document Compliance / eDocument; ayrı konu | WARNING |
-| AF-DRV-03 | PDF `ls_formoutput-pdf` (XSTRING) → spool / e-posta eki (`email.md` §5) / indirme | WARNING |
+| AF-DRV-03 | PDF `ls_formoutput-pdf` (XSTRING) → spool / e-posta eki (`email.md` §5; CL_BCS §6, gönderen politikası §1, RAP'tan ayrı LUW §6.1) / indirme | WARNING |
 | AF-ERR | `FP_JOB_OPEN/CLOSE` istisnaları + `cx_fp_runtime` yakalanır | WARNING |
 | AF-NAM-01 | Driver `<GÖVDE>_P_<AD>`, include'lara bölünür (`programs-includes.md` §1) | BLOCKER |
 | AF-005 | Z driver; standart çıktı objesine dokunulmaz (kesin yasak A) | BLOCKER |
+
+### A.4 Yol D — form objesi OLMADAN, modelin yazdığı yerleşim
+§A.1'deki iş bölümü **SFP form objesi** (SFPF/SFPI) içindir. Belge yalnız PDF olarak (çoğu kez mail eki) üretilecekse ve
+Designer'da bakım beklenmiyorsa ikinci yol vardır: yerleşimi model **XFA 3.3 XDP** (düz XML) olarak yazar, veri XML'i ABAP'ta
+kurulur, `CL_FP_ADS_UTIL=>RENDER_PDF` ADS'e gönderip PDF xstring alır. SFPF/SFPI yaratılmaz, standart tabloya yazım yoktur
+(çekirdekte canlı ölçüldü, S/4 private 2025; aXet'te ölçülmedi).
+
+| | SFP yolu (§A.1-§A.3) | Yol D |
+|---|---|---|
+| Layout | Geliştirici/operatör, Designer (SAP GUI) | Model, `.xdp` dosyası (repoda, diff'lenebilir) |
+| Bakım | Designer'da | Metin düzenleme + yeniden render |
+| Çıktı yönetimi (NAST/OM, spool) | Var | Yok — PDF xstring (mail eki / indirme) |
+| Ne zaman | Basılı/yasal çıktı, operatör bakımı, çıktı yönetimi | Mail eki, iç belge, hızlı yineleme |
+
+- **Kural:** Yol D yalnız **kullanıcının açık seçimiyle** açılır (yerleşim modelde kalır, Designer bakımı olmaz — bunu
+  kullanıcı bilerek seçer). Model Yol D'yi kendiliğinden seçmez; iki yolu bu tabloyla sunar, kararı kullanıcı verir.
+- Yasal çıktı (e-İrsaliye/e-Fatura) bu yoldan **yapılmaz** (AF-DRV-02).
+- §A.3'ten Yol D'de yalnız **AF-005** geçerlidir; AF-DIV-02 · AF-IF-01 · AF-DRV-01..03 · AF-ERR · AF-NAM-01 SFP'ye özgüdür
+  (interface/driver programı yoktur; çağıran Z sınıf/FM projenin genel adlandırmasına uyar).
+- Reçete, tuzaklar ve Yol D kontrol listesi: `%sap-pdf-output`. Mail eki olarak gönderim: `email.md` §6.
 
 ---
 

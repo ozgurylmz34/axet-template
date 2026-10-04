@@ -2839,6 +2839,9 @@ def adt_classrun(name: str) -> dict:
     Returns:
         {ok, class, status, output} — output = out->write konsol çıktısı.
         ⚠ `ok: true` çıktının GÜNCEL olduğunu KANITLAMAZ (yukarıdaki bayatlık şerhi).
+        ⛔ `islenmis_olabilir: true` (200-dışı yanıt / zaman aşımı) = sınıf SAP'de KOŞMUŞ
+        olabilir; araç POST'u tekrarlamadı. Yan etkili sınıfı (mail, tablo yazımı) yeniden
+        koşmadan önce etkisini kontrol et (SOST/SOOD, tablo) — Z190.
     """
     try:
         require_writable_tier(get_active_tier(), what="classrun execute")

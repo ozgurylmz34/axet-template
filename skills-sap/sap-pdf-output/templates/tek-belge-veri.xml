@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <HDR>
+  <BELGE_NO>8000000001</BELGE_NO>
+  <TARIH>04.10.2026</TARIH>
+  <MUSTERI>Örnek Gıda Sanayi ve Ticaret Anonim Şirketi — Çağlayan Şubesi, İzmir Ğ Ü Ö Ç Ş İ ı</MUSTERI>
+ </HDR>
+ <ITEMS>
+  <ROW><POSNR>10</POSNR><MATNR>MAT-0001</MATNR><MAKTX>Paslanmaz çelik bağlantı parçası</MAKTX><MIKTAR>12</MIKTAR><BIRIM>ADT</BIRIM><ACIKLAMA>Acil</ACIKLAMA></ROW>
+  <ROW><POSNR>20</POSNR><MATNR>MAT-0002-UZUN-KOD</MATNR><MAKTX>Çok uzun malzeme tanımı: ısıya dayanıklı, iki katmanlı, şeffaf ambalajlı ürün (satır büyümesi denemesi)</MAKTX><MIKTAR>3</MIKTAR><BIRIM>KG</BIRIM><ACIKLAMA>Kırılabilir — dikkatli taşıyın</ACIKLAMA></ROW>
+  <ROW><POSNR>30</POSNR><MATNR>MAT-0003</MATNR><MAKTX>Etiket rulosu</MAKTX><MIKTAR>150</MIKTAR><BIRIM>ADT</BIRIM><ACIKLAMA></ACIKLAMA></ROW>
+ </ITEMS>
+ <TOPLAM><MIKTAR>165</MIKTAR><KALEM_SAYISI>3 kalem</KALEM_SAYISI></TOPLAM>
+</data>

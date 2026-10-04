@@ -261,6 +261,13 @@ jobs:
           python skills-sap/sap-ui5-user-guide/tests/run_tests.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      # Z189 (2026-10-04): sap-pdf-output skill takimi (SAP'ye/aga baglanmaz; pypdf gerekmez).
+      - name: sap-pdf-output takimi
+        if: matrix.takim == 'skill'
+        run: |
+          python skills-sap/sap-pdf-output/tests/run_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: SAP ADT foundation takimi
         if: matrix.takim == 'foundation'
         run: python skills-sap/sap-adt-foundation/tests/run_tests.py

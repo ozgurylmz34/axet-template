@@ -103,6 +103,8 @@ $PW -s=kd close
 - Zorunlu alanları (view'da `required="true"`, zorunlu alan i18n metni) envantere yaz; senaryoda `fill` ile doldurulur,
   deneme-yanılmayla aşılmaz.
 - Ekran envanteri çıkar: `webapp/view/*.xml` + `webapp/fragment/*.xml` (diyalog, değer yardımı, seçim penceresi);
+  **JS'te koddan açılan pencereler** de (aXet'in yerleşik `grep` aracıyla — bash komutu değil — `webapp/**/*.js` içinde `MessageBox\.|new Dialog\(` — onay,
+  uyarı, silme sorusu; view/fragment'te görünmezler, metinleri i18n'dedir — T27);
   liste ekranında grid araçları (sıralama, filtre, kolonlar, varyant, Excel —
   `%sap-ui5-fiori` → `references/list-grid-alv.md`). Her giriş bir KD bölümüne eşlenir (DOC-KD-03).
 - Seçici çıkarma: snapshot'taki rol + ad (`button "Oluştur"`) → senaryoda `button:has-text('Oluştur')`; UI5 kimliği
@@ -167,7 +169,7 @@ node $D/capture_kd_screens.js $APP/docs/ekranlar.json
 - **Çıkış ölçütü:** son satır `ÖZET: M OK, 0 FAIL`, çıkış 0, `out_dir`'de M adet PNG.
 
 ## 6. Görsel kontrol
-Her PNG `view` aracıyla açılır; `gorsel-kontrol.md` listesi kare kare uygulanır ve sonucu bir tabloya yazılır
+Her PNG `view` aracıyla açılır (bir mesajda tek `view` — `gorsel-kontrol.md` yöntem 1); `gorsel-kontrol.md` listesi kare kare uygulanır ve sonucu bir tabloya yazılır
 (kare · bakıldı · bulgu · yapılacak). Bulgu varsa senaryo/veri düzeltilir, adım 5 tekrarlanır.
 - **Çıkış ölçütü:** her kare "bakıldı" ve bulgusuz; tablo KD dosyasının yanında (`docs/kd-gorsel-kontrol.md`) durur.
 
@@ -179,6 +181,9 @@ Her PNG `view` aracıyla açılır; `gorsel-kontrol.md` listesi kare kare uygula
 - Adım 3'teki ekran envanterinin her satırı bir bölüm; her bölümde görsel, adım adım akış, alan/buton tablosu.
 - Görseller KD'ye `build_kd_pdf.py` eşleme dosyasıyla girer; eşleme dosyasındaki `img` adları `ekranlar.json`'daki
   `shot` adlarıyla aynıdır (araç bu eşliği ölçmez — yazan sağlar).
+- **Şekil numarası belgedeki sıradır, kare numarası değil:** `caption`'daki "Şekil N" KD'de yukarıdan aşağı 1, 2, 3 …
+  diye artar. Kare (`kd-NN`) çekim sırasıdır ve belge sırasından farklı olabilir; sonradan eklenen kare araya giriyorsa
+  sonraki şekiller yeniden numaralanır (2026-10-04: KD'de 1…8, 11, 12, 9, 10 diye aktı).
 - Metin **uydurulmaz**: iş kuralı, mesaj metni, alan anlamı uygulamadan (i18n, annotation, FS) gelir; yoksa `[Açık Konu]`.
 - **Çıkış ölçütü:** `%sap-fs-ts-docs` → `references/doc-checklist.md` §A yazar öz kontrolü yapıldı.
 

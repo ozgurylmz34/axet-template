@@ -88,9 +88,17 @@ def check_global() -> tuple[dict, bool]:
         if not Path(p).exists():
             add("FAIL", f"config'teki yol diskte yok: {p}")
     prules = _kurallar(cfg)
-    missing = [f"{d}:{pat}" for d, pats in inst.load_rules().items() for pat, dec in pats.items()
-               if not isinstance(prules.get(d), dict) or prules[d].get(pat) != dec]
+    missing, siki = [], []
+    for d, pats in inst.load_rules().items():
+        for pat, dec in pats.items():
+            mevcut = prules[d].get(pat) if isinstance(prules.get(d), dict) else None
+            if mevcut == dec:
+                continue
+            # Z182: şablonun izin veren kuralını kullanıcı sıkılaştırdıysa install.py onu korur → eksik sayılmaz.
+            (siki if inst.kullanici_karari_korunur(dec, mevcut) else missing).append(f"{d}:{pat}")
     add("PASS" if not missing else "WARN", "izin kuralları eksiksiz" if not missing else f"eksik/farklı izin kuralı: {missing}")
+    if siki:
+        add("INFO", f"template'in izin veren kuralı config'te sıkılaştırılmış (install.py korur; bilinçliyse sorun yok): {siki}")
     # K4b: install.py'yi yeniden koşmamış makinede önceki sürümün desenleri kalır; başa bağlı desen zincirli komutu
     # kaçırır, uzun ask aynı komuta uyan deny'ı ezer (ölçüldü 2026-09-14). Ölçüt install.strip_ours'un kendisi.
     emekli = emekli_izin_desenleri(cfg)
@@ -1158,7 +1166,8 @@ def check_project(cwd: Path, sap_global: bool = False) -> None:
             else:
                 prules = _kurallar(data)
                 ezen = [f"{d}:{p} ({prules[d][p]} ≠ {v})" for d, pats in inst.load_rules().items() for p, v in pats.items()
-                        if isinstance(prules.get(d), dict) and p in prules[d] and prules[d][p] != v]
+                        if isinstance(prules.get(d), dict) and p in prules[d] and prules[d][p] != v
+                        and not inst.kullanici_karari_korunur(v, prules[d][p])]
                 add("FAIL" if ezen else "PASS", f"proje config'i şablon izin kuralını EZİYOR: {ezen}" if ezen
                     else "proje config'i şablon izin kurallarını ezmiyor")
     else:

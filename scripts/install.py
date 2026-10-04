@@ -194,13 +194,22 @@ def sap_enabled(cfg: dict) -> bool:
     return any(is_ours(p) and _norm(p) == _norm(SAP_CORE_DIR) for p in paths)
 
 
+def kullanici_karari_korunur(sablon_karari: str, config_karari) -> bool:
+    """Şablonun GEVŞETEN kuralı (allow), kullanıcının aynı desen için verdiği FARKLI kararı ezmez (Z182 bug gate
+    MEDIUM-1). Yalnız geçerli sıkı karar (`ask`/`deny`) korunur; bilinmeyen/bozuk değer (`"Allow"`, `""`, sayı) eskisi gibi
+    onarılır (2. tur LOW-A). Şablonun deny/ask kuralları eskisi gibi yazılır: onlar yalnız sıkılaştırır. Bilinen sınır: kullanıcının
+    kendisi de aynı desene `allow` yazdıysa bizimkinden ayırt edilemez (kaldırmada silinir — bash'teki davranışla aynı)."""
+    return sablon_karari == "allow" and config_karari in ("ask", "deny")
+
+
 def strip_ours(cfg: dict, rules: dict, retired: dict | None = None) -> dict:
     """Bu reponun eklediklerini config'ten çıkarır. Emekli kurallar (RETIRED_RULES) yalnız karar bizim yazdığımızsa silinir.
 
-    Dönüş: {"emekli_silinen": ["alan:desen", …], "emekli_korunan": ["alan:desen (config kararı ≠ yazdığımız)", …]}.
+    Dönüş: {"emekli_silinen": ["alan:desen", …], "emekli_korunan": ["alan:desen (config kararı ≠ yazdığımız)", …],
+            "kullanici_korunan": ["alan:desen (config kararı; şablon: 'allow')", …]}.
     """
     retired = RETIRED_RULES if retired is None else retired
-    rapor: dict = {"emekli_silinen": [], "emekli_korunan": []}
+    rapor: dict = {"emekli_silinen": [], "emekli_korunan": [], "kullanici_korunan": []}
     opts = cfg.get("options")
     if isinstance(opts, dict):
         for key in ("context_paths", "skills_paths"):
@@ -217,7 +226,11 @@ def strip_ours(cfg: dict, rules: dict, retired: dict | None = None) -> dict:
             if isinstance(prules.get(domain), dict):
                 for pattern in list(prules[domain]):
                     # bu reponun kuralı ya da (klon taşınmış/klasör listesi değişmiş olsa bile) klon içini gösteren desen
-                    if pattern in rules.get(domain, {}) or _pattern_is_ours(pattern):
+                    if pattern in rules.get(domain, {}) and kullanici_karari_korunur(rules[domain][pattern],
+                                                                                     prules[domain][pattern]):
+                        rapor["kullanici_korunan"].append(
+                            f"{domain}:{pattern} (config: {prules[domain][pattern]!r}; şablon: 'allow')")
+                    elif pattern in rules.get(domain, {}) or _pattern_is_ours(pattern):
                         del prules[domain][pattern]
                     elif pattern in retired.get(domain, {}):
                         yazdigimiz = retired[domain][pattern]
@@ -250,7 +263,9 @@ def apply_ours(cfg: dict, rules: dict, sap: bool) -> None:
                 f"HATA: permissions.rules.{domain} bir desen haritası değil ({current!r}). "
                 "Bu değeri elle nesneye çevirin; config'e dokunulmadı."
             )
-        current.update(patterns)
+        for pattern, karar in patterns.items():
+            if not kullanici_karari_korunur(karar, current.get(pattern)):
+                current[pattern] = karar
 
 
 def check_env() -> list[tuple[str, str, bool | None]]:
@@ -549,6 +564,8 @@ def main() -> int:
               + ", ".join(emekli["emekli_silinen"]))
     for satir in emekli["emekli_korunan"]:
         print(f"UYARI: eski template kuralının kararı config'te değiştirilmiş, dokunulmadı: {satir}")
+    for satir in emekli["kullanici_korunan"]:
+        print(f"UYARI: template'in izin veren kuralı yerine config'teki kararın korundu (bilinçliyse sorun yok): {satir}")
     print("Ortam:")
     for name, info, ok in check_env():
         print(f"  [{'BİLGİ' if ok is None else ('OK' if ok else 'UYARI')}] {name}: {info}")

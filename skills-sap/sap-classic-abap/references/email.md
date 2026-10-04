@@ -6,18 +6,49 @@
 
 ## 0. Yol seçimi
 - **`SO_DOCUMENT_SEND_API1`** — çalışır, arka plan işinde (job) çalışır; mevcut çalışan kodu buna dokunmak için taşıma.
-- **`CL_BCS`** — yeni işlerde ve ek dosyada önerilen modern yol (§6). Kaynakta araştırma olarak yazıldı, **canlı DOĞRULANMADI**.
+- **`CL_BCS`** — yeni işlerde, ek dosyada ve 50 karakterden uzun/Türkçe konuda önerilen modern yol (§6). **Kısmen canlı**
+  (çekirdekte ölçüldü, S/4 private 2025 — neyin ölçüldüğü §6 listesinde; aXet'te ayrıca ölçülmedi).
+- Gönderen adresi kodun değil kurumun kuralıdır: yeni mail işine **§1 gönderen politikası** ile başla.
+- **PDF eki:** SFP form objesi varsa `forms-f1-help.md` §A.2 (`ls_formoutput-pdf`); form objesi yoksa `%sap-pdf-output`.
 - İki çalışan desen: FORM tabanlı mail include'u (`<GÖVDE>_I_<AD>_F01`) ve sınıf tabanlı işçi (satır içi stil, parça
   ekleme, başarı/hata ayrımı, ABAP Unit ile test edilebilir) — uzun/tekrarlı mantıkta sınıf tercih edilir.
 - ⚠ Anti-desen: 8+ kolonlu tabloyu doğrudan gövdeye basan eski mailler (aşağıdaki tuzakların çoğu buradan çıktı).
 
-## 1. Gönderen — sabit kullanıcı YOK
+## 1. Gönderen — önce kurumun gönderen POLİTİKASINI öğren
+> **Gönderen politikası (çekirdekte canlı ölçüldü, S/4 private 2025):** SAPconnect'in teslim ettiği kurumsal relay
+> (ör. Microsoft 365 / Exchange Online) çoğu kez **yalnız yetkili bir teknik adresten** gönderime izin verir ("Send As"
+> kısıtı). SAP kullanıcısı gönderen yapılınca relay maili reddeder; SOES'te `XS 812` +
+> `554 5.2.252 SendAsDenied; <kimliği doğrulanan hesap> not allowed to send as <From>` görünür. Teşhiste asıl ipucu
+> metnin ikinci yarısıdır: relay'in hangi hesapla bağlandığını ve hangi gönderene izin vermediğini söyler. Ölçülen vakada
+> aylarca biriken yüzlerce 812 "test sisteminden mail çıkmaz" diye normal sayılmıştı; gönderen teknik adres yapılınca aynı
+> sistemden mail dış posta kutusuna ulaştı (ekip hafızası: "'Bu ortamda normal' hükmünden önce hata metnini oku").
+> - **Kural:** yeni mail işine başlarken gönderen politikasını kullanıcıya/Basis'e **sor** ve SOES geçmişinde
+>   812/SendAsDenied var mı **baktır** (§1.1).
+> - Teknik adres zorunluysa CL_BCS: `lo_send->set_sender( cl_cam_address_bcs=>create_internet_address(
+>   i_address_string = <teknik-adres> ) )`. Adres projenin belgelenmiş **tek** yerinden gelir (kaynağı yorumunda yazılı
+>   sabit ya da bakım tablosu); adresi kullanıcı verir, uydurulmaz.
+> - Bu durumda "gönderene CC" gibi özellikler anlamını yitirir → yanıt alacak kişiyi gövdede adıyla belirt.
+
+**Relay serbest bırakıyorsa** varsayılan, job'u çalıştıranın gönderen olmasıdır:
 ```abap
 sender_address      = CONV soextreci1-receiver( sy-uname ).
 sender_address_type = 'B'.   " B = SAP iç kullanıcı
 ```
-- ⛔ Sabit kullanıcı adı gömme (`CONSTANTS gc_sender … VALUE '<SAP_USER>'`): job'u kim çalıştırıyorsa ondan gitmeli.
+- ⛔ Sabit **SAP kullanıcı adı** gömme (`CONSTANTS gc_sender … VALUE '<SAP_USER>'`): job'u kim çalıştırıyorsa ondan gitmeli.
+  Kurumun zorunlu kıldığı **teknik SMTP adresi** bu yasağın konusu değildir (yukarıdaki politika kutusu).
 - ⛔ `type='U'` (SMTP) + değer olarak SAP kullanıcı adı → gönderen bozuk (canlı hata). SAP kullanıcısı → `'B'`; gerçek SMTP adresi → `'U'`.
+
+### 1.1 Teslim teşhisi — SOST / SOES
+| SOES / SOST durumu | Anlamı |
+|---|---|
+| `XS 718` tip `I` "Recipient Is Valid. Delivery Attempted" (MSGV'de `250 2.1.5 Recipient OK`) | Relay kabul etti → dışarı çıktı (çekirdekte canlı) |
+| `XS 812` + `554 5.2.252 SendAsDenied` | Gönderen adres relay'de yetkisiz → §1 (çekirdekte canlı) |
+| `W` (bekliyor) | ⚠ ölçülmedi. Aylarca `W`'de kalan kayıt "henüz koşmadı" demek DEĞİLDİR — ayrı teşhis ister (SCOT gönderim işi, node/adres eşleşmesi) |
+- SOST'ta HTML eki açarken çıkan **SO596** ("güvenlik nedeniyle değiştirildi") yalnız SAP GUI görüntüleyicisinin
+  `<style>`/SVG ayıklamasıdır — mail engeli DEĞİL.
+- ⛔ **"Test sisteminden mail çıkmaz" VARSAYMA.** Çıkabilir: test alıcılarını kontrol et (bakım tablolarında gerçek
+  müşteri/depo adresleri durabilir), deneme mailini yalnız kendine gönder.
+- SOST kaydını kullanıcıya baktırırken durum kodunu değil **hata satırının tam metnini** birebir iste (sebebi çoğu kez o söyler).
 
 ## 2. Alıcılar — dinamik, pasifler hariç
 ```abap
@@ -63,6 +94,9 @@ ENDFORM.
 kod sayfası dönüşümünde bozulabilir (`ı/ş` → `?`). Tam UTF-8 gerekiyorsa veriyi **ikili UTF-8 ek** olarak üret (§5).
 
 ## 4. Konu (`sodocchgi1-obj_descr`, CHAR50)
+- **50'den uzun ya da Türkçe karakterli konu → `CL_BCS` + `set_message_subject( ip_subject = <string> )`** (§6; çekirdekte
+  canlı: 95 karakter, `– İ Ş` bozulmadan saklandı ve dış alıcıya ulaştı). Aşağıdaki CHAR50 ve "ASCII tut" kuralları **yalnız**
+  `SO_DOCUMENT_SEND_API1` / `create_document( i_subject )` yolu içindir.
 - En kritik bilgi ve durum ibaresi (BAŞARILI/HATALI) **başta**; taşarsa `COND #( WHEN strlen( s ) > 50 THEN s(50) ELSE s )`.
 - `Ş/İ` konu alanında kod sayfası riski taşıyabilir → kritik değilse konuyu ASCII tut, tam Türkçe gövdede.
 - ⚠ Sabit genişlikli alan + `ALPHA = OUT`: `|{ f ALPHA = OUT }|` alan genişliğini koruyup sondaki boşlukları üretir →
@@ -70,6 +104,8 @@ kod sayfası dönüşümünde bozulabilir (`ı/ş` → `?`). Tam UTF-8 gerekiyor
 
 ## 5. Ek dosya — kısa gövde + dosya
 **Ne zaman:** 8+ kolonlu geniş tablo çoğu gelen kutusunda taşar → kısa HTML gövde + ek. İşlenecek veri → Excel; resmî arşiv → PDF.
+- **PDF eki:** SFP form objesi olmadan, modelin yazdığı yerleşimle → `%sap-pdf-output` (üretim + §6'daki CL_BCS deseniyle
+  `i_attachment_type = 'PDF'`). SFP formu varsa `forms-f1-help.md` §A.2 (`ls_formoutput-pdf`).
 
 **5.1 Excel eki — yöntem (Türkçe güvenliği sırasıyla)**
 1. `ZCL_EXCEL` (abap2xlsx, açık kaynak, standart değil) sistemde **kuruluysa** gerçek `.xlsx` (en temiz). Kurulu değilse
@@ -112,34 +148,54 @@ CALL FUNCTION 'SO_DOCUMENT_SEND_API1'
 - `doc_size = xstrlen( )` (gerçek bayt) → son SOLIX satırının dolgusu kırpılır (yoksa ek sonunda çöp bayt).
 - ⛔ `commit_work = abap_true` yoksa "gönderildi" görünür ama hiç çıkmaz (en sık hata).
 
-## 6. `CL_BCS` (yeni işler; canlı DOĞRULANMADI)
-Kazanç: `packing_list` yok, tek `TRY … CATCH cx_bcs`, `cl_bcs_convert=>string_to_soli( )` 255 bölmeyi kendisi yapar.
+## 6. `CL_BCS` (yeni işler; kısmen canlı — çekirdekte ölçüldü, S/4 private 2025; kapsam aşağıda)
+Kazanç: `packing_list` yok, tek `TRY … CATCH cx_bcs`, `cl_bcs_convert=>string_to_soli( )` 255'lik satırlara böler
+(⚠ bölme ayrıca test edilmedi — uzun HTML gövde bu yoldan geçip doğru açıldı). Mevcut çalışan `SO_DOCUMENT_SEND_API1`
+kodunu buna taşımak için dokunma.
 ```abap
 TRY.
     DATA(lo_send) = cl_bcs=>create_persistent( ).
     DATA(lo_doc)  = cl_document_bcs=>create_document(
       i_type = 'HTM'                                   " RAW değil — istenmeyen satır sonu ekler
-      i_text = cl_bcs_convert=>string_to_soli( iv_html )  i_subject = CONV #( iv_subject ) ).  " konu yine CHAR50
+      i_text = cl_bcs_convert=>string_to_soli( iv_html )  i_subject = CONV #( iv_subject ) ).  " burada CHAR50
     lo_doc->add_attachment( i_attachment_type = 'XLS' i_attachment_subject = 'Rapor.xls'
                             i_att_content_hex = cl_bcs_convert=>xstring_to_solix( lv_xstr ) ).
     lo_send->set_document( lo_doc ).
-    lo_send->set_sender( cl_sapuser_bcs=>create( sy-uname ) ).
+    lo_send->set_sender( cl_sapuser_bcs=>create( sy-uname ) ).    " relay izin veriyorsa; teknik adres zorunluysa §1
+    lo_send->set_message_subject( ip_subject = iv_long_subject ). " > 50 karakter / Türkçe konu (§4)
     lo_send->add_recipient( cl_cam_address_bcs=>create_internet_address( iv_email ) ).
     lo_send->send( ).
     COMMIT WORK.                                       " şart
   CATCH cx_bcs INTO DATA(lx).                          " job log; akışı kesme
 ENDTRY.
 ```
+- **Çekirdekte canlı ölçülenler:** HTM gövde + `PDF` eki (dosya adı `i_attachment_header = VALUE soli_tab(
+  ( line = |&SO_FILENAME=<ad>.pdf| ) )` ile) · `set_message_subject` · teknik adres gönderen · `cl_sapuser_bcs` alıcı
+  (SAP gelen kutusu) + internet adresi alıcı · `set_send_immediately( abap_true )`. Tam ekli örnek: `%sap-pdf-output`.
+- ⚠ **Ölçülmeyen:** örnekteki `XLS` eki (o turda yalnız HTM gövde + PDF eki koştu). aXet'te hiçbiri ayrıca ölçülmedi.
+
 Türkçe için en güvenli ek: `.xlsx` ya da BOM'lu ikili dosya — kodlama dosyanın içindedir, SAPconnect kod sayfasından bağımsızdır.
 
+### 6.1 RAP içinden gönderim — `COMMIT` ayrı LUW'da
+RAP handler/saver içinde `COMMIT WORK` yasaktır (`%sap-code-review` BE-26) ama `CL_BCS` `COMMIT`'siz göndermez. Kanonik
+desen zaten yazılı: `%sap-rap` → `behavior-impl.md` §10 "Commit gerektiren klasik BAPI'yi RAP'ten çağırmak (ayrı LUW)"
+(Remote-Enabled Z FM + `CALL FUNCTION '<Z_FM>' DESTINATION 'NONE'`; tuzakları orada). Mail için de aynısı: FM kendi
+LUW'unda `send( )` + `COMMIT WORK` yapar, sonucu (mesaj tablosu) döner. FM `TABLES` parametresi → `fugr-fm.md` §2.1.
+- Ölçüm bağlamı (çekirdek): unmanaged, strict olmayan BDEF'te static action (interaction phase) içinden. ⚠ strict/managed
+  saver bağlamında ölçülmedi.
+
 ## 7. Kontrol listesi
-- [ ] Gönderen `sy-uname` / tip `'B'` (sabit kullanıcı yok, tip-değer uyumlu)
+- [ ] Gönderen politikası soruldu (§1): relay teknik adres istiyor mu? SOES'te 812/SendAsDenied geçmişi var mı?
+- [ ] Gönderen `sy-uname` / tip `'B'` **ya da** zorunlu teknik adres (sabit SAP kullanıcısı yok, tip-değer uyumlu)
+- [ ] Test maili yalnız kendine — test sisteminden de dışarı çıkabilir (§1.1)
 - [ ] Alıcılar dinamik tablodan, `pasif <> 'X'`; alıcı yoksa atla + log
 - [ ] Gövdede satır içi stil (head CSS sınıfı yok)
 - [ ] `html_add` 255 karakter parçalı (tek atama yok)
 - [ ] Hizalı tablo `<table><td>` + sabit etiket kolonu
 - [ ] Adet tam sayı / KG ondalık; `WRITE … TO` yok
-- [ ] Konu ≤ 50, kritik bilgi + durum başta, ASCII; `ALPHA = OUT` → `condense`
+- [ ] Konu: `CL_BCS` `set_message_subject` (uzun/Türkçe serbest) **ya da** API1 yolunda ≤ 50 + ASCII; kritik bilgi + durum
+      başta; `ALPHA = OUT` → `condense`
+- [ ] RAP içinden gönderim → Remote-Enabled Z FM `DESTINATION 'NONE'` (§6.1)
 - [ ] Gövde `charset=utf-8`; kritik metin bozuluyorsa ikili ek
-- [ ] 8+ kolonlu tablo → gövde yerine ek dosya
+- [ ] 8+ kolonlu tablo → gövde yerine ek dosya (§5); PDF eki → `%sap-pdf-output` ya da SFP formu (§5)
 - [ ] `commit_work = abap_true` / `COMMIT WORK`

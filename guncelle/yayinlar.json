@@ -3315,6 +3315,155 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.19",
+   "tarih": "2026-10-04",
+   "kalemler": [
+    {
+     "id": "0.5.19-01",
+     "baslik": "Yeni skill `sap-pdf-output`: SFP form objesi olmadan ABAP'ten PDF (XDP şablonu + `CL_FP_ADS_UTIL=>RENDER_PDF`), çok belge → tek PDF, CL_BCS mail eki · XDP denetçisi, bağlama simülasyonlu XDP → ABAP üreticisi, deneme sınıfı + base64 çözücü",
+     "tur": "yetenek",
+     "kritik": false,
+     "neden": "Basit bir PDF çıktısı (ör. irsaliye özeti, mail eki) için SFP form + arayüz objesi açmak gerekmiyor: `s4_private` sistemde AI'ın yazdığı XFA 3.3 XDP şablonu ve XML veri `CL_FP_ADS_UTIL=>RENDER_PDF` ile doğrudan PDF'e çevrilir. Skill adım adım reçeteyi (şablon, veri, render, çok belgeyi tek PDF'te birleştirme, CL_BCS ile mail eki), ADS'nin sessizce bozduğu noktaları denetleyen bir kontrol listesini (sütun toplamı kapsayıcıdan 1 mm dar, büyük İ, minH + multiLine, Arial + font gömme, `ALPHA=OUT` sondaki boşluk …) ve SAP'ye bağlanmayan üç script'i getirir: `xdp_denetle.py` (şablon denetçisi), `xdp_abap_uret.py` (veri bağlarını simüle eder, şablonu ve veriyi ABAP metotlarına gömer, `--check` ile bayatlığı ölçer), `pdf_coz.py` (deneme sınıfının konsola bastığı base64'ü PDF'e çevirir; `pypdf` kuruluysa sayfa sayısını kıyaslar). Deneme sınıfı şablonunda mail varsayılan KAPALIDIR. SFP form, NAST/çıktı yönetimi ve yasal çıktılar `sap-classic-abap`'ta kalır. `sap-dev` yönlendiricisi ve SAP skill listesi yeni skill'i gösterir; README'ye isteğe bağlı `pypdf` satırı eklendi.",
+     "dosyalar": [
+      "skills-sap/sap-pdf-output/SKILL.md",
+      "skills-sap/sap-pdf-output/references/kontrol-listesi.md",
+      "skills-sap/sap-pdf-output/references/mail-eki.md",
+      "skills-sap/sap-pdf-output/references/recete.md",
+      "skills-sap/sap-pdf-output/scripts/_xdp_ortak.py",
+      "skills-sap/sap-pdf-output/scripts/pdf_coz.py",
+      "skills-sap/sap-pdf-output/scripts/xdp_abap_uret.py",
+      "skills-sap/sap-pdf-output/scripts/xdp_denetle.py",
+      "skills-sap/sap-pdf-output/templates/cok-belge-veri.xml",
+      "skills-sap/sap-pdf-output/templates/cok-belge.xdp",
+      "skills-sap/sap-pdf-output/templates/deneme-classrun.clas.abap",
+      "skills-sap/sap-pdf-output/templates/tek-belge-veri.xml",
+      "skills-sap/sap-pdf-output/templates/tek-belge.xdp",
+      "skills-sap/sap-pdf-output/tests/_common.py",
+      "skills-sap/sap-pdf-output/tests/run_tests.py",
+      "skills-sap/sap-pdf-output/tests/test_pdf_coz.py",
+      "skills-sap/sap-pdf-output/tests/test_skill_structure.py",
+      "skills-sap/sap-pdf-output/tests/test_xdp_abap_uret.py",
+      "skills-sap/sap-pdf-output/tests/test_xdp_denetle.py",
+      ".github/workflows/testler.yml",
+      "guncelle/harita.json",
+      "skills-sap/README.md",
+      "skills-sap/sap-dev/SKILL.md",
+      "tests/test_run_tests_cli.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-pdf-output/tests/run_tests.py",
+      "python tests/run_tests.py -k test_run_tests_cli"
+     ]
+    },
+    {
+     "id": "0.5.19-02",
+     "baslik": "`adt_classrun` yan etkili koşuyu artık iki kez göndermez — 500/502/503/504 ve zaman aşımında tek POST, sonuçta \"işlenmiş olabilir\" işareti",
+     "tur": "duzeltme",
+     "kritik": true,
+     "neden": "Mail gönderen ya da veri yazan bir deneme sınıfı `adt_classrun` ile koşturulunca istek iki katmanda tekrarlanıyordu: 500'de araç kendisi ikinci kez POST atıyordu, 502/503/504'te ve okuma zaman aşımında HTTP katmanı isteği 4 kez gönderiyordu. Sonuç: aynı mail 2-4 kez gidebiliyordu (yerel sahte sunucuya karşı ölçüldü). Artık classrun istekleri tekrarsız bir bağlantıdan gider: yalnız bağlantı hiç kurulamadıysa yeniden denenir (istek sunucuya ulaşmamıştır). Oturumun eski sınıf yüklemesini gördüğü bilinen durumda (200 + `does not implement if_oo_adt_classrun~main`) oturum sıfırlanıp bir kez daha denenir; bu yanıtta sınıf hiç koşmamıştır. Sınıfın kendi çıktısında \"does not implement\" geçmesi artık tekrar tetiklemez. Belirsiz sonuçta yanıt `islenmis_olabilir: true` taşır ve yeniden koşmadan önce yan etkiyi (ör. SOST) kontrol etmeni söyler (bilinen hata K-28). Kritik işaretli, çünkü tekrar gönderilen mail geri alınamaz. Diğer ADT çağrılarının (aktivasyon, push …) tekrar davranışı değişmedi.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/hints.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/references/known-errors-adt.md",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/tests/test_classrun_tek_post.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_classrun_tek_post",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_hints_labels"
+     ]
+    },
+    {
+     "id": "0.5.19-03",
+     "baslik": "Skill dosyalarını okumak artık klasör başına onay sormaz (`skill` izin alanı) · kullanıcının kendi ask/deny kararı korunur",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "aXet oturum onayını skill adına değil dosyanın klasörüne bağlıyordu: aynı skill'in `SKILL.md`'si, `references/` ve `templates/` dosyaları ayrı ayrı soruldu (bir KD turunda 4 soru, ~3,5 dk bekleme). İzin şablonu artık skill dosyalarının OKUNMASINA izin verir (`skill: {\"*\": \"allow\"}`); yazma eskisi gibi `edit` kurallarından geçer (lab'da ölçüldü). `skill` alanında kendin `ask` ya da `deny` kararı verdiysen kurulum onu ezmez ve kaldırmada silmez, yalnız UYARI basar; doctor bunu bilgi satırı olarak gösterir. Güncellemeden sonra `python scripts/install.py` yeniden çalıştırılır ve aXet kapatılıp açılır. aXet'in ekranlı oturumunda sorunun kalktığı henüz ölçülmedi (ilk oturumda doğrulanacak).",
+     "dosyalar": [
+      "config/permissions.json",
+      "scripts/install.py",
+      "scripts/doctor.py",
+      "docs/izin-kurallari.md",
+      "tests/test_install.py",
+      "tests/test_doctor.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k SkillOkumaIzniTest",
+      "python tests/run_tests.py -k SikilastirilmisAllowDoctorTest"
+     ]
+    },
+    {
+     "id": "0.5.19-04",
+     "baslik": "KD turu kuralları: koddan açılan onay pencereleri envantere girer (T27), şekil numaraları belge sırasında, görsel kontrolde mesaj başına tek görüntü",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "Son KD turunda üç kusur ölçüldü. ① Koddan açılan `MessageBox`/`Dialog` pencereleri (ör. \"varyantın üzerine yaz\" onayı) view/fragment'te görünmediği için keşif envanterine girmedi ve kılavuzda eksik kaldı. Artık keşif adımı kodu da `MessageBox\\.` / `new Dialog\\(` ile tarar (yeni tuzak T27, DOC-KD-03). ② Şekil numaraları belge sırasında değil kare çekim sırasında akıyordu (1…8, 11, 12, 9, 10). Eşleme ve kontrol listesi artık belge sırasını şart koşar. ③ Aynı mesajda iki görsel açılması bir oturumu kullanılamaz hâle getirdi (motor hatası, bildirildi). Görsel kontrol yöntemi mesaj başına tek görüntü ister.",
+     "dosyalar": [
+      "skills-sap/sap-ui5-user-guide/SKILL.md",
+      "skills-sap/sap-ui5-user-guide/references/akis.md",
+      "skills-sap/sap-ui5-user-guide/references/gorsel-kontrol.md",
+      "skills-sap/sap-ui5-user-guide/references/tuzaklar.md",
+      "skills-sap/sap-fs-ts-docs/references/doc-checklist.md",
+      "skills-sap/sap-fs-ts-docs/references/kd-authoring.md",
+      "skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md",
+      "skills-sap/sap-fs-ts-docs/scripts/build_kd_pdf.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_skill_structure",
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_kd_build"
+     ]
+    },
+    {
+     "id": "0.5.19-05",
+     "baslik": "ABAP mail ve inceleme kuralları: gönderen politikası, SOST/SOES, CL_BCS konu satırı, RAP'te ayrı LUW · yeni inceleme maddeleri BE-80/BE-81 · yeni projede proje hafızası git'e açık kalır",
+     "tur": "kural",
+     "kritik": false,
+     "neden": "`sap-classic-abap` mail rehberi genişledi: gönderen adresi politikası, SOST/SOES ile gönderim kontrolü, uzun konu için `set_message_subject`, PDF ekinin `sap-pdf-output`'a yönlendirilmesi, canlı doğrulama kapsamı ve RAP davranışından mail için ayrı LUW kuralı; formlar rehberine SFP'siz PDF yolu (Yol D) eklendi. Kod incelemesine iki madde girdi: BE-80 (BLOCKER) ve BE-81 (WARNING); validator haritasındaki toplam sayı ölçülerek düzeltildi (89 → 92). Ekip hafızasındaki bir ders düzeltildi. Yeni proje akışına proje hafızasının git'e açık kaldığını kilitleyen bir test eklendi.",
+     "dosyalar": [
+      "skills-sap/sap-classic-abap/SKILL.md",
+      "skills-sap/sap-classic-abap/references/email.md",
+      "skills-sap/sap-classic-abap/references/forms-f1-help.md",
+      "skills-sap/sap-classic-abap/references/checklists.md",
+      "skills-sap/sap-code-review/SKILL.md",
+      "skills-sap/sap-code-review/references/checklist-abap.md",
+      "skills-sap/sap-code-review/references/validator-map.md",
+      "memory/MEMORY.md",
+      "memory/feedback_ortam-normal-hukmu-hata-metnini-oku.md",
+      "tests/test_new_project.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python -m unittest discover -s skills-sap/sap-code-review/tests",
+      "python tests/run_tests.py -k test_proje_hafizasi_git_e_acik"
+     ]
+    },
+    {
+     "id": "0.5.19-06",
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı · README güncelleme cümlesi düzeltildi",
+     "tur": "duzeltme",
+     "kritik": false,
+     "neden": "Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı. README'nin giriş cümlesi \"güncelleme tüm projelere birden yansır\" diyordu; projelerdeki şablon kopyaları (`AGENTS.md`, `.githooks` …) ise `%guncelle-proje` ile gelir — cümle düzeltildi.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k readme"
+     ]
+    }
+   ]
   }
  ]
 }

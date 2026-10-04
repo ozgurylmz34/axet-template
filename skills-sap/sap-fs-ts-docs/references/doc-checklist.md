@@ -25,7 +25,7 @@ inceleme yorgunluğu doğar ve kapı mekanik onaya döner.
 |---|---|---|---|
 | DOC-KD-01 | **Ekran görüntüleri temiz örnek veriyle** — anlamlı, tutarlı uydurma kayıt; kirli/gerçek kayıt (test çöpü, gerçek müşteri/kişi verisi, tutarsız satır) = ihlal. Gerçek arayüz evet, gerçek veri hayır | **BLOCKER** (HATA) | yok — görüntü okunur |
 | DOC-KD-02 | Gerçek arayüz kullanılmış (mockup değil); görüntüler işaretli/numaralı | HIGH (HATA) | yok |
-| DOC-KD-03 | **Tüm alt ekranlar var** (diyalog, popover, F4, seçim penceresi, sihirbaz) — her biri ayrı bölüm + görüntü + alan/buton işlevi; ekran envanteri KD'ye eşlenmiş | **BLOCKER** (EKSİK) | yok — envanter eşleme tablosu istenir |
+| DOC-KD-03 | **Tüm alt ekranlar var** (diyalog, popover, F4, seçim penceresi, sihirbaz, koddan açılan onay/uyarı kutusu `MessageBox`) — her biri ayrı bölüm + görüntü + alan/buton işlevi; ekran envanteri KD'ye eşlenmiş | **BLOCKER** (EKSİK) | yok — envanter eşleme tablosu istenir |
 | DOC-KD-04 | Grid varsa Bölüm 4-A (sıralama, filtre, kolonlar, varyant, Excel, yenile, filtre çubuğu) | HIGH (EKSİK) | yok |
 | DOC-KD-05 | Genel bakışta amaç + **arka plan sonucu** | HIGH (EKSİK) | yok |
 | DOC-KD-06 | Her tipik görev adım adım + görüntü; emir kipi | HIGH (EKSİK) | yok |

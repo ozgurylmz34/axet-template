@@ -37,6 +37,7 @@
 | sözdizimi kontrolü hata dedi, aktivasyon geçti | K-26 |
 | "araç bozuk" hissi · aynı hata tekrar tekrar | G-1 … G-6 |
 | "obje ne zaman değişti" — `E070-AS4DATE` her objede aynı tarih · sürüm geçmişi ucu `406` | K-27 |
+| classrun `500`/`502`/`504` · zaman aşımı · `islenmis_olabilir: true` | K-28 |
 
 ---
 
@@ -195,6 +196,8 @@
   iki gereksiz obje bıraktı. Kök neden: teşhis fonksiyonu kaynağı `version` vermeden (inaktif sürüm) okuyup
   "sınıf sağlam" diyordu.
 - İlgili CSRF vakası: istek CSRF'siz gidince SAP 403 yerine **200 + yanıltıcı gövde** döndü (K-18).
+- Araç oturumu sıfırlayıp POST'u **yalnız bu imzada** (HTTP 200 + "does not implement") bir kez tekrarlar; 200 dışı
+  yanıtta tekrarlamaz (K-28).
 
 ## K-14 · classrun `400 Session Timed Out`
 - Dialog context isteyen FM'ler (ekran/GUI status üretimi: `RPY_DYNPRO_INSERT`, `RS_CUA_INTERNAL_*`) classrun ile koşmaz.
@@ -308,6 +311,28 @@
 - Vakadaki kazanç: dump'ı doğuran ifade iki sürümde de birebir aynı çıktı ⇒ kırılma kod değil VERİ regresyonuydu;
   düzeltmenin yeri tamamen değişti.
 - Bir tarih ölçtüysen raporda **objeye mi isteğe mi ait** olduğunu yaz; aksi hâlde ölçüm doğru, hüküm yanlış olur.
+
+## K-28 · classrun 200 dışı yanıt / zaman aşımı — sınıf SAP'de koşmuş olabilir
+- **Kural:** classrun ABAP kodu çalıştırır. 200 dışı yanıt ya da zaman aşımı "koşmadı" demek DEĞİLDİR: sınıf mail
+  gönderip, tabloya yazıp sonra dump'lamış olabilir. Yan etkili sınıfı (mail, tablo yazımı) **tekrar koşmadan önce
+  etkisini kontrol et** (mail: SOST/SOOD · tablo: ilgili satırlar · dump: ST22 / `adt_dump_list`).
+- **Kaynak:** ekip çekirdeğindeki PDF/ADS kılavuzu: *"Mail gönderen classrun'u yeniden deneyen bir araçla koşma. Bazı
+  ADT istemcileri 200 dışı yanıtta POST'u tekrarlar ⇒ mail iki kez gider."* Mail gönderen deneme koşusu tek POST atan
+  bir yolla yapılır; zaman aşımında tekrarlanmaz, önce SOST/SOOD'a bakılır.
+- **aXet aracı (Z190, 2026-10-04):** eskiden iki katmanda tekrar vardı, ikisi de daraltıldı:
+  1. `run_classrun` 200 dışı her yanıtta oturumu sıfırlayıp POST'u tekrarlıyordu → artık yalnız HTTP 200 +
+     "does not implement" imzasında (K-13, bayat oturum).
+  2. HTTP katmanı (`_build_session` adapter'ı) `502/503/504` ve **okuma zaman aşımında** POST'u 3 kez daha
+     gönderiyordu (yerel sahte sunucuda ölçüldü: 4 POST) → classrun öneki için okuma/durum tekrarı kapalı; yalnız
+     bağlantı kurma tekrarı açık (istek henüz gitmemiştir).
+  Bu durumda dönüş `islenmis_olabilir: true`, `yeniden_denenmedi: true`, `code: classrun_islenmis_olabilir` ve bir
+  `uyari` taşır. İşaret yalnız bağlantı kurma zaman aşımında (`ConnectTimeout`) konmaz. Bağlantı reddi platforma ve ortama göre
+  `ConnectTimeout` ya da `ConnectionError` olarak gelir (iki ölçüm iki sonuç verdi); `ConnectionError` olarak gelen ret, DNS
+  hatası (ör. VPN kapalıyken `getaddrinfo failed`) ve CSRF token alımındaki hata işaretlenir — istek SAP'ye gitmemiş olsa bile
+  (fazla uyarı yönünde güvenli).
+- **Sınır:** davranış yerel sahte HTTP sunucusuyla ölçüldü (`tests/test_classrun_tek_post.py`); SAP'ye karşı
+  DOĞRULANMADI. Diğer POST'lar (push/activate/yaratma) aynı HTTP katmanından geçer ve `502/503/504`/zaman aşımında
+  hâlâ tekrarlanır — bu madde onları kapsamaz.
 
 ---
 

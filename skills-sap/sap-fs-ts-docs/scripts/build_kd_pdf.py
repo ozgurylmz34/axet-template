@@ -13,7 +13,7 @@ istenirse uygulama içi yardım kopyasını günceller.
 Eşleme dosyası:
     {
       "fences": {"<kod bloğunda geçen anahtar>": [{"img": "kd-01.png", "caption": "Şekil 1 — ..."}]},
-      "after_heading": {"### 5.6 Başlık": [{"img": "kd-06.png", "caption": "Şekil 6 — ..."}]},
+      "after_heading": {"### 5.6 Başlık": [{"img": "kd-06.png", "caption": "Şekil 4 — ..."}]},
       "strip_circled_numbers": false
     }
   fences        : içinde anahtar geçen kod bloğunun TAMAMI görsel(ler)le değişir (kod bloğu içindeki ![]() ayrıştırılmaz).

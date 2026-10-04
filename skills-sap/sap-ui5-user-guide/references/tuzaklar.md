@@ -41,3 +41,4 @@
 | T20 | Kadrajda büyük beyaz alan | tam sayfa çekim | öğe seçicili `shot` + `build_kd_pdf.py --trim-from` |
 | T21 | Aç/kapa alanının yalnız bir durumu var; kullanıcı ikisini de ister | tek çekim | iki kare: kapalı + açık |
 | T22 | Bir alt ekran (diyalog, seçim penceresi) kılavuzda yok; kullanıcı yakaladı | ekran envanteri çıkarılmadan çekildi | adım 3'te view/fragment envanteri → her giriş bir bölüm (DOC-KD-03) |
+| T27 | Onay kutusu ("üzerine yazılsın mı?", "silmek istediğinize emin misiniz?") KD'de yok; bağımsız inceleme BLOCKER verdi (DOC-KD-03). **Ölçüldü** 2026-10-04 | envanter yalnız view/fragment'ten çıkarıldı; `MessageBox.confirm` JS'te koddan açılır, XML'de görünmez | adım 3'te aXet'in yerleşik `grep` aracıyla (bash komutu değil) `webapp/**/*.js` içinde `MessageBox\.` ve `new Dialog\(` desenlerini ara (düzenli ifade; `(` kaçışsız hata verir); her biri envantere, senaryoya (`shot`) ve KD'ye girer; mesaj metni i18n'den birebir |

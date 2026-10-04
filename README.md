@@ -2,9 +2,10 @@
 
 aXet.code'un Claude Code'a olabildiğince yakın çalışması için ortak kurallar, skill'ler, hafıza düzeni ve
 kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullanıcının global aXet config'ini
-bu klasöre bağlar. Güncelleme tek komutla tüm projelere birden yansır.
+bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu okuyan tüm projelere yansır; projelerdeki
+şablon kopyaları (`AGENTS.md`, `.githooks`, denylist …) `%guncelle-proje` ile getirilir.
 
-> Sürüm: v0.5.18 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.19 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -32,6 +33,7 @@ testini kurulum kendisi hazırlar. GitHub hesabı gerekmez.
 | Chrome ya da Edge + `@playwright/cli` — **kendiliğinden kurulur**: kurulum aracı ve `%guncelle`, Node.js varsa `@playwright/cli`'yi klonun `.araclar/` klasörüne kurar ve `~/.playwright/cli.config.json`'u yazar (`scripts/tarayici_hazirla.py`; tarayıcı indirilmez, ayrı komut gerekmez) | aXet içinde tarayıcı testi (`%sap-ui5-fiori`), `%sap-ui5-user-guide` (keşif ve kare çekimi; çekim betiği bu merkezi kurulumu kendisi bulur, projede ayrı `playwright-core` gerekmez) |
 | `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
 | Node.js + `playwright-core` (proje içinde), `@abaplint/cli` (npx önbelleği) | `%sap-ui5-fiori` ui-smoke, `%sap-code-review` abaplint |
+| `pypdf` (`pip install --user pypdf`) | `%sap-pdf-output` — üretilen PDF'in sayfa sayısı kıyası (yoksa "ÖLÇÜLEMEDİ" yazar, PDF yine çözülür) |
 
 ## Kurulum
 1. **Önce kur:** aXet, Git ve Python 3.12+ — şirket portalından.
@@ -166,7 +168,7 @@ kapanış `KAPANDI — test borcu var: %testler` der ve `doctor` borç sürdük�
 - `%hata-bildir` — aXet hatası ya da önerisi için kimlik taşımayan bildirim hazırla (GitHub hesabı gerekmez)
 - `%office-excel` · `%office-docs` · `%office-slides` — Excel, Word/PDF, sunum üretimi ve okuma
 - `%sistem` — projenin `conn/` altında tanımlı SAP sistemlerini listele, aktif olanı değiştir ("QA'ya geç")
-- SAP işi: giriş `%sap-dev` (yeni talepte önce `%sap-intake-triage`); SAP skill listesi [`skills-sap/README.md`](skills-sap/README.md) · KD (kullanıcı kılavuzu): `%sap-fs-ts-docs`; freestyle UI5 ekran çekimiyle `%sap-ui5-user-guide`
+- SAP işi: giriş `%sap-dev` (yeni talepte önce `%sap-intake-triage`); SAP skill listesi [`skills-sap/README.md`](skills-sap/README.md) · KD (kullanıcı kılavuzu): `%sap-fs-ts-docs`; freestyle UI5 ekran çekimiyle `%sap-ui5-user-guide` · SFP form objesi olmadan ABAP'ten PDF ve mail eki: `%sap-pdf-output`
 - `ctrl+p` → **User** sekmesi — projeye özel komutlar (`.axet-code/commands/`)
 - Kimlik bilgilerini (kullanıcı adı, şifre, token) sohbete **yazma**: prompt'lar kurumsal denetime gider.
 

@@ -74,6 +74,7 @@ Her şeyi değil, ilgili olanı oku.
 | CDS view, domain, data element, structure, table, table type, lock object, mesaj sınıfı | `%sap-cds-ddic` |
 | RAP (view entity katmanları, BDEF, behavior sınıfı, SRVD/SRVB, EML, draft/kilit, value-help) | `%sap-rap` |
 | Klasik sınıf, program + include, fonksiyon grubu, rapor/ALV, Dynpro, e-posta, form | `%sap-classic-abap` |
+| SFP form objesi olmadan PDF (XDP + `RENDER_PDF`), toplu PDF, PDF mail eki — klasik program ya da RAP'tan (yalnız `s4_private`) | `%sap-pdf-output` |
 | Klasik OData (SEGW, DPC_EXT/MPC_EXT, deep insert, function import), dış API çağrısı | `%sap-odata-backend` |
 | SAP backend değişikliğini "tamam" demeden incelemek; clean core / released halef; abaplint; ATC bulgusu | `%sap-code-review` |
 | Veri yalnız SAP GUI ekranında görünüyor (ALV, tablo kontrolü, ekran alanı); önce CLI okuması denenir | `%sap-gui-scripting` (script'i geliştirici çalıştırır) |

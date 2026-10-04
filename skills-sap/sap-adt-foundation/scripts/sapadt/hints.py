@@ -111,6 +111,7 @@ KOD_KURALLARI = (
       "activation_not_executed"}, _KE, "K-10 · K-19", "obje inaktif kaldı ya da aktivasyon kanıtlanmadı"),
     ({"description_too_long", "create_not_persisted"}, _KE, "K-16", "kısa metin sınırı / yaratma sonrası varlık"),
     ({"readback_mismatch", "readback_failed"}, _KE, "K-10", "yazma aktif sürümde doğrulanmadı"),
+    ({"classrun_islenmis_olabilir"}, _KE, "K-28", "classrun SAP'de koşmuş olabilir — tekrar koşmadan önce etkiyi kontrol et"),
     ({"auth_failed"}, _KE, "K-24", "kimlik reddi — parolayı tekrar tekrar deneme"),
     ({"connection_failed", "doctor_fail", "discovery_unavailable"}, _OPS, "§1 Bağlantı kontrolü (sap_doctor)", "bağlantı katmanı"),
     ({"tier_not_writable", "conn_env_mismatch"}, _OPS, "§10 Çoklu sistem ve tier", "bağlantı dosyası / tier"),

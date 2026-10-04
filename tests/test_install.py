@@ -49,7 +49,8 @@ def ask_deny_uzunluk_ihlalleri(kurallar: dict) -> list[str]:
       deny'ı ezer ve komut sorulmadan çalışır (yaşanmış vaka: HEAD taşındı, kanarya dosyası silindi).
     · allow↔deny (2026-09-17, tek koşum, motor kanıtı = BgJob log satırı + işaret dosyası): aynı uzunluk kuralı
       allow için de işliyor — uzun allow kısa deny'ı EZDİ (komut çalıştı), uzun deny kısa allow'u ezdi.
-      Statik dosyada allow deseni YOK; kural gelecekte eklenecek olanı korur. `install.py`'nin klon yolundan
+      Statik dosyada bash allow deseni YOK (`skill` alanındaki `*`=allow ayrı alandır, o alanda deny yok — Z182);
+      kural gelecekte eklenecek olanı korur. `install.py`'nin klon yolundan
       ÜRETTİĞİ jokersiz allow'lar (Z12, Z140) bu denetimin dışındadır → `uretilen_izin_ihlalleri` ayrıca bakar.
 
     İki ölçülmemiş nokta, ikisi de KATI tarafa yuvarlanır:
@@ -289,6 +290,77 @@ class OturumOzetiNoFetchAllowTest(unittest.TestCase):
                 self.assertIn('session_brief.py" --no-fetch', metin)
 
 
+class SkillOkumaIzniTest(unittest.TestCase):
+    """Z182 (kullanıcı onayı 2026-10-04): `skill` alanında `*`=allow. Motor `grant_for_session` onayını skill adına değil
+    dosyanın KLASÖRÜNE bağlıyor (TUI logu, ölçüldü) ⇒ aynı skill'in SKILL.md / references / templates okumaları ayrı ayrı
+    soruluyordu. Alanın motorda geçerli olduğu ve allow'un uygulandığı canlı ölçüldü (config/permissions.json `_aciklama`
+    "SKILL OKUMA İZNİ"). Bu sınıf yalnız ŞABLON tarafını kilitler: kural var, dar alanda, kur/kaldır simetrik."""
+
+    def test_1_kural_skill_alaninda_ve_yalniz_okuma(self):
+        kurallar = guncel_kurallar()
+        self.assertEqual(kurallar.get("skill"), {"*": "allow"})
+        for alan, desenler in kurallar.items():
+            if alan != "skill":
+                self.assertNotEqual(desenler.get("*"), "allow", f"{alan} alanında her şeye allow — kapsam taştı")
+        for alan in ("edit", "write", "view", "fetch"):
+            self.assertNotIn(alan, kurallar, f"{alan} alanına şablon kuralı girdi — Z182 yalnız skill okumasını açar")
+
+    def test_2_yasam_dongusu_apply_sonra_strip(self):
+        import install
+        kurallar = install.load_rules()
+        cfg: dict = {}
+        install.apply_ours(cfg, kurallar, sap=False)
+        self.assertEqual(cfg["permissions"]["rules"]["skill"], {"*": "allow"})
+        install.strip_ours(cfg, kurallar)
+        self.assertNotIn("permissions", cfg, "kaldırma sonrası skill kuralı config'te KALMAMALI")
+
+    def test_3_kullanicinin_skill_kurali_korunur(self):
+        import install
+        kurallar = install.load_rules()
+        cfg: dict = {"permissions": {"rules": {"skill": {"benim-skill": "deny"}}}}
+        install.apply_ours(cfg, kurallar, sap=False)
+        self.assertEqual(cfg["permissions"]["rules"]["skill"], {"benim-skill": "deny", "*": "allow"})
+        install.strip_ours(cfg, kurallar)
+        self.assertEqual(cfg["permissions"], {"rules": {"skill": {"benim-skill": "deny"}}})
+
+    def test_4_kullanicinin_SIKI_yildiz_karari_ezilmez(self):
+        """Bug gate MEDIUM-1: şablonun gevşeten `*`=allow'u kullanıcının aynı desendeki deny/ask kararını ezmez,
+        kaldırmada da silmez ve raporlar."""
+        import install
+        kurallar = install.load_rules()
+        for karar in ("deny", "ask"):
+            with self.subTest(karar=karar):
+                cfg: dict = {"permissions": {"rules": {"skill": {"*": karar}}}}
+                rapor = install.strip_ours(cfg, kurallar)
+                self.assertEqual(rapor["kullanici_korunan"], [f"skill:* (config: {karar!r}; şablon: 'allow')"])
+                install.apply_ours(cfg, kurallar, sap=False)
+                self.assertEqual(cfg["permissions"]["rules"]["skill"], {"*": karar}, "kullanıcı kararı allow'a çevrildi")
+                install.strip_ours(cfg, kurallar)
+                self.assertEqual(cfg["permissions"]["rules"]["skill"], {"*": karar}, "kaldırma kullanıcı kararını sildi")
+
+    def test_5_KONTROL_sablonun_deny_ve_ask_kurali_eskisi_gibi_yazilir(self):
+        """Koruma yalnız gevşeten (allow) şablon kuralı içindir: şablonun deny'ı da ask'ı da kullanıcının allow'unu
+        yine ezer (2. tur LOW-B: yalnız deny'la kilitliyken ask'ı da koruyan mutant yaşıyordu)."""
+        import install
+        for sablon in ("deny", "ask"):
+            with self.subTest(sablon=sablon):
+                desen = next(p for p, k in install.load_rules()["bash"].items() if k == sablon)
+                cfg: dict = {"permissions": {"rules": {"bash": {desen: "allow"}}}}
+                install.apply_ours(cfg, install.load_rules(), sap=False)
+                self.assertEqual(cfg["permissions"]["rules"]["bash"][desen], sablon)
+
+    def test_6_bozuk_deger_korunmaz_onarilir(self):
+        """2. tur LOW-A: yalnız geçerli sıkı karar (ask/deny) korunur; bozuk değer allow ile onarılır."""
+        import install
+        for bozuk in ("Allow", "", 1, {"x": 1}):
+            with self.subTest(bozuk=bozuk):
+                cfg: dict = {"permissions": {"rules": {"skill": {"*": bozuk}}}}
+                rapor = install.strip_ours(cfg, install.load_rules())
+                self.assertEqual(rapor["kullanici_korunan"], [])
+                install.apply_ours(cfg, install.load_rules(), sap=False)
+                self.assertEqual(cfg["permissions"]["rules"]["skill"]["*"], "allow")
+
+
 class EmekliKuralTest(unittest.TestCase):
     """install.RETIRED_RULES ↔ güncel permissions.json ↔ git geçmişi."""
 
@@ -347,6 +419,16 @@ class InstallTest(GeciciTest):
 
     def install(self, *args: str):
         return self.calistir(self.klon / "scripts" / "install.py", *args)
+
+    def test_z182_kullanici_skill_karari_korunur_ve_uyarilir(self):
+        """Uçtan uca (gerçek install.py süreci): kullanıcının skill `*`=ask kararı kurulumda korunur ve UYARI basılır."""
+        self.cfg.parent.mkdir(parents=True, exist_ok=True)
+        self.cfg.write_text(json.dumps({"permissions": {"rules": {"skill": {"*": "ask"}}}}), encoding="utf-8")
+        r = self.install()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("config'teki kararın korundu", r.stdout, self.cikti(r))
+        self.assertIn("skill:*", r.stdout)
+        self.assertEqual(self.oku()["permissions"]["rules"]["skill"], {"*": "ask"})
 
     def oku(self) -> dict:
         return json.loads(self.cfg.read_text(encoding="utf-8"))
