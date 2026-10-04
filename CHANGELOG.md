@@ -6,6 +6,22 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.18 — 2026-10-04
+
+### ★ 0.5.18-01 · UI5 kullanıcı kılavuzu: mock sunucu tek komutla başlar ve durur (`mock_sunucu.py baslat|durum|durdur|yenile`) · arka planda başlatılan sunucu aXet'i artık kilitlemez · yalnız kendi başlattığı süreçleri kapatır (düzeltme)
+
+- **neden:** KD turunda mock sunucu (`npm run start-mock`) arka planda başlatıldı; aXet sunucuyu durdururken süresiz bekledi ve oturum kilitlendi, port dolu kaldığı için sonraki ölçüm eski sunucuya gitti (T26). `mock_sunucu.py baslat --app <uygulama>` sunucuyu ayrı süreç grubunda başlatır, gerçek adresi sunucunun kendi log'undan okur, uygulama yanıt verene kadar bekler ve `MOCK SUNUCU: HAZIR · <adres> · PID` satırıyla döner — ön planda çağrılır, aXet arka plan işi tutmaz. `durdur` yalnız bu aracın başlattığı ve soyu süreç oluşturma zamanıyla kanıtlanan süreçleri kapatır; portu dinlemek kimlik sayılmaz, başkasının sunucusu kapatılmaz (`--port` dolu ise başlatılmaz). Port boşalmazsa ya da ölçülemezse `durdur` çıkış 1 verir ve "DURDU" demez; zaman aşımında da kayıt tutulur, durum dürüst raporlanır. `kd_ortam.py check` mock başlatma komutunu `KOMUT` satırı olarak hazır basar. Kritik işaretli, çünkü takılma KD akışını kilitliyordu. Belgeler (SKILL adım 2, akış §2/§5, mock-ortam §6, tuzak T16/T26, `sap-fs-ts-docs` PDF ekran görüntüsü A.3) arka planda `start-mock` talimatından arındırıldı.
+- **dosyalar:** `skills-sap/sap-ui5-user-guide/scripts/mock_sunucu.py`, `skills-sap/sap-ui5-user-guide/scripts/kd_ortam.py`, `skills-sap/sap-ui5-user-guide/tests/test_mock_sunucu.py`, `skills-sap/sap-ui5-user-guide/tests/test_kd_ortam.py`, `skills-sap/sap-ui5-user-guide/SKILL.md`, `skills-sap/sap-ui5-user-guide/references/akis.md`, `skills-sap/sap-ui5-user-guide/references/mock-ortam.md`, `skills-sap/sap-ui5-user-guide/references/tuzaklar.md`, `skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md`
+- **test:** `python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_mock_sunucu`, `python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_kd_ortam`
+- **gerektirir:** —
+
+### 0.5.18-02 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.17 — 2026-10-03
 
 ### ★ 0.5.17-01 · OData `$metadata`: `--kaydet` ile uygulamanın `metadata.xml`'i SAP yanıtıyla yenilenir · kimlik env → `.conn_adt` → giriş penceresi · yönlendirmede kimlik başka sunucuya gitmez (yetenek)

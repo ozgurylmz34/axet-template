@@ -490,6 +490,18 @@ class KdOrtamKomutTest(unittest.TestCase):
             komutlar = dict(kd_ortam.komut_onerileri(app, temiz_env(t)))
         self.assertEqual({}, komutlar)
 
+    def test_start_mock_varsa_mock_sunucu_komutu_yoksa_yok(self):
+        """Z181: mock `npm run start-mock` ile değil mock_sunucu.py ile (ön planda) başlatılır."""
+        with gecici_dizin() as t:
+            app = tam_uygulama(os.path.join(t, "app"))
+            mock = dict(kd_ortam.komut_onerileri(app, temiz_env(t))).get("mock (başlat, ön planda)")
+            yaz_json(os.path.join(app, "package.json"), {"name": "x", "scripts": {}})
+            yok = dict(kd_ortam.komut_onerileri(app, temiz_env(t)))
+        self.assertTrue(mock and mock.startswith('python "') and '/mock_sunucu.py" baslat --app "' in mock, mock)
+        self.assertNotIn("\\", mock)
+        self.assertTrue(os.path.isfile(kd_ortam.MOCK_SUNUCU))
+        self.assertNotIn("mock (başlat, ön planda)", yok)
+
     @unittest.skipUnless(WIN, "Chrome yol simülasyonu Windows arama sırasına göre")
     def test_check_komut_satirlari_ve_tek_kosu_notu(self):
         with gecici_dizin() as t:
@@ -500,6 +512,7 @@ class KdOrtamKomutTest(unittest.TestCase):
                 rc, out, err = call_main(lambda a: kd_ortam.cmd_check(app, env), [])
         self.assertEqual(0, rc, out + err)
         self.assertIn("KOMUT çekim (tek koşu)", out)
+        self.assertIn("KOMUT mock (başlat, ön planda)", out)
         self.assertIn("kare çekimi", out)
         self.assertIn("Z169", out)
 

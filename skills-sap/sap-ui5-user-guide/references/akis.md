@@ -64,8 +64,12 @@ Ayrıntı `mock-ortam.md`'de. Kısa sıra:
    `--sabit-degerler <EntitySet>.<Alan>=<A,B,C>` (değerler domain sabit değerlerinden — `adt_get` domain — ya da değer
    yardımı varlığının kodlarından; **uydurulmaz**). Çıktıdaki `UYARI: kod alanı adayı` satırlarının her biri ya bu
    bayrakla beslenir ya da neden gerekmediği yazılır.
-4. Mock'u **arka planda** başlat: `npm run start-mock` (uygulama klasöründe; bin workspace kökünden çözülür).
-   Portu **logdan** oku; varsayma. İskeletteki script `fiori run ... --open ...` biçimindedir; `--open` kullanıcının
+4. Mock'u **ön planda** başlat: `python $S/mock_sunucu.py baslat --app $APP` (`kd_ortam.py check`'in
+   `KOMUT mock (başlat, ön planda)` satırı). Araç `npm run start-mock`'u ayrı süreç grubunda, çıktısı dosyaya yönlenmiş
+   başlatır, hazır olunca adresi (`http://127.0.0.1:<port>/index.html?sap-ui-language=tr`) basıp döner; sunucu yaşamaya
+   devam eder. ⛔ `npm run start-mock`'u aXet'in **arka plan işi** olarak başlatma: durdurulunca aXet sonsuza dek bekler
+   (`tuzaklar.md` T26). Kapatma: `mock_sunucu.py durdur --app $APP` (yalnız bu aracın başlattığı, soyu kanıtlanan süreçler
+   kapanır — portu dinlemek kimlik sayılmaz; port boşalmazsa ya da ölçülemezse çıkış 1, "DURDU" denmez). Portu araç çıktısından al; varsayma. İskeletteki script `fiori run ... --open ...` biçimindedir; `--open` kullanıcının
    varsayılan tarayıcısında pencere açması beklenir (bu turda ölçülmedi) — çekim buna bağlı değildir, script kullanıcı onayı olmadan değiştirilmez.
    ⛔ **Her yerel sunucu yalnız 127.0.0.1'e bağlanır.** Bind adresi verilmeyen sunucu tüm arabirimlere açılır ve
    Windows Güvenlik Duvarı izin penceresi çıkarır; yönetici olmayan kullanıcı izin veremez, iş orada durur
@@ -159,7 +163,7 @@ node $D/capture_kd_screens.js $APP/docs/ekranlar.json
 - `capture_kd_screens.js` merkezi kurulumu (`<TEMPLATE>/.araclar/playwright-cli`) kendisi bulur; hangisini kullandığını
   `playwright-core: … (kaynak: …)` satırı söyler. `KOMUT` satırındaki `PLAYWRIGHT_CORE_PATH`, çekimin `check`'in
   raporladığı kurulumu (projede yerel kurulum varsa o) kullanmasını sabitler.
-- Mock veri değiştiyse önce mock'u yeniden başlat (veri açılışta okunur).
+- Mock veri değiştiyse önce mock'u yeniden başlat: `python $S/mock_sunucu.py yenile --app $APP` (veri açılışta okunur).
 - **Çıkış ölçütü:** son satır `ÖZET: M OK, 0 FAIL`, çıkış 0, `out_dir`'de M adet PNG.
 
 ## 6. Görsel kontrol

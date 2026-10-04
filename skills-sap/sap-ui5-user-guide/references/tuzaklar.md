@@ -29,9 +29,10 @@
 | T13 | `npm run start-mock` yok / sunucu başlamıyor | uygulamada mock middleware geliştirme bağımlılığı yok (yalnız deploy edilmiş uygulamalarda sık) | `kd_ortam.py check` komutu yazar; ekleme kullanıcı onayıyla |
 | T14 | F4 penceresi boş açılıyor | ana varlık mock'landı ama F4'ün beslendiği değer yardımı varlığının verisi yok | her VH varlığına `<VH EntitySet>.json` (`mock-ortam.md` §4) |
 | T15 | Ekranda "Sample Text", "Item 1" | `generateMockData` genel değer üretti | kareye giren her varlığa kurgusal veri dosyası (`mock_veri.py`) |
-| T16 | Veri dosyasını düzelttim, ekran değişmedi | mock veriyi açılışta okur | mock'u yeniden başlat ya da `watch: true` |
+| T16 | Veri dosyasını düzelttim, ekran değişmedi | mock veriyi açılışta okur | `python $S/mock_sunucu.py yenile --app $APP` (durdur + başlat) |
 | T17 | Fiyat/bakiye gibi dolu alanlar boş, hata diyaloğu | değer fonksiyon içe aktarımından/aksiyondan geliyor, mock'ta yok | model verisi enjeksiyonu (`set_model`) ya da arayüzü sürerek doldur; hata diyaloğunu kapat; sayıları tutarlı tut |
 | T18 | Pasif düğme yüzünden diyalog açılamıyor | başlık koşulu vb. düğmeyi pasif tutuyor | `eval` ile kontrolü bul, etkinleştir, `firePress()` (`%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` §A madde 5) |
+| T26 | aXet.code mock sunucusunu durdururken takıldı: "Waiting for tool response…", log her 5 sn `BgJob kill still waiting for job to exit after cancel`, Esc ve iptal çözmedi; oturum ancak aXet kapatılınca bitti. **Ölçüldü 2026-10-03** (önceki: 2026-09-25 port LISTENING kaldı, sonraki mock `EADDRINUSE`) | `npm run start-mock` arka plan işi olarak başlatıldı; Windows'ta `npm → cmd → fiori → npx → ui5 serve` zinciri oluşur, durdurma yalnız en üst süreci kapatır, alttaki `node` süreçleri yaşar ve işin çıktı borusunu açık tutar | mock YALNIZ `python $S/mock_sunucu.py baslat --app $APP` ile, **ön planda** (ayrı süreç grubu, çıktı dosyaya, hazır olunca döner); kapatma `mock_sunucu.py durdur --app $APP`. Takılma olduysa: aXet'i kapat, ardından `durdur` (kayıt yoksa kendi terminalinde `netstat -ano` (aXet bash'inde netstat engelli) ile portu tutan PID'ye bak; komut satırında kendi uygulama klasörün geçiyorsa kapat) |
 
 ## C. Görüntü
 | # | Belirti | Sebep | Çözüm |

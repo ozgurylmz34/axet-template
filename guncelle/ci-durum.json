@@ -2,9 +2,9 @@
  "surum": 1,
  "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
  "yayinlar": {
-  "v0.5.17": {
-   "kaynak_commit": "91cdbd7c331f0962fda18ecb1eb45e13faad6ea1",
-   "olcum_zamani": "2026-10-03T22:21:06",
+  "v0.5.18": {
+   "kaynak_commit": "fdaf069f5bd97d242da7275df7f7c98508bf027b",
+   "olcum_zamani": "2026-10-04T12:56:20",
    "hepsi_yesil": true,
    "depo": "ozgurylmz34/axet",
    "takimlar": [
@@ -13,31 +13,11 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 3/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (foundation · Python 3.12)",
+     "ad": "Testler (kok 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
      "ad": "Testler (skill · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 2/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 5/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -49,11 +29,27 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok-public 1/5 · Python 3.12)",
+     "ad": "Testler (kok 4/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 4/5 · Python 3.12)",
+     "ad": "Testler (kok 5/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 2/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (foundation · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 3/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 2/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -61,7 +57,11 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 2/5 · Python 3.12)",
+     "ad": "Testler (kok-public 1/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 4/5 · Python 3.12)",
      "sonuc": "success"
     },
     {

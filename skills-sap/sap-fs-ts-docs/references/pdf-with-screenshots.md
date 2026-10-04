@@ -24,8 +24,10 @@ Durum: `python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/doc_tools.py check`.
    (elle hazırlanmayan varlıklar için).
 2. **Temiz veri hazırla:** `webapp/localService/mainService/data/<EntitySet>.json` (dizi). Alan adlarını mock'tan teyit et
    (`…/<EntitySet>?$top=1&$format=json`). **F4 değer yardımı varlıklarına da** veri dosyası koy; yoksa açılır pencere boş görünür.
-3. Mock'u başlat (`npm run start-mock`); **portu logdan al**. Veri değişince yeniden başlat (mock veriyi açılışta okur).
-   `start-mock` yoksa uygulamada mock sunucu geliştirme bağımlılığı yoktur → eklenmesi kullanıcıyla kararlaştırılır.
+3. Mock'u **ön planda** başlat: `python <TEMPLATE>/skills-sap/sap-ui5-user-guide/scripts/mock_sunucu.py baslat --app <uygulama>`
+   — hazır olunca döner ve adresi basar. `npm run start-mock`'u arka plan işi olarak başlatma: durdurulamaz, aXet bekler
+   (`%sap-ui5-user-guide` → `tuzaklar.md` T26). Veri değişince `mock_sunucu.py yenile --app <uygulama>` (mock veriyi
+   açılışta okur); bitince `mock_sunucu.py durdur --app <uygulama>`. `start-mock` yoksa uygulamada mock sunucu geliştirme bağımlılığı yoktur → eklenmesi kullanıcıyla kararlaştırılır.
 4. **Türkçe arayüz şart:** URL'ye `?sap-ui-language=tr`.
 5. **Çekim:** `capture_kd_screens.js` yapılandırma dosyasıyla (aşağıda). Açılır/kapanır alanları iki durumda çek. Pasif düğmeyi ya da
    diyaloğu `eval` adımıyla açabilirsin (kontrol kaydından düğmeyi bul, `firePress()`); mock'ta olmayan dolu durumları (fiyat, bakiye)

@@ -200,6 +200,7 @@ def playwright_core_yolu(proje, env=None):
 
 
 CAPTURE_BETIGI = os.path.join(_KLON, "skills-sap", "sap-fs-ts-docs", "scripts", "capture_kd_screens.js")
+MOCK_SUNUCU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_sunucu.py")
 SENARYO_GORELI = os.path.join("docs", "ekranlar.json")
 TEK_KOSU_NOTU = ("KD kareleri YALNIZ yukarıdaki tek çekim koşusuyla alınır (senaryo: docs/ekranlar.json); keşifte "
                  "`screenshot` ile kare çekilmez, `npx playwright-cli` kullanılmaz (Z169).")
@@ -231,6 +232,11 @@ def cli_giris_noktasi(cli_dizin):
 def komut_onerileri(proje, env=None):
     """[(ad, komut)] — yalnız yolu diskte bulunan bileşenler için; komutun çalıştığını ÖLÇMEZ."""
     satirlar = []
+    pj, _ = package_json_oku(proje)
+    if ((pj or {}).get("scripts") or {}).get("start-mock") and os.path.isfile(MOCK_SUNUCU):
+        # Z181: `npm run start-mock` aXet'te arka plan işi olarak başlatılınca durdurma sonsuza dek bekler.
+        satirlar.append(("mock (başlat, ön planda)", 'python "%s" baslat --app "%s"'
+                         % (_ileri(MOCK_SUNUCU), _ileri(proje))))
     giris = cli_giris_noktasi(playwright_cli_yolu(proje, env)[0])
     if giris:
         satirlar.append(("keşif (PW)", 'node "%s"' % _ileri(giris)))
@@ -563,7 +569,7 @@ def cmd_check(proje, env=None):
     komutlar = komut_onerileri(proje, env)
     for ad, komut in komutlar:
         _cikti("  %-5s %-26s %s" % ("KOMUT", ad, komut))
-    if komutlar:
+    if any(ad == "çekim (tek koşu)" for ad, _ in komutlar):
         _cikti("  %-5s %-26s %s" % ("BİLGİ", "kare çekimi", TEK_KOSU_NOTU))
     for u in filter(None, [global_config_uyarisi(env)] + ortam_uyarilari(env)):
         _cikti("  UYARI " + u)

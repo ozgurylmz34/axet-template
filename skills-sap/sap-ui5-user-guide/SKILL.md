@@ -53,7 +53,9 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
    **kendin indir** (salt-okur; kimlik env → `.conn_adt` → giriş penceresi; kullanıcıdan tarayıcıda kaydetmesini ya da
    parola isteme; `metadata.xml`'e elle satır ekleme) → `python $S/mock_veri.py --metadata <metadata.xml> --cikti
    <mockdata klasörü>` ile kurgusal Türkçe veri (değer yardımı varlıkları dahil; kod/durum alanlarına
-   `--sabit-degerler` ile domain sabit değerleri ya da değer yardımı kodları — `UYARI: kod alanı adayı` satırı boş kalmalı) → `npm run start-mock` arka planda, **portu logdan al**.
+   `--sabit-degerler` ile domain sabit değerleri ya da değer yardımı kodları — `UYARI: kod alanı adayı` satırı boş kalmalı) →
+   `python $S/mock_sunucu.py baslat --app $APP` **ön planda** (hazır olunca döner, adresi basar; `npm run start-mock`'u
+   arka plan işi olarak başlatma — durdurulamaz, aXet bekler: `tuzaklar.md` T26). Bitince `mock_sunucu.py durdur --app $APP`.
    Sunucu yalnız `127.0.0.1`'e bağlanır. Ayrıntı: `references/mock-ortam.md`.
 3. **Keşif.** `$PW -s=<oturum> open <url> --browser chrome` (`$PW` = `kd_ortam.py check`'in `KOMUT keşif (PW)` satırı:
    doğrudan `node …/playwright-cli.js`, `npx` değil) → `snapshot --filename=…` → ekranın
@@ -97,6 +99,7 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
 | `references/tuzaklar.md` | takılınca | belirti → sebep → çözüm (ölçülmüş) |
 | `scripts/kd_ortam.py` | adım 1 | `check` (bağımlılık tablosu, eksikte kurulum komutu, çıkış 2) · `config` (Chrome'a sabit yapılandırma; `--kanal msedge`, `--no-sandbox`) |
 | `scripts/mock_veri.py` | adım 2 | metadata'dan her EntitySet için kurgusal Türkçe `<EntitySet>.json` (tohumlu, var olanı ezmez) |
+| `scripts/mock_sunucu.py` | adım 2, 5 | mock sunucuyu ön planda `baslat` (hazır olunca döner) · `durum` · `durdur` (yalnız kendi süreç soyu; portun boşaldığını ölçer) · `yenile` |
 | `%sap-fs-ts-docs` → `references/pdf-with-screenshots.md` | adım 5, 8, 9 | `capture_kd_screens.js` yapılandırması, HTML/PDF kurma, doğrulama tablosu |
 | `%sap-fs-ts-docs` → `references/kd-authoring.md` · `templates/KD-template.md` | adım 7 | KD bölümleri, alt ekran kuralı, içindekiler kuralı |
 | `%sap-fs-ts-docs` → `references/doc-checklist.md` | adım 7, 9 | DOC-KD maddeleri, bağımsız inceleme brifingi (§E) |
