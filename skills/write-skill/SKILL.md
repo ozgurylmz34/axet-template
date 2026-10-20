@@ -41,3 +41,22 @@ description: >
    - Kimlik bilgisi, müşteri adı, sistem adresi yazılmaz.
 5. **Test:** YENİ bir aXet oturumu aç (skill'ler oturum başında bulunur) → `%<ad>` ile çağır → modelin `SKILL.md`'yi okuyup adımları izlediğini gör.
 6. Template seviyesindeyse README'deki skill listesine ekle.
+
+## Kural yazarken
+Skill kuralı, kontrol listesi satırı, çekirdek ya da `AGENTS.md` maddesi, hafıza dersi — yazarken **ve** var olan
+kuralın metnine dokunurken (dokunulmayan eski kurallar toplu yeniden yazılmaz). Kural çoğu zaman yokluğundan değil
+yazılışından kaçar: uygulayacak kişinin o an açtığı dosyada değildir ya da hangi eylemde uygulanacağını söylemez.
+- **Dört alan:** **NE** — tek anlamlı, ölçülebilir eşik ("ya da eşdeğeri" gibi ölçütsüz ifade yok) · **NEDEN** — önlediği
+  hata: mekanizma tek cümle + vaka (tarih; müşteri/sistem adı yok) · **NE ZAMAN** — hangi eylemde, hangi dosya türünde
+  ateşler ("`.clas.abap`'a yeni metot yazarken"; yalnız semptom — "push 400 verirse" — yetmez, o an iş olmuştur) ·
+  **NEREDE** — uygulayacak kişi ya da model onu o an hangi dosyada okuyor (o işin skill'i/referansı, kontrol listesi,
+  çekirdek). Yalnız hafıza ya da iş listesi yetmez. Kanonik metin tek yerde durur; öbür kanala ateşleme anını taşıyan
+  tek cümle + atıf yazılır, ayrıntı kopyalanmaz.
+- **Olumsuz iddia koşuluyla:** "X çalışmaz / yasak / yok" cümlesine profil/sürüm, obje tipi, araç, bağlam ve ölçüm
+  tarihi yazılır; ölçülmeyen komşu bağlam `ÖLÇÜLMEDİ` diye anılır. Koşulsuz çürütme, X'in geçerli olduğu yerde de kullanılmaz.
+- **Üç test (birleştirmeden önce):** **netlik** — yazmayan, bağlamsız bir okura (salt-okur inceleme ajanı, çekirdek §7)
+  yalnız kural metni + 2-3 senaryo ver (biri istisna); beklenen cevabı önceden yaz, ayrışırsa metni düzelt ·
+  **ulaşım** — kural → onu okuyan rol → dosya → satır zincirini `rg` çıktısıyla göster · **çelişki** — anahtar terimi ve
+  eşanlamlılarını Türkçe harf varyantlarıyla (çekirdek §2) `rg` ile tara, sayısal sınırlarda koddaki değeri de; çelişeni
+  hizala ya da iki tarafa gerekçeli istisna yaz.
+- Ayrıntı ve vakalar: `<template>/memory/feedback_kural-yazim-konum-ve-kosul.md`.

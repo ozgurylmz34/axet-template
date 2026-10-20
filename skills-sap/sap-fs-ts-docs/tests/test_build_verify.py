@@ -50,7 +50,8 @@ class BuildTest(unittest.TestCase):
         return p
 
     def test_templates_build_without_dead_links(self):
-        for tpl in ("FS-template.md", "TS-template.md", "KD-template.md"):
+        for tpl in ("FS-template.md", "TS-template.md", "KD-template.md", "FS-summary-template.md",
+                    "integration-sheet-template.md"):
             html = os.path.join(self.dir, tpl.replace("-template.md", "-XX-001_Sablon.html"))
             with mock.patch.object(doc_tools, "resolve_cli", return_value=None):
                 call_main(build_doc_pdf.main, [os.path.join(TEMPLATES, tpl), html])
@@ -96,6 +97,58 @@ class BuildTest(unittest.TestCase):
             rc, _, err = call_main(lambda a: build_doc_pdf.to_pdf(*a), [html])
         self.assertEqual(2, rc)
         self.assertIn("node bulunamadı", err)
+
+
+class PdfBayrakTest(unittest.TestCase):
+    """Z201: --sayfa-no / --yer-imi html_to_pdf.js'e geçirilir; bayraksız komut eskisiyle AYNI; çıkış 0'daki stderr
+    UYARI'sı yutulmaz. Tarayıcısız (node çağrısı taklit edilir) — uçtan uca ölçüm test_node_scripts.BrowserPdfTest'te."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.html = os.path.join(self.tmp.name, "D.html")
+        with open(self.html, "w", encoding="utf-8") as fh:
+            fh.write("<html></html>")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _kos(self, bayraklar=(), stderr=""):
+        sonuc = mock.Mock(returncode=0, stdout="PDF OK", stderr=stderr)
+        with mock.patch.object(build_doc_pdf.shutil, "which", return_value="node"), \
+                mock.patch.object(build_doc_pdf.subprocess, "run", return_value=sonuc) as run:
+            rc, out, err = call_main(lambda a: build_doc_pdf.to_pdf(self.html, None, bayraklar), [])
+        return rc, out, err, run
+
+    def test_KONTROL_bayraksiz_komut_eskisiyle_ayni(self):
+        rc, _, _, run = self._kos()
+        self.assertEqual(0, rc)
+        pdfjs = os.path.join(os.path.dirname(os.path.abspath(build_doc_pdf.__file__)), "html_to_pdf.js")
+        self.assertEqual(["node", pdfjs, os.path.abspath(self.html), os.path.abspath(self.html[:-5] + ".pdf")],
+                         run.call_args[0][0])
+
+    def test_bayraklar_komuta_eklenir(self):
+        rc, _, _, run = self._kos(("--sayfa-no", "--yer-imi"))
+        self.assertEqual(0, rc)
+        self.assertEqual(["--sayfa-no", "--yer-imi"], run.call_args[0][0][-2:])
+
+    def test_cikis_0_stderr_uyarisi_yutulmaz(self):
+        rc, out, err, _ = self._kos(("--yer-imi",), stderr="UYARI --yer-imi: yer imi sayisi (3) baslik sayisindan (4) farkli")
+        self.assertEqual(0, rc)
+        self.assertIn("PDF OK", out)
+        self.assertIn("UYARI --yer-imi: yer imi sayisi (3)", err)
+
+    def test_bilinmeyen_bayrak_exit_2(self):
+        rc, _, err, run = self._kos(("--sayfano",))
+        self.assertEqual(2, rc)
+        self.assertIn("bilinmeyen PDF bayrağı: --sayfano", err)
+        run.assert_not_called()
+
+    def test_bayrak_pdfsiz_reddedilir_html_yazilmaz(self):
+        out_html = os.path.join(self.tmp.name, "Y.html")
+        rc, _, err = call_main(build_doc_pdf.main, [self.html, out_html, "--yer-imi"])
+        self.assertEqual(2, rc)
+        self.assertIn("--yer-imi yalnız --pdf / --pdf-out ile", err)
+        self.assertFalse(os.path.exists(out_html))
 
 
 class MissingDependencyTest(unittest.TestCase):

@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.9.0
+CORE-ID: AXET-CORE-0.10.0
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -12,7 +12,7 @@ CORE-ID: AXET-CORE-0.9.0
 - Bağlamındaki "AÇILIŞ BRIEF'İ" bloğu (proje `.axet-code/acilis-brief.md`) son özetin kopyasıdır ve her oturumda yüklenir. Özeti bu
   oturumda çalıştıramadıysan onu üretim saatiyle aktar; üretim tarihi bugün değilse `— BAYAT` yaz ve yenilemeyi öner.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.9.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.10.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, SAP profili, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
@@ -27,8 +27,11 @@ CORE-ID: AXET-CORE-0.9.0
 - İddiayı kanıtın sınırına indir; doğrulamadığını `DOĞRULANMADI` diye etiketle.
 
 ## 2. Önce ara → ölç → daralt → yaz
-Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
+Yeni kural/ders/hafıza kaydı yazmadan, "bu yapılamaz" demeden ya da başarısız bir denemeden sonra aynı amaçla yeniden
+denemeden önce (yeniden denemede zorunlu olan 1. adımdır, son hata mesajıyla; 2-4 yalnız kayıt yazılacaksa):
 1. **Ara:** proje dosyaları, `AGENTS.md`, hafıza indeksleri, ilgili skill. Zaten yazılı mı? Daha önce çalışıyor muydu?
+   Türkçe karakterli desende harf varyantlarını da ara (ı/i · ş/s · ğ/g · ü/u · ö/o · ç/c · İ/I): desen ile metnin alfabesi
+   uyuşmazsa sahte sıfır çıkar, iki yönde de (ASCII desen ↔ Türkçe metin · Türkçe desen ↔ ASCII'leştirilmiş metin).
 2. **Ölç:** kontrol grubuyla.
 3. **Daralt:** kanıtın neyi kanıtladığını yaz, fazlasını iddia etme.
 4. **Yaz:** kayda neyin arandığını ekle (`önceki kayıt: bulundu <yol>` ya da `yok`).
@@ -59,6 +62,8 @@ Yeni kural/ders/hafıza kaydı yazmadan ya da "bu yapılamaz" demeden önce:
 - Web aracını (`agentic_fetch`, `fetch`) yalnız somut bir soru ya da URL ile çağır; boş ya da yer tutucu istem (`placeholder`)
   gönderme — boşa bir alt oturum ve izin sorusu açılır (ölçüldü: `agentic_fetch`).
 - Bir madde (açık iş, karar, bulgu) konuşmada kapanınca yazılı yerinde de aynı anda kapat; aynı açık maddeyi iki yerde tutma. Denemelerden sonra çalışan bir yöntem bulduysan `%remember` ile kaydet.
+  İş yapılarak kapanan maddenin kapanış kaydı ölçüm satırıdır (komut + sonuç); commit/PR numarası ya da "birleştirildi" tek
+  başına kanıt değildir. İptal kararıyla ya da başka işe katılarak kapanan madde ölçüm istemez; kaynağı karar ya da o iştir.
 - **Kabuk ortamı:** `bash` aracı Go tabanlıdır; şu dört hata sık yapılır — komut yazmadan önce bak:
   - `grep`/`head`/`tail`/`wc`/`type`/`dir` YOKTUR (`executable file not found`) → içerik araması `rg`; `rg` de bulunamazsa
     bash'te arama yapma, `grep`/`glob` ARAÇLARINI kullan (bash komutu değil).
@@ -80,7 +85,8 @@ Her dalda kanıt şart; "sanırım bozuk" ile kalem açılmaz.
 - `main`'e doğrudan commit yok: `git fetch origin` + `git switch -c <dal> origin/main` (başlangıç noktası daima açık yazılır). Remote yoksa (`git remote` boş): `git switch -c <dal> main`; push ve PR yoktur.
 - Dalı `main`'e birleştirmeden önce `%commit-pr`'yi oku (yerel repoda adım 9): açık onay · `git merge --no-ff` · çakışmada DUR, kendin çözme · yalnız `git branch -d`.
 - Commit ve push yalnız kullanıcı isteyince. `--force`, `--no-verify`, `reset --hard`, `clean -f` kullanılmaz.
-- Commit öncesi `git status` + `git diff --staged` oku: kimlik bilgisi, geçici dosya, alakasız değişiklik girmesin.
+- Commit öncesi `git status --short` oku; yalnız kendi dosyalarını ADIYLA ekle (`git add <yol> <yol>`). `git add -A` / `git add .`
+  kullanma: başka işin commit'lenmemiş değişikliğini süpürür. Sonra `git diff --staged` oku: kimlik bilgisi, geçici dosya, alakasız değişiklik girmesin.
 - Commit, push ve PR ayrı adımlardır; her birinin sonucunu kontrol et.
 
 ## 7. Alt görev devri (`agent` aracı)

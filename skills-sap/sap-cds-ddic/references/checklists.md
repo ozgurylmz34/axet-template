@@ -12,36 +12,36 @@
 ## 1. CDS (DDLS) — yaratma / güncelleme
 | ID | Kontrol | Seviye | Referans |
 |---|---|---|---|
-| CDS-NAME | Ad paket `.rules.md` / `naming.md` §4.3 biçiminde | BLOCKER | `cds.md` §3.2 |
-| CDS-TYPE | Tür belirlendi (classic / view entity / abstract entity) ve kural dalı ona göre | BLOCKER | `cds.md` §1.1 |
-| CDS-SQLV-1 | Classic view'da `@AbapCatalog.sqlViewName` var; view entity'de **yok** | BLOCKER | `cds.md` §3.2 |
-| CDS-SQLV-2 | `sqlViewName` biçimi `<GÖVDE>_V_<1-5>` ve ≤ 14 karakter; ilk aktivasyonda doğru (sonradan yeniden adlandırılamaz) | BLOCKER | `cds.md` §3.2 |
-| CDS-LABEL | `@EndUserText.label` var, `master_language`'de, spesifikasyondan | BLOCKER | kesin yasak D |
-| CDS-AUTH-1 | `@AccessControl.authorizationCheck` var | BLOCKER | `cds.md` §3.1 |
-| CDS-AUTH-2 | Kaynaktaki standart view'lara **doğrudan** erişim var mı, `#CHECK` mi? Varsa çare/gerekçe | BLOCKER | `cds.md` §2 DCL-01 |
-| CDS-DEPR | `@AbapCatalog.preserveKey` yok | WARNING | `cds.md` §3.1 |
-| CDS-WIN | `OVER (PARTITION BY …)` yok (ölçülen sistemde aktive olmadı → ABAP'a al) | BLOCKER | `cds.md` §4 T9 |
-| CDS-FROM-1 | Kaynak tablo/view'lar sistemde var; Z kaynak view'lar aktif | BLOCKER | `adt_get` |
-| CDS-FROM-2 | Standart tablo alan adları hedef sistemde teyitli (eski sistemden kopya değil; alan adı ≠ DTEL adı) | BLOCKER | `cds.md` §3.3 |
-| CDS-FROM-3 | Standart tablo yerine released CDS arandı; kullanılmıyorsa gerekçe kullanıcıya bildirildi; halef `#CHECK` + guard ise geçilmedi | WARNING | `cds.md` §2 DCL-02, §5 |
-| CDS-FROM-4 | Replacement tablosu (`DD02L-VIEWREF` dolu: `MSEG`, `MKPF`, `MBEW`, `MSKU` …) yok; `MARC`'tan miktar alanı okunmuyor — classic view **ve view entity** (view entity de fiziksel tabloyu okur: 0 satır ya da 0 miktar). Classic view → `nsdm_e_*`; view entity'de miktar → `I_MaterialStock_2` (`group by` + `sum`) ya da `nsdm_e_*` | BLOCKER | `cds.md` §2 NSDM-01 |
-| CDS-CUR | CURR/QUAN alanlarında `@Semantics.amount.currencyCode` / `quantity.unitOfMeasure` doğru referansla | BLOCKER | `tables-structures.md` §3.3 |
-| CDS-NS | Eski sistemden taşındıysa namespace ve alan rename'leri regex/kontrolle uygulandı; spesifikasyonda silinen alanlar kaynaktan çıkarıldı | BLOCKER | `cds.md` §3.4 |
-| CDS-KEY | En az bir `key` alan | WARNING | `cds.md` §3.1 |
-| CDS-AGG | `sum`/`count`/`max` varsa `group by`; UNIT/CUKY alanı aggregate edilmiyor, `group by`'da | BLOCKER | `cds.md` §4 |
-| CDS-UNION | `union all` view entity: `EXISTS` yok · `@Semantics` yalnız ilk dalda · `@Metadata.ignorePropagatedAnnotations: true` · dallar tip/sıra hizalı | BLOCKER | `cds.md` §4 T4 |
-| CDS-CONVEXIT | Conversion exit'li alan OData'ya açılıyorsa: salt-okunur → cast; yazılabilir → exit'siz Z DTEL (kullanıcı kararı) | BLOCKER | `cds.md` §4 T5 |
-| CDS-QTYEXPR | Quantity/amount alanı ifadede cast ile semantiği sıyrılmış | BLOCKER | `cds.md` §4 |
-| CDS-CONSUME | BO'suz salt-okunur tüketim view'ı `as select from`; `as projection on`, `root`, `redirected to` yok | BLOCKER | `cds.md` §4 T3 |
-| CDS-FIELDRM | Alan kaldırma/rename: tüketiciler ölçüldü; sıra (tüketici önce) ya da `also` ile atomik aktivasyon ya da ekle→çevir→sil planı yazılı | BLOCKER | `cds.md` §4 T6/T11 |
-| CDS-2PHASE | Alt view key değişimi + tüketici JOIN değişimi aynı turda değil (iki faz) | BLOCKER | `cds.md` §4 T6 |
-| CDS-JOINCAST | JOIN ON'da cast/fonksiyon yok (köprü view); `numc` uzunluk değişimi `lpad` + eşit uzunluk cast | BLOCKER | `cds.md` §4 T8 |
-| CDS-CONCAT | Ayraçlı birleştirmede `concat_with_space`; ifade çıktısıyla doğrulanacak | WARNING | `cds.md` §4 T12 |
-| CDS-CURRCONV | `currency_conversion` DDIC-based view'da: `amount` kolon, kur tipi literal/parametre | BLOCKER | `cds.md` §4 T14 |
-| CDS-CAPA | Kullanılan CDS fonksiyonunun desteği çalışan bir örnekle ya da canlı aktivasyonla kanıtlı (sürüm çıkarımı değil) | BLOCKER | `cds.md` §4 T9 |
-| CDS-VERIFY | Yazma sonrası plan: `adt_get` içerik kıyası + `adt_inactive_objects` + (classic) satır sayımı | BLOCKER | `cds.md` §1.5 |
-| CDS-DESC | `@EndUserText.label` değiştiyse İKİ yüzey ayrı doğrulandı: kaynak annotation (`adt_get` `include_source`) ve obje açıklaması (`adtcore:description`). Obje açıklaması yalnız ilk yaratılışta annotation'dan alınır; sonraki push + aktivasyonda ESKİ kalır (ekip dersi, ölçüldü) → düzelmesi isteniyorsa ayrı iş: `adt_set_description`. Raporda hangi yüzeyin ölçüldüğü yazılı | WARNING | `%sap-adt-foundation` `tool-catalog.md` `adt_set_description` |
-| CDS-DUP | Satır çoğaltma/tekillik ölçümünde şüphelenilen HER association'dan en az bir alan seçildi (hiç alan seçilmeyen to-one join HANA'da budanır, çoğaltma ölçümde görünmez — ekip dersi: 38/38 tekil sanılan view bir alan eklenince 39 satır verdi); `[0..1]` ilan edilen association hedefin key'i/`GROUP BY`'ıyla doğrulandı; bulgu SELECT alan listesiyle yazıldı | WARNING | `%sap-adt-foundation` `foundation-query.md` §1 |
+| C-CDS-NAME-01 | Ad paket `.rules.md` / `naming.md` §4.3 biçiminde | BLOCKER | `cds.md` §3.2 |
+| AX-CDS-TYPE-01 | Tür belirlendi (classic / view entity / abstract entity) ve kural dalı ona göre | BLOCKER | `cds.md` §1.1 |
+| C-CDS-SQLV-01 | Classic view'da `@AbapCatalog.sqlViewName` var; view entity'de **yok** | BLOCKER | `cds.md` §3.2 |
+| C-CDS-SQLV-02 | `sqlViewName` biçimi `<GÖVDE>_V_<1-5>` ve ≤ 14 karakter; ilk aktivasyonda doğru (sonradan yeniden adlandırılamaz) | BLOCKER | `cds.md` §3.2 |
+| C-CDS-LABEL-01 | `@EndUserText.label` var, `master_language`'de, spesifikasyondan | BLOCKER | kesin yasak D |
+| C-CDS-AUTH-01 | `@AccessControl.authorizationCheck` var | BLOCKER | `cds.md` §3.1 |
+| AX-CDS-AUTH-01 | Kaynaktaki standart view'lara **doğrudan** erişim var mı, `#CHECK` mi? Varsa çare/gerekçe | BLOCKER | `cds.md` §2 DCL-01 |
+| C-CDS-DEPR-01 | `@AbapCatalog.preserveKey` yok | WARNING | `cds.md` §3.1 |
+| C-CDS-WIN-01 | `OVER (PARTITION BY …)` yok (ölçülen sistemde aktive olmadı → ABAP'a al) | BLOCKER | `cds.md` §4 T9 |
+| C-CDS-FROM-01 | Kaynak tablo/view'lar sistemde var; Z kaynak view'lar aktif | BLOCKER | `adt_get` |
+| C-CDS-FROM-03 | Standart tablo alan adları hedef sistemde teyitli (eski sistemden kopya değil; alan adı ≠ DTEL adı) | BLOCKER | `cds.md` §3.3 |
+| C-CDS-FROM-04 | Standart tablo yerine released CDS arandı; kullanılmıyorsa gerekçe kullanıcıya bildirildi; halef `#CHECK` + guard ise geçilmedi | WARNING | `cds.md` §2 DCL-02, §5 |
+| C-CDS-FROM-05 | Replacement tablosu (`DD02L-VIEWREF` dolu: `MSEG`, `MKPF`, `MBEW`, `MSKU` …) yok; `MARC`'tan miktar alanı okunmuyor — classic view **ve view entity** (view entity de fiziksel tabloyu okur: 0 satır ya da 0 miktar). Classic view → `nsdm_e_*`; view entity'de miktar → `I_MaterialStock_2` (`group by` + `sum`) ya da `nsdm_e_*` | BLOCKER | `cds.md` §2 NSDM-01 |
+| C-CDS-CUR-02 | CURR/QUAN alanlarında `@Semantics.amount.currencyCode` / `quantity.unitOfMeasure` doğru referansla | BLOCKER | `tables-structures.md` §3.3 |
+| C-CDS-NS-01 | Eski sistemden taşındıysa namespace ve alan rename'leri regex/kontrolle uygulandı; spesifikasyonda silinen alanlar kaynaktan çıkarıldı (çekirdekte ayrıca C-CDS-NS-02, C-CDS-TD-02) | BLOCKER | `cds.md` §3.4 |
+| C-CDS-KEY-01 | En az bir `key` alan | WARNING | `cds.md` §3.1 |
+| C-CDS-AGG-01 | `sum`/`count`/`max` varsa `group by`; UNIT/CUKY alanı aggregate edilmiyor, `group by`'da | BLOCKER | `cds.md` §4 |
+| C-CDS-UNION-01 | `union all` view entity: `EXISTS` yok · `@Semantics` yalnız ilk dalda · `@Metadata.ignorePropagatedAnnotations: true` · dallar tip/sıra hizalı | BLOCKER | `cds.md` §4 T4 |
+| C-CDS-CONVEXIT-01 | Conversion exit'li alan OData'ya açılıyorsa: salt-okunur → cast; yazılabilir → exit'siz Z DTEL (kullanıcı kararı) | BLOCKER | `cds.md` §4 T5 |
+| C-CDS-QTYEXPR-01 | Quantity/amount alanı ifadede cast ile semantiği sıyrılmış | BLOCKER | `cds.md` §4 |
+| C-CDS-CONSUME-01 | BO'suz salt-okunur tüketim view'ı `as select from`; `as projection on`, `root`, `redirected to` yok | BLOCKER | `cds.md` §4 T3 |
+| C-CDS-FIELDRM-01 | Alan kaldırma/rename: tüketiciler ölçüldü; sıra (tüketici önce) ya da `also` ile atomik aktivasyon ya da ekle→çevir→sil planı yazılı | BLOCKER | `cds.md` §4 T6/T11 |
+| C-CDS-2PHASE-01 | Alt view key değişimi + tüketici JOIN değişimi aynı turda değil (iki faz) | BLOCKER | `cds.md` §4 T6 |
+| AX-CDS-JOINCAST-01 | JOIN ON'da cast/fonksiyon yok (köprü view); `numc` uzunluk değişimi `lpad` + eşit uzunluk cast | BLOCKER | `cds.md` §4 T8 |
+| AX-CDS-CONCAT-01 | Ayraçlı birleştirmede `concat_with_space`; ifade çıktısıyla doğrulanacak | WARNING | `cds.md` §4 T12 |
+| AX-CDS-CURRCONV-01 | `currency_conversion` DDIC-based view'da: `amount` kolon, kur tipi literal/parametre | BLOCKER | `cds.md` §4 T14 |
+| AX-CDS-CAPA-01 | Kullanılan CDS fonksiyonunun desteği çalışan bir örnekle ya da canlı aktivasyonla kanıtlı (sürüm çıkarımı değil) | BLOCKER | `cds.md` §4 T9 |
+| AX-CDS-VERIFY-01 | Yazma sonrası plan: `adt_get` içerik kıyası + `adt_inactive_objects` + (classic) satır sayımı | BLOCKER | `cds.md` §1.5 |
+| AX-CDS-DESC-01 | `@EndUserText.label` değiştiyse İKİ yüzey ayrı doğrulandı: kaynak annotation (`adt_get` `include_source`) ve obje açıklaması (`adtcore:description`). Obje açıklaması yalnız ilk yaratılışta annotation'dan alınır; sonraki push + aktivasyonda ESKİ kalır (ekip dersi, ölçüldü) → düzelmesi isteniyorsa ayrı iş: `adt_set_description`. Raporda hangi yüzeyin ölçüldüğü yazılı | WARNING | `%sap-adt-foundation` `tool-catalog.md` `adt_set_description` |
+| AX-CDS-DUP-01 | Satır çoğaltma/tekillik ölçümünde şüphelenilen HER association'dan en az bir alan seçildi (hiç alan seçilmeyen to-one join HANA'da budanır, çoğaltma ölçümde görünmez — ekip dersi: 38/38 tekil sanılan view bir alan eklenince 39 satır verdi); `[0..1]` ilan edilen association hedefin key'i/`GROUP BY`'ıyla doğrulandı; bulgu SELECT alan listesiyle yazıldı | WARNING | `%sap-adt-foundation` `foundation-query.md` §1 |
 
 Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A) · çok dilli etiket tutarlılığı · analitik view'larda `@VDM` eksikleri.
 
@@ -50,34 +50,34 @@ Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A)
 ## 2. Domain / data element
 | ID | Kontrol | Seviye | Referans |
 |---|---|---|---|
-| DE-REUSE-1 | Önce released standart DTEL arandı; varsa yeni yaratılmıyor | BLOCKER | `naming.md` §5 |
-| DE-REUSE-2 | Aynı işi gören mevcut Z DTEL/domain arandı (`adt_search_objects`); kopya yok | BLOCKER | `naming.md` §5 |
-| DE-NAME | Domain `…_D_…`, DTEL `…_E_…`; ad önerisi canlıda kontrol edildi (varsa başka ad) ve **kullanıcı açıkça onayladı** (`%sap-dev` §6) | BLOCKER | `naming.md` §4.7 |
-| DE-LANG | Oturum dili = `master_language`; yaratma sonrası metadata'dan `masterLanguage` okunacak | BLOCKER | kesin yasak D |
-| DE-LABEL | 4 etiket (kısa ≤10 · orta ≤20 · uzun ≤40 · başlık ≤55) tam ve dolu | BLOCKER | `domain-dtel.md` §1.2 |
-| DE-TEXT | Açıklama/etiket spesifikasyondan ya da eski sistemden; tahmin yok | BLOCKER | SAP çekirdeği |
-| DE-DOM | Tip/uzunluk/ondalık doğru; sabit değer / değer tablosu gerekiyorsa tanımlı; çıktı uzunluğu formülü kontrol edilecek | WARNING | `domain-dtel.md` §3 |
-| DE-BUILTIN | Built-in tipli DTEL'de `typeName` = tip adı (`DATS` …) | BLOCKER | `domain-dtel.md` §2 |
-| DE-VERIFY | Aktivasyon öncesi/sonrası okuma: `typeName`, etiketler, tip | BLOCKER | `domain-dtel.md` §4 |
-| DE-STD | Standart DTEL/domain'e dokunulmuyor; append alanı/DTEL adı önerilmiyor | BLOCKER | kesin yasak A |
+| DE-REUSE-01 | Önce released standart DTEL arandı; varsa yeni yaratılmıyor | BLOCKER | `naming.md` §5 |
+| DE-REUSE-02 | Aynı işi gören mevcut Z DTEL/domain arandı (`adt_search_objects`); kopya yok | BLOCKER | `naming.md` §5 |
+| DE-NAM-01 | Domain `…_D_…`, DTEL `…_E_…`; ad önerisi canlıda kontrol edildi (varsa başka ad) ve **kullanıcı açıkça onayladı** (`%sap-dev` §6) | BLOCKER | `naming.md` §4.7 |
+| DE-TR-01 | Oturum dili = `master_language`; yaratma sonrası metadata'dan `masterLanguage` okunacak | BLOCKER | kesin yasak D |
+| DE-TR-02 | 4 etiket (kısa ≤10 · orta ≤20 · uzun ≤40 · başlık ≤55) tam ve dolu | BLOCKER | `domain-dtel.md` §1.2 |
+| DE-TXT-01 | Açıklama/etiket spesifikasyondan ya da eski sistemden; tahmin yok | BLOCKER | SAP çekirdeği |
+| DE-DOM-01 | Tip/uzunluk/ondalık doğru; sabit değer / değer tablosu gerekiyorsa tanımlı; çıktı uzunluğu formülü kontrol edilecek | WARNING | `domain-dtel.md` §3 |
+| AX-DE-BUILTIN-01 | Built-in tipli DTEL'de `typeName` = tip adı (`DATS` …) | BLOCKER | `domain-dtel.md` §2 |
+| DE-ACT-01 | Aktivasyon öncesi/sonrası okuma: `typeName`, etiketler, tip | BLOCKER | `domain-dtel.md` §4 |
+| DE-005 | Standart DTEL/domain'e dokunulmuyor; append alanı/DTEL adı önerilmiyor | BLOCKER | kesin yasak A |
 
 ---
 
 ## 3. Structure
 | ID | Kontrol | Seviye | Referans |
 |---|---|---|---|
-| STR-NAME | `…_S_…` biçimi, ≤ 30 karakter | BLOCKER | `naming.md` §4.7 |
-| STR-LABEL | `@EndUserText.label` var, `master_language`'de, dolu | BLOCKER | kesin yasak D |
-| STR-FIELD-1 | Alanlar mümkünse DTEL'e bağlı (ilkel tip değil) | INFO | `naming.md` §5 |
-| STR-FIELD-2 | Alan tipi Z/Y ya da `/ad-alanı/` ile başlayan tüm DTEL'ler sistemde var ve aktif (standart DTEL'ler bu satırın kapsamı dışında → STR-FIELD-3; Z tipli alan yapı/tablo tipiyse DTEL sayılmaz) | BLOCKER | yazma kapısı `check_struct_field_dtel_active.py` (artefaktlı ve artefaktsız `adt_struct_create`) · elle `adt_get` `dtel` |
-| STR-FIELD-3 | Standart DTEL adları (`MANDT`, `ERNAM`, `ERDAT` …) doğru | BLOCKER | `adt_get` |
-| STR-FIELD-4 | Büyük/küçük harf duyarsız mükerrer alan adı yok | BLOCKER | — |
-| STR-CUR | CURR alanında nitelenmiş `@Semantics.amount.currencyCode`, referans alan aynı yapıda ve `@Semantics.currencyCode : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
-| STR-UNIT | QUAN alanında nitelenmiş `@Semantics.quantity.unitOfMeasure`, referans alan `@Semantics.unitOfMeasure : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
-| STR-DEPR | `@AbapCatalog.preserveKey` yok | WARNING | `cds.md` §3.1 |
-| STR-COMMENT | DDL'de `//` yorum yok | BLOCKER | `tables-structures.md` §1.3 ③ |
-| STR-SPEC | Spesifikasyonda silinen alanlar çıkarıldı, rename'ler uygulandı | BLOCKER | — |
-| STR-VERIFY | Yazma sonrası yer tutucu kontrolü + `DD03L` alan sayısı planlı | BLOCKER | `tables-structures.md` §1.4 |
+| C-STR-NAME-01 | `…_S_…` biçimi, ≤ 30 karakter | BLOCKER | `naming.md` §4.7 |
+| C-STR-LABEL-01 | `@EndUserText.label` var, `master_language`'de, dolu | BLOCKER | kesin yasak D |
+| C-STR-FIELD-01 | Alanlar mümkünse DTEL'e bağlı (ilkel tip değil) | INFO | `naming.md` §5 |
+| C-STR-FIELD-02 | Alan tipi Z/Y ya da `/ad-alanı/` ile başlayan tüm DTEL'ler sistemde var ve aktif (standart DTEL'ler bu satırın kapsamı dışında → C-STR-FIELD-03; Z tipli alan yapı/tablo tipiyse DTEL sayılmaz) | BLOCKER | yazma kapısı `check_struct_field_dtel_active.py` (artefaktlı ve artefaktsız `adt_struct_create`) · elle `adt_get` `dtel` |
+| C-STR-FIELD-03 | Standart DTEL adları (`MANDT`, `ERNAM`, `ERDAT` …) doğru | BLOCKER | `adt_get` |
+| C-STR-FIELD-04 | Büyük/küçük harf duyarsız mükerrer alan adı yok | BLOCKER | — |
+| C-STR-CUR-02 | CURR alanında nitelenmiş `@Semantics.amount.currencyCode`, referans alan aynı yapıda ve `@Semantics.currencyCode : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
+| C-STR-UNIT-01 | QUAN alanında nitelenmiş `@Semantics.quantity.unitOfMeasure`, referans alan `@Semantics.unitOfMeasure : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
+| C-STR-DEPR-01 | `@AbapCatalog.preserveKey` yok | WARNING | `cds.md` §3.1 |
+| AX-STR-COMMENT-01 | DDL'de `//` yorum yok | BLOCKER | `tables-structures.md` §1.3 ③ |
+| C-STR-KAP-01 | Spesifikasyonda silinen alanlar çıkarıldı, rename'ler uygulandı (çekirdekte ayrıca C-STR-KAP-02) | BLOCKER | — |
+| AX-STR-VERIFY-01 | Yazma sonrası yer tutucu kontrolü + `DD03L` alan sayısı planlı | BLOCKER | `tables-structures.md` §1.4 |
 
 Bilinen kör noktalar: append yapı varlığı · pool/cluster ayrımı · çok dilli etiket tutarlılığı.
 
@@ -86,22 +86,22 @@ Bilinen kör noktalar: append yapı varlığı · pool/cluster ayrımı · çok 
 ## 4. Z tablo — yeni ve güncelleme
 | ID | Kontrol | Seviye | Referans |
 |---|---|---|---|
-| TBL-APPROVAL | (Yeni) alanlar + DTEL + anahtar + uzunluk + delivery class + data maintenance kullanıcıya gösterildi, **açık onay** alındı | BLOCKER | `tables-structures.md` §3.1 |
-| TBL-NAME | `…_T_…` biçimi, ≤ 16 karakter | BLOCKER | `tables-structures.md` §3.1 |
-| TBL-SOURCE | (Güncelleme) güncel DDL `adt_get` ile çekildi | BLOCKER | pull-before-edit |
-| TBL-MANDT | `key mandt : mandt not null;` | BLOCKER | `tables-structures.md` §3.3 |
-| TBL-ENH | `@AbapCatalog.enhancement.category` var | BLOCKER | `tables-structures.md` §3.3 |
-| TBL-NOTNULL | `not null` yalnız anahtar alanlarda | WARNING | `tables-structures.md` §3.3 |
-| TBL-DTEL | Yeni alanların DTEL'leri aktif; standart DTEL adları doğru; namespace'li DTEL tırnaksız küçük harf | BLOCKER | `tables-structures.md` §3.3 |
-| TBL-CUR | CURR → CUKY referansı tabloda; nitelenmiş annotation + işaret | BLOCKER | `tables-structures.md` §3.3 |
-| TBL-QUAN | QUAN → UNIT referansı tabloda; nitelenmiş annotation + işaret; miktar/tutar ayrımı DTEL veri tipinden | BLOCKER | `tables-structures.md` §3.3 |
-| TBL-DROP | Mevcut alan siliniyor / rename / tip değişiyor mu? Evetse yazma yolu analizi + etki listesi + kullanıcı kararı | BLOCKER | `tables-structures.md` §3.4 |
-| TBL-APPEND | Standart tabloya append eklenmiyor | BLOCKER | kesin yasak A |
-| TBL-DLVCLASS | Delivery class değişiyor mu (genelde sabit kalmalı) | WARNING | — |
-| TBL-MAINT | Data maintenance değişiyor mu | INFO | — |
-| TBL-ORDER | Yeni iş alanı audit bloğunun üstünde; audit bloğu en sonda | WARNING | `tables-structures.md` §3.4 |
-| TBL-SPEC | Spesifikasyondaki alan listesiyle (sayı, sıra) uyumlu | BLOCKER | — |
-| TBL-VERIFY | Yazma sonrası içerik kıyası + `DD03L` alan sayısı + (yeniden yaratmada) `E071` silme kalıntısı planlı | BLOCKER | `tables-structures.md` §3.5 |
+| AX-TBL-APPROVAL-01 | (Yeni) alanlar + DTEL + anahtar + uzunluk + delivery class + data maintenance kullanıcıya gösterildi, **açık onay** alındı | BLOCKER | `tables-structures.md` §3.1 |
+| C-TBL-NAME-01 | `…_T_…` biçimi, ≤ 16 karakter | BLOCKER | `tables-structures.md` §3.1 |
+| C-TBL-SOURCE-01 | (Güncelleme) güncel DDL `adt_get` ile çekildi | BLOCKER | pull-before-edit |
+| AX-TBL-MANDT-01 | `key mandt : mandt not null;` | BLOCKER | `tables-structures.md` §3.3 |
+| AX-TBL-ENH-01 | `@AbapCatalog.enhancement.category` var | BLOCKER | `tables-structures.md` §3.3 |
+| AX-TBL-NOTNULL-01 | `not null` yalnız anahtar alanlarda | WARNING | `tables-structures.md` §3.3 |
+| C-TBL-DTEL-01 | Yeni alanların DTEL'leri aktif; standart DTEL adları doğru; namespace'li DTEL tırnaksız küçük harf | BLOCKER | `tables-structures.md` §3.3 |
+| C-TBL-CUR-02 | CURR → CUKY referansı tabloda; nitelenmiş annotation + işaret | BLOCKER | `tables-structures.md` §3.3 |
+| C-TBL-QUAN-01 | QUAN → UNIT referansı tabloda; nitelenmiş annotation + işaret; miktar/tutar ayrımı DTEL veri tipinden | BLOCKER | `tables-structures.md` §3.3 |
+| C-TBL-DROP-01 | Mevcut alan siliniyor / rename / tip değişiyor mu? Evetse yazma yolu analizi + etki listesi + kullanıcı kararı | BLOCKER | `tables-structures.md` §3.4 |
+| C-TBL-APPEND-01 | Standart tabloya append eklenmiyor | BLOCKER | kesin yasak A |
+| C-TBL-DLI-01 | Delivery class değişiyor mu (genelde sabit kalmalı) | WARNING | — |
+| C-TBL-MAINT-01 | Data maintenance değişiyor mu | INFO | — |
+| C-TBL-ORDER-01 | Yeni iş alanı audit bloğunun üstünde; audit bloğu en sonda | WARNING | `tables-structures.md` §3.4 |
+| C-TBL-TD-01 | Spesifikasyondaki alan listesiyle (sayı, sıra) uyumlu | BLOCKER | — |
+| AX-TBL-VERIFY-01 | Yazma sonrası içerik kıyası + `DD03L` alan sayısı + (yeniden yaratmada) `E071` silme kalıntısı planlı | BLOCKER | `tables-structures.md` §3.5 |
 
 Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponlama değişikliği · append içeren tablo değişikliği.
 
@@ -160,4 +160,5 @@ Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponla
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
 - Validator/script adları, reviewer çıktı YAML şablonu, zincir/wiring durumu notları → alınmadı (aXet'te karşılığı yok); "kapı PASS'i ≠ madde ölçüldü" dersi başlıkta kaldı.
 - Müşteri paketine özgü ad desenleri, teknik tasarım dokümanı araçları, ekran/kolon yerleşimi maddeleri (PACK-14) → genelleştirildi ya da çıkarıldı.
-- 2026-09-25 eşitleme (ekip dersleri): CDS-DESC ve CDS-DUP eklendi; kaynaktaki obje adları, belge numaraları ve sistem kimliği alınmadı.
+- 2026-09-25 eşitleme (ekip dersleri): AX-CDS-DESC-01 ve AX-CDS-DUP-01 eklendi; kaynaktaki obje adları, belge numaraları ve sistem kimliği alınmadı.
+- 2026-10-19 kimlik hizası: kaynakla aynı kuralı taşıyan satır kaynağın kimliğini aldı (`C-CDS-*`, `C-STR-*`, `C-TBL-*`, `DE-*`); birden çok kaynak satırını birleştiren satır ilkinin kimliğini taşır (ör. C-CDS-SQLV-02 ⊃ SQLV-03 · C-CDS-CUR-02 ⊃ CUR-03 · C-TBL-DROP-01 ⊃ DROP-02/RENAME-01/TYPE-01); kaynakta karşılığı olmayan satırlar `AX-` ailesinde. Eski kısa adlar (CDS-FROM-1, TBL-DTEL …) yalnız bu tarihten önceki kayıtlarda geçer.

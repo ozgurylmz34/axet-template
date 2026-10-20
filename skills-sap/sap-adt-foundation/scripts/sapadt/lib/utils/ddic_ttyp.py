@@ -21,7 +21,10 @@ taşıyan aktüel, bu tipe TAM tipli bir FM parametresinden devredilirse çalı�
 from __future__ import annotations
 
 import re
-from xml.sax.saxutils import escape as _xml_escape
+try:  # Z194: öznitelik kaçışı tek kaynak (lib/ sys.path'te ya da paket içi import)
+    from utils.xml_kacis import attr_escape as _att
+except ImportError:  # pragma: no cover
+    from .xml_kacis import attr_escape as _att  # type: ignore
 
 ERISIM = {"standard": "T", "sorted": "S", "hashed": "H"}
 ANAHTAR_TANIM = {"standard": "D", "rowType": "T", "keyComponents": "K"}
@@ -35,10 +38,6 @@ DESTEKLENMEYEN_SATIR = ("aralık tablosu (rangeTypeOnPredefinedType / rangeTypeO
                         "referans satır (refToDictionaryType / refToPredefinedAbapType / refToClassOrInterfaceType)",
                         "tablo tipi satırı (iç içe tablo)", "boş/genel anahtar (notSpecified)", "ikincil anahtarlar")
 _AD_RE = re.compile(r"^(/[A-Z0-9_]+/)?[A-Z][A-Z0-9_]*$")
-
-
-def _att(v) -> str:
-    return _xml_escape(str(v), {'"': "&quot;"})
 
 
 def _bulgu(liste, kural, mesaj):

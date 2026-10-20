@@ -3464,6 +3464,356 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.20",
+   "tarih": "2026-10-20",
+   "kalemler": [
+    {
+     "id": "0.5.20-01",
+     "tur": "duzeltme",
+     "kritik": true,
+     "baslik": "SAP obje yaratma gövdelerinde XML kaçışı tek yerden yapılır · sorumlu kişi çözülemezse istek hiç gönderilmez",
+     "neden": "Obje yaratırken açıklama ya da alan metninde `&`, `<`, `\"` gibi karakter geçince ADT'ye giden XML bozulabiliyordu: kaçış yedi ayrı yerde kopyalanmıştı ve bazı obje tiplerinde hiç yoktu. Artık sınıf, program, veri elemanı, yapı/tablo, CDS, tip grubu, fonksiyon grubu/modülü, DDLX, DCL, BDEF, davranış sınıfı, tablo tipi, mesaj sınıfı ve kilit objesi gövdeleri tek bir kaçış modülünden geçer (öznitelik ve eleman metni ayrı). Sorumlu kişi (responsible) bağlantıdan çözülemezse araç ağa hiç çıkmadan hata verir; önceden gövdeye `None` yazılıyordu. Kritik işaretli, çünkü bozuk gövdeyle yaratılan obje SAP'de yanlış metinle kalabilir.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddic_ttyp.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/xml_kacis.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/description.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/msgclass.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/shells.py",
+      "skills-sap/sap-adt-foundation/tests/test_xml_kacis.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_xml_kacis"
+     ]
+    },
+    {
+     "id": "0.5.20-02",
+     "tur": "duzeltme",
+     "kritik": true,
+     "baslik": "`adt_syntax_check` artık salt-okur (aktive etmeden sözdizimi kontrolü) · yeni `adt_get_method` · kilit bildirimi · yan etkili istekler 5xx'te yeniden gönderilmez",
+     "neden": "① `adt_syntax_check` önceden objeyi aktive ederek ölçüyordu, bu yüzden adına rağmen yazma aracıydı. Artık yalnız salt-okur kontrol çağrısını (checkrun, inaktif sürüm) kullanır ve okuma sınıfındadır; araç sayısı 44 (29 okuma · 15 yazma). İnaktif sürümü olmayan tabloda sonuç `notProcessed` döner ve araç bunu ÖLÇÜLEMEDİ der; sınıfta aktif sürüm denetlenir (canlı ölçüldü). Push öncesi ön kontrol eski yolunu kullanmaya devam eder. ② Yeni okuma aracı `adt_get_method`: sınıf kaynağından tek metodun bloğunu döner; blok sınırı belirsizse (tek satırlık metot, aynı satırda zincirlenmiş `ENDMETHOD.`) komşu metodu döndürmek yerine `found:null` verir. ③ Kilit çakışmasında kimin kilitlediği bildirilir. ④ Genel HTTP katmanı yan etkili istekleri (yaratma, PUT, aktivasyon, silme, kilit, transport kaydı, ATC/ABAP Unit koşusu) 5xx'te artık yeniden göndermez; okuma istekleri eskisi gibi yeniden denenir. Bilinen sınır: uygulama katmanındaki üç döngü (kaynak yazma, silme, bir yaratma yolu) hâlâ tekrar edebilir — canlı ölçüm bekliyor. Kritik işaretli, çünkü iki kez giden yan etkili istek geri alınamaz.",
+     "dosyalar": [
+      "docs/sap-api-policy.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/SKILL.md",
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills-sap/sap-adt-foundation/references/foundation-query.md",
+      "skills-sap/sap-adt-foundation/references/known-errors-adt.md",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/gate.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/__init__.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/diag.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/cds_hatali_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/cls_hatali_active.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/cls_hatali_inactive.req.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/cls_hatali_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/cls_temiz_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/fm_hatali_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/tab_hatali_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/fixtures/checkrun_sozdizimi/tab_temiz_inactive.resp.xml",
+      "skills-sap/sap-adt-foundation/tests/test_checkrun_sozdizimi.py",
+      "skills-sap/sap-adt-foundation/tests/test_classrun_tek_post.py",
+      "skills-sap/sap-adt-foundation/tests/test_cli_gate.py",
+      "skills-sap/sap-adt-foundation/tests/test_kilit_bildirimi.py",
+      "skills-sap/sap-adt-foundation/tests/test_static.py",
+      "skills-sap/sap-adt-foundation/tests/test_verdict_activation.py",
+      "skills-sap/sap-adt-foundation/tests/test_yan_etkili_tekrar.py",
+      "skills-sap/sap-cds-ddic/SKILL.md",
+      "skills-sap/sap-classic-abap/SKILL.md",
+      "skills-sap/sap-code-review/SKILL.md",
+      "skills-sap/sap-code-review/references/quality-scorecard.md",
+      "skills-sap/sap-code-review/references/reviewer-brief.md",
+      "skills-sap/sap-code-review/scripts/quality_scorecard.py",
+      "skills-sap/sap-code-review/tests/test_quality_scorecard.py",
+      "skills-sap/sap-dev/references/role-briefs.md",
+      "skills-sap/sap-fs-ts-docs/references/live-confirmation-tour.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_checkrun_sozdizimi",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_yan_etkili_tekrar",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_kilit_bildirimi",
+      "python -m unittest discover -s skills-sap/sap-code-review/tests"
+     ]
+    },
+    {
+     "id": "0.5.20-03",
+     "tur": "kural",
+     "kritik": false,
+     "baslik": "İnceleme kontrol listelerinin madde kimlikleri kaynak metodolojiyle hizalandı · aXet'e özgü maddeler `AX-` önekli",
+     "neden": "ABAP, CDS/DDIC, OData, clean core, UI5 ve doküman kontrol listelerinde aynı madde numarası iki ayrı anlam taşıyabiliyordu. Artık ortak ailelerde (BE/FE/OD/CC/DOC/C/UI …) numara kaynak metodolojiyle birebir aynıdır; aXet'e özgü maddeler `AX-` önekiyle ayrılır. Eski inceleme raporlarında geçen numaralar değişmiş olabilir; yeni raporlar yeni kimlikleri kullanır. FS analiz günlüğü denetçisi `AX-DOC-*` kimliklerini de yakalar. Kimliklerin tekil ve kayıtlı olduğunu yeni bir test korur.",
+     "dosyalar": [
+      "memory/feedback_inceleme-bulgusu-kontrol-listesine.md",
+      "memory/feedback_ui5-elle-kurulan-istek-sap-client.md",
+      "memory/feedback_ui5-sayfadan-ayrilirken-senkron-xhr.md",
+      "skills-sap/sap-cds-ddic/references/cds.md",
+      "skills-sap/sap-cds-ddic/references/checklists.md",
+      "skills-sap/sap-classic-abap/references/checklists.md",
+      "skills-sap/sap-classic-abap/references/forms-f1-help.md",
+      "skills-sap/sap-code-review/SKILL.md",
+      "skills-sap/sap-code-review/references/checklist-abap.md",
+      "skills-sap/sap-code-review/references/checklist-cds-ddic.md",
+      "skills-sap/sap-code-review/references/checklist-clean-core.md",
+      "skills-sap/sap-code-review/references/checklist-common.md",
+      "skills-sap/sap-code-review/references/checklist-odata-backend.md",
+      "skills-sap/sap-code-review/references/clean-core.md",
+      "skills-sap/sap-code-review/references/validator-map.md",
+      "skills-sap/sap-code-review/tests/test_checklists.py",
+      "skills-sap/sap-dev/references/coding-patterns.md",
+      "skills-sap/sap-fs-ts-docs/SKILL.md",
+      "skills-sap/sap-fs-ts-docs/references/doc-checklist.md",
+      "skills-sap/sap-fs-ts-docs/references/fs-authoring.md",
+      "skills-sap/sap-fs-ts-docs/references/kd-authoring.md",
+      "skills-sap/sap-fs-ts-docs/references/traceability.md",
+      "skills-sap/sap-fs-ts-docs/scripts/check_fs_no_analysis_log.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_fs_no_analysis_log.py",
+      "skills-sap/sap-rap/references/draft-and-locks.md",
+      "skills-sap/sap-ui5-fiori/references/checklists.md",
+      "skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md",
+      "skills-sap/sap-ui5-fiori/references/known-errors-ui5.md",
+      "tests/test_kimlik_hizasi.py",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_kimlik_hizasi",
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_fs_no_analysis_log",
+      "python -m unittest discover -s skills-sap/sap-code-review/tests"
+     ]
+    },
+    {
+     "id": "0.5.20-04",
+     "tur": "yetenek",
+     "kritik": false,
+     "baslik": "Yeni skill `diagnosing-bugs` (kök neden döngüsü) · Clean ABAP ve Clean Core referansları, ECC→S/4 yeniden yazım ve toplu karar kuyruğu reçeteleri · FS özet ve entegrasyon sayfası şablonları",
+     "neden": "Sebebi bilinmeyen hata, dump, yanlış veri ya da yavaşlamada `%diagnosing-bugs` önce yeniden üretilebilir bir geri bildirim döngüsü kurar, 3-5 çürütülebilir hipotezi sırayla dener ve düzeltmeyi kusurun yaşadığı birimde yapar; `sap-dev` yönlendiricisi ve `sap-intake-triage` bu ayrımı gösterir. `sap-dev`'e Clean ABAP kuralları, ECC→S/4 yeniden yazım reçetesi ve toplu karar kuyruğu; `sap-code-review`'a ATC düzeltme desenleri ve clean core seviye notları; `sap-fs-ts-docs`'a FS özet ve entegrasyon sayfası şablonları eklendi. Salt-okunur listede `CL_SALV_TABLE`, düzenlenebilir ya da olay gerektiren ekranda GRID kuralı senaryoya göre yazıldı. abaplint sürüm sabiti 2.120.38 → 2.120.64: tüketicide ilk koşuda `npx` yeni sürümü bir kez indirir, ağ yoksa abaplint kontrolü SKIP olur (diğer kontroller etkilenmez). Yeni lisans kayıtları `THIRD_PARTY_NOTICES.md`'de.",
+     "dosyalar": [
+      "THIRD_PARTY_NOTICES.md",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_abaplint.py",
+      "skills-sap/sap-code-review/SKILL.md",
+      "skills-sap/sap-code-review/references/abaplint.md",
+      "skills-sap/sap-code-review/references/atc-fix-patterns.md",
+      "skills-sap/sap-code-review/references/clean-core.md",
+      "skills-sap/sap-code-review/scripts/abaplint_run.py",
+      "skills-sap/sap-code-review/scripts/released_successors.py",
+      "skills-sap/sap-code-review/tests/test_released_successors.py",
+      "skills-sap/sap-dev/SKILL.md",
+      "skills-sap/sap-dev/references/batch-judgment-queue.md",
+      "skills-sap/sap-dev/references/clean-abap.md",
+      "skills-sap/sap-dev/references/ecc-to-s4-rewrite.md",
+      "skills-sap/sap-fs-ts-docs/SKILL.md",
+      "skills-sap/sap-fs-ts-docs/templates/FS-summary-template.md",
+      "skills-sap/sap-fs-ts-docs/templates/integration-sheet-template.md",
+      "skills-sap/sap-fs-ts-docs/tests/test_build_verify.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_skill_structure.py",
+      "skills-sap/sap-intake-triage/SKILL.md",
+      "skills/diagnosing-bugs/SKILL.md",
+      "skills/diagnosing-bugs/references/dongu-adaylari.md",
+      "skills-sap/sap-dev/references/coding-patterns.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python -m unittest discover -s skills-sap/sap-code-review/tests",
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_skill_structure"
+     ]
+    },
+    {
+     "id": "0.5.20-05",
+     "tur": "yetenek",
+     "kritik": false,
+     "baslik": "Belge PDF'lerinde sayfa numarası (`--sayfa-no`) ve başlıklardan yer imi (`--yer-imi`)",
+     "neden": "`build_doc_pdf` ve `build_kd_pdf` iki yeni isteğe bağlı bayrak alır: `--sayfa-no` her sayfanın altına numara basar, `--yer-imi` belge başlıklarından PDF yer imi (outline) üretir. Altbilgi için sayfa alt boşluğu ölçülür; boşluk yetmiyorsa ya da ölçülemiyorsa araç DURDU der ve önceki PDF'i silmez. Bayraksız kullanım değişmedi (FS/KD/TS şablonlarında sayfa sayısı ve metin birebir aynı). `build_doc_pdf` artık başarılı dönüşte de tarayıcının uyarılarını gösterir.",
+     "dosyalar": [
+      "skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md",
+      "skills-sap/sap-fs-ts-docs/scripts/build_doc_pdf.py",
+      "skills-sap/sap-fs-ts-docs/scripts/build_kd_pdf.py",
+      "skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js",
+      "skills-sap/sap-fs-ts-docs/tests/test_build_verify.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_kd_build.py",
+      "skills-sap/sap-fs-ts-docs/tests/test_node_scripts.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_node_scripts",
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_build_verify"
+     ]
+    },
+    {
+     "id": "0.5.20-06",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "Yayın sızıntı taraması testleri genişledi",
+     "neden": "Yalnız test dosyası değişir; tüketicinin kullandığı bir akışı etkilemez. Yayın hazırlığının depo taraması yayına giren yollarda iç ad sınıflarını engelleyici sayar, yapısal kimlik izlerini (bulut host adı, transport numarası) içeriğini basmadan uyarır ve JSON dosyalarının çözülmüş değerlerini de tarar; bu testler o davranışı korur.",
+     "dosyalar": [
+      "tests/test_yayin_hazirla.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_yayin_hazirla"
+     ]
+    },
+    {
+     "id": "0.5.20-07",
+     "tur": "kural",
+     "kritik": false,
+     "baslik": "Çekirdek `AXET-CORE-0.10.0`: yeniden denemeden önce ara, Türkçe harf varyantı, ölçümlü kapanış, dosyaları adıyla ekle · doctor bulgu sınıfları · güncelleme raporunda ATLANDI ≠ ÖLÇÜLEMEDİ",
+     "neden": "Çekirdek kurallarına dört satır girdi: başarısız bir işlemi aynı amaçla yeniden denemeden önce ara; Türkçe karakterli aramada harf varyantını iki yönde dene (ASCII desen ↔ Türkçe metin sahte sıfır verir); iş yaparak kapanan maddenin kapanış kaydı bir ölçüm satırıdır; commit'e dosyaları adıyla ekle. Oturum açılış kimliği `AXET-CORE-0.10.0` olur. Kural yazım standardı `%write-skill`'e özetlendi. doctor FAIL/WARN satırları üç sınıfa ayrıldı (ONAR · KULLANICI · ŞABLON HATASI; tek açıklama `docs/onboarding.md` §5) ve skill'leri koşacak Python yorumlayıcısını yoklayan yeni bir WARN satırı geldi. `%guncelle` raporunda koşul gereği atlanan bütünlük adımı artık ÖLÇÜLEMEDİ diye görünmez.",
+     "dosyalar": [
+      "GUNCELLE.md",
+      "core/00-temel.md",
+      "docs/onboarding.md",
+      "scripts/doctor.py",
+      "scripts/guncelle.py",
+      "skills/guncelle/SKILL.md",
+      "skills/hata-bildir/SKILL.md",
+      "skills/onboard/SKILL.md",
+      "skills/remember/SKILL.md",
+      "skills/write-skill/SKILL.md",
+      "tests/test_doctor.py",
+      "tests/test_guncelle.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_doctor",
+      "python tests/run_tests.py -k test_guncelle"
+     ]
+    },
+    {
+     "id": "0.5.20-08",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "SAP bağlantı rehberi `conn/README.md` → `docs/sap-baglanti.md`; `conn/` artık yalnız git'e girmeyen bağlantı dosyasını taşır",
+     "neden": "Proje şablonunda bağlantı rehberi gizli bağlantı dosyasıyla aynı klasördeydi ve `.gitignore`'da istisna gerektiriyordu; rehberin commit'i kullanıcıya düşüyordu. Rehber `docs/sap-baglanti.md`'ye taşındı, `.gitignore` istisnası kalktı. Mevcut projede `%guncelle-proje` yeni rehberi getirir ve eski `conn/README.md` silmesini yalnız o dosya için sahneler (commit atmaz); dosya git'te hiç izlenmiyorsa git işi önermez; `geri-al` sahnelemeyi de geri alır. doctor'un yorumlayıcı yoklaması 30 → 10 sn.",
+     "dosyalar": [
+      "README.md",
+      "docs/onboarding.md",
+      "guncelle/kartlar/V6.md",
+      "scripts/guncelle_proje.py",
+      "skills-sap/sap-adt-foundation/references/foundation-ops.md",
+      "skills/guncelle-proje/SKILL.md",
+      "templates/project-sap/conn/README.md",
+      "templates/project-sap/docs/sap-baglanti.md",
+      "templates/project/.gitignore",
+      "tests/test_guncelle_proje.py",
+      "tests/test_new_project.py",
+      "tests/test_proje_tamamla.py",
+      "scripts/doctor.py",
+      "tests/test_doctor.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_guncelle_proje",
+      "python tests/run_tests.py -k test_guncelle_kartlar",
+      "python tests/run_tests.py -k test_new_project"
+     ]
+    },
+    {
+     "id": "0.5.20-09",
+     "tur": "kural",
+     "kritik": false,
+     "baslik": "Yeni inceleme maddeleri (ABAP BE-82..88, UI5 FE-44/50..52, doküman DOC-FS/TS/CR) · inceleme brifinde kanıt tipi, kapsama tablosu ve \"sistemde kalan doğrulamalar\"",
+     "neden": "Kontrol listeleri kaynak metodolojiyle hizalandı: ABAP'ta BE-82..88 (BE-82 DOĞRULANMADI şerhli) ve yeniden yazılan BE-10b/76/80, UI5'te FE-44 ve FE-50..52 (TR yerel ayarda sayı, boş Decimal, metin → token), doküman listesinde DOC-FS-08, DOC-TS-06..08, DOC-CR-04..06. İnceleme brifi her bulgunun kanıt tipini (canlı · kaynak · doküman) ister: yalnız dokümana dayanan davranış iddiası en fazla WARNING olur ve \"sistemde kalan doğrulamalar\" bölümüne girer; liste yürüyüşü kapsama tablosuna dönüştü. `cleancore_policy` boşsa clean core bulgusu WARNING yazılır ve politika sorulur. Rol brifleri araç listesini CLI ile hizalı gösterir.",
+     "dosyalar": [
+      "skills-sap/sap-classic-abap/SKILL.md",
+      "skills-sap/sap-code-review/references/checklist-abap.md",
+      "skills-sap/sap-code-review/references/validator-map.md",
+      "skills-sap/sap-dev/references/coding-patterns.md",
+      "skills-sap/sap-fs-ts-docs/references/doc-checklist.md",
+      "skills-sap/sap-ui5-fiori/references/checklists.md",
+      "skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md",
+      "skills-sap/sap-code-review/references/reviewer-brief.md",
+      "skills-sap/sap-dev/references/role-briefs.md",
+      "skills/code-review/SKILL.md",
+      "tests/test_sap_skill_bilgi.py",
+      "skills-sap/sap-code-review/references/checklist-clean-core.md",
+      "skills-sap/sap-code-review/references/clean-core.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k test_sap_skill_bilgi",
+      "python -m unittest discover -s skills-sap/sap-code-review/tests"
+     ]
+    },
+    {
+     "id": "0.5.20-10",
+     "tur": "kural",
+     "kritik": false,
+     "baslik": "33 yeni ders skill referanslarına işlendi · SD modül referansı (tablo, işlem kodu, BAPI, SPRO, LO-VC) · kullanım kılavuzu önceki KD'nin git geçmişine bakar",
+     "neden": "Kaynak metodolojinin 42 yeni dersi tek tek değerlendirildi: 33'ü ilgili skill referanslarına satır olarak girdi (ADT, klasik ABAP ve UI5 bilinen hataları, ATC düzeltme desenleri, CDS etiketi, ambalaj talimatı, ALV, liste/grid, filtre-arama, çalışma zamanı doğrulaması, uygulama iskeleti, PDF ekran görüntüsü, mock ortam, görsel kontrol), dört disiplin dersi ekip hafızasına eklendi. `sap-intake-triage` modül paketine SD referans klasörü geldi (tablolar, işlem kodları, BAPI, geliştirme noktaları, SPRO, iş akışları, LO-VC belge konfigürasyonu, karakteristik hızlı giriş). `sap-ui5-user-guide` yeni KD yazmadan önce önceki KD'nin git geçmişine bakar (tuzak T28).",
+     "dosyalar": [
+      "memory/MEMORY.md",
+      "memory/feedback_git-stash-u-yarim-kalabilir.md",
+      "memory/feedback_is-kurali-sessizce-gomulmez.md",
+      "memory/feedback_paralel-oturum-ayni-calisma-agaci.md",
+      "memory/feedback_verilmis-karar-yeniden-sorulmaz.md",
+      "memory/feedback_yerel-suit-ci-ikizi-degil.md",
+      "skills-sap/sap-adt-foundation/references/known-errors-adt.md",
+      "skills-sap/sap-cds-ddic/references/cds.md",
+      "skills-sap/sap-cds-ddic/references/packing-instruction.md",
+      "skills-sap/sap-classic-abap/references/alv-report.md",
+      "skills-sap/sap-classic-abap/references/classes.md",
+      "skills-sap/sap-classic-abap/references/known-errors-classic.md",
+      "skills-sap/sap-code-review/references/atc-fix-patterns.md",
+      "skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md",
+      "skills-sap/sap-intake-triage/SKILL.md",
+      "skills-sap/sap-intake-triage/references/modules/README.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/README.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/bapi.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/enhancements.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/karakteristik-hizli-giris.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/lovc-belge-konfigurasyonu.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/spro.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/tables.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/tcodes.md",
+      "skills-sap/sap-intake-triage/references/modules/referans/sd/workflows.md",
+      "skills-sap/sap-intake-triage/references/modules/sd.md",
+      "skills-sap/sap-odata-backend/references/filter-search.md",
+      "skills-sap/sap-ui5-fiori/references/app-skeleton.md",
+      "skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md",
+      "skills-sap/sap-ui5-fiori/references/known-errors-ui5.md",
+      "skills-sap/sap-ui5-fiori/references/list-grid-alv.md",
+      "skills-sap/sap-ui5-fiori/references/runtime-verification.md",
+      "skills-sap/sap-ui5-user-guide/SKILL.md",
+      "skills-sap/sap-ui5-user-guide/references/akis.md",
+      "skills-sap/sap-ui5-user-guide/references/gorsel-kontrol.md",
+      "skills-sap/sap-ui5-user-guide/references/mock-ortam.md",
+      "skills-sap/sap-ui5-user-guide/references/tuzaklar.md",
+      "skills-sap/sap-ui5-user-guide/tests/test_skill_structure.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-ui5-user-guide/tests/run_tests.py -k test_skill_structure"
+     ]
+    },
+    {
+     "id": "0.5.20-11",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı · README ve kurulum rehberinin skill listelerine `%diagnosing-bugs`",
+     "neden": "Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı. README \"Günlük kullanım\" ve `docs/onboarding.md` genel skill listesi yeni `%diagnosing-bugs` skill'ini gösterir.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md",
+      "docs/onboarding.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k readme"
+     ]
+    }
+   ]
   }
  ]
 }

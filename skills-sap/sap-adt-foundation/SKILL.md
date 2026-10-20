@@ -193,7 +193,7 @@ kullanıcıya aktar, ne gerektiğini söyle.
 ## Referanslar
 | Dosya | İçerik |
 |---|---|
-| `references/tool-catalog.md` | 43 araç: sınıf, amaç, argüman, uyarı |
+| `references/tool-catalog.md` | 44 araç: sınıf, amaç, argüman, uyarı |
 | `references/profiles.md` | SAP profil yetenek matrisi (rehber, canlı test gerekir) + CLI profil etiketleri |
 | `references/foundation-ops.md` | Okuma/indirme, yaratma, push, aktivasyon, include+program akışı, FM/CDS/class protokol notları, kilit, transport, paket, arama |
 | `references/foundation-query.md` | SQL ve tablo okuma, where-used/blast-radius (`CROSS`), ATC, OData `$metadata` doğrulama |
@@ -206,7 +206,8 @@ kullanıcıya aktar, ne gerektiğini söyle.
   Referanslardaki REST akışları teşhis ve araç bakımı içindir.
 - QA/PRD'de hassas veri okuma (KVKK) açık onay ister; DEV muaftır (SAP çekirdeği). Onay kelimesi
   net olmalı ("onay"); "dene", "çek" onay değildir.
-- `adt_syntax_check` salt-okuma DEĞİLDİR: temiz bekleyen sürümü aktive eder → yazma sınıfı.
+- `adt_syntax_check` salt-okur checkrun'dır (okuma sınıfı, Z195): bekleyen sürümü aktive ETMEZ; `valid:null` = ölçülemedi
+  (ör. inaktif sürümü olmayan tabloda `notProcessed`; sınıfta inaktif sürüm yoksa aktif sürüm denetlenir), temiz DEĞİL. Aktivasyonun yerini tutmaz.
 - Alt ajana (`agent`) SAP yazma işi verilmez; alt ajan yalnız okuma sınıfı araçlarla araştırır ve
   brifinge "yazma sınıfı araç çağırma" kuralı açıkça yazılır.
 - Yeni bir ADT yöntemi başarısız denemelerden sonra çalıştıysa: çalışan yöntem + denenen başarısız yollar

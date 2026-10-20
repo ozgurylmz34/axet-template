@@ -421,18 +421,24 @@ class KapiKayitDefteriTests(DefterTestTemeli):
         self.assertIn('test:skills-sap/sap-code-review/tests', adlar, 'gerçek test takımları')
         self.assertNotIn('review:asla_olmayan_gorev', adlar)
 
-    def test_adt_syntax_check_yazma_sinifi_isaretlenir(self):
+    def test_sap_kapi_sinifi_gate_read_tools_ile_isaretlenir(self):
+        # Z195 (2026-10-19): adt_syntax_check salt-okur checkrun'a geçti ⇒ okuma; adt_classrun yazma kalır.
         _, out, _ = _cli('kapilar', '--json')
         kap = json.loads(out)
-        self.assertEqual(kap['kapilar']['sap:adt_syntax_check']['sinif'], 'yazma',
-                         'bizde adt_syntax_check SAP\'ye YAZAR — ücretsiz ön kontrol değildir')
+        self.assertEqual(kap['kapilar']['sap:adt_syntax_check']['sinif'], 'okuma',
+                         'adt_syntax_check artık salt-okur checkrun (gate.READ_TOOLS)')
+        self.assertEqual(kap['kapilar']['sap:adt_classrun']['sinif'], 'yazma',
+                         'kontrol grubu: classrun SAP\'de kod koşturur — ücretsiz ön kontrol değildir')
         self.assertEqual(kap['kapilar']['sap:adt_atc_check']['sinif'], 'okuma')
 
     def test_yazma_sinifi_kapi_karnede_isaretlenir(self):
+        self.satir_ekle(kapi='sap:adt_classrun', sonuc='pass', artefakt=str(self.kanit),
+                        kapsam='tek sınıf', test_sayisi=None)
         self.satir_ekle(kapi='sap:adt_syntax_check', sonuc='pass', artefakt=str(self.kanit),
                         kapsam='tek sınıf', test_sayisi=None)
         _, k, _ = _karne_json(self.defter)
-        self.assertIn('sap:adt_syntax_check', k['yazma_sinifi_kapi'])
+        self.assertIn('sap:adt_classrun', k['yazma_sinifi_kapi'])
+        self.assertNotIn('sap:adt_syntax_check', k['yazma_sinifi_kapi'], 'okuma kapısı yazma diye işaretlenmez')
 
     def test_kayit_defteri_olculemezse_sessiz_kalmaz(self):
         # Kontrol grubu: kaynaklar YOKKEN (boş kök) kayıt defteri boş DÖNMEZ, "ÖLÇÜLEMEDİ" der ve

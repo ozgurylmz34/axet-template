@@ -102,6 +102,13 @@ Yalnız sınıfta test include'u **henüz yokken** geçerlidir; var olanı günc
 "`method_count` = beklenen test sayısı" yaz; `0` = FAIL. Aktivasyondan sonra `adt_get` ile include listesinde
 `testclasses` var mı ve içerik bayt olarak yereldeki ile aynı mı bak.
 
+**Sahte sıfır — include DOLU iken de olur:** yeni yaratılıp aktive edilen sınıfta **ilk** `adt_unit_run` `method_count:0`
+dönebilir; test sınıfı `RISK LEVEL HARMLESS` olsa bile (ekip dersi, 2026-09-28: aynı anda kontrol grubu sınıfı 19 test
+döndü; aynı sınıfın ikinci koşusu 22 döndü ve 1 test gerçekten kalıyordu — "0" kırmızıyı gizliyordu). Kök neden ölçülmedi
+(test include'unun geç üretilmesi ya da oturum önbelleği olabilir). Aktivasyon sonrası `0` görürsen sonucu kabul etme:
+bilinen testli başka bir sınıfla kontrol grubu koş + aynı sınıfı ikinci kez koş. Beklenen sayıyı yerel kaynaktan
+(`FOR TESTING` metot sayısı) önceden yaz; tutmazsa DUR.
+
 **aXet'te araç durumu (2026-09-13; çevrimdışı test edildi, canlı DOĞRULANMADI):** `adt_push_source` `object_type=ccau`
 (ve `ccimp`) sınıf alt-include'unu yazar — `name` = **ana sınıf**; include yoksa önce iskelet (①) sonra PUT (②), bayt readback,
 ardından ana sınıf aktivasyonu; transport zorunlu (`%sap-adt-foundation` → `tool-catalog.md` → `adt_push_source`).

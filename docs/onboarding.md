@@ -102,8 +102,8 @@ Var olan bir projeyi şablona getirmek için aXet'te **`%guncelle-proje`** yaz; 
 
 ### 3.2 SAP kimlik bilgileri
 Her SAP sistemi `conn\<AD>.env` dosyasıdır; aktif bağlantı proje kökündeki `.conn_adt`'dir. Bağlantı dosyaları
-(`conn/*.env`, `.conn_adt`) git'e girmez; `conn/` altında yalnız `conn/README.md` izlenir (şablon `.gitignore`:
-`!conn/README.md`) ve onun commit'i kullanıcıdadır — aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez.
+(`conn/*.env`, `.conn_adt`) git'e girmez; `conn/` altında hiçbir dosya izlenmez. Klasörün açıklaması projede
+`docs/sap-baglanti.md`'dir (eski projelerdeki `conn/README.md`'yi `%guncelle-proje` oraya taşır).
 `conn/` ve `.conn_adt` aXet ajanına kapalıdır (denylist), içeriği sohbete yazılmaz.
 
 1. **Proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (`%yeni-proje` yazar; yoksa
@@ -178,7 +178,7 @@ SAP GUI otomasyonu gerekiyorsa model script'i yazar, **sen** çalıştırırsın
   ve devir notları oradan gelir.
 - **Gün sonu:** `%gun-sonu` · devir notu `%handoff` · iş listesi `.axet-code/memory/project_is-listesi.md`.
 - **Genel skill'ler:** `%yeni-proje` · `%recall` · `%remember` · `%verify-done` · `%explore` · `%code-review` ·
-  `%commit-pr` · `%skill-audit` · `%write-skill` · `%hata-bildir` (aXet'e hata/öneri bildirimi; GitHub hesabı gerekmez).
+  `%diagnosing-bugs` (sebebi bilinmeyen hata, dump, yavaşlama) · `%commit-pr` · `%skill-audit` · `%write-skill` · `%hata-bildir` (aXet'e hata/öneri bildirimi; GitHub hesabı gerekmez).
 - **Ofis işleri:** `%office-excel` (profil, dönüştürme, karşılaştırma, rapor) · `%office-docs` (Markdown → Word/PDF,
   ekran görüntülü kılavuz) · `%office-slides` (PowerPoint).
 - **SAP işleri:** iş alımı `%sap-intake-triage`, okuma `%sap-adt-foundation`, teslim `%sap-abapgit-delivery`;
@@ -196,6 +196,28 @@ SAP GUI otomasyonu gerekiyorsa model script'i yazar, **sen** çalıştırırsın
 ## 5. Sorun giderme
 
 İlk bakılacak yer her zaman kurulum penceresindeki mesajdır; sonra `python $HOME\axet\scripts\doctor.py` çıktısı.
+
+### `doctor` bir şey bulursa — her satırı üç sınıftan birine koy
+
+> Bu bölüm tek kaynaktır: `%guncelle`, `%onboard` ve `%hata-bildir` buraya bağlanır, kuralı kendileri yazmaz.
+
+`doctor` **salt-okurdur**: hiçbir şeyi düzeltmez, bildirim göndermez; satırların çoğu `→` ile bir öneri basar.
+Ne yapılacağına doctor'u koşan karar verir. FAIL'ler **ve** WARN'lar tek tek, sırayla şu üç sınıftan birine konur:
+
+| Sınıf | Ölçüt | Ne yapılır |
+|---|---|---|
+| **① ONAR** (model yapar) | Satır bir komut öneriyor **ve** komut yalnız bu projenin ya da klonun yerel, yeniden üretilebilir durumunu yazıyor: `git config core.hooksPath .githooks` (yerel repo ayarı) · `new_package.py --index` (paket indeksi) · `session_brief.py` (açılış özeti) | Komutu koş → `doctor`'u yeniden koş → satırın PASS olduğunu göster. Hâlâ FAIL ise ③'e geç. Komut bir onay kuralına giriyorsa (çekirdek §3 altyapı/davranış yüzeyi; `new_project.py` gerçek koşusu; `%guncelle-proje`) önce öner, açık onayla koş |
+| **② KULLANICI** (model yapamaz ya da yapmamalı) | Kimlik/şifre (`conn/*.env`, `.conn_adt`) · global config, izin kuralı, denylist (`install.py` yazar) · başka klon kaydı (o klonda `--uninstall`) · yazılım kurulumu (Python, Git, aXet, Python paketleri) · makine geneli ayar (PATH, PowerShell politikası, git **global** kimliği) · davranış yüzeyi onayı (`behavior_manifest.py generate`) · proje bilgisi (`AGENTS.md` yer tutucusu, `sap-project.json` alanı) · yarım iş olabilecek durum (commit'siz değişiklik, kirli çalışma ağacı) · süre kararı (test borcu → `%testler`) | Ne gerektiğini tek satırla söyle, satırdaki öneriyi ver, kullanıcının yapmasını bekle; sonra yeniden ölç. Şifreyi model yazmaz, sormaz |
+| **③ ŞABLON HATASI** (bakımcılara bildirilir) | Kurulum doğru olduğu hâlde template'in kendi dosyası ya da aracı yanlış davranıyor: ① uygulandığı hâlde süren FAIL · template skill'inde `SKILL.md yok` / ad / frontmatter FAIL'i · `SAP kanonik kesin yasak bölümü BOZUK` · `doctor`'un kendisi çöktü (traceback) | Template dosyasına yerelde **DOKUNMA** (her projeyi etkiler, sonraki `%guncelle`'de çakışır). `%hata-bildir` ile bildirim taslağı hazırla, kullanıcıya göster; göndermeyi kullanıcı yapar — açık onayı olmadan hiçbir şey gönderilmez |
+
+- **Emin değilsen ②'ye koy ve sor** — yanlış sınıf ①'de istenmeyen bir değişiklik, ③'te gereksiz bir bildirim üretir.
+  ③'ten önce `%hata-bildir` adım 2'yi uygula: bildirimlerin çoğu aslında kurulum eksiğidir.
+- Projenin **kendi** dosyasındaki kusur (proje `AGENTS.md`, `.axet-code.json`, `.rules.md`) ③ değildir: düzeltmeyi
+  kullanıcıya göster, onayla uygula.
+- Bilinen satırların sınıfı: PowerShell yürütme politikası · git kimliği · `SAP Python paketleri EKSİK` · skill
+  yorumlayıcısı uyarısı · başka klondan gelen skill ad çakışması → ② · `core.hooksPath` · paket indeksi bayat → ①.
+- Raporda her FAIL/WARN satırı sınıfıyla ve sonucuyla yazılır: `① onarıldı → PASS` · `② kullanıcıya bırakıldı: <ne>` ·
+  `③ bildirim taslağı: <dosya> — kullanıcı gönderdi <adres> | göndermedi`.
 
 ### Kurulum penceresi (`aXet-Kur.cmd`)
 - **Windows uyarısı** ("bu dosya internetten geldi" / SmartScreen): **Daha fazla bilgi → Yine de çalıştır**.

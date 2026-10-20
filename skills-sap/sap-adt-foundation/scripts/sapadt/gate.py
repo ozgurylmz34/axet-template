@@ -83,6 +83,10 @@ READ_TOOLS = frozenset({
     # Z166 (2026-10-03, kullanıcı onayı): tek ST22 dump'ını okur — yalnız GET (tools/query.py);
     # PII: DEV dışı tier + başka client acknowledge_risk ister (araç içi kapı)
     "adt_dump_read",
+    # Z195 (2026-10-19, lider kararı; kaynak çekirdek salt-okur araçları): `adt_syntax_check` artık yalnız
+    # `POST /sap/bc/adt/checkruns` (kilit/PUT/aktivasyon YOK; eski aktive eden yol araçtan kaldırıldı) ·
+    # `adt_get_method` yalnız `source/main` GET'i
+    "adt_syntax_check", "adt_get_method",
 })
 # Okuma kapısını (`check_read`) ve profil kontrolünü CLI'de ATLAYAN araçlar. `ping` SAP'ye gitmez;
 # `sap_doctor` sap-project.json/.conn_adt eksikliğini TEŞHİS etmek için var — aynı ön koşulları

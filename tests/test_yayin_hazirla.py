@@ -16,6 +16,7 @@ taraması, DISLANANLAR listesinin kendisi, NOTICE glob doğrulaması, ASCII dı�
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import unittest
 from pathlib import Path
@@ -33,7 +34,13 @@ ZORUNLU = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSES/Apache-2.0.t
 ORTAM = "AXET_SIZINTI_EK"
 UYDURMA = "Orn" + "ekfirma"  # uydurma müşteri adı (gerçek ad bu depoya yazılmaz)
 
-TB, IB = "\\", "/"  # ters/ileri bölü — `C:\Users\...` örneklerini kaynak dosyada yan yana getirmemek için
+# Z193/Z204 sentetikleri (parçalı — bu dosya da taranır). İç ad UYDURMADIR; test, betik kopyasının desenine ekler.
+SENTETIK_IC_AD = "Uydurma" + "_IcDepo"
+SAHTE_TENANT = "qz7" + "firma.s4hana.cloud" + ".sap"
+SAHTE_TRANSPORT = "QZ7" + "K912345"
+
+TB, IB = "\\", "/"   # ters/ileri bölü — `C:\Users\...` örneklerini kaynak dosyada yan yana getirmemek için
+KULLANICI_YOLU = "C:" + TB + "Users" + TB + "Orn" + "ekkisi" + TB + "proje"   # uydurma kullanıcı adı
 
 # (sınıf adı, sentetik sızıntı satırı) — BLOCKER kalması gereken gerçek sızıntı sınıfları.
 SIZINTI_ORNEKLERI = [
@@ -338,6 +345,173 @@ class YayinHazirlaTest(GeciciTest):
         for s in ("KAPSAM — BLOCKER (çıkış 1): yerel liste (müşteri/kurum): 1 desen",
                   "KAPSAM — dışlanan:", "KAPSAM — bakılmayan:", "git geçmişi"):
             self.assertIn(s, c)
+
+    # --- Z193 (2026-10-19): iç repo adı (ve DESENLER'in öbür BLOCKER sınıfları) yayına GİREN yolda BLOCKER ----------
+    # Vaka 2026-10-04: `tests/`'e düşen bir iç ad `--depo-tara`da BULGU 0 ile geçti, CI'ın public düzen taraması aynı
+    # satırı BLOCKER saydı (6 iş kırmızı). Muafiyet artık yalnız DISLANANLAR yollarında (`dislanan_mi`).
+    def sentetik_ic_ad_deposu(self, **dosyalar: str):
+        """Betik kopyasındaki "iç repo adı" desenine UYDURMA bir ad eklenir — gerçek iç ad bu teste yazılmaz.
+        Desen satırı bulunamazsa test sessizce boş ölçmesin diye ASSERT edilir."""
+        d = self.depo(**dosyalar)
+        kopya = d / "maintenance" / "yayin_hazirla.py"
+        metin = kopya.read_text(encoding="utf-8")
+        isaret = '(BLOCKER, "iç repo adı", r"'
+        self.assertEqual(metin.count(isaret), 1, "iç repo adı desen satırı bulunamadı")
+        kopya.write_text(metin.replace(isaret, isaret + SENTETIK_IC_AD + "|"), encoding="utf-8")
+        self.liste(d)
+        return d
+
+    def test_depo_tara_ic_ad_yayin_yolunda_blocker(self):
+        d = self.sentetik_ic_ad_deposu(**{"tests__test_ornek.py": "# " + SENTETIK_IC_AD + " junction\n"})
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("iç repo adı: tests/test_ornek.py:1:", c)
+        self.assertIn("BULGU: 1 (BLOCKER)", c)
+
+    def test_KONTROL_depo_tara_ic_ad_maintenance_icinde_bulgu_degil(self):
+        d = self.sentetik_ic_ad_deposu(**{"maintenance__IS-LISTESI.md": "Z1: " + SENTETIK_IC_AD + " eşlemesi\n"})
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("BULGU: 0", c)
+        # (betik kopyası da sentetik adı taşır — desen satırı; o da dışlanan yolda sayılır)
+        self.assertRegex(c, r"iç repo adı: \d+ satır \(yalnız sayı — dışlanan yol;[^\n]*maintenance/IS-LISTESI\.md 1")
+
+    def test_depo_tara_muafiyet_dislananlar_listesinden_gelir(self):
+        """Muafiyet `maintenance/` önekine değil DISLANANLAR'a bağlı: `_lab/` sayılır, benzer adlı yayın yolu sayılmaz."""
+        d = self.sentetik_ic_ad_deposu(**{"_lab__not.md": SENTETIK_IC_AD + "\n",
+                                          "docs__maintenance-notu.md": SENTETIK_IC_AD + "\n"})
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("iç repo adı: docs/maintenance-notu.md:1:", c)
+        self.assertNotIn("iç repo adı: _lab/not.md", c)
+        self.assertIn("_lab/not.md 1", c)
+
+    def test_depo_tara_tum_blocker_siniflari_yayin_yolunda_blocker(self):
+        d = self.depo(**{"docs__sizinti.md": "\n".join(s for _, s in SIZINTI_ORNEKLERI) + "\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn(f"BULGU: {len(SIZINTI_ORNEKLERI)} (BLOCKER)", c)
+        for no, (sinif, _) in enumerate(SIZINTI_ORNEKLERI, 1):
+            self.assertIn(f"{sinif}: docs/sizinti.md:{no}:", c)
+
+    # --- Z204 (2026-10-19): yapısal kimlik izi (tenant host · transport no) — WARN-FIRST, token basılmaz ------------
+    def test_depo_tara_yapisal_iz_uyari_cikis_kodu_ayni(self):
+        d = self.depo(**{"docs__baglanti.md": "Sunucu: https://" + SAHTE_TENANT + "/sap/bc/adt\nİş: "
+                         + SAHTE_TRANSPORT + " kaydı\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)                                 # warn-first: çıkış kodu değişmez
+        self.assertIn("BULGU: 0", c)
+        self.assertIn("yapısal kimlik izi: docs/baglanti.md:1 (tenant host)", c)
+        self.assertIn("yapısal kimlik izi: docs/baglanti.md:2 (transport no)", c)
+        self.assertNotIn(SAHTE_TENANT, c)                          # token basılmaz
+        self.assertNotIn(SAHTE_TRANSPORT, c)
+        (d / "docs" / "baglanti.md").unlink()                      # kontrol: aynı depo, iz yok → aynı çıkış kodu
+        rc0, c0 = self.depo_tara(d)
+        self.assertEqual(rc0, rc, c0)
+        self.assertNotIn("yapısal kimlik izi:", c0)
+
+    def test_KONTROL_depo_tara_yapisal_iz_yer_tutucular_sessiz(self):
+        satirlar = ["https://<tenant>.s4hana.cloud" + ".sap", "https://abc123.eu10.hana.ondemand" + ".com",
+                    "eu10.hana.ondemand" + ".com", "https://xxx.s4hana.cloud" + ".sap", "XXX" + "K900001",
+                    "<SID>K9NNNNN", "SAH" + "K900123", "ZXX001_ORDERK123456"]
+        d = self.depo(**{"docs__ornekler.md": "\n".join(satirlar) + "\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertNotIn("yapısal kimlik izi:", c)
+
+    def test_depo_tara_bolge_bicimli_tenant_ara_etiketle_uyari(self):
+        """Ö1 (bug gate 2026-10-19): bölge muafiyeti yalnız host TAM `<bölge>.<sonek>` iken — ara etiket varsa uyarı."""
+        d = self.depo(**{"docs__idp.md": "https://ab12.authentication.eu10.hana.ondemand" + ".com/oauth\n"
+                                          + "eu10.hana.ondemand" + ".com\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("yapısal kimlik izi: docs/idp.md:1 (tenant host)", c)
+        self.assertNotIn("docs/idp.md:2", c)                       # kontrol: yalın bölge alanı sessiz
+
+    # --- F2 (bug gate 2026-10-19): JSON kaçışlı değer + üretilen CHANGELOG — yayın ve depo taraması AYNI görür ------
+    def test_json_kacisli_kullanici_yolu_iki_taramada_blocker(self):
+        d = self.depo(**{"docs__ayar.json": json.dumps({"ornek": {"yol": KULLANICI_YOLU}}) + "\n"})
+        self.liste(d)
+        self.assertNotIn(KULLANICI_YOLU, (d / "docs" / "ayar.json").read_text(encoding="utf-8"))  # ham metinde kaçışlı
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertIn("iç kullanıcı/dizin: docs/ayar.json:json$.ornek.yol:", c)
+        rc_y, c_y = self.tara(d)                                    # yayın taraması aynı fonksiyonla aynı bulgu
+        self.assertEqual(rc_y, 1, c_y)
+        self.assertIn("iç kullanıcı/dizin: docs/ayar.json:json$.ornek.yol:", c_y)
+
+    def test_KONTROL_json_yer_tutucu_yol_ve_bozuk_json_sessiz(self):
+        yer_tutucu = "C:" + TB + "Users" + TB + "<kullanici>" + TB + "proje"
+        d = self.depo(**{"docs__ayar.json": json.dumps({"yol": yer_tutucu}) + "\n",
+                         "docs__bozuk.json": '{"yol": "' + KULLANICI_YOLU.replace(TB, TB * 2) + '"\n'})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)                                  # bozuk JSON çözülmez → yalnız ham (kaçışlı) satır
+        self.assertNotIn("docs/ayar.json:", c)
+        self.assertNotIn("docs/bozuk.json:", c)
+
+    def test_json_ham_satirda_gorunen_deger_bir_kez_raporlanir(self):
+        """Çözülmüş değer, ham satırla AYNI eşleşmeyi veriyorsa ikinci bulgu üretmez (bulgu sayısı şişmez)."""
+        d = self.depo(**{"docs__musteri.json": json.dumps({"ad": UYDURMA}) + "\n"})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertEqual(1, c.count("docs/musteri.json:"), c)
+        self.assertIn("docs/musteri.json:1:", c)                    # ham satır numarasıyla, json$ yoluyla değil
+
+    def test_json_anahtari_host_olan_yapisal_iz_tokeni_basmaz(self):
+        """Bug gate 3. tur: JSON yapısal iz konumu anahtar yolunu basmaz (anahtarın kendisi host olabilir) — `json#N`."""
+        kacisli = SAHTE_TENANT.replace(".", TB + "u002e")             # ham satırda desen tutmaz, çözülmüş anahtarda tutar
+        d = self.depo(**{"docs__k.json": '{"' + kacisli + '": 1}\n'})
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("yapısal kimlik izi: docs/k.json:json#1 (tenant host)", c)
+        self.assertNotIn(SAHTE_TENANT.split(".")[0], c)              # host etiketi hiçbir yerde basılmaz
+
+    def test_bom_lu_json_cozulur_ve_bozuk_json_olculemedi_sayilir(self):
+        """Bug gate 3. tur: BOM'lu JSON'un çözülmüş değerleri taranır; ayrıştırılamayan .json sessiz düşmez (KAPSAM)."""
+        d = self.depo(**{"docs__bom.json": "﻿" + json.dumps({"yol": KULLANICI_YOLU}) + "\n",
+                         "docs__bozuk.json": '{"yol": 1\n'})
+        self.liste(d)
+        self.assertEqual(b"\xef\xbb\xbf", (d / "docs" / "bom.json").read_bytes()[:3])
+        for kip, (rc, c) in (("depo", self.depo_tara(d)), ("yayın", self.tara(d))):
+            self.assertEqual(rc, 1, kip + c)
+            self.assertIn("iç kullanıcı/dizin: docs/bom.json:json$.yol:", c, kip)
+            self.assertIn("ÖLÇÜLEMEDİ 1 .json (ayrıştırılamadı", c, kip)
+            self.assertIn("ilk 5: docs/bozuk.json)", c, kip)
+
+    def test_KONTROL_gecerli_json_olculemedi_sifir(self):
+        d = self.depo(**{"docs__ayar.json": json.dumps({"a": 1}) + "\n"})
+        self.liste(d)
+        for kip, (rc, c) in (("depo", self.depo_tara(d)), ("yayın", self.tara(d))):
+            self.assertEqual(rc, 0, kip + c)
+            self.assertIn("ÖLÇÜLEMEDİ 0 .json (ayrıştırılamadı", c, kip)
+
+    def _yayinlar(self, baslik: str) -> str:
+        return json.dumps({"surum": 1, "yayinlar": [{"etiket": "v0.0.1", "tarih": "2026-10-19", "kalemler": [
+            {"id": "0.0.1-01", "baslik": baslik, "tur": "duzeltme", "neden": "deneme", "dosyalar": ["README.md"]}]}]})
+
+    def test_depo_tara_uretilen_changelog_taranir(self):
+        """Yalnız ÜRETİLEN biçimde oluşan metin (başlık + tür etiketi): JSON'da yok, CHANGELOG'da var."""
+        d = self.depo(**{"guncelle__yayinlar.json": self._yayinlar(UYDURMA) + "\n"})
+        self.yaz(d / "maintenance" / "sizinti-yerel.txt", UYDURMA + r" \(düzeltme\)" + "\n")
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 1, c)
+        self.assertRegex(c, r"yerel liste \(müşteri/kurum\): CHANGELOG\.md\(üretilen←guncelle/yayinlar\.json\):\d+:")
+        self.assertNotIn("guncelle/yayinlar.json:", c.split("BULGU:")[-1])   # JSON'un kendisi bu deseni taşımaz
+        self.assertIn("KAPSAM — ek yüzey: üretilen CHANGELOG.md (←guncelle/yayinlar.json)", c)
+
+    def test_KONTROL_depo_tara_yayinlar_yoksa_uretilen_olculemedi(self):
+        d = self.depo()
+        self.liste(d)
+        rc, c = self.depo_tara(d)
+        self.assertEqual(rc, 0, c)
+        self.assertIn("üretilen CHANGELOG.md: ÖLÇÜLEMEDİ (guncelle/yayinlar.json yok)", c)
 
 
 @unittest.skipUnless(BETIK.is_file(), "maintenance/yayin_hazirla.py yok (public sürümde maintenance/ dışlanır)")

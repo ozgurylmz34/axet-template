@@ -85,6 +85,15 @@ class BuildMapTests(unittest.TestCase):
         self.assertEqual(stats['tip_disi'], 1)
         self.assertEqual(stats['gecersiz_kayit'], 1)
 
+    def test_section_keys_sorted_regardless_of_source_order(self):
+        recs = [_rec('TABL', k, 'notToBeReleased', [{'tadirObjName': f'I_{k}'}]) for k in ('VBAK', 'KNA1', 'MARA')]
+        recs += [_rec('FUNC', k, 'deprecated', [{'tadirObjName': 'I_X'}]) for k in ('Z_B', 'A_A')]
+        forward, _ = rs.build_map({'objectReleaseInfo': recs})
+        backward, _ = rs.build_map({'objectReleaseInfo': list(reversed(recs))})
+        self.assertEqual(list(forward['tables']), ['KNA1', 'MARA', 'VBAK'])
+        self.assertEqual(list(forward['functions']), ['A_A', 'Z_B'])
+        self.assertEqual(json.dumps(forward), json.dumps(backward), 'kaynak sırası çıktı sırasını değiştirdi')
+
     def test_rejects_wrong_shape(self):
         for bad in ({}, [], {'objectReleaseInfo': 'x'}, {'objectReleaseInfo': ['a', 1]}):
             with self.assertRaises(rs.DataError):

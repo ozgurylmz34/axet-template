@@ -2,7 +2,8 @@
 
 > Kaynak: ekibin ambalajlama talimatı tüketim standardı + operasyonel reçetesi (canlı okuma ile doğrulanmış veri modeli); aXet'e uyarlandı.
 > **Kapsam:** LE-PAC ambalajlama talimatlarının (POP1/2/3) ve belirleme kayıtlarının (POF1/2/3) **salt-okunur** tüketimi — bir malzemenin
-> hangi kasaya konduğu ve kasa başına kaç adet olduğu. Talimat tanımlama/değiştirme (POP/POF yazma) kapsam dışıdır.
+> hangi kasaya konduğu ve kasa başına kaç adet olduğu. Talimat değiştirme ve belirleme kaydı (POF) yazma kapsam dışıdır;
+> talimatı **programdan yaratma** yolu §6'dadır (ekip dersi, tüketim standardının parçası değil).
 > **Profil:** `s4_private`'ta ölçüldü. Released CDS varlığı **sistem bağımlıdır** — ölçülen sistemde vardı; web kaynakları "yok" diyebilir →
 > `adt_get` ile canlı teyit et. `ecc`'de released CDS yoktur.
 > Kontrol listesi: `checklists.md` §8.
@@ -71,6 +72,22 @@ Adlar paket `.rules.md`'ye göre kesinleşir; Z obje adını kullanıcı onaylar
 - **T6** Standart FM imzası build'de canlı okunur; şema kimliği customizing'den.
 - **T7** Released CDS varlığı sistem bağımlı → `adt_get` ile teyit; olumsuz dönüşü kanıtsız kabul etme.
 - Released CDS `#CHECK` taşıyorsa doğrudan okumada yetkisiz kullanıcıda 0 satır → `cds.md` §2 (CDS-DCL-01 örneği tam bu view'larla).
+
+## 6. Talimatı programdan yaratma (ekip dersi, `s4_private` 2025)
+Yazma yolu sırası `%sap-dev` → `references/write-api-selection.md`'dir; tablolara doğrudan yazılmaz (kesin yasak B).
+- **Released EML `A_PackingInstructionHeader` / OData `API_PACKINGINSTRUCTION` ≥2 ambalaj (`P`) kalemli talimatı
+  yaratamaz** → `VHU01/029` "Yükleme aracı olarak tek bir kalem tanımlanması gerekir". Kök: yaratma eşlemesi her `P`
+  kalemine yükleme aracı bayrağını (`indmapaco = 'X'`) basar, released projeksiyonda bu bayrağı taşıyan alan yok. Tek `P`
+  kalemli senaryoda EML kabul etti. OData aynı iş nesnesi işleyicisinden geçer — ayrıca ölçülmedi, kod yolu aynı.
+- **Çok `P` kalemi gerekiyorsa:** FM `VHUPO_PACK_INSTRUCTION_CREATE` (release edilmemiş → `write-api-selection.md` ADIM 4;
+  gerekçe TS'e, `cleancore_policy`'ye bak). FM kaynağı + deneme koşusuyla ölçülen kurallar:
+  - `PROP_PIKP_IMP` **zorunludur** (imzada OPTIONAL değil); verilmezse döküm `CALL_FUNCTION_PARM_MISSING` — boş yapı ver.
+  - Tam **1** kalemde yükleme aracı bayrağı, o kalemin miktarı **1** (`VHU01/042`), en az 1 ürün kalemi.
+  - FM **yetki denetlemez** → program `AUTHORITY-CHECK OBJECT 'LO_HU_PI' ID 'ACTVT' FIELD '01'` yapar.
+  - Numara zaten varsa `sy-subrc = 12` döner ama mesaj yanıltıcıdır (`VHUPD/026`) → ayrımı subrc'ye dayandır.
+  - Test modunda aynı oturumda "zaten var"ı önlemek: `ROLLBACK WORK` + `VHUPODB_PACKOBJ_REFRESH_BUFFER` + `VHUPO_REFRESH`
+    (denemede çalıştı; mekanizma — fonksiyon grubu tamponu — hipotez).
+- Yaratma sonrası okuma: §3 yolu + bağımsız SQL ile karşılaştır. Kapsam: tek sistemde ölçüldü; diğer profillerde ölçülmedi.
 
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
 - Sistem kimliği/client, projenin koşul türü adı, gerçek talimat numaraları, kasa/ürün malzeme numaraları, müşteri numarası → çıkarıldı ya da yer tutucu.

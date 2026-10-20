@@ -31,6 +31,9 @@ _scripts_dir = Path(__file__).parent
 if str(_scripts_dir) not in sys.path:
     sys.path.insert(0, str(_scripts_dir))
 
+# Z194: XML öznitelik/eleman kaçışı + sorumlu çözümü TEK KAYNAK (utils/xml_kacis.py).
+from utils.xml_kacis import attr_escape, text_escape, sorumlu_coz, SORUMLU_YOK_MESAJI  # noqa: E402
+
 # Import auth providers for BTP cloud support
 try:
     from auth.i_auth_provider import IAuthProvider
@@ -118,6 +121,21 @@ KILIT_CAKISMA_TARIFI = (
     "kendi kilidini kontrol et (bayat kilidi yalnız kullanıcı siler); başka biri düzenliyorsa bitmesini bekle. "
     "Sonra işlemi tek sefer tekrar dene."
 )
+
+# ── Z195 ③ (2026-10-19): kilit BIRAKILAMADI uyarısı — TEK KAYNAK (kaynak çekirdekle aynı metin) ──────
+# `unlock_object` tüm stratejiler düşünce `False` döner (2026-09-14). Her çağıran AYNI metni basar
+# (çağıran başına ayrı metin = ayrışan ikinci gerçek). ⛔ Metin SM12'de kilidi SİLMEYİ / BIRAKMAYI
+# ÖNERMEZ (Kesin Yasak C) — yalnız "kontrol et" der. Akış kesilmez, yeniden deneme yapılmaz.
+KILIT_BIRAKILAMADI_IMZA = "[WARN] KILIT BIRAKILAMADI"
+
+
+def kilit_birakilamadi_uyarisi(obje: str = '') -> str:
+    """`unlock_object` False döndüğünde basılacak tek satırlık uyarı (yazma sonucu DEĞİŞMEZ)."""
+    ad = obje or '<OBJE>'
+    return (f"      {KILIT_BIRAKILAMADI_IMZA}: {ad} — tum unlock stratejileri basarisiz; "
+            f"kilit acik kalmis olabilir (lock_released=False). Yazma sonucu DEGISMEDI. "
+            f"SM12'de bu objenin kilidini KONTROL ET; silme/birakma karari kullanicidadir "
+            f"(Kesin Yasak C). Bir sonraki push 409/423 verirse sebep bu olabilir.")
 
 
 class SAPActivationError(SAPADTError):
@@ -334,6 +352,118 @@ class SAPTransportError(SAPADTError):
 # Bilinmeyen/boş/eksik değer de aynı şekilde nötrdür (fail-safe).
 LOCK_MODIFICATION_SUPPORT_FIELD = 'MODIFICATION_SUPPORT'
 LOCK_NO_MODIFICATION = 'nomodification'   # casefold edilmiş karşılaştırma değeri
+
+
+# ── Z195 ① (2026-10-19): SALT-OKUR sözdizimi denetimi — ADT checkrun ─────────────────────
+# Kaynak çekirdek ölçümü (DEV, 4 tip: sınıf · FM · tablo · CDS, ayrı Z deneme objeleri):
+#   · `version="inactive"` aktivasyon ön denetimiyle AYNI kök hatayı verir (metin + satır/kolon).
+#   · `version="active"` hatalı İNAKTİF sürümü GÖRMEZ (0 mesaj) ⇒ varsayılan inactive.
+#   · Yan etkisiz: temiz-ama-farklı inaktif sürüm checkrun sonrası aktive OLMADI (readback).
+#   · ⛔ İnaktif sürümü OLMAYAN objede `status="notProcessed"` + 0 mesaj ⇒ bu "temiz" DEĞİLDİR.
+# aXet'te canlı ölçülmedi (DOĞRULANMADI); sahte sunucu testleri: tests/test_checkrun_sozdizimi.py.
+CHECKRUN_UC = '/sap/bc/adt/checkruns'
+
+# ── Z207 (2026-10-19): HTTP adapter yeniden denemesi — YALNIZ güvenli metotlar + okuma amaçlı POST önekleri ──
+# Ölçüm (düzeltme öncesi, gerçek `_build_session` + yerel sahte sunucu, her uç 503): yaratma POST'u, kaynak PUT'u,
+# aktivasyon, DELETE, LOCK/UNLOCK, transport kaydı, ATC/ABAP Unit koşusu → 4'er istek (classrun hariç: Z190 → 1).
+# İlk istek SAP'de İŞLENMİŞ olabilir ⇒ yan etki 4 kez. Kural: genel adapter yalnız GET/HEAD/OPTIONS'ı yeniden dener.
+# POST'u OKUMA için kullanan uçlar sunucuda durum yaratmaz (ölçüldü değil — uç sözleşmesi; ayrı ayrı gerekçe):
+#   checkruns (sözdizimi denetimi, Z195 ①) · datapreview/freestyle (SELECT önizleme) · repository/nodestructure
+#   (paket ağacı) · repository/informationsystem/usageReferences (where-used) · abapsource/prettyprinter (biçimleme;
+#   kaydetmez, Z128). Bunlar AYRI izinli adapter'la eskisi gibi yeniden denenir.
+# BİLİNÇLİ DIŞARIDA: atc/runs · atc/worklists (sunucuda koşu/iş listesi YARATIR) · abapunit/testruns (test KOŞTURUR —
+# riskli testler veri değiştirebilir) · oo/classrun (Z190 ayrı adapter'ı aynen durur).
+OKUMA_POST_ONEKLERI = (
+    CHECKRUN_UC,
+    '/sap/bc/adt/datapreview/freestyle',
+    '/sap/bc/adt/repository/nodestructure',
+    '/sap/bc/adt/repository/informationsystem/usageReferences',
+    '/sap/bc/adt/abapsource/prettyprinter',
+)
+GUVENLI_YENIDEN_DENEME_METOTLARI = ('GET', 'HEAD', 'OPTIONS')
+CHECKRUN_REPORTER = 'abapCheckRun'
+CHECKRUN_NS = 'http://www.sap.com/adt/checkrun'
+CHECKRUN_BILINEN_TIPLER = {'E': 'hata', 'W': 'uyari', 'I': 'bilgi'}
+CHECKRUN_KAPSAM_METNI = (
+    "Yalniz ADT checkrun sozdizimi denetimi (reporter=abapCheckRun) — ATC, ABAP Unit, "
+    "aktivasyon bagimliliklari (co-activation) ve yetki denetimi DEGIL. Denetlenen surum "
+    "`version` alaninda; 'inactive' diskte bekleyen surumu, 'active' calisan surumu denetler.")
+
+
+def checkrun_govdesi(object_uri, version='inactive'):
+    """checkrun istek gövdesi (kaynak çekirdekte canlıda ölçülen biçim). `object_uri` objenin KÖK URI'si."""
+    uri = (object_uri or '').split('?')[0]
+    if uri.endswith('/source/main'):
+        uri = uri[:-len('/source/main')]
+    return ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<chkrun:checkObjectList xmlns:chkrun="%s" xmlns:adtcore="http://www.sap.com/adt/core">'
+            '<chkrun:checkObject adtcore:uri="%s" chkrun:version="%s"/></chkrun:checkObjectList>'
+            % (CHECKRUN_NS, attr_escape(uri), attr_escape(version)))
+
+
+def _checkrun_konum(uri):
+    """`...#start=21,25` → (21, 25); bulunamazsa (None, None)."""
+    m = re.search(r'#start=(\d+),(\d+)', uri or '')
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
+
+def checkrun_ayristir(govde, beklenen_uri=None, version='inactive'):
+    """checkrun yanıtı → TEK hüküm sözlüğü. Ağ yok, istisna atmaz.
+
+    hukum: 'temiz' | 'hatali' | 'OLCULEMEDI'. Belirsiz her durum (boş/bozuk gövde, rapor yok,
+    reporter farklı, beklenen obje raporlanmadı, status≠processed, tanınmayan mesaj tipi)
+    'OLCULEMEDI'dir — ASLA 'temiz' değildir. `kapsam` her dönüşte basılır (KAPSAM BEYANI).
+    """
+    sonuc = {'hukum': 'OLCULEMEDI', 'sebep': '', 'hatalar': [], 'uyarilar': [],
+             'status': None, 'status_text': None,
+             'kapsam': {'version': version, 'reporter': CHECKRUN_REPORTER,
+                        'bakilan': CHECKRUN_KAPSAM_METNI}}
+    if not govde or not str(govde).strip():
+        sonuc['sebep'] = 'bos_govde'
+        return sonuc
+    try:
+        kok = ET.fromstring(str(govde))
+    except Exception as exc:  # noqa: BLE001
+        sonuc['sebep'] = 'bozuk_xml:%s' % type(exc).__name__
+        return sonuc
+    ns = '{%s}' % CHECKRUN_NS
+    raporlar = [r for r in kok.iter(ns + 'checkReport')]
+    if not raporlar:
+        sonuc['sebep'] = 'rapor_yok'
+        return sonuc
+    bizim = [r for r in raporlar if r.get(ns + 'reporter') == CHECKRUN_REPORTER]
+    if not bizim:
+        sonuc['sebep'] = 'reporter_yok:%s' % ','.join(sorted({r.get(ns + 'reporter') or '?' for r in raporlar}))
+        return sonuc
+    if beklenen_uri:
+        hedef = beklenen_uri.split('?')[0].replace('/source/main', '').rstrip('/').lower()
+        bizim = [r for r in bizim
+                 if (r.get(ns + 'triggeringUri') or '').rstrip('/').lower() == hedef]
+        if not bizim:
+            sonuc['sebep'] = 'obje_raporlanmadi'
+            return sonuc
+    for r in bizim:
+        durum = r.get(ns + 'status')
+        sonuc['status'], sonuc['status_text'] = durum, r.get(ns + 'statusText')
+        if durum != 'processed':
+            sonuc['sebep'] = 'status=%s: %s' % (durum, r.get(ns + 'statusText') or '')
+            return sonuc
+        for m in r.iter(ns + 'checkMessage'):
+            tip = (m.get(ns + 'type') or '').upper()
+            satir, kolon = _checkrun_konum(m.get(ns + 'uri'))
+            t100 = m.find(ns + 't100Key')
+            kayit = {'type': tip, 'message': m.get(ns + 'shortText') or '',
+                     'line': satir, 'column': kolon, 'href': m.get(ns + 'uri') or '',
+                     't100': ('%s/%s' % (t100.get(ns + 'msgid'), t100.get(ns + 'msgno'))
+                              if t100 is not None else None)}
+            if tip not in CHECKRUN_BILINEN_TIPLER:
+                sonuc['sebep'] = 'taninmayan_mesaj_tipi:%s' % (tip or '<bos>')
+                sonuc['hatalar'], sonuc['uyarilar'] = [], []
+                return sonuc
+            (sonuc['hatalar'] if tip == 'E' else sonuc['uyarilar']).append(kayit)
+    sonuc['hukum'] = 'hatali' if sonuc['hatalar'] else 'temiz'
+    sonuc['sebep'] = 'processed'
+    return sonuc
 
 
 def parse_sap_error(response):
@@ -1365,6 +1495,8 @@ class SAPADTClient:
         # SAP's CORRNR in the lock response is authoritative — it may differ from
         # the corrNr we sent on the LOCK request if stale E071 entries exist.
         self._last_lock_corrnr = None
+        # Z195 ③: CORRNR uyuşmazlığında okunan istek sahibi (E070.AS4USER); None = okunmadı/okunamadı.
+        self._last_lock_istek_sahibi = None
 
         # IS_LINK_UP flag from lock response: 'X' means SAP already linked the object
         # to an S-type task under the workbench request. In that case CORRNR holds the
@@ -1421,10 +1553,8 @@ class SAPADTClient:
         ssl_verify = os.getenv('ADT_SAP_SSL_VERIFY', 'false').lower()
         sess.verify = ssl_verify in ('true', '1', 'yes')
 
-        _adapter = HTTPAdapter(
-            pool_connections=4,
-            pool_maxsize=10,
-            max_retries=_Retry(
+        def _yeniden_deneme(metotlar):
+            return _Retry(
                 total=3,
                 backoff_factor=0.3,
                 # ⛔ 500 BU LİSTEDE DEĞİL (2026-08-19, ölçülmüş iki vaka).
@@ -1438,15 +1568,30 @@ class SAPADTClient:
                 # ⇒ Tekrar denemek 500'ü ÇÖZMEZ, yalnız TEŞHİSİ SİLER. 429/502/503/504
                 # kalır — onlar gerçekten geçicidir.
                 status_forcelist=(429, 502, 503, 504),
-                allowed_methods=('GET', 'HEAD', 'PUT', 'POST', 'DELETE'),
-            ),
-        )
+                # ⛔ Z207: eskiden ('GET','HEAD','PUT','POST','DELETE') — yan etkili istekler 502/503/504'te ve OKUMA
+                # ZAMAN AŞIMINDA 3 kez daha gidiyordu. Bağlantı KURMA tekrarı metottan bağımsız açık kalır (istek
+                # henüz gitmemiştir — urllib3 `connect` sayacı).
+                allowed_methods=metotlar,
+            )
+
+        _adapter = HTTPAdapter(pool_connections=4, pool_maxsize=10,
+                               max_retries=_yeniden_deneme(GUVENLI_YENIDEN_DENEME_METOTLARI))
         sess.mount('https://', _adapter)
         sess.mount('http://', _adapter)
+        # Z207: okuma amaçlı POST uçları — ayrı adapter, POST yeniden denemesi AÇIK (requests en uzun öneki seçer;
+        # önek `self.url` ile kurulur ⇒ yalnız bu sistemin uçlarına uygulanır).
+        _okuma_post = HTTPAdapter(pool_connections=2, pool_maxsize=10,
+                                  max_retries=_yeniden_deneme(GUVENLI_YENIDEN_DENEME_METOTLARI + ('POST',)))
+        for _onek in OKUMA_POST_ONEKLERI:
+            sess.mount(f"{self.url}{_onek}", _okuma_post)
         # Z190 (2026-10-04): classrun POST'u SAP'de ABAP KODU ÇALIŞTIRIR (mail, tablo
-        # yazımı). Yukarıdaki adapter 502/503/504'te ve OKUMA ZAMAN AŞIMINDA POST'u
-        # 3 kez daha gönderir — yerel sahte sunucuyla ölçüldü: 504 → 4 POST, okuma
+        # yazımı). Z207 öncesi genel adapter 502/503/504'te ve OKUMA ZAMAN AŞIMINDA POST'u
+        # 3 kez daha gönderiyordu — yerel sahte sunucuyla ölçüldü: 504 → 4 POST, okuma
         # zaman aşımı → 4 POST. İlk istek SAP'de koşmuş olabilir ⇒ yan etki 4 kez.
+        # Z207 genel kuralı (POST tekrarsız) bunu artık kendisi de sağlar; bu mount BİLİNÇLİ
+        # KORUNDU: en ağır yan etkili uç için derinlemesine savunma — okuma-POST izinli
+        # listesine ileride geniş bir önek (ör. `/sap/bc/adt/oo/`) eklenirse classrun'u
+        # kapsamasını en uzun önek kuralı engeller.
         # Bu önek için yalnız BAĞLANTI kurma tekrarı açık (istek henüz gitmemiştir);
         # okuma/durum tekrarı KAPALI. `new_session()` de bu fonksiyonu çağırdığı için
         # bayat-oturum dalındaki ikinci POST da bu adapter'dan geçer.
@@ -1882,6 +2027,11 @@ class SAPADTClient:
         # Z52 (v0.5.1): bu çağrıdaki 5xx / zaman aşımı / bağlantı hatası yeniden denemeleri — yaratma POST'unda ilk
         # istek SAP'de işlenmiş olabilir; ardından gelen AlreadyExists aracın KENDİ kabuğu olabilir (`_zaten_var_hatasi`).
         # CSRF yeniden denemesi kaydedilmez: SAP isteği token yüzünden reddetti, işlemedi.
+        # Z207 BİLİNÇLİ İSTİSNASI (2026-10-19, lider kararı): HTTP adapter'ı yan etkili POST'u artık tekrarlamaz, ama
+        # bu katman beş yaratma çağrısında (DTEL · domain · struct · tablo · CDS) POST'u 5xx'te (500 dahil —
+        # `_should_retry` `status >= 500`), 408'de ve zaman aşımında 3 kez gönderir. Neden güvenli: yaratma tekrarı ÇİFT OBJE üretemez — ikinci deneme "already exists" alır ve Z52 telafisi
+        # (`_son_yeniden_denemeler` → araçta `already_exists_after_retry` + `own_shell_possible`) tam bu yolu işler.
+        # 3 → 1 yapılırsa o telafi ölü kalır; bkz. `tests/test_yan_etkili_tekrar.py` Y8 · IMPLEMENTATION §25.4.
         self._son_yeniden_denemeler = []
 
         for attempt in range(self.max_retries):
@@ -2910,6 +3060,37 @@ class SAPADTClient:
             f"CLAS'ta sağlıklı objede de 'NoModification' döner (§12.7b)."
         )
 
+    def _istek_sahibi_metni(self, trkorr):
+        """Z195 ③ (2026-10-19): istek sahibini (E070.AS4USER) oku → metin parçası.
+
+        Döner: ``"sahibi <KULLANICI>"`` ya da ``"sahip okunamadı: <sebep>"``.
+        ⛔ ASLA istisna fırlatmaz — çağıran bir HATA dalıdır (SAPLockError'ı fırlatmak üzeredir);
+        sahip sorgusu düşerse (500/ağ/bozuk XML) o dalın kendisi bozulmamalı. Salt-okur tek SELECT
+        (`run_query`); çağıran kilidi bu çağrıdan ÖNCE bırakır. Okunan değer
+        `self._last_lock_istek_sahibi`'ye yazılır (None = okunamadı) — `sap_client` Bug-11 uyarısı
+        sahibi buradan adlandırır. Kaynak çekirdekle aynı tasarım; aXet'te canlı ÖLÇÜLMEDİ.
+        """
+        self._last_lock_istek_sahibi = None
+        try:
+            t = str(trkorr or '').strip().upper()
+            if not re.fullmatch(r'[A-Z0-9]{10}', t):
+                return "sahip okunamadı: istek numarası biçimi tanınmadı"
+            xml = self.run_query(f"SELECT AS4USER FROM E070 WHERE TRKORR = '{t}'", row_number=1)
+            ns = '{http://www.sap.com/adt/dataPreview}'
+            root = ET.fromstring(xml)
+            for col in root.iter(f'{ns}columns'):
+                meta = col.find(f'{ns}metadata')
+                if meta is None or (meta.get(f'{ns}name') or '').upper() != 'AS4USER':
+                    continue
+                for d in col.iter(f'{ns}data'):
+                    deger = (d.text or '').strip()
+                    if deger:
+                        self._last_lock_istek_sahibi = deger
+                        return f"sahibi {deger}"
+            return "sahip okunamadı: E070 yanıtında AS4USER yok"
+        except Exception as e:  # noqa: BLE001 — hata dalı bozulmaz
+            return f"sahip okunamadı: {type(e).__name__}"
+
     def _release_lock_after_failure(self, object_url, lock_handle, ok_message):
         """Hemen ardından raise edeceğimiz kilidi bırak (stale enqueue bırakma).
 
@@ -2919,10 +3100,13 @@ class SAPADTClient:
         try:
             actual_handle = lock_handle or 'IMPLICIT_LOCK'
             if actual_handle and actual_handle != 'IMPLICIT_LOCK':
-                self.unlock_object(object_url, actual_handle)
-                print(ok_message)
+                # Z195 ③: dönüş OKUNUR — eskiden `False`'ta da `ok_message` ("Lock released") basılıyordu.
+                if self.unlock_object(object_url, actual_handle) is False:
+                    print(kilit_birakilamadi_uyarisi(self._object_name_from_url(object_url)))
+                else:
+                    print(ok_message)
         except Exception:
-            print(f"[WARNING] Could not release lock — use SM12 to clear it manually.")
+            print(kilit_birakilamadi_uyarisi(self._object_name_from_url(object_url)))
 
     def _verify_and_return_lock(self, response, object_url, transport, label='', access_mode='MODIFY'):
         """Extract lock handle + CORRNR + IS_LINK_UP from a successful (200) lock response.
@@ -2996,14 +3180,17 @@ class SAPADTClient:
                 # IS_LINK_UP='X': object is in a FOREIGN transport — another developer's.
                 # Source: CL_ADT_CTS_MANAGEMENT.is_obj_recorded_in_foreign_req() returns
                 # abap_true when current user has NO task in the transport holding the lock.
+                sahip_metni = self._istek_sahibi_metni(corrnr_actual)   # Z195 ③ — istisna atmaz
                 raise SAPLockError(
-                    f"Object is recorded in FOREIGN transport {corrnr_actual} (IS_LINK_UP=X).\n\n"
+                    f"Object is recorded in FOREIGN transport {corrnr_actual} (IS_LINK_UP=X).\n"
+                    f"Istek {corrnr_actual} ({sahip_metni}).\n\n"
                     f"This transport belongs to another developer — pushing to it would\n"
                     f"inject your changes without the owner's knowledge.\n\n"
                     f"Fix:\n"
                     f"  1. SE01/SE09 → open transport {corrnr_actual} → remove object entry\n"
                     f"     (only if authorised — coordinate with the transport owner)\n"
-                    f"  2. SM12 → release enqueue lock for this object if any\n"
+                    f"  2. SM12'de bu objenin kilidini KONTROL ET (silme/birakma karari\n"
+                    f"     kullanicidadir — Kesin Yasak C; ajan kilit silmez)\n"
                     f"  3. Retry the push with transport {transport}\n\n"
                     f"[ACTION REQUIRED] STOP. Do NOT retry automatically. Report to user.",
                     status_code=409,
@@ -3013,16 +3200,26 @@ class SAPADTClient:
                 # IS_LINK_UP=empty: object is in a DIFFERENT transport of the same user.
                 # (Stale E071 entry from an older workbench request, or user has
                 #  multiple active transports for the same package/layer.)
+                # ⛔ Z195 ③ (kaynak çekirdekle aynı): eski metin "The object is in your own transport <K>"
+                # diyordu. IS_LINK_UP=boş'un anlamı "o istek altında SENİN GÖREVİN var"dır — isteğin
+                # KENDİSİ başkasına ait olabilir. Sahip ADIYLA söylenir; okunamazsa "sahip okunamadı"
+                # der ve dal AYNEN çalışır (aynı istisna sınıfı/kodu). SM12 bırakma önerisi ÇIKARILDI.
+                sahip_metni = self._istek_sahibi_metni(corrnr_actual)
                 raise SAPLockError(
                     f"SAP assigned transport {corrnr_actual} but {transport} was requested.\n\n"
+                    f"Istek {corrnr_actual} ({sahip_metni}), altinda gorevin var (IS_LINK_UP bos).\n"
+                    f"Bu 'senin istegin' demek DEGILDIR — istegin sahibi baskasi olabilir.\n"
                     f"A stale E071 entry or transport layer mismatch caused SAP to override\n"
-                    f"the corrNr hint. The object is in your own transport {corrnr_actual}.\n\n"
+                    f"the corrNr hint.\n\n"
                     f"Fix:\n"
                     f"  1. SE01/SE09 → open transport {corrnr_actual} → move/delete object entry\n"
-                    f"  2. SM12 → release enqueue lock for this object\n"
+                    f"     (istek baskasinin ise sahibiyle koordine et)\n"
+                    f"  2. SM12'de bu objenin kilidini KONTROL ET (silme/birakma karari\n"
+                    f"     kullanicidadir — Kesin Yasak C; ajan kilit silmez)\n"
                     f"  3. Retry the push with transport {transport}\n\n"
-                    f"  Or: use transport {corrnr_actual} instead of {transport}.\n"
-                    f"  Diagnostic: SELECT STRKORR FROM E070 WHERE TRKORR = '{corrnr_actual}'\n"
+                    f"  Or: use transport {corrnr_actual} instead of {transport}"
+                    f" (yalniz istek sahibi uygunsa).\n"
+                    f"  Diagnostic: SELECT STRKORR, AS4USER FROM E070 WHERE TRKORR = '{corrnr_actual}'\n"
                     f"  (STRKORR shows parent K-type request if {corrnr_actual} is a task)",
                     status_code=409,
                     response_text=response.text[:500]
@@ -3107,6 +3304,7 @@ class SAPADTClient:
         self._last_lock_corrnr = None
         self._last_lock_is_link_up = None
         self._last_lock_effective_transport = None
+        self._last_lock_istek_sahibi = None   # Z195 ③: önceki objenin istek sahibi taşınmaz
 
         if self.debug_enabled:
             self._debug(f"[DEBUG] lock_object - URL: {object_url}, access_mode: {access_mode}")
@@ -3362,7 +3560,7 @@ class SAPADTClient:
                         f"(target was {transport or 'not specified'}).\n\n"
                         f"This usually means a previous push locked the object under a different transport.\n\n"
                         f"Fix:\n"
-                        f"  1. Go to SM12 -> delete the enqueue lock for this object\n"
+                        f"  1. SM12 -> bu objenin enqueue kilidini KONTROL ET (silme karari kullanicidadir, Kesin Yasak C)\n"
                         f"  2. Go to SE01/SE09 -> find transport {conflict_transport or conflict_transport} -> move object to {transport or 'your target transport'}\n"
                         f"  3. Retry the push"
                     )
@@ -3820,7 +4018,7 @@ class SAPADTClient:
                     if lock_info and lock_info.get('locked'):
                         raise SAPLockError(
                             f"Object is locked by user '{lock_info.get('lock_owner', 'unknown')}'. "
-                            f"Please unlock it manually or wait for the lock to expire.",
+                            f"SM12'de kilidi KONTROL ET (silme karari kullanicidadir) ya da kilidin dusmesini bekle.",
                             lock_owner=lock_info.get('lock_owner')
                         )
 
@@ -3844,7 +4042,10 @@ class SAPADTClient:
         if not lock_handle:
             return True
         try:
-            self.unlock_object(object_url, lock_handle)
+            # Z195 ③: `unlock_object` False dönebilir (tüm stratejiler düştü) — eskiden dönüş okunmadan True veriliyordu.
+            if self.unlock_object(object_url, lock_handle) is False:
+                print(kilit_birakilamadi_uyarisi(self._object_name_from_url(object_url)))
+                return False
             return True
         except Exception:
             return False
@@ -3939,7 +4140,7 @@ class SAPADTClient:
                 pass
             return {
                 'valid': False,
-                'errors': [{'message': f'Object locked by {lock_user}. Release lock in SM12 or close other sessions.'}],
+                'errors': [{'message': f'Object locked by {lock_user}. SM12 kilidini KONTROL ET (silme karari kullanicidadir) ya da diger oturumlari kapat.'}],
                 'warnings': [],
                 'locked': True,
                 'lock_user': lock_user,
@@ -3967,7 +4168,8 @@ class SAPADTClient:
         #            ioc:inactiveObjects · tanınmayan govde): sozdizimi HIC olculmedi
         # ⚠ Iki davranis BILEREK korunur: HTTP 403 (kilit) ve >=50 karakterlik AYRISTIRILAMAYAN
         # govde `valid:False` + yerel mesaj doner (`sap_client.push_object` on-kontrolu bunlarda
-        # aktivasyonu durdurmaya devam eder; MCP `_gecerlilik` yerel mesaji zaten None okur).
+        # aktivasyonu durdurmaya devam eder). `adt_syntax_check` araci Z195'ten beri bu yolu
+        # KULLANMAZ (salt-okur checkrun; eski `_gecerlilik` kaldirildi).
         text = response.text or ''
         if len(text.strip()) < 50:
             return {
@@ -4713,11 +4915,17 @@ class SAPADTClient:
         """
 
 
+        # Z194: sorumlu çözülemezse AĞ ÇAĞRISINDAN ÖNCE dur — eskiden `None` f-string'e
+        # `adtcore:responsible="None"` diye yazılıyordu. Öznitelikler `attr_escape` ile yazılır.
+        sorumlu = sorumlu_coz(responsible, self)
+        if sorumlu is None:
+            raise SAPValidationError(SORUMLU_YOK_MESAJI)
+        responsible_xml = attr_escape(sorumlu)
+        description_xml = attr_escape(description)
+
         # Ensure we have CSRF token
         if not self.csrf_token:
             self.fetch_csrf_token()
-
-        responsible_xml = responsible or self.user
         name_upper = name.upper()
         package_upper = package_name.upper()
 
@@ -4777,22 +4985,22 @@ class SAPADTClient:
                 creation_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <{xml_element}:abapProgram xmlns:{xml_element}="{namespace}"
                       xmlns:adtcore="http://www.sap.com/adt/core"
-                      adtcore:description="{description}"
+                      adtcore:description="{description_xml}"
                       adtcore:name="{name_upper}"
                       adtcore:responsible="{responsible_xml}"
                       adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{package_path}"/>
+  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{attr_escape(package_path)}"/>
 </{xml_element}:abapProgram>'''
             elif obj_type == 'PROG/I':
                 creation_body = f'''<?xml version="1.0" encoding="UTF-8"?>
 <{xml_element}:abapInclude xmlns:{xml_element}="{namespace}"
                       xmlns:adtcore="http://www.sap.com/adt/core"
                       adtcore:type="{obj_type}"
-                      adtcore:description="{description}"
+                      adtcore:description="{description_xml}"
                       adtcore:name="{name_upper}"
                       adtcore:responsible="{responsible_xml}"
                       adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{package_path}"/>
+  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{attr_escape(package_path)}"/>
 </{xml_element}:abapInclude>'''
             elif obj_type == 'INTF/OI':
                 # Interface
@@ -4800,11 +5008,11 @@ class SAPADTClient:
 <{xml_element}:abapInterface xmlns:{xml_element}="{namespace}"
                             xmlns:adtcore="http://www.sap.com/adt/core"
                             adtcore:type="{obj_type}"
-                            adtcore:description="{description}"
+                            adtcore:description="{description_xml}"
                             adtcore:name="{name_upper}"
                             adtcore:responsible="{responsible_xml}"
                             adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{package_path}"/>
+  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{attr_escape(package_path)}"/>
 </{xml_element}:abapInterface>'''
             else:
                 # Class
@@ -4812,11 +5020,11 @@ class SAPADTClient:
 <{xml_element}:abapClass xmlns:{xml_element}="{namespace}"
                             xmlns:adtcore="http://www.sap.com/adt/core"
                             adtcore:type="{obj_type}"
-                            adtcore:description="{description}"
+                            adtcore:description="{description_xml}"
                             adtcore:name="{name_upper}"
                             adtcore:responsible="{responsible_xml}"
                             adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{package_path}"/>
+  <adtcore:packageRef adtcore:name="{package_upper}" adtcore:uri="{attr_escape(package_path)}"/>
 </{xml_element}:abapClass>'''
 
             headers = self._get_headers(media_type, media_type)
@@ -5117,7 +5325,7 @@ class SAPADTClient:
         ns_adtcore = 'http://www.sap.com/adt/core'
 
         xml_parts = ['<?xml version="1.0" encoding="utf-8"?>']
-        xml_parts.append(f'<tm:root adtcore:name="{self.user}" xmlns:tm="{ns_tm}" xmlns:adtcore="{ns_adtcore}">')
+        xml_parts.append(f'<tm:root adtcore:name="{attr_escape(self.user)}" xmlns:tm="{ns_tm}" xmlns:adtcore="{ns_adtcore}">')
         xml_parts.append(f'  <tm:workbench tm:category="Workbench">')
 
         # Group by status
@@ -5146,7 +5354,7 @@ class SAPADTClient:
                     timestamp = ''
 
                 # XML for this request
-                request_xml = f'''        <tm:request tm:number="{trkorr}" tm:parent="" tm:owner="{as4user}" tm:desc="{as4text}" tm:type="K" tm:status="{trstatus}" tm:target="{tarssystem}" tm:target_desc="" tm:cts_project="" tm:cts_project_desc="" tm:lastchanged_timestamp="{timestamp}" tm:uri="/sap/bc/adt/cts/transportrequests/{trkorr}">
+                request_xml = f'''        <tm:request tm:number="{trkorr}" tm:parent="" tm:owner="{attr_escape(as4user)}" tm:desc="{attr_escape(as4text)}" tm:type="K" tm:status="{attr_escape(trstatus)}" tm:target="{attr_escape(tarssystem)}" tm:target_desc="" tm:cts_project="" tm:cts_project_desc="" tm:lastchanged_timestamp="{timestamp}" tm:uri="/sap/bc/adt/cts/transportrequests/{trkorr}">
           <tm:long_desc/>
         </tm:request>'''
 
@@ -5176,13 +5384,8 @@ class SAPADTClient:
 
     @staticmethod
     def _xml_escape(text):
-        """Escape special characters for XML attribute values."""
-        return (str(text)
-                .replace('&', '&amp;')
-                .replace('<', '&lt;')
-                .replace('>', '&gt;')
-                .replace('"', '&quot;')
-                .replace("'", '&apos;'))
+        """XML öznitelik değeri kaçışı — Z194: ortak `utils.xml_kacis.attr_escape`'e indirgendi."""
+        return attr_escape(text)
 
     @staticmethod
     def _extract_transport_from_location(location):
@@ -5565,6 +5768,11 @@ class SAPADTClient:
         Returns:
             dict with success status and object URL
         """
+        # Z194: sorumlu çözülemezse AĞ ÇAĞRISINDAN ÖNCE dur (eskiden `"None"` yazılırdı).
+        sorumlu = sorumlu_coz(None, self)
+        if sorumlu is None:
+            raise SAPValidationError(SORUMLU_YOK_MESAJI)
+
         # Ensure we have CSRF token
         if not self.csrf_token:
             self.fetch_csrf_token()
@@ -5586,12 +5794,12 @@ class SAPADTClient:
         # Doğru kök: blue:wbobj + nested dtel:dataElement; TÜM zorunlu adtcore
         # attribute'lar (responsible/abapLanguageVersion/language) dolu olmalı.
         dtel_xml = f'''<?xml version="1.0" encoding="utf-8"?>
-<blue:wbobj adtcore:responsible="{self.user}"
+<blue:wbobj adtcore:responsible="{attr_escape(sorumlu)}"
             adtcore:masterLanguage="{self.language}"
             adtcore:abapLanguageVersion="standard"
             adtcore:name="{name.upper()}"
             adtcore:type="DTEL/DE"
-            adtcore:description="{description}"
+            adtcore:description="{attr_escape(description)}"
             adtcore:language="{self.language}"
             xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"
             xmlns:adtcore="http://www.sap.com/adt/core">
@@ -5600,20 +5808,20 @@ class SAPADTClient:
                       adtcore:name="{package_name.upper()}"/>
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>domain</dtel:typeKind>
-    <dtel:typeName>{domain_name.upper()}</dtel:typeName>
+    <dtel:typeName>{text_escape(domain_name.upper())}</dtel:typeName>
     <dtel:dataType>{dom_datatype}</dtel:dataType>
     <dtel:dataTypeLength>{dom_length}</dtel:dataTypeLength>
     <dtel:dataTypeDecimals>{dom_decimals}</dtel:dataTypeDecimals>
-    <dtel:shortFieldLabel>{short_label}</dtel:shortFieldLabel>
+    <dtel:shortFieldLabel>{text_escape(short_label)}</dtel:shortFieldLabel>
     <dtel:shortFieldLength>{len(short_label)}</dtel:shortFieldLength>
     <dtel:shortFieldMaxLength>10</dtel:shortFieldMaxLength>
-    <dtel:mediumFieldLabel>{medium_label}</dtel:mediumFieldLabel>
+    <dtel:mediumFieldLabel>{text_escape(medium_label)}</dtel:mediumFieldLabel>
     <dtel:mediumFieldLength>{len(medium_label)}</dtel:mediumFieldLength>
     <dtel:mediumFieldMaxLength>20</dtel:mediumFieldMaxLength>
-    <dtel:longFieldLabel>{long_label}</dtel:longFieldLabel>
+    <dtel:longFieldLabel>{text_escape(long_label)}</dtel:longFieldLabel>
     <dtel:longFieldLength>{len(long_label)}</dtel:longFieldLength>
     <dtel:longFieldMaxLength>40</dtel:longFieldMaxLength>
-    <dtel:headingFieldLabel>{heading_label}</dtel:headingFieldLabel>
+    <dtel:headingFieldLabel>{text_escape(heading_label)}</dtel:headingFieldLabel>
     <dtel:headingFieldLength>{len(heading_label)}</dtel:headingFieldLength>
     <dtel:headingFieldMaxLength>55</dtel:headingFieldMaxLength>
     <dtel:searchHelp/>
@@ -5830,8 +6038,6 @@ class SAPADTClient:
         # populate_domains.py:169-191,202-203. Formül TEK KAYNAKTA: lib/utils/ddic_domain.py.
         from utils.ddic_domain import expected_output_length
         output_length_str = str(expected_output_length(datatype, length, decimals)).zfill(6)
-        from xml.sax.saxutils import escape as _xml_escape
-        _att = lambda v: _xml_escape(str(v), {'"': '&quot;'})  # noqa: E731
 
         # Build fixed values XML
         # aXet 2026-09-13: değer/metin XML kaçışlı (kaynak populate_domains.py:213-214 `xml_escape`); metin
@@ -5845,9 +6051,9 @@ class SAPADTClient:
                 text = fv.get('text', '')
                 fix_values_xml += f'''<doma:fixValue>
       <doma:position>{str(idx).zfill(4)}</doma:position>
-      <doma:low>{_att(value)}</doma:low>
+      <doma:low>{text_escape(value)}</doma:low>
       <doma:high/>
-      <doma:text>{_att(text)}</doma:text>
+      <doma:text>{text_escape(text)}</doma:text>
     </doma:fixValue>'''
             fix_values_xml += '</doma:fixValues>'
         else:
@@ -5857,7 +6063,7 @@ class SAPADTClient:
         domain_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <doma:domain adtcore:name="{name.upper()}"
              adtcore:type="DOMA/DD"
-             adtcore:description="{_att(description)}"
+             adtcore:description="{attr_escape(description)}"
              adtcore:masterLanguage="{self.language}"
              xmlns:doma="http://www.sap.com/dictionary/domain"
              xmlns:adtcore="http://www.sap.com/adt/core">
@@ -6030,12 +6236,12 @@ class SAPADTClient:
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                   xmlns:adtcore="http://www.sap.com/adt/core"
                   adtcore:name="{name.upper()}"
-                  adtcore:description="{description}"
+                  adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
-  <blue:source>{ddl_source}</blue:source>
+  <blue:source>{text_escape(ddl_source)}</blue:source>
 </blue:blueSource>'''
 
         params = {}
@@ -6096,10 +6302,14 @@ class SAPADTClient:
                 timeout=self.timeout_default,
             )
         finally:
+            kilit_birakildi = False
             try:
-                self.unlock_object(src_url, lock_handle)
+                # Z195 ③: dönüş okunur; False → uyarı + sonuçta lock_released=False.
+                kilit_birakildi = self.unlock_object(src_url, lock_handle) is not False
             except Exception:
-                pass
+                kilit_birakildi = False
+            if not kilit_birakildi:
+                print(kilit_birakilamadi_uyarisi(name))
 
         if put_resp.status_code not in [200, 201]:
             raise SAPADTError(
@@ -6113,7 +6323,8 @@ class SAPADTClient:
         return {
             'success': True,
             'object_url': object_url,
-            'message': f'Structure {name} created + source deterministik PUT ile yazıldı'
+            'message': f'Structure {name} created + source deterministik PUT ile yazıldı',
+            'lock_released': kilit_birakildi,   # Z195 ③: False = kilit açık kalmış olabilir
         }
 
     def create_table(self, name, description, package_name, fields=None,
@@ -6287,12 +6498,12 @@ define table {name.lower()} {{
                   xmlns:adtcore="http://www.sap.com/adt/core"
                   adtcore:name="{name.upper()}"
                   adtcore:type="TABL/DT"
-                  adtcore:description="{description}"
+                  adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
-  <blue:source>{ddl_source}</blue:source>
+  <blue:source>{text_escape(ddl_source)}</blue:source>
 </blue:blueSource>'''
 
         headers = self._get_headers(
@@ -6364,7 +6575,7 @@ define table {name.lower()} {{
             raise
         ml = (master_language or self.language or '').upper()
         tablo_url = f'/sap/bc/adt/ddic/tables/{name.lower()}'
-        esc = lambda v: str(v).replace('&', '&amp;').replace('<', '&lt;').replace('"', '&quot;')  # noqa: E731
+        esc = attr_escape  # Z194: ortak öznitelik kaçışı (eski yerel lambda TAB/LF/CR ve `>` kaçışlamıyordu)
         kabuk = f'''<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
                  xmlns:adtcore="http://www.sap.com/adt/core"
@@ -6667,7 +6878,7 @@ define table {name.lower()} {{
 <ddl:ddlSource xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources"
                  xmlns:adtcore="http://www.sap.com/adt/core"
                  adtcore:name="{name.upper()}"
-                 adtcore:description="{description}"
+                 adtcore:description="{attr_escape(description)}"
                  adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
@@ -6803,7 +7014,7 @@ constants:
 <atypgr:abapTypeGroup xmlns:atypgr="http://www.sap.com/adt/ddic/typegroups"
                        xmlns:adtcore="http://www.sap.com/adt/core"
                        adtcore:name="{name.upper()}"
-                       adtcore:description="{description}"
+                       adtcore:description="{attr_escape(description)}"
                        adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
@@ -6898,7 +7109,7 @@ constants:
 <group:abapFunctionGroup xmlns:group="http://www.sap.com/adt/functions/groups"
                          xmlns:adtcore="http://www.sap.com/adt/core"
                          adtcore:name="{name.upper()}"
-                         adtcore:description="{description}"
+                         adtcore:description="{attr_escape(description)}"
                          adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
@@ -6978,7 +7189,7 @@ constants:
 <fmodule:abapFunctionModule xmlns:fmodule="http://www.sap.com/adt/functions/fmodules"
                             xmlns:adtcore="http://www.sap.com/adt/core"
                             adtcore:name="{name.upper()}"
-                            adtcore:description="{description}"
+                            adtcore:description="{attr_escape(description)}"
                             adtcore:masterLanguage="{self.language}">
 </fmodule:abapFunctionModule>'''
 
@@ -7311,6 +7522,41 @@ constants:
 
         return response.text
 
+    def check_run(self, object_url, version='inactive'):
+        """SALT-OKUR sözdizimi denetimi — `POST /sap/bc/adt/checkruns?reporters=abapCheckRun` (Z195 ①).
+
+        Aktivasyon ucuna GİTMEZ (kilit/transport/aktivasyon/kaynak PUT YOK). Varsayılan `inactive`:
+        diskte bekleyen sürümü denetler (kaynak çekirdek ölçümü: `active` hatalı inaktif sürümü görmez).
+        Döner: `checkrun_ayristir` sözlüğü (+ `http_status`). Ağ hatası / 200 dışı yanıt ⇒
+        `hukum='OLCULEMEDI'` (istisna FIRLATMAZ; "temiz" de DEMEZ).
+        """
+        if version not in ('inactive', 'active'):
+            raise SAPValidationError("check_run version 'inactive' ya da 'active' olmali: %r" % (version,))
+        govde = checkrun_govdesi(object_url, version)
+        headers = self._get_headers('application/vnd.sap.adt.checkmessages+xml',
+                                    'application/vnd.sap.adt.checkobjects+xml')
+        try:
+            r = self._request_with_csrf_retry(
+                'post', f"{self.url}{CHECKRUN_UC}",
+                headers=headers,
+                data=govde.encode('utf-8'),
+                params={'reporters': CHECKRUN_REPORTER},
+            )
+        except Exception as exc:  # noqa: BLE001 — ölçülemedi, "temiz" değil
+            sonuc = checkrun_ayristir('', object_url, version)
+            sonuc['sebep'] = 'istisna:%s' % type(exc).__name__
+            sonuc['http_status'] = None
+            return sonuc
+        kod = getattr(r, 'status_code', None)
+        if kod != 200:
+            sonuc = checkrun_ayristir('', object_url, version)
+            sonuc['sebep'] = 'http_%s' % kod
+            sonuc['http_status'] = kod
+            return sonuc
+        sonuc = checkrun_ayristir(r.text, object_url, version)
+        sonuc['http_status'] = kod
+        return sonuc
+
     def run_atc_check(self, object_url, variant='DEFAULT', max_verdicts=100):
         """Run ATC (ABAP Test Cockpit) check - 3-step workflow
 
@@ -7580,7 +7826,7 @@ constants:
 <ddlx:ddlxSource xmlns:ddlx="http://www.sap.com/adt/ddic/ddlxsources"
                 xmlns:adtcore="http://www.sap.com/adt/core"
                   adtcore:name="{name.upper()}"
-                  adtcore:description="{description}"
+                  adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
@@ -7654,7 +7900,7 @@ constants:
 <acm:dclSource xmlns:acm="http://www.sap.com/adt/acm/dclsources"
                xmlns:adtcore="http://www.sap.com/adt/core"
                adtcore:name="{name.upper()}"
-               adtcore:description="{description}"
+               adtcore:description="{attr_escape(description)}"
                adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"
@@ -7730,7 +7976,6 @@ constants:
         # KANITLI reçete: playbook/adt-rap.md §32.6c + create_rap_service.py.
         # ESKİ (bozuk) payload: bdef:behaviorDefinition + yanlış ns + yanlış
         # endpoint (/behaviordefinitions, /bo eksik) → 404, hiç çalışmıyordu.
-        from xml.sax.saxutils import escape as _xe
         bdef_base = '/sap/bc/adt/bo/behaviordefinitions'
         bdef_ct = 'application/vnd.sap.adt.blues.v1+xml'
         object_url = f'{bdef_base}/{name.lower()}'
@@ -7740,7 +7985,7 @@ constants:
             '<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"\n'
             '                 xmlns:adtcore="http://www.sap.com/adt/core"\n'
             f'                 adtcore:name="{name.upper()}"\n'
-            f'                 adtcore:description="{_xe(description or name)}"\n'
+            f'                 adtcore:description="{attr_escape(description or name)}"\n'
             '                 adtcore:type="BDEF/BDO"\n'
             f'                 adtcore:masterLanguage="{self.language}">\n'
             f'  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"\n'
@@ -7801,8 +8046,11 @@ constants:
                     )
             finally:
                 try:
-                    self.unlock_object(object_url, lock_handle)
+                    # Z195 ③: dönüş okunur (False = tüm stratejiler düştü) — akış değişmez.
+                    if self.unlock_object(object_url, lock_handle) is False:
+                        print(kilit_birakilamadi_uyarisi(name))
                 except Exception as e:
+                    print(kilit_birakilamadi_uyarisi(name))
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] BDEF unlock note: {e}")
 
@@ -7853,7 +8101,7 @@ constants:
 <bimpl:behaviorImplementation xmlns:bimpl="http://www.sap.com/adt/behaviorImplementations"
                                xmlns:adtcore="http://www.sap.com/adt/core"
                                adtcore:name="{name.upper()}"
-                               adtcore:description="{description or name}"
+                               adtcore:description="{attr_escape(description or name)}"
                                adtcore:masterLanguage="{self.language}">
   <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
                       adtcore:type="DEVC/K"

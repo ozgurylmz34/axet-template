@@ -14,7 +14,8 @@ EXPECTED_SCRIPTS = ["doc_tools.py", "build_doc_pdf.py", "build_kd_pdf.py", "capt
 EXPECTED_DOCS = ["SKILL.md", "references/fs-authoring.md", "references/ts-authoring.md", "references/kd-authoring.md",
                  "references/doc-checklist.md", "references/traceability.md", "references/pdf-with-screenshots.md",
                  "references/live-confirmation-tour.md", "templates/FS-template.md", "templates/TS-template.md",
-                 "templates/KD-template.md"]
+                 "templates/KD-template.md", "templates/FS-summary-template.md",
+                 "templates/integration-sheet-template.md"]
 
 
 def _read(rel):

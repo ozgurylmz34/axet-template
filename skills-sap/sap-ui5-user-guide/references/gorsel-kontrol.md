@@ -34,6 +34,7 @@
 | G10 | **Durum tutarlılığı** | aç/kapa alanının yalnız bir durumu çekilmiş; seçili satır vurgusu yok | iki durum ayrı kare; seçim gerekiyorsa senaryoda seçim adımı |
 | G12 | **Kod değeri kaynakta yok** | durum/kod kolonundaki değer (ör. rapor kodu, durum kodu) domain sabit değerlerinde ya da değer yardımı listesinde yok | değeri kaynağından al: `mock_veri.py --sabit-degerler` (domain — `adt_get`, ya da VH varlığı); "uygun görünüyor" yetmez, kaynağı tabloya yaz |
 | G13 | **Tanıtım karesi kaydırılmış / seçim düz metin** | liste karesinde ilk kolonlar (belge no, müşteri) yok, tablo sağa kaymış; filtre alanında seçili değer (token/anahtar) yerine düz metin | çekimden önce `scroll_reset`; seçimi değer yardımından yap (F4 → kayıt) ya da `fill` + `press` ile |
+| G14 | **Yanıt şekli arka ucu izlemiyor** | başarı mesajı / satır sayısı / mesaj sırası / durum adı yazımı arka ucun o eylemde üreteceğiyle uyuşmuyor; karede arka ucun hiç üretmediği bir satır var | eylemin arka uç metodunu oku (dönen mesaj sırası, tipi, sayısı; başarısız dal; metin kaynağı) ve mock'u ona göre kur (`mock-ortam.md` §3) |
 | G11 | **Gezinme izleri** | fare imleci, odak çerçevesi, yarım kalmış tooltip | çekimden önce odağı başka yere al ya da `wait` ile tooltip'in kapanmasını bekle |
 
 ## Sınırlar

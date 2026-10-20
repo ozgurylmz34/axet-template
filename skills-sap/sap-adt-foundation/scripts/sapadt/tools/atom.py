@@ -2063,6 +2063,17 @@ def adt_push_source(
                     + str(result.get("readback_reason", "")).strip()
                 ).strip()
 
+        # ⛔ Z195 ③ (2026-10-19, kaynak çekirdekle aynı): kilit BIRAKILAMADI → `ok` DEĞİŞMEZ (yazma sonucu
+        # olduğu gibi kalır), yalnız üst seviyede görünür olur (readback_notice deseni). Uyarı SM12'de kilidi
+        # SİLMEYİ önermez (Kesin Yasak C) — yalnız "kontrol et" der. Eskiden alan yalnız nested `result`'taydı.
+        if isinstance(result, dict) and result.get("lock_released") is False:
+            resp["lock_released"] = False
+            resp["lock_notice"] = (
+                "KILIT BIRAKILAMADI — tum unlock stratejileri basarisiz; kilit acik kalmis "
+                "olabilir. Yazma sonucu DEGISMEDI. SM12'de objenin kilidini KONTROL ET; "
+                "silme/birakma karari kullanicidadir (Kesin Yasak C). Sonraki push 409/423 "
+                "verirse sebep bu olabilir.")
+
         # Aktivasyon-oncesi canli syntax-check (push_object icinde) basarisizsa yuzeye cikar:
         # push upload etti ama AKTIVE ETMEDI -> ok=False + hatalar (gateway net gorsun, nested kalmasin).
         if isinstance(result, dict) and result.get("syntax_precheck") == "failed":

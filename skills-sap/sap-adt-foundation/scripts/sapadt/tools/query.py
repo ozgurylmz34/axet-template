@@ -425,94 +425,70 @@ def adt_atc_check(name: str, object_type: str = "class",
 
 
 # =============================================================================
-# adt_syntax_check  (gap-analysis #10)
+# adt_syntax_check  (gap-analysis #10) — Z195 ① (2026-10-19): SALT-OKUR checkrun
 # =============================================================================
+# Eskiden alt katman `syntax_check_via_activation` idi: `preauditRequested=true` SAP'de onurlandırılmıyor,
+# bekleyen TEMİZ sürümü AKTİVE EDİYORDU (ölçüm 2026-07-31: inaktif 1 → 0) ⇒ araç yazma sınıfındaydı.
+# Kaynak çekirdek (salt-okur `POST /sap/bc/adt/checkruns`, `version=inactive`) bu aracın varsayılanını
+# değiştirdi ve eski yolu bir sabitle geri alınabilir bıraktı. aXet'te araç sınıfı ADIYLA belirlenir
+# (`gate.READ_TOOLS`) ⇒ sabitle geri açılan yan etkili yol okuma kapısından YAZARDI. Bu yüzden eski yol
+# ARAÇTAN KALDIRILDI (geri dönüş = commit geri alma + aracı yazma kümesine taşıma). Kütüphanedeki
+# `SAPClient.syntax_check` / `syntax_check_via_activation` DURUR: `push_object`'in aktivasyon-öncesi
+# ön kontrolü onu kullanır (zaten yazma akışının içindedir).
 
-def _gecerlilik(res) -> tuple:
-    """`syntax_check` yanıtından ÜÇ-DEĞERLİ sonuç türet: True / False / **None = ÖLÇÜLEMEDİ**.
 
-    ⛔ Eski hâl (2026-09-09'a kadar): `bool(res.get("valid"))`. `bool(None)` **False**'tur ⇒
-    alt katman ölçüm ÜRETEMEDİĞİNDE tool *"sözdizimi HATALI"* diyordu. Bu, bu evin en sık
-    tekrarlayan kusur sınıfı: **"bakamadım" ile "hayır" AYNI DEĞERE çöküyor.** Kardeşleri
-    aynı dosyada zaten üç-değerli: `adt_lock_check` → `locked: None` + `kilit_belirsiz` ·
-    `adt_transport_list` → `zero_verified` · `adt_atc_check` → `finding_count_unverified`;
-    komşu katmanda `atom.adt_activate` → `activation_verified` · `sap_client` → `readback_ok`.
-
-    ÖLÇÜLMÜŞ vakalar (hipotez değil, kaynakta yazılı):
-      · obje KİLİTLİ (HTTP 403) → `{'valid': False, 'check_executed': False, 'locked': True}`
-        — `scripts/sap_adt_lib.py:3490-3506`
-      · alt katman istisna yakaladı → `{'valid': False, 'error': str(e)}`
-        — `scripts/sap_client.py:1594`
-      · yanıt XML'i ayrıştırılamadı → `valid:False` + YEREL üretilmiş tek mesaj
-        — `scripts/sap_adt_lib.py:3596-3598`
-    Üçünde de sözdizimi **HİÇ kontrol edilmedi**; tool yine de "hatalı" diyordu. Zarar:
-    ajan var olmayan bir sözdizimi hatasını "düzeltmeye" oturur, gerçek sebep (kilit /
-    bağlantı / bozuk yanıt) görünmez kalır.
-
-    Ayrım kuralı:
-      · **Olumlu sonuç çöküşten DOĞAMAZ** — her başarısızlık yolu `False` yazar ⇒ `valid:true`
-        doğrudan ölçümdür.
-      · `valid:false` ancak **SAP'nin KENDİ bulgu kaydı** varsa ölçümdür. SAP'nin msg
-        listesinden gelen her kayıt `type` taşır (`sap_adt_lib.py:3568-3580`: `errors`e yalnız
-        `msg_type == 'E'` olanlar eklenir); kilit metni ve parse-hatası metni gibi YEREL
-        üretilmiş kayıtlar taşımaz. Yapısal ayrım — metin eşleştirmesi YOK.
-    """
-    if not isinstance(res, dict):
-        return None, "alt katman sözlük döndürmedi (çağrı KOŞMADI)"
-    if "valid" not in res:
-        return None, "alt katman 'valid' alanı ÜRETMEDİ"
-    if res.get("valid"):
-        return True, None
-    if res.get("locked"):
-        return None, ("obje KİLİTLİ (%s) — sözdizimi HİÇ kontrol edilmedi; SM12/SE11 ile çöz"
-                      % (res.get("lock_user") or "sahibi bildirilmedi"))
-    if res.get("error") and not res.get("errors"):
-        return None, "alt katman istisna yakaladı: %s" % str(res.get("error"))[:160]
-    hatalar = res.get("errors") or []
-    if not any(isinstance(h, dict) and h.get("type") for h in hatalar):
-        return None, ("valid:false ama SAP'nin kendi bulgu kaydı YOK (%d yerel mesaj) — "
-                      "sözdizimi ÖLÇÜLMEDİ" % len(hatalar))
-    return False, None
+def _sozdizimi_checkrun(client, name: str, object_type: str) -> dict:
+    """checkrun yolunun dönüşü — eski `adt_syntax_check` ile AYNI anahtarlar + `source`/`scope`."""
+    from object_types import get_object_url  # type: ignore
+    url = get_object_url(name, object_type)
+    with _capture() as buf:
+        res = client.adt_client.check_run(url, version="inactive")
+    sozluk = res if isinstance(res, dict) else {}
+    hukum = sozluk.get("hukum")
+    ortak = {"name": name, "type": object_type, "source": "checkrun",
+             "scope": sozluk.get("kapsam"),
+             "errors": sozluk.get("hatalar", []),
+             "warnings": sozluk.get("uyarilar", []),
+             "client_log": buf.getvalue().strip()}
+    if hukum in ("temiz", "hatali"):
+        return {"ok": True, "valid": hukum == "temiz", **ortak}
+    sebep = sozluk.get("sebep") if sozluk else "alt katman sözlük döndürmedi"
+    return {"ok": False, "error": "sozdizimi_belirsiz", "valid": None,
+            "valid_reason": "checkrun ÖLÇÜLEMEDİ (%s)" % sebep,
+            "message": ("Sözdizimi ÖLÇÜLEMEDİ (checkrun: %s). Bu sonuç 'sözdizimi TEMİZ' de "
+                        "'HATALI' da DEĞİLDİR — ör. inaktif sürümü olmayan tabloda SAP "
+                        "`notProcessed` döner." % sebep),
+            **ortak}
 
 
 @profil_tool()
 def adt_syntax_check(name: str, object_type: str = "class") -> dict:
-    """⚠️ YAN ETKİLİ — SALT-OKUMA DEĞİL: temiz bekleyen sürümü AKTİVE EDER. Yazma sayılır.
+    """Sözdizimi denetimi — SALT-OKUR ADT checkrun (`POST /sap/bc/adt/checkruns`, `version=inactive`).
 
-    Gerçek semantik: "temizse aktive et". Alt katman (`sap_adt_lib.
-    syntax_check_via_activation`) ölçtü (2026-07-31): `preauditRequested=true` SAP
-    tarafından ONURLANDIRILMIYOR — bekleyen INACTIVE sürüm temiz derleniyorsa bu çağrı
-    onu AKTİVE EDER (`adt_inactive_objects` 1 → 0 gözlendi). Hatalıysa aktivasyon iptal
-    edilir ve hatalar döner.
-
-    ⚠ 2026-08-01'e kadar bu docstring "read-only" diyordu; alt katman "treat as WRITE"
-    diyordu. Doküman-yalanı yüzünden tool MUTASYON YAPAN TEK GUARD'SIZ araçtı: tier
-    guard'ı da namespace guard'ı da YOKTU → PRD tier'ında ve standart obje üzerinde
-    çağrılabiliyordu. Artık `require_writable_tier` + `require_customer_namespace`
-    diğer mutasyon tool'larıyla (create/push/activate/delete) AYNI kapıdan geçer.
-
-    Kullanım: push-before-activate akışında aktivasyon hatasını (ADR 0006/T10) önceden
-    yakalar — ama bilinçli geciktirilen bir aktivasyonu (co-activation sırası, def/impl
-    include çiftleri) SIRA BOZARAK öne alabilir. Tek-yazıcı (gateway) disiplinine tabidir.
+    Bekleyen (inaktif) sürümü denetler; kilit / kaynak PUT / aktivasyon / transport YOK. Kaynak çekirdek
+    canlı ölçümü (4 tip): aktivasyon ön denetimiyle aynı kök hata + satır/kolon; temiz sürüm aktive
+    OLMADI. aXet'te canlı ölçülmedi (sahte sunucu testi: `tests/test_checkrun_sozdizimi.py`).
+    Okuma sınıfıdır (`gate.READ_TOOLS`) ama araç içi iki kapı bilinçli olarak korunur: yalnız Z/Y
+    objeleri (ADR 0005-A) ve yazılabilir tier (DEV) — kaynak çekirdekle aynı.
 
     Args:
         name: Obje adı (Z*/Y*; standart obje REDDEDİLİR — ADR 0005-A).
         object_type: ADT tipi ('class', 'ddls', 'prog', ...).
 
     Returns:
-        {ok, name, type, valid, errors: [...], warnings: [...], client_log}
+        {ok, name, type, valid, errors: [...], warnings: [...], source: "checkrun", scope, client_log}
         veya guardrail_violation (PRD/QA tier ya da standart obje)
-        veya {ok: false, error: "sozdizimi_belirsiz", valid: null, valid_reason, message}
-        — kontrol KOŞMADIYSA (2026-09-09 / Q205; eskiden ölçülemeyen her durum `valid:false`
-        oluyordu = *"kod hatalı"* sanılan sahte-negatif).
+        veya {ok: false, error: "sozdizimi_belirsiz", valid: null, valid_reason, message, scope}
+        — denetim ÖLÇÜLEMEDİYSE (boş/bozuk yanıt, `notProcessed`, obje raporlanmadı, HTTP ≠ 200).
         ⚠ `valid: false` YALNIZ `ok: true` iken "sözdizimi hatalı" demektir. `valid: null`
         **"bakamadım"**tır — kodu düzeltmeye oturmadan önce `valid_reason`'ı oku.
+        `scope` = KAPSAM BEYANI: ATC, ABAP Unit, co-activation ve yetki denetimi DEĞİL.
     """
     from sapadt._conn import get_active_tier
     from sapadt.guardrails import (
         GuardrailViolation, require_customer_namespace, require_writable_tier,
     )
-    ne = f"{object_type} syntax_check (temiz bekleyen sürümü AKTİVE EDER)"
+    ne = f"{object_type} syntax_check (checkrun, salt-okur)"
     try:
         require_customer_namespace(name, what=ne, object_type=object_type)
         require_writable_tier(get_active_tier(), what=ne)
@@ -521,38 +497,7 @@ def adt_syntax_check(name: str, object_type: str = "class") -> dict:
 
     client = _get_client()
     try:
-        with _capture() as buf:
-            res = client.syntax_check(name, object_type=object_type)
-        gecerli, sebep = _gecerlilik(res)
-        hatalar = res.get("errors", []) if isinstance(res, dict) else []
-        uyarilar = res.get("warnings", []) if isinstance(res, dict) else []
-        if gecerli is None:
-            # Emsal AYNI DOSYADA: `adt_lock_check` → `ok:false` + `locked:null` +
-            # "'kilitli DEĞİL' ANLAMINA GELMEZ"; `adt_atc_check` → `ok:false` +
-            # `finding_count_unverified`. Belirsiz sonuç `ok:true` ile SUNULMAZ.
-            return {
-                "ok": False,
-                "error": "sozdizimi_belirsiz",
-                "name": name,
-                "type": object_type,
-                "valid": None,
-                "valid_reason": sebep,
-                "message": ("Sözdizimi ÖLÇÜLEMEDİ (%s). Bu sonuç 'sözdizimi HATALI' "
-                            "ANLAMINA GELMEZ — kodu düzeltmeye oturma; önce sebebi gider, "
-                            "sonra yeniden ölç." % sebep),
-                "errors": hatalar,
-                "warnings": uyarilar,
-                "client_log": buf.getvalue().strip(),
-            }
-        return {
-            "ok": True,
-            "name": name,
-            "type": object_type,
-            "valid": gecerli,
-            "errors": hatalar,
-            "warnings": uyarilar,
-            "client_log": buf.getvalue().strip(),
-        }
+        return _sozdizimi_checkrun(client, name, object_type)
     except Exception as exc:
         return _err_from_exc(exc)
 

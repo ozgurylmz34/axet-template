@@ -177,8 +177,9 @@ cli adt_atc_check '{"name":"ZCL_DEMO_CLASS","object_type":"class"}'
 ```
 - Okuma sınıfı; varyant verilmezse `.conn_adt`'deki ATC varyantı, o da yoksa `DEFAULT`.
 - Proje politikası (hangi öncelik zorunlu) proje `AGENTS.md`'sindedir; yoksa kullanıcıya sor.
-- `adt_syntax_check` **yazma sınıfıdır** (temiz bekleyen sürümü aktive eder; ölçüm: inaktif sayısı 1→0).
-  Push zaten sözdizimi kontrolü içerir → ayrı tur gereksiz. `valid:null` = "bakamadım", `valid:false` yalnız `ok:true` iken "hatalı".
+- `adt_syntax_check` **okuma sınıfıdır** (Z195, 2026-10-19): salt-okur `POST /sap/bc/adt/checkruns` (`version=inactive`),
+  aktive etmez. Push zaten sözdizimi kontrolü içerir → ayrı tur gereksiz. `valid:null` = "bakamadım" (ör. `notProcessed`),
+  `valid:false` yalnız `ok:true` iken "hatalı". Tek metot okumak için `adt_get_method` (yalnız `source/main` GET).
 - Sözdizimi kontrolü tek otorite değildir: CDS/sınıf etkileşiminde yanlış hata raporlayabilir → aktivasyon sonucuyla
   çapraz doğrula. Ama `parser_error` / "Statement does not exist"i körü körüne yanlış-pozitif sayma: çalışan bir
   referans kaynakla kıyasla.

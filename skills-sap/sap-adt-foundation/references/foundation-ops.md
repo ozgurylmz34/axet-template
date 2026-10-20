@@ -181,8 +181,8 @@ cli adt_activate    '{"name":"ZDEMO_C_SO_ITEM","object_type":"ddls"}' --sap-writ
   yanıt `syntax_precheck:"olculemedi"` + `syntax_precheck_notice` taşır. Bu "sözdizimi temiz" değildir.
   (Aracın açıklaması "aktivasyon ayrı adım" der; alt katman aktive etmeyi dener → sonucu her durumda
   `adt_inactive_objects` ile doğrula, gerekiyorsa `adt_activate` çağır.)
-- Doğru sıra: **push → (hata varsa dur, düzelt) → `adt_activate` → readback**. Araya elle
-  `adt_syntax_check` turu koyma: gereksizdir ve yan etkilidir (bekleyen temiz sürümü aktive eder).
+- Doğru sıra: **push → (hata varsa dur, düzelt) → `adt_activate` → readback**. Push zaten aktivasyon öncesi kontrol içerir;
+  ayrı `adt_syntax_check` turu gereksizdir (Z195'ten beri salt-okur checkrun — yan etkisi yok, aktive etmez).
 - **"activated" ≠ içerik canlıya indi (ekip dersi).** Push'un başarılı dönmesi, sözdizimi kontrolü ve incelemenin PASS
   vermesi kaynağın canlıya indiğini kanıtlamaz: bir CDS'teki ABAP tarzı `"` yorumu SAP tarafından sessizce reddedildi, beş
   kontrol yeşildi, canlı hiç değişmedi. Tek kanıt readback içerik eşitliğidir (`readback_verified:true`, ya da `adt_get`
@@ -335,7 +335,9 @@ ad denetimi yetmez; yazma kapısı (`gate.check_std_extension`, adım 5) ve `adt
     değil: kilit çakışması `ok:false` + `result.error_type:"SAPLockError"` + `result.error` (sahip adı metinde) +
     `result.source_uploaded:false`; üst seviyede `error:"locked"` ve `lock_owner` **yoktur**, tarif `client_log`'dadır.
     UNLOCK düşerse `result.lock_released:false` — `ok:true` ile yan yana görülebilir (bırakma `finally`'de, `ok`
-    hesaplandıktan sonra yazılır); kilit kalmış olabilir → kullanıcıya bildir. Ayrıntı: `known-errors-adt.md` K-09.
+    hesaplandıktan sonra yazılır); Z195'ten beri ÜST seviyede de `lock_released:false` + `lock_notice` ve `client_log`'da
+    `[WARN] KILIT BIRAKILAMADI` satırı. Kilit kalmış olabilir → kullanıcıya bildir (SM12'de KONTROL; silme kararı
+    kullanıcıda). Ayrıntı: `known-errors-adt.md` K-09.
 - **`409 Conflict` → ASLA retry.** Her retry SAP'de yeni boş bir K-tipi transport yaratabilir. Yapılacaklar:
   1. Kullanıcıya bildir.
   2. Kullanıcı SM12'den kendi eski kilidini temizler (Yasak C: **model enqueue kilidi silmez, silmeyi otomatikleştirmez**).
@@ -436,7 +438,7 @@ python <foundation>/scripts/sap_adt_populate.py msag --name <ZMSG> --description
 
 ## 10. Çoklu sistem ve tier
 **Konvansiyon:** proje kökünde tek aktif dosya `.conn_adt`; birden çok sistem varsa her biri `conn/<SISTEM_ADI>.env` slotunda (aynı anahtarlar,
-`ADT_SAP_SYSTEM_NAME` = slot adı). Proje şablonunun `.gitignore`'u `.conn*` ve `conn/*`'ı dışarıda tutar (yalnız `*.example` / `conn/README.md` girer).
+`ADT_SAP_SYSTEM_NAME` = slot adı). Proje şablonunun `.gitignore`'u `.conn*` ve `conn/*`'ı dışarıda tutar (yalnız `*.example` girer; klasörün açıklaması `docs/sap-baglanti.md`).
 
 | Adım | Kim · nasıl | Sonuç |
 |---|---|---|

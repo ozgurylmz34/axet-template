@@ -19,10 +19,10 @@ Proje kimliği `sap-project.json`'dadır (`sap_profile`, `cleancore_policy`).
 
 | `cleancore_policy` | Anlamı | İncelemede |
 |---|---|---|
-| `strict` | Yalnız released API; yeni klasik Dynpro politika gereği yasak | `WARNING · strict: BLOCKER` satırları BLOCKER; CC-02 uygulanır |
+| `strict` | Yalnız released API; yeni klasik Dynpro politika gereği yasak | `WARNING · strict: BLOCKER` satırları BLOCKER; AX-CC-02 uygulanır |
 | `balanced` | Profil varsayılanı: released tercih, klasik meşru | WARNING; released kullanılmayacaksa gerekçe kullanıcıya bildirilir (sessiz geçiş yok) |
 | `classic` | RAP tercih baskısı kalkar; released tercihi değişmez | `balanced` ile aynı önem |
-| boş / tanımsız değer | Ölçülemez | önem DOĞRULANMADI, kullanıcıya sor |
+| boş / tanımsız değer | Ölçülemez | WARNING; sistemde kalan doğrulamalara "cleancore_policy sorulacak (strict ise BLOCKER)", kullanıcıya sor |
 
 Not: CLI `cleancore_policy`'yi yalnız metin olarak doğrular (`sap-adt-foundation` `project.py`); yazım hatası sessizce
 "tanımsız" olur → incelemede boş gibi ele al.
@@ -37,6 +37,34 @@ Not: CLI `cleancore_policy`'yi yalnız metin olarak doğrular (`sap-adt-foundati
 
 İnceleme raporunda yeni objenin seviyesi A değilse gerekçesiyle yazılır. D daima BLOCKER'dır (kesin yasak A).
 
+### 2.1 Politika × seviye ve teknik × politika (`s4_private`)
+Bu tablo yeni kural koymaz; §1 politika ekseni, §2 seviyeler ve `%sap-dev` `write-api-selection.md`'yi hizalar —
+çelişkide onlar geçerlidir. **Hücre sözlüğü:** `serbest` · `gerekçeyle` (TS'te yazılı gerekçe) · `yasak` ·
+**`ölçülmedi`** = matristen/dokümandan türetildi, canlı ya da araçla doğrulanmadı · **`zorlama yok`** = hiçbir araç bu
+politikayı uygulamıyor (yalnız doküman + inceleme). ⛔ Boş ya da `ölçülmedi` hücre "serbest" demek DEĞİLDİR.
+
+| Politika | A | B | C | D | Durum |
+|---|---|---|---|---|---|
+| `strict` | serbest (tercih) | gerekçeyle — yeni klasik Dynpro yasak | **yasak** (yalnız released API) | **yasak** | ölçülmedi · zorlama yok (inceleme önemi §1) |
+| `balanced` | serbest (tercih) | serbest | gerekçeyle — yazma kapısındaki halef validator'ı WARNING verir (yalnız tablo okuması, §4); otorite ATC "Usage of APIs" | **yasak** | C hücresinin tablo dışı kısmı ölçülmedi |
+| `classic` | serbest (RAP tercih baskısı yok) | serbest | gerekçeyle | **yasak** | ölçülmedi · zorlama yok |
+
+D sütunu her politikada yasaktır ve politika ekseninden değil **kesin yasak A**'dan gelir; hiçbir politika değeri
+standart obje değişikliğini açmaz.
+
+| Teknik | `strict` | `balanced` | `classic` | Not |
+|---|---|---|---|---|
+| Standart tabloyu doğrudan **okuma** | yasak (C) | gerekçeyle; released halef önerilir (§3) | gerekçeyle | Kesin yasak B okumayı yasaklamaz. Halef `#CHECK` taşıyorsa kontrol fail-open olabilir (§3 madde 4) |
+| Standart veriye **yazma** | yalnız released yollar | tam zincir (`write-api-selection.md`) | tam zincir | Doğrudan SQL her politikada yasak (kesin yasak B) |
+| Klasik rapor / Dynpro / ALV | Dynpro yasak; rapor ölçülmedi | serbest (`%sap-classic-abap`) | serbest | — |
+| RAP / released CDS | tercih | tercih | serbest | — |
+| SEGW OData | ölçülmedi | serbest | serbest | `%sap-odata-backend` |
+
+**Kullanım:** FS/TS'te ve inceleme raporunda Clean Core gerekçesi **seviye harfi + politika** ile yazılır ("C seviyesi
+okuma, `balanced` — released halef yok / `#CHECK` riski"). Bir hücreyi `ölçülmedi`den çıkarmak canlı ölçüm ister (ATC
+"Usage of APIs" ya da aktivasyon). `cleancore_policy`'yi okuyup davranış değiştiren bir doğrulayıcı yoktur (değer
+yalnız proje kurulumunda, oturum özetinde ve template doktorunun tutarlılık uyarısında okunur); bunu değiştirmek araç kararıdır.
+
 ## 3. Karar akışı — standart obje okunacaksa
 1. **Yazma mı?** Bu okuma akışı değil: kesin yasak B — released API (released RAP BO/EML · released BAPI · released OData) →
    BAPI → RFC FM → BDC → kullanıcıdan manuel; hangi yol ve hangi canlı teyitle: `%sap-dev` → `write-api-selection.md` (BE-79).
@@ -50,7 +78,7 @@ Not: CLI `cleancore_policy`'yi yalnız metin olarak doğrular (`sap-adt-foundati
    yapamıyorsa 5. adım.
 7. **Birim semantiği tuzağı:** released görünümlerde birim çevrim alanları `@Semantics.quantity` taşıyabilir; aritmetik ya
    da `case` içinde doğrudan kullanım "UNIT-reference" aktivasyon hatası verir → önce `cast( … as abap.dec(n,m) )`.
-8. **Sınıf, arayüz, FM:** tablo haritası yalnız ipucudur; otorite ATC "Usage of APIs" (§5, CC-01).
+8. **Sınıf, arayüz, FM:** tablo haritası yalnız ipucudur; otorite ATC "Usage of APIs" (§5, AX-CC-01).
 9. **Eski kod:** mevcut koddaki ham tablo tek başına bulgu değildir (envanter); migrasyon proje kararıdır.
 
 ## 4. Otomasyon — neyi yakalar, neyi kaçırır
@@ -69,7 +97,7 @@ Yazma kapısı validator'ı `check_released_objects.py` (`<skills-sap>/sap-adt-f
 | `/* … from <tablo> … */` blok yorum | bulgu verir (yanlış pozitif) |
 | Harita dosyası yok ya da boş | `SKIP` + durum satırı `status=SKIPPED measured=false` basar, çıkış 0 → `run_review` SKIP (WARNING) sayar; 2026-09-14 öncesi durum satırı yoktu ve PASS sayılıyordu |
 
-Son satır nedeniyle CC-03 vardır: `released_successors.py status` haritayı doğrular (yok/boş/bozuk → çıkış 2).
+Son satır nedeniyle AX-CC-03 vardır: `released_successors.py status` haritayı doğrular (yok/boş/bozuk → çıkış 2).
 Yazma kapısının bu durumu ölçmeden geçmesi foundation tarafında açık bir kalemdir (kapıya dokunulmadı).
 
 ## 5. ATC — tüm obje tipleri için otorite

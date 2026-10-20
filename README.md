@@ -5,7 +5,7 @@ kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullan�
 bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu okuyan tüm projelere yansır; projelerdeki
 şablon kopyaları (`AGENTS.md`, `.githooks`, denylist …) `%guncelle-proje` ile getirilir.
 
-> Sürüm: v0.5.19 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.20 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -72,8 +72,8 @@ Sonra **proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (aXet bu dosya
    proje ayarlarının onayı sorulur, kontrol (`doctor`) koşar ve aXet'i projede açmayı önerir — ilk satırda
    `proje: <ad>` görünmeli.
 
-Parola dosyada düz metindir; `conn/` altındaki bağlantı dosyaları git'e girmez (yalnız `conn/README.md` izlenir, onun
-commit'i de sende — aXet `conn/` altına dokunmaz) ve klasör aXet ajanına kapalıdır. Sistem değiştirmek için aXet'te
+Parola dosyada düz metindir; `conn/` altındaki bağlantı dosyaları git'e girmez ve klasör aXet ajanına kapalıdır
+(açıklaması projede `docs/sap-baglanti.md`). Sistem değiştirmek için aXet'te
 `%sistem` (ya da "QA'ya geç"). Var olan projeyi şablona getirmek için `%guncelle-proje`; bitince yine
 `KURULUMU-TAMAMLA`'ya çift tıkla (ayar onayını o sorar).
 
@@ -154,6 +154,8 @@ kapanış `KAPANDI — test borcu var: %testler` der ve `doctor` borç sürdük�
 - `%verify-done` — "tamam" demeden tam kapsam doğrulaması
 - `%explore` — salt-okur araştırmayı alt ajana devret
 - `%code-review` — bağımsız inceleyiciyle kod incelemesi
+- `%diagnosing-bugs` — sebebi bilinmeyen hata, dump, yanlış veri ya da yavaşlamada kök neden döngüsü (önce yeniden
+  üret, hipotezleri tek tek çürüt, sonra düzelt)
 - `%handoff` — oturum devir notu / "devam"
 - `%commit-pr` — commit, push, PR disiplini; uzak deposu olmayan projede dalı `main`'e yerel birleştirme
   (onayınla; cevapsız onay = hayır)

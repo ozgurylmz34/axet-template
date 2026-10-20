@@ -39,12 +39,12 @@ Yer   : <source_root>/<MODÜL>/<PAKET>/docs/     (kaynak/dönüşüm belgeleri r
   çakışmak zorundaysa doküman yazarına sabit bir dosya özeti verilmez; yazar başlarken kendisi ölçer, tutmuyorsa durur
   ve sorar. Aynı turda dosya sahipliği açıkça bölünür (bir dokümana tek yazar).
 - **Koda çapa ad ile atılır, satır numarasıyla değil.** Doküman değişebilecek koda metot/FORM/dal adıyla bağlanır (ad
-  da yazılmadan önce kaynakta doğrulanır); satır numarası ilk düzeltmede kayar (DOC-CR-06).
+  da yazılmadan önce kaynakta doğrulanır); satır numarası ilk düzeltmede kayar (AX-DOC-CR-03).
 - **Dışarı gönderilen paket ayrıca ölçülür.** Zip, e-posta eki ya da teslim klasörü çalışma dosyasının bir kopyasıdır ve
   hiçbir inceleme onu görmez: kaynak dosya düzeltilince paket sessizce bayatlar. Paket **teslim anında** güncel dosyalardan
   yeniden kurulur ("zaten kurmuştum"a güvenilmez) · açılıp üye üye özet (md5/sha) alınır ve çalışma ağacındaki dosyayla
   eşitliği ölçülür (boyut yetmez) · beklenen özetler eşlik eden nota yazılır ki alıcı doğrulayabilsin · eski sürüm
-  paketler aynı klasörde bırakılmaz (yanlışının gönderilme riski) (DOC-CR-07).
+  paketler aynı klasörde bırakılmaz (yanlışının gönderilme riski) (AX-DOC-CR-04).
 
 ## 4. Karar yayılımı ve ikinci kapı
 Bir karar birden çok yerde yaşar (gövde kuralı, ekran tablosu, sözde kod, test, ek belge, onay listesi). Her karar kaydında

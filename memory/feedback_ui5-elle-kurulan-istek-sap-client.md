@@ -19,7 +19,7 @@ Tek client / tek dil / tek sekmeyle yapılan test bu sınıfı yapısal olarak y
 devret — literal client yazma; util'de ana modeli `Component.getOwnerComponentFor(ctrl).getModel()` ile al (onInit'te
 view modeli `undefined` olabilir). Kanıt kaynak okuması değil: iki client'lı iki sekme + **ayırıcı veri** (iki client'ta
 sayısı farklı entity) + ağ izinde `sap-client`. Kardeş taraması: `new ODataModel(` / `XMLHttpRequest` / `fetch(` /
-`sServiceUrl +` tüm uygulamalarda. Reçete `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.4, kontrol FE-48 / UI-BOOT-06.
+`sServiceUrl +` tüm uygulamalarda. Reçete `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.4, kontrol FE-48 / UI-BOOT-05.
 İlgili: [UI5 sayfadan ayrılırken senkron XHR](feedback_ui5-sayfadan-ayrilirken-senkron-xhr.md).
 Önceki kayıt: yok
 Son-doğrulama: 2026-09-25 (ekip dersinden uyarlandı; aXet'te ayrıca ölçülmedi) · Kapsam: freestyle UI5 + OData V2, çok client'lı host

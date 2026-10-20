@@ -150,19 +150,24 @@ class ConnSablonTest(ZProje):
             self.assertNotIn(iz, r.stdout)
 
     def test_z70_conn_readme_kurulumda_gelir_git_kurali_ve_ezilmez(self):
+        # Z164 (2026-10-19): bağlantı açıklaması `conn/README.md`'den `docs/sap-baglanti.md`'ye taşındı — `conn/`
+        # ajan denylist'inde olduğu için izlenen README'nin commit'i hep kullanıcıya düşüyordu.
         d = self.proje("connproje", sap=True)
-        readme = (d / "conn" / "README.md").read_text(encoding="utf-8")
-        # Z83: README git'e açık ⇒ makine yolu TAŞIMAZ (önceden `<AXET_HOME>` klon yoluyla dolduruluyordu)
-        self.assertNotIn(AXET_HOME.as_posix(), readme, "README klonun mutlak yolunu taşıyor")
+        self.assertFalse((d / "conn" / "README.md").exists(), "Z164: kurulum conn/ altına README yazmamalı")
+        readme = (d / "docs" / "sap-baglanti.md").read_text(encoding="utf-8")
+        # Z83: açıklama git'e açık ⇒ makine yolu TAŞIMAZ (önceden `<AXET_HOME>` klon yoluyla dolduruluyordu)
+        self.assertNotIn(AXET_HOME.as_posix(), readme, "açıklama klonun mutlak yolunu taşıyor")
         self.assertNotIn("<AXET_HOME>", readme)
-        for rel, kapali in (("conn/README.md", False), ("conn/DEV.env", True), ("conn/QA.env", True)):
+        for rel, kapali in (("docs/sap-baglanti.md", False), ("conn/README.md", True), ("conn/DEV.env", True),
+                            ("conn/QA.env", True)):
             with self.subTest(rel=rel):
                 rc = self.git(d, "check-ignore", "-q", "--no-index", rel, kontrol=False).returncode
                 self.assertEqual(rc == 0, kapali, rel)
-        (d / "conn" / "README.md").write_text("kendi notum\n", encoding="utf-8")
+        (d / "docs" / "sap-baglanti.md").write_text("kendi notum\n", encoding="utf-8")
         r = self.calistir("new_project.py", str(d), "--sap")
         self.assertEqual(r.returncode, 0, self.cikti(r))
-        self.assertEqual((d / "conn" / "README.md").read_text(encoding="utf-8"), "kendi notum\n", "README ezildi")
+        self.assertEqual((d / "docs" / "sap-baglanti.md").read_text(encoding="utf-8"), "kendi notum\n",
+                         "açıklama ezildi")
 
     def test_z70_denylist_conn_klasorunu_kapatir(self):
         # canlı ölçüm (aXet 1.3.0, sahte dosya): satır yokken ajan conn/QA.env'i OKUDU; `conn` ile reddedildi

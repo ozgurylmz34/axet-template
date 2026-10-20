@@ -7,6 +7,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -1479,6 +1480,34 @@ class CekirdekMetniTest(GeciciTest):
         """doctor'ın kendi eşiği (doctor.py:758) — istisna metni çekirdeği eşiğin üstüne çıkarmamalı."""
         self.assertLessEqual(len(self.metin.splitlines()), 150)
 
+    def _bolum(self, baslik: str) -> str:
+        i = self.metin.find(baslik)
+        self.assertGreaterEqual(i, 0, baslik)
+        j = self.metin.find("\n## ", i + 1)
+        return self.metin[i:j if j > 0 else len(self.metin)]
+
+    def test_Z203_kaynak_cekirdek_satirlari(self):
+        """Z203 (kaynak çekirdek #336): adıyla `git add` · kapanış kaydı = ölçüm satırı · başarısız denemeden sonra
+        yeniden denemeden önce ARA · Türkçe harf varyantı (sahte sıfır iki yönde). KAPSAM: metin; davranış ölçülmedi."""
+        ara = self._bolum("## 2. Önce ara")
+        for parca in ("başarısız bir denemeden sonra aynı amaçla yeniden", "harf varyantlarını", "sahte sıfır",
+                      "iki yönde"):
+            self.assertIn(parca, ara)
+        self.assertIn("kapanış kaydı ölçüm satırıdır", self._bolum("## 4. İş akışı"))
+        git = self._bolum("## 6. Git")
+        for parca in ("ADIYLA ekle", "`git add -A` / `git add .`"):
+            self.assertIn(parca, git)
+
+    def test_Z203_kural_yazim_standardi_skillere_bagli(self):
+        """std 13 özeti `%write-skill`'de kanonik; `%remember` ona bağlanır (kopyalamaz)."""
+        ws = (doctor.inst.AXET_HOME / "skills" / "write-skill" / "SKILL.md").read_text(encoding="utf-8")
+        bolum = ws.split("## Kural yazarken", 1)[1]
+        for parca in ("**NE**", "**NEDEN**", "**NE ZAMAN**", "**NEREDE**", "koşuluyla", "netlik", "ulaşım", "çelişki"):
+            self.assertIn(parca, bolum)
+        rm = (doctor.inst.AXET_HOME / "skills" / "remember" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`%write-skill` \"Kural yazarken\"", rm)
+        self.assertNotIn("## Kural yazarken", rm)
+
     def test_guncelle_istisnasi_dar_yazilmis(self):
         i = self.metin.find("## 11. Güvenlik")
         j = self.metin.find("\n## ", i + 1)
@@ -1964,3 +1993,131 @@ class PsPolitikaTest(GeciciTest):
         if os.name != "nt":
             self.assertTrue(satirlar[0].startswith("[INFO]") and "uygulanmaz" in satirlar[0], satirlar[0])
         self.assertIn("PowerShell yürütme politikası", r.stdout.split("\nKAPSAM", 1)[1])
+
+
+class YorumlayiciTest(GeciciTest):
+    """Z205: skill komutlarının çağırdığı PATH'teki `python` ↔ doctor'un kendi yorumlayıcısı. `which` ve koşucu
+    ENJEKTE edilir (bu makinenin PATH'ine bağlı değil). Kontrol grubu: gerçek yorumlayıcı → PASS · aynı yol →
+    "FARKLI" notu yok. WARN-only: hiçbir dalda FAIL üretilmez."""
+
+    ETIKET = "skill yorumlayıcısı (`python`)"
+
+    def setUp(self) -> None:
+        super().setUp()
+        doctor.results.clear()
+        self.env["LOCALAPPDATA"] = str(self.tmp / "_lad")  # uçtan uca koşu gerçek skill manifest'ini okumasın
+
+    def tearDown(self) -> None:
+        doctor.results.clear()
+        super().tearDown()
+
+    def _satir(self, yol, kos=None, kendi=None):
+        doctor.results.clear()
+        doctor.check_yorumlayici(which=lambda ad: yol if ad == "python" else None, kos=kos,
+                                 kendi=kendi or (yol or "C:/py/python.exe"))
+        satirlar = [(s, m) for s, m in doctor.results if self.ETIKET in m]
+        self.assertEqual(1, len(satirlar), doctor.results)  # sessiz atlama yok, çift satır yok
+        self.assertNotIn("FAIL", [s for s, _ in doctor.results])
+        return satirlar[0]
+
+    @staticmethod
+    def _kos(rc, cikti):
+        return lambda yol: (rc, cikti)
+
+    def test_python_PATHte_yok_WARN(self):
+        durum, mesaj = self._satir(None, kendi="C:/py/python.exe")
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("PATH'te YOK", mesaj)
+        self.assertIn("aXet-Kur.cmd", mesaj)
+        self.assertIn("KAPSAM", mesaj)
+
+    def test_windowsapps_yonlendiricisi_BASLAMIYOR_WARN(self):
+        yol = "C:/Users/u/AppData/Local/Microsoft/WindowsApps/python.exe"
+        durum, mesaj = self._satir(yol, kos=self._kos(9009, "Python was not found; run without arguments"),
+                                   kendi="C:/py/python.exe")
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("BAŞLAMIYOR", mesaj)
+        self.assertIn("YÖNLENDİRİCİSİ", mesaj)
+        self.assertIn("rc=9009", mesaj)
+
+    def test_isaretsiz_cikti_rc0_da_BASLAMIYOR(self):
+        """rc 0 tek başına 'çalışıyor' demek değil: işaret satırı yoksa ölçüm geçersiz."""
+        durum, mesaj = self._satir("C:/x/python.exe", kos=self._kos(0, "merhaba\n"))
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("BAŞLAMIYOR", mesaj)
+        self.assertNotIn("YÖNLENDİRİCİSİ", mesaj)
+
+    def test_eski_surum_WARN(self):
+        durum, mesaj = self._satir("C:/x/python.exe", kos=self._kos(0, "AXET-YORUMLAYICI-OK 3 11 9\n"))
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("3.11.9 <", mesaj)
+
+    def test_yoklama_10_sn_ile_sinirli_zaman_asimi_WARN(self):
+        """Ö1 (bağımsız inceleme 2026-10-19): `%guncelle` bütünlük turunda doctor adımının bütçesi 45 sn; yorumlayıcı
+        yoklaması onu yiyemez ⇒ 10 sn. Zaman aşımı sessiz geçmez: BAŞLAMIYOR WARN olur, doctor çökmez."""
+        gorulen = {}
+
+        def sahte_run(*a, **kw):
+            gorulen.update(kw)
+            raise subprocess.TimeoutExpired(a[0], kw.get("timeout"))
+        with mock.patch.object(doctor.subprocess, "run", sahte_run):
+            durum, mesaj = self._satir("C:/x/python.exe")
+        self.assertEqual(10, gorulen.get("timeout"), gorulen)
+        self.assertEqual("WARN", durum, mesaj)
+        self.assertIn("BAŞLAMIYOR", mesaj)
+        self.assertIn("TimeoutExpired", mesaj)
+
+    def test_farkli_yorumlayici_notu(self):
+        durum, mesaj = self._satir("C:/x/python.exe", kos=self._kos(0, "AXET-YORUMLAYICI-OK 3 13 1\n"),
+                                   kendi="C:/baska/python.exe")
+        self.assertEqual("PASS", durum, mesaj)
+        self.assertIn("FARKLI", mesaj)
+
+    def test_KONTROL_gercek_yorumlayici_PASS(self):
+        """Kontrol grubu: bu testi koşan GERÇEK yorumlayıcı, gerçek `-c` probuyla → PASS, FARKLI notu yok."""
+        durum, mesaj = self._satir(sys.executable)
+        self.assertEqual("PASS", durum, mesaj)
+        self.assertIn("çalışıyor", mesaj)
+        self.assertNotIn("FARKLI", mesaj)
+
+    def test_uctan_uca_doctor_satiri_ve_kapsam(self):
+        """Kablolama: doctor.main satırı basar (kod ≠ kablolama) ve KAPSAM alt satırı bu kontrolü anar."""
+        r = self.calistir("doctor.py", cwd=self.tmp)
+        satirlar = [s for s in r.stdout.splitlines() if self.ETIKET in s and s.startswith("[")]
+        self.assertEqual(1, len(satirlar), r.stdout)
+        self.assertIn("skill yorumlayıcısı", r.stdout.split("\nKAPSAM", 1)[1])
+
+
+class DoctorSiniflariTekKaynakTest(unittest.TestCase):
+    """Z205: `doctor` FAIL/WARN satırlarının üç sınıfı (① ONAR · ② KULLANICI · ③ ŞABLON HATASI) TEK yerde yazılır
+    (`docs/onboarding.md` §5); `%guncelle` · `%onboard` · `%hata-bildir` ona bağlanır, ölçütleri kopyalamaz."""
+
+    BASLIK = "### `doctor` bir şey bulursa — her satırı üç sınıftan birine koy"
+    BAGLANTI = "bir şey bulursa"
+    SKILLER = ("guncelle", "onboard", "hata-bildir")
+
+    @staticmethod
+    def _oku(yol: str) -> str:
+        return (doctor.inst.AXET_HOME / yol).read_text(encoding="utf-8")
+
+    def test_kanonik_bolum_uc_sinifi_tasir(self):
+        metin = self._oku("docs/onboarding.md")
+        self.assertEqual(1, metin.count(self.BASLIK))
+        bolum = metin.split(self.BASLIK, 1)[1].split("\n### ", 1)[0]
+        for parca in ("① ONAR", "② KULLANICI", "③ ŞABLON HATASI", "%hata-bildir", "Emin değilsen ②"):
+            self.assertIn(parca, bolum)
+
+    def test_skiller_kanonik_bolume_baglanir(self):
+        for ad in self.SKILLER:
+            with self.subTest(skill=ad):
+                metin = self._oku(f"skills/{ad}/SKILL.md")
+                self.assertIn("onboarding.md", metin)
+                self.assertIn(self.BAGLANTI, metin)
+
+    def test_skiller_olcutu_kopyalamaz(self):
+        """Ölçüt metni (② listesi) yalnız kanonik bölümde: kopya bayatlar, iki kaynak ayrışır."""
+        for ad in self.SKILLER:
+            with self.subTest(skill=ad):
+                metin = self._oku(f"skills/{ad}/SKILL.md")
+                self.assertNotIn("yeniden üretilebilir durumunu", metin)
+                self.assertNotIn("makine geneli ayar", metin)

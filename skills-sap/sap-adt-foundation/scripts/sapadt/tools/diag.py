@@ -6,6 +6,7 @@
   adt_object_structure  obje yapısı (objectstructure bileşenleri)
   sap_doctor            tek komutluk yerel + canlı bağlantı tanısı (PASS/WARN/FAIL + kapsam beyanı)
   adt_pretty_print      SAP Pretty Printer ile biçimlenmiş kaynak → yanıt / YEREL dosya; SAP'de değişiklik YOK (Z128)
+  adt_get_method        sınıfın ana kaynağından TEK metot gövdesi → yanıt / YEREL dosya; yalnız GET (Z195)
 
 KANIT (kaynak çekirdek salt-okur; aXet kütüphane kopyası `sapadt/lib/`):
   · sürümler: `lib/sap_adt_lib.py get_object_revisions` — obje GET → `rel="http://www.sap.com/adt/relations/versions"`
@@ -591,3 +592,142 @@ def adt_pretty_print(name: str, object_type: str = "class", output_path: str | N
     out["notice"] = ("SAP'de hiçbir şey değişmedi (kaydetme/kilit/aktivasyon/transport yok). Sisteme almak için: "
                      "adt_get (taban) → biçimli metni uygula → adt_push_source → adt_activate.")
     return _temizle(out, adt)
+
+
+# ═══════════════════════════════════════ adt_get_method ══════════════════════════════════════════
+# Z195 ② (2026-10-19; kaynak çekirdek salt-okur `adt_get_method`): sınıfın ANA kaynağından TEK metot gövdesi.
+# SAP'ye YAZMAZ (yalnız `adt_get` ile aynı `source/main` GET'i); pull kaydı YAZILMAZ (tam kaynak değil).
+_METOT_BAS = re.compile(r"^\s*METHOD\s+([A-Za-z0-9_/~]+)(?=[\s.]|$)", re.IGNORECASE)
+_METOT_SON = re.compile(r"^\s*ENDMETHOD\s*\.", re.IGNORECASE)
+# Satır içinde (başta olmayan) ENDMETHOD sözcüğü: `METHOD a. ENDMETHOD.` tek satır ya da `y = 2. ENDMETHOD.` zinciri.
+_METOT_SON_ICERDE = re.compile(r"(?<![A-Za-z0-9_])ENDMETHOD(?![A-Za-z0-9_])", re.IGNORECASE)
+# Yorum ayıklayıcı YOK (bilinçli, kaynak çekirdekle aynı): iki desen satır başına `^\s*` ile çapalıdır ⇒ sütun-1 `*`
+# yorumu ve `"` satır-içi yorumu yapısal olarak eşleşemez.
+# Sınır güvenle çıkarılamıyorsa (bitiş METHOD satırında / satır ortasında, ya da bitişten önce yeni `METHOD` satırı)
+# blok BELİRSİZ döner — yanlış blok döndürmek yerine (2026-10-19 inceleme bulgusu: tek satırlık metot komşu metodun
+# gövdesini found:true ile döndürüyordu).
+_METOT_KAPSAM = (
+    "Sinifin ANA kaynagi (`source/main`, EN GUNCEL surum — `version` parametresiz GET: bekleyen inaktif surum varsa "
+    "O okunur, aktif surum DEGIL) METINSEL taranir: `METHOD <ad>.` .. `ENDMETHOD.`. Yerel siniflar / test "
+    "include'lari (ccimp/ccau/ccdef) ve makrolar ARANMAZ ⇒ found:false 'metot yok' demek DEGILDIR.")
+
+
+def _satir_ici_bitis(satir: str) -> bool:
+    """Satırda başta olmayan bir ENDMETHOD sözcüğü var mı (tam satır yorumları hariç)."""
+    if satir.startswith("*") or satir.lstrip().startswith('"'):
+        return False
+    return bool(_METOT_SON_ICERDE.search(satir))
+
+
+def _metot_cikar(kaynak: str, metot: str) -> list:
+    """`METHOD <metot>.` .. `ENDMETHOD.` blokları → [(bas, son, metin, belirsiz_sebep)] (1-tabanlı satır).
+
+    Kapanmamış blok `son=None, sebep=None` ile döner (çağıran ÖLÇÜLEMEDİ der). Sınırı güvenle çıkarılamayan
+    blok `son=None` + `sebep` (str) ile döner (çağıran `belirsiz` der): METHOD satırında ENDMETHOD · bitiş satır
+    ortasında (zincirli) · bitişten önce yeni `METHOD` satırı. Satır bölme yalnız `\n`
+    (str.splitlines Unicode ayırıcılarda da böler)."""
+    hedef = (metot or "").strip().upper()
+    satirlar = [s[:-1] if s.endswith("\r") else s for s in (kaynak or "").split("\n")]
+    bulunan, i = [], 0
+    while i < len(satirlar):
+        m = _METOT_BAS.match(satirlar[i])
+        if m and m.group(1).upper() == hedef:
+            if _METOT_SON_ICERDE.search(satirlar[i][m.end():]):
+                bulunan.append((i + 1, None, satirlar[i], "METHOD satırında ENDMETHOD (tek satırlık metot)"))
+                i += 1
+                continue
+            j, sebep = None, None
+            for k in range(i + 1, len(satirlar)):
+                if _METOT_SON.match(satirlar[k]):
+                    j = k
+                    break
+                if _METOT_BAS.match(satirlar[k]):
+                    j, sebep = k, "ENDMETHOD. bulunmadan yeni METHOD satırı (satır %d)" % (k + 1)
+                    break
+                if _satir_ici_bitis(satirlar[k]):
+                    j, sebep = k, "ENDMETHOD satır ortasında (satır %d)" % (k + 1)
+                    break
+            if j is None:
+                bulunan.append((i + 1, None, "\n".join(satirlar[i:]), None))
+                break
+            if sebep:
+                bulunan.append((i + 1, None, "\n".join(satirlar[i:j]), sebep))
+                i = j if _METOT_BAS.match(satirlar[j]) else j + 1
+                continue
+            bulunan.append((i + 1, j + 1, "\n".join(satirlar[i:j + 1]), None))
+            i = j
+        i += 1
+    return bulunan
+
+
+@profil_tool()
+def adt_get_method(name: str, method: str, output_path: str | None = None, overwrite: bool = False) -> dict:
+    """Read ONE method body from a class's main source. READ-ONLY (SAP is not modified).
+
+    Sınıfın ana kaynağını `adt_get` ile aynı uçtan (`/sap/bc/adt/oo/classes/<ad>/source/main`, GET) okur ve
+    `METHOD <ad>.` .. `ENDMETHOD.` bloğunu metinsel çıkarır. Kilit/PUT/aktivasyon/transport YOK; pull kaydı
+    (`sap-pull-state.json`) YAZILMAZ — metodu düzenleyip geri yazmak için tam kaynak `adt_get` ile çekilir.
+
+    Args:
+        name: Sınıf adı (standart sınıf da okunabilir — okuma serbest).
+        method: Metot adı (arayüz metodu `zif_x~m` biçimiyle).
+        output_path: Metin yerel dosyaya yazılır (`adt_get` ile aynı yol kuralı: proje kökü içi · kaynak uzantısı ·
+            `.axet-code/` dışı · denylist dışı); verilmezse metin yanıtta `source` alanında döner.
+        overwrite: Var olan dosyanın üzerine yazılsın mı (varsayılan HAYIR → `output_exists`).
+
+    Returns:
+        {ok, name, method, found, start_line?, end_line?, source?, output_path, written, scope, client_log}
+        `found: false` + `scope` = aranan yüzeyde YOK (yerel include'lar aranmadı).
+        Birden çok eşleşme ya da kapanmamış blok ⇒ ok:false (`belirsiz` / `kapanmamis`, found:null).
+        Sınırı güvenle çıkarılamayan blok (tek satırlık `METHOD a. ENDMETHOD.` · satır ortasında zincirli
+        `ENDMETHOD.` · bitişten önce yeni `METHOD` satırı) ⇒ `belirsiz`, found:null — yanlış blok döndürülmez.
+    """
+    if not (isinstance(name, str) and name.strip()) or not (isinstance(method, str) and method.strip()):
+        return {"ok": False, "error": "invalid_argument", "scope": _METOT_KAPSAM,
+                "message": "name ve method boş olamaz. SAP'ye gidilmedi."}
+    from sapadt import project as _project
+    yol = None
+    if output_path is not None:
+        yol, hata = _project.yerel_kaynak_yolu(output_path, "output_path")
+        if hata:
+            return {**hata, "scope": _METOT_KAPSAM, "message": hata["message"] + " SAP'ye gidilmedi."}
+        if yol.exists() and not overwrite:
+            return {"ok": False, "error": "output_exists", "scope": _METOT_KAPSAM,
+                    "message": "output_path zaten var; üzerine yazmak için overwrite=true ver ya da başka yol seç. "
+                               "SAP'ye gidilmedi."}
+    from sapadt.tools import atom as _atom
+    oku = _atom._read_source_object(name.strip(), "oo/classes", "class")
+    ortak = {"name": name.strip().upper(), "method": method.strip().upper(), "scope": _METOT_KAPSAM,
+             "output_path": None, "written": False, "client_log": oku.get("client_log", "")}
+    if not oku.get("ok") or not oku.get("exists"):
+        return {**{k: v for k, v in oku.items() if k != "source"}, **ortak}
+    bloklar = _metot_cikar(oku.get("source") or "", method)
+    if not bloklar:
+        return {"ok": True, "found": False, **ortak}
+    if len(bloklar) > 1:
+        return {"ok": False, "error": "belirsiz", "found": None,
+                "matches": [{"start_line": b, "end_line": s} for b, s, _m, _sb in bloklar],
+                "message": ("Ana kaynakta %d ayrı `METHOD %s.` bloğu var (yerel sınıf?) — hangisi olduğu ad ile "
+                            "AYIRT EDİLEMEZ." % (len(bloklar), method.strip().upper())), **ortak}
+    bas, son, metin, sebep = bloklar[0]
+    if sebep:
+        return {"ok": False, "error": "belirsiz", "found": None,
+                "matches": [{"start_line": bas, "end_line": None}],
+                "message": ("`METHOD %s.` bloğunun sınırı satır yapısından güvenle çıkarılamadı (%s) — gövde "
+                            "DÖNDÜRÜLMEDİ (yanlış blok riski). Tam kaynak için adt_get."
+                            % (method.strip().upper(), sebep)), **ortak}
+    if son is None:
+        return {"ok": False, "error": "kapanmamis", "found": None, "start_line": bas,
+                "message": "`METHOD` bulundu ama `ENDMETHOD.` bulunamadı — gövde ÖLÇÜLEMEDİ.", **ortak}
+    out = {"ok": True, "found": True, "start_line": bas, "end_line": son, **ortak}
+    if yol is None:
+        out["source"] = metin
+        return out
+    yazma_hatasi = _project.yerel_dosyaya_yaz(yol, metin)
+    if yazma_hatasi:
+        return {**out, "ok": False, "error": "output_write_failed", "source": metin,
+                "message": f"Metot okundu ama yerel dosya yazılamadı ({yazma_hatasi}). SAP değişmedi; source yanıtta."}
+    out["output_path"] = yol.relative_to(_project.project_dir()).as_posix()
+    out["written"] = True
+    out["line_count"] = len(metin.splitlines())
+    return out

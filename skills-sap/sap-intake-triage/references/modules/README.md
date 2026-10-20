@@ -4,8 +4,13 @@
 | Modül | Dosya | Durum |
 |---|---|---|
 | SD (Satış ve Dağıtım) | `sd.md` | aktif |
+| SD standart referansı | `referans/sd/` (tablo · BAPI · genişletme · SPRO · işlem kodu · akış · LO-VC reçeteleri) | aktif |
 
 **Başka modül paketi YOKTUR** (MM, FI, CO, PP, QM, PM, WM/EWM …).
+
+> **Paket ≠ referans:** paket *neye bakılır, ne kontrol edilir, ne sorulur* der; domain olgusu taşımaz. Standart tablo/BAPI/
+> genişletme gibi "standartta ne nerede" bilgisi ayrı katmandadır: `referans/` (`referans/README.md`). Referans satırları
+> **hipotezdir**, canlı sistemde teyit edilir.
 
 ## Paket yoksa
 - Paket **UYDURULMAZ** — ne dosya olarak ne de "MM paketine göre şunlar kontrol edilir" diye sohbette. Olmayan bir kontrol
@@ -29,4 +34,5 @@
 - Standart SAP nesne adları (tablo, CDS, BAPI) aynen yazılır; müşteri/proje Z obje adları, kişi, firma, sistem adı yazılmaz
   (`Z<MOD>_…`, `ZDEMO_…` gibi nötr örnek kullanılır).
 - Template seviyesindeki paket commit/PR ile girer (`%write-skill`, `%commit-pr`); yalnız bir projeye özgüyse proje hafızasına yazılır.
+- Modülün standart referansı yazılacaksa `referans/<modül>/` altına, `referans/README.md`'deki şablonla yazılır.
 - Paketi ekledikten sonra bu README'deki tabloyu güncelle.

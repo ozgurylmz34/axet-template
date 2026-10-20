@@ -121,9 +121,9 @@ diskten/koddan üretilir (`python quality_scorecard.py kapilar`):
 Defterde geçen ama kayıt defterinde **olmayan** bir ad karnede `bilinmeyen_kapi` olarak görünür ve
 hüküm `PASS` olamaz — var olmayan bir kapı adı, olmayan bir güvencedir.
 
-> ⚠ **`adt_syntax_check` bizde YAZMA sınıfıdır** (SAP'ye gider; okuma allowlist'inde değildir) —
-> başka ekosistemlerdeki gibi ücretsiz bir ön kontrol **değildir**. Karne bu sınıftaki kapıları
-> ayrıca işaretler (`yazma_sinifi_kapi`). Kapsam/erişim kararını buna göre ver.
+> ⚠ **Yazma sınıfı `sap:` kapıları** (ör. `adt_classrun`; okuma allowlist'inde değildir) SAP'ye yazar —
+> ücretsiz bir ön kontrol **değildir**. Karne bu sınıftaki kapıları ayrıca işaretler (`yazma_sinifi_kapi`).
+> `adt_syntax_check` Z195'ten beri salt-okur checkrun'dır (okuma sınıfı). Kapsam/erişim kararını buna göre ver.
 
 Bir kaynak okunamazsa o namespace **sessizce boş kalmaz**: `olculemedi` listesine düşer ve
 karnenin KAPSAM BEYANI'nda "ÖLÇÜLEMEDİ" olarak basılır. *Ölçülemedi ≠ temiz.*

@@ -86,9 +86,10 @@ PATTERNS = {
         r"(?<![A-Za-z0-9])[vV]\d\.\d{1,2}(?:[a-c])?(?:-taslak)?(?![0-9])"   # v1.5, v1.5c, v1.8-taslak
         r"|\(\*{0,2}YENİ[,\s]"                                               # (YENİ, K-3) — BÜYÜK; "(yeni parça" değil
         r"|\b[vV]\d\.\d'(?:te|de|da|ta)\b"),                                  # v1.6'da
-    # Bu template'in inceleme çıktısı kontrol listesi madde kimliğiyle raporlanır (doc-checklist.md: DOC-XX-NN).
+    # Bu template'in inceleme çıktısı kontrol listesi madde kimliğiyle raporlanır (doc-checklist.md: çekirdek `DOC-<tip>-<nn>`
+    # ve aXet'e özgü `AX-DOC-<tip>-<nn>`). `AX-` öneki AYRI kol: geriye bakış `-` dışlar, öneksiz desen onu kaçırırdı.
     B: re.compile(
-        r"(?<![%s0-9-])DOC-(?:KD|FS|TS|CR)-\d{2}[a-z]?(?![0-9])"
+        r"(?<![%s0-9-])(?:AX-)?DOC-(?:KD|FS|TS|CR)-\d{2}[a-z]?(?![0-9])"
         r"|(?<![%s0-9-])ADR[- ]?\d{1,4}(?![0-9])" % (_TR, _TR)),
     C: re.compile(
         r"canlı ölç(?!ül(?:ür|ecek|meli|sün))|canlı teyit(?: edildi|li)|DEV'de ölç|DEV canlı|ilk turda"

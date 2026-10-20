@@ -607,18 +607,42 @@ class AracYolu(_Kayit):
                     "[UNVERIFIED]" in cikti and "[OK] Syntax check passed" not in cikti
                     and "[FAIL] Syntax errors found" not in cikti)
 
+    # Z195 ① (2026-10-19): MCP `adt_syntax_check` artık salt-okur checkrun'dır — aktivasyon gövdesini
+    # değil checkrun raporunu okur. J12/J13 aynı sözleşmeyi (belirsiz ⇒ ok False · E ⇒ valid False) checkrun
+    # gövdeleriyle ölçer; ek olarak aktivasyon ucuna HİÇ gidilmediğini sayar. Ayrıntılı vektörler:
+    # tests/test_checkrun_sozdizimi.py.
+    _CR_NOTPROCESSED = ('<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports '
+                        'xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport '
+                        'chkrun:reporter="abapCheckRun" chkrun:triggeringUri="%s" chkrun:status="notProcessed" '
+                        'chkrun:statusText="Error while importing object"/></chkrun:checkRunReports>' % SINIF_A_URI)
+    _CR_HATA = ('<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports '
+                'xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" '
+                'chkrun:triggeringUri="%s" chkrun:status="processed" chkrun:statusText="checked">'
+                '<chkrun:checkMessageList><chkrun:checkMessage chkrun:uri="%s/source/main#start=3,5" '
+                'chkrun:type="E" chkrun:shortText="Sozdizimi hatasi"/></chkrun:checkMessageList>'
+                '</chkrun:checkReport></chkrun:checkRunReports>' % (SINIF_A_URI, SINIF_A_URI))
+
+    def _yalniz_checkrun(self, s):
+        urller = [p["url"] for p in s.adt_client.session.postlar]
+        return all("/checkruns" in u for u in urller) and not any("activation" in u for u in urller), urller
+
     def test_J12_mcp_adt_syntax_check_belirsiz(self):
-        self._istemci([_Yanit(200, GOVDE_YALNIZ_GENERATION)], _Yanit(200, WL_HEDEF_YOK))
+        s = self._istemci([_Yanit(200, self._CR_NOTPROCESSED)], _Yanit(200, WL_HEDEF_YOK))
         r = self.query.adt_syntax_check(SINIF_A, "class")
-        self.kaydet("J12 MCP adt_syntax_check kontrol koşmadı", "ok False sozdizimi_belirsiz valid None",
-                    (r.get("ok"), r.get("error"), r.get("valid")),
-                    r.get("ok") is False and r.get("error") == "sozdizimi_belirsiz" and r.get("valid") is None)
+        yalniz, urller = self._yalniz_checkrun(s)
+        self.kaydet("J12 MCP adt_syntax_check checkrun notProcessed", "ok False sozdizimi_belirsiz valid None · yalnız checkrun",
+                    (r.get("ok"), r.get("error"), r.get("valid"), urller),
+                    r.get("ok") is False and r.get("error") == "sozdizimi_belirsiz" and r.get("valid") is None
+                    and yalniz and len(urller) == 1)
 
     def test_J13_mcp_adt_syntax_check_kontrol_grubu_hata(self):
-        self._istemci([_Yanit(200, GOVDE_HATA)], _Yanit(200, WL_HEDEF_YOK))
+        s = self._istemci([_Yanit(200, self._CR_HATA)], _Yanit(200, WL_HEDEF_YOK))
         r = self.query.adt_syntax_check(SINIF_A, "class")
-        self.kaydet("J13 MCP SAP E mesajı", "ok True valid False", (r.get("ok"), r.get("valid")),
-                    r.get("ok") is True and r.get("valid") is False)
+        yalniz, urller = self._yalniz_checkrun(s)
+        self.kaydet("J13 MCP checkrun E mesajı", "ok True valid False · satır 3 · yalnız checkrun",
+                    (r.get("ok"), r.get("valid"), [e.get("line") for e in r.get("errors") or []], urller),
+                    r.get("ok") is True and r.get("valid") is False
+                    and [e.get("line") for e in r.get("errors") or []] == [3] and yalniz and len(urller) == 1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════

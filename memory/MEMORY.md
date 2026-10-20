@@ -47,6 +47,10 @@ MEMORY-ID: AXET-TEAM-MEMORY
 - [Kabuk heredoc Türkçe/kaçış bozulması](feedback_bash-heredoc-turkce-kacis.md) — heredoc/`python -c` Türkçe ve `\` kaçışını bozabilir; `write` ile yaz, dosyayı yeniden okuyarak doğrula (aXet bash'inde ölçülmedi)
 - [Asılı CI koşusu: PR kapat/aç](feedback_github-actions-asili-kosu-pr-kapat-ac.md) — queued + 0 job saatlerce → `run_attempt`/`updated_at` ölç, PR'ı kapatıp hemen aç
 - ["Bu ortamda normal" hükmünden önce hata metnini oku](feedback_ortam-normal-hukmu-hata-metnini-oku.md) — "test sisteminde çalışmaz" bir sebep iddiası; kodu/sayacı değil tam hata metnini oku, aynı ortamda başarılı örnek ara
+- [`git stash -u` yarım kalabilir](feedback_git-stash-u-yarim-kalabilir.md) — salt-okunur boş dizinde stash yarım kalır, dosya diskten silinir, `pop` koşmaz; HEAD = origin/main ise stash'siz dal aç
+- [Paralel oturum aynı çalışma ağacında](feedback_paralel-oturum-ayni-calisma-agaci.md) — commit'siz iş öteki oturumun commit'ine girip "kaybolabilir"; önce reflog + açık PR; uzun iş için worktree
+- [İş kuralı sessizce gömülmez](feedback_is-kurali-sessizce-gomulmez.md) — build sırasında koyduğun dışlama/sınırlama kuralı kaynaksızsa ayrı karar maddesi olarak sunulur
+- [Verilmiş karar yeniden sorulmaz](feedback_verilmis-karar-yeniden-sorulmaz.md) — onay listesinden önce karar kaydını tara; kararlı kalem "zaten kararlı (K-n)" diye bildirilir
 
 ## Referanslar (reference)
 

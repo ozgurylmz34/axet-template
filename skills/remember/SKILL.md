@@ -41,6 +41,7 @@ description: Use when a durable lesson, decision, user correction or project fac
 
    - Yeni yazılan ya da içeriğine dokunulan kayda `Son-doğrulama` ve `Applies-to` eklenir; eski kayıtlar toplu güncellenmez.
    - Kayıt her projede geçerli bir yöntem/kural ise hafıza notu hatırlatıcıdır, kanonik yer ilgili skill ya da çekirdektir: kullanıcıya oraya taşımayı öner.
+   - Kayıt bir **kural** taşıyorsa (`AGENTS.md` maddesi, skill/kontrol listesi önerisi dahil) `%write-skill` "Kural yazarken" bölümünü uygula: dört alan (NE · NEDEN · NE ZAMAN · NEREDE), olumsuz iddiada kapsam koşulu, üç test.
 
    - Göreli tarihleri mutlak tarihe çevir ("dün" → gerçek tarih).
    - İlgili kayıtlara `[[kisa-ad]]` ile bağlantı ver.

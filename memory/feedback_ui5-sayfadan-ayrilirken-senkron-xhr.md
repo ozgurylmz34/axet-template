@@ -19,7 +19,7 @@ unutulursa 307 → 403 "No service found") + ana modelin client parametreleri (b
 gittiği için: ekrandan çıkılan her yolda (geri/kayıt/silme) kilit bırakıldıktan sonra kilit bayrağını sıfırla, unload
 dinleyicisi bayrağa baksın — yoksa listedeyken sayfadan ayrılınca (yenileme / başka adrese gitme) aynı belgeye tekrar
 bırakma gider ve kullanıcının başka sekmedeki kilidi düşer. Reçete `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.5,
-kontrol FE-49 / UI-SAVE-06; backend sözleşmesi `%sap-rap` → `draft-and-locks.md` §6.
+kontrol FE-49 / UI-SAVE-05; backend sözleşmesi `%sap-rap` → `draft-and-locks.md` §6.
 İlgili: [UI5 elle kurulan istek sap-client](feedback_ui5-elle-kurulan-istek-sap-client.md).
 Önceki kayıt: yok
 Son-doğrulama: 2026-09-25 (ekip dersinden uyarlandı; aXet'te ayrıca ölçülmedi) · Kapsam: freestyle UI5, sayfadan ayrılırken istek gönderen her ekran

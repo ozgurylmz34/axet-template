@@ -37,14 +37,17 @@
 SAP'ye yalnız şu CLI ile ve yalnız OKUMA sınıfı araçlarla erişirsin:
   python <TEMPLATE>/skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py <tool> --args-json '{...}' --project-dir <PROJE_KÖKÜ>
   (araç ve sınıf listesi: aynı komut `--list`; çıktısı otoritedir. Uzun/tırnaklı argüman: --args-file <json>)
-OKUMA sınıfı (serbest): ping, adt_get, adt_msgclass_read, adt_search_objects, adt_transport_list, adt_where_used,
-  adt_impact_analysis, adt_grep_source, adt_package_contents, adt_atc_check, adt_table_read, adt_sql_query,
+OKUMA sınıfı (serbest): ping, sap_doctor, adt_get, adt_get_method, adt_msgclass_read, adt_textpool_read,
+  adt_search_objects, adt_transport_list, adt_where_used, adt_impact_analysis, adt_grep_source, adt_package_contents,
+  adt_object_structure, adt_revisions, adt_system_info, adt_atc_check, adt_table_read, adt_sql_query,
   adt_dump_list, adt_dump_read, adt_inactive_objects, adt_enhancements, adt_enhancement_read, adt_enhancement_options,
-  adt_feature_probe, adt_lock_check, adt_unit_run (YALNIZ allow_risky_tests=false).
+  adt_feature_probe, adt_lock_check, adt_unit_run (YALNIZ allow_risky_tests=false),
+  adt_syntax_check (salt-okur checkrun; valid:null = ölçülemedi),
+  adt_pretty_print (SAP'ye yazmaz; `output_path` verilirse biçimlenmiş metni YEREL dosyaya yazar — yazma alanın
+  yoksa `output_path` verme, metin yanıtta döner).
 YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, adt_delete, adt_publish_service,
   adt_classrun, adt_domain_create, adt_dtel_create, adt_struct_create, adt_screen_generate,
-  adt_table_create, adt_ttyp_create, adt_textpool_write,
-  adt_syntax_check (adına rağmen yazmadır: bekleyen temiz sürümü AKTİVE EDER),
+  adt_table_create, adt_ttyp_create, adt_textpool_write, adt_msgclass_write, adt_set_description,
   adt_unit_run + allow_risky_tests=true (kalıcı veri değiştirebilir).
 - Hiçbir komuta `--sap-write` / `--scope` ekleme. `install.py` çalıştırma.
 - SAP'ye ham REST/HTTP isteği atan script yazma ya da çalıştırma; SAP yolu yalnız bu CLI'dir.
@@ -139,6 +142,39 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
 - Tutar/miktar (decimal) değerini dış API gövdesine metin olarak çevirirken `WRITE ... TO` kullanma (kullanıcı ayarına göre ayraç değişir).
 - Yerel sözdizimi doğrulaması: bu devirde belgelenmiş ayrı bir derleyici komutu yoktur; gömülü inceleme ana oturumun
   push adımında koşar. Bu yüzden "derlendi / syntax temiz" YAZMA; sözdizimini `DOĞRULANMADI` işaretle.
+- YAZIM ANI KURALLARI — kodu YAZARKEN uygula, incelemeye bırakma. Biçim: <eylem> yaparken <kural> — çünkü
+  <mekanizma> (<ID>). İstisnalar ve doğru desen kontrol listesi satırındadır (tek ev:
+  <TEMPLATE>/skills-sap/sap-code-review/references/checklist-abap.md); tetiklenen satırı AÇ ve oku.
+  · `.clas.abap` IMPLEMENTATION bölümüne yorum yazarken ya da bir metodu silerken yorumu metotların dışında bırakma:
+    notu sil ya da bir metodun `METHOD x.` satırının altına al — çünkü SAP metot dışındaki yorumu bir kod öğesine
+    bağlayamaz ve push satır numarası vermeden 400 `OO_SOURCE_BASED-012` döner (BE-10b).
+  · Satır tipi NUMC olan tabloya `VALUE #( ( '…' ) )` ya da NUMC parametreye literal/`space` yazdığın her yerde
+    `CONV #( … )` kullan (komşu metot doğru desende olsa bile) — çünkü uyumsuzluk yalnız aktivasyonda patlar, statik
+    kontrollerin hepsi geçer (BE-80).
+  · `WITH EMPTY KEY` tabloya `SORT` / `DELETE ADJACENT DUPLICATES` yazarken ölçütü açık ver (`BY …` / `COMPARING …` /
+    `table_line`) — çünkü ölçütsüz biçim birincil anahtara dayanır, bu tabloda anahtar boştur ve deyimin fiilî etkisi
+    ölçülmedi (BE-85).
+  · CHAR alanını `|{ f ALPHA = OUT }|` ile dizeye çevirip birleştirirken, karşılaştırırken ya da anahtar yaparken
+    `condense( )` içine al — çünkü `ALPHA = OUT` baştaki sıfırları atar ama genişliği korur, sonda boşluk kalır (BE-86).
+  · Sınıf/arayüz tanımında `"!` ABAP Doc yazarken onu iki noktalı `TYPES:`/`DATA:`/`CONSTANTS:` zincirinin ya da
+    `BEGIN OF`'un önüne koyma, orada düz `"` kullan — çünkü ATC o konumu "wrong position" (P2) diye işaretler (BE-87).
+  · Teslimden önce bu turda değişen her metodu/include'u SAP Pretty Printer biçimiyle karşılaştır — çünkü ATC
+    `CI_PRETTY_PRINT` birim başına yalnız ilk farkı bildirir, sonradan kovalamak ATC + push döngüsüdür (BE-88).
+    aXet'te `adt_pretty_print` SAP'deki kaynağı biçimler, yerel taslağı değil: yerel taslak için karşılaştırma yolu
+    yoksa bu maddeyi `DOĞRULANAMADI` yaz (ana oturum push sonrası ATC ile ölçer).
+- TESLİM ÖNCESİ ÖZ-DENETİM (ZORUNLU, ÇIKTI'dan önce):
+  1. `python <TEMPLATE>/skills-sap/sap-code-review/scripts/abaplint_run.py <değişen ABAP dosyaları>` — çıkış 1 = bulgu
+     → düzelt · 3 = ölçülmedi · 4 = kısmi ölçüm (ölçülmeyen dosyaları listele). Son `ABAPLINT-RUN-STATUS` satırını
+     aynen ekle. Temiz sonuç derleme kanıtı değildir.
+  2. Kendi kodunu kontrol listelerinde yürü: <TEMPLATE>/skills-sap/sap-code-review/references/checklist-common.md +
+     dosya tipine göre aynı klasördeki checklist-*.md (eşleme: <TEMPLATE>/skills-sap/sap-code-review/SKILL.md §2).
+     Uygulanabilir her satır KAPSAMA TABLOSU'nda bir satır alır: ID · hüküm (UYGUN | İHLAL | UYGULANMAZ + gerekçe |
+     DOĞRULANAMADI + neden) · kanıt (dosya:satır). Kanıtsız UYGUN yazma.
+  3. Senin yazdığın satırdaki gerçek ihlal — YAZIM ANI maddeleri dahil — düzeltilir, gerekçeyle geçilmez. Gerekçe
+     yalnız iki durumda geçerlidir: araç yanılıyor (kanıtla) ya da ihlal senin değişikliğinden önce de vardı ("önceden var").
+  4. Araç koşmadıysa (komut hatası, traceback, `ABAPLINT-RUN-STATUS` satırı yok) "temiz" deme; nedenini yaz ve
+     YAZIM ANI maddelerini elle yürü.
+  5. Öz-denetim bağımsız incelemenin yerine geçmez; son hüküm ana oturumun `%sap-code-review` incelemesindedir.
 - ÇIKTI (genel §8'e ek) — ana oturumun inceleme ve yazma adımı için yapılandırılmış teslim:
   1. Obje listesi: ad · tip · yerel dosya yolu · yeni mi/değişiklik mi · dayandığı canlı çekim (obje + zaman)
   2. Niyet: değişiklik ne yapmalı (spesifikasyon referansı)
@@ -146,6 +182,7 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
   4. Etki alanı: adt_where_used / adt_impact_analysis sonucu + kapsam alanları (S4)
   5. Aktivasyon sırası önerisi (ör. DDIC → CDS → BDEF + behavior sınıfı birlikte → servis tanımı → binding)
   6. Kullanıcıdan gelmesi gerekenler: obje adı/TITLE, DTEL adı, tablo onayı, transport — açık kalem olarak
+  7. Öz-denetim: abaplint son durum satırı + KAPSAMA TABLOSU (aynen) + gerekçelenen satırlar
 ```
 
 ## (c) Ön yüz (UI5) geliştirme alt görevi — yerel kaynak hazırlama
@@ -178,8 +215,36 @@ uygulamadan da doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel 
   kilitle bozulur.
 - "Bitti / doğrulandı" demeden çalışma zamanını düşün: sözdizimi/XML geçerliliği çalışma zamanı hatasını yakalamaz.
   Uygulamayı çalıştırıp ana akışı deneyemediysen çalışma zamanı sonucunu DOĞRULANMADI yaz.
+- YAZIM ANI KURALLARI — kodu YAZARKEN uygula. Biçim: <eylem> yaparken <kural> — çünkü <mekanizma> (<ID>). İstisnalar,
+  test yöntemi ve doğru desen kontrol listesi satırındadır (tek ev:
+  <TEMPLATE>/skills-sap/sap-ui5-fiori/references/checklists.md §B); tetiklenen satırı AÇ ve oku.
+  · VH'li bir alana GEÇERLİ değer yazan her fonksiyonda — kullanıcı yolu (VH'de olan elle giriş · F4 · boşaltma) ve kod
+    yolu (toplu doldurma · başka alandan türetme · F4 `confirm`'ün yan alanlara yazması) — hata durumunu ve geçersiz
+    bayrağını temizle; VH'de olmayan elle giriş ise Error + kayıt bloğu alır — çünkü kod yolundan yazan fonksiyonlar
+    bayrağı temizlemeyince geçerli kayıt bloklandı (FE-34).
+  · Miktar/decimal gösteren bir binding yazarken ya da paneli kopyalarken formatter kullan, düz birleştirme yapma —
+    çünkü OData V2 değeri `.` ayraçlı ham dize (`"14.000"`) olarak gelir ve TR yerelde 14 görünmeli;
+    `sap.ui.model.type.Float` + `decimalSeparator:'.'` bunu karşılamaz (FE-35).
+  · "Tümü seçilemez" kuralı olan `MultiToggle` bir `sap.ui.table` yazarken `rowSelectionChange` işleyicisinde
+    `selectAll` dalını ele al, `enableSelectAll="false"`'a güvenme — çünkü UI5'in Ctrl+A dalı bu özelliğe bakmaz, odak
+    içerik hücresindeyken tümünü seçer (FE-51). `Single`/`None` modunda bu yol koşmaz, madde uygulanmaz.
+  · Decimal alanın boş/dolu olmasına göre karar veren formatter'ı ya da mock'u yazarken kararı backend'in durum
+    alanına dayandır — çünkü V2'de boş decimal `null` değil `"0.000"` gelir ve `null` taklit eden mock duman testini
+    sahte-yeşil yapar (FE-52).
+- TESLİM ÖNCESİ ÖZ-DENETİM (ZORUNLU, ÇIKTI'dan önce):
+  1. Statik kontroller (`S=<TEMPLATE>/skills-sap/sap-ui5-fiori/scripts`): `python $S/check_ui5_freestyle_traps.py <app>` ·
+     `check_list_view_grid.py <app>` · `check_filter_search_pattern.py <app>` · `check_i18n_keys.py <app>`. Çıkış 2 =
+     ölçüm yok (temiz değil); her çıktının KAPSAM satırını aynen ekle.
+  2. Kendi kodunu <TEMPLATE>/skills-sap/sap-ui5-fiori/references/checklists.md §B FE satırlarında yürü; uygulanabilir
+     her satır KAPSAMA TABLOSU'nda bir satır alır: ID · hüküm (UYGUN | İHLAL | UYGULANMAZ + gerekçe | DOĞRULANAMADI +
+     neden) · kanıt (dosya:satır). Kanıtsız UYGUN yazma.
+  3. Senin yazdığın satırdaki gerçek ihlal — YAZIM ANI maddeleri dahil — düzeltilir, gerekçeyle geçilmez. Gerekçe
+     yalnız iki durumda geçerlidir: araç yanılıyor (kanıtla) ya da ihlal senin değişikliğinden önce de vardı ("önceden var").
+  4. Araç koşmadıysa (komut hatası, traceback) "temiz" deme; nedenini yaz ve YAZIM ANI maddelerini elle yürü.
+  5. Öz-denetim bağımsız incelemenin yerine geçmez; son hüküm ana oturumun incelemesindedir.
 - ÇIKTI (genel §8'e ek): değişen dosyalar · binding/handler/navigasyon etkisi · ALV paritesi maddeleri tek tek
-  (var / yok + dosya:satır) · dayandığı metadata/backend kaynağı · çalışma zamanı doğrulaması yapıldı mı.
+  (var / yok + dosya:satır) · dayandığı metadata/backend kaynağı · çalışma zamanı doğrulaması yapıldı mı ·
+  öz-denetim (statik kontrol çıktıları + KAPSAMA TABLOSU, aynen).
 ```
 
 ## (d) Özellik (feature) koordinasyonu — ana oturumun işi
@@ -204,7 +269,7 @@ gönderemez ve konuşmayı görmez → koordinasyon **devredilemez**; ayrı bir 
 |---|---|
 | Rol başına araç izin listesi ile SAP yazma engeli | aXet'te özel ajan tanımı çalışmaz; engel S2 metni + CLI yazma kapısı (`--sap-write` + kullanıcı opt-in) ile sağlanır |
 | Uzmanın inceleme ajanına "hazır" sinyali ve lider aracılı inceleme döngüsü | Karşılığı: ana oturum `%code-review` çalıştırır; (b) ÇIKTI teslim alanları o incelemenin girdisidir |
-| Yerel ABAP lint komutunun çıkış şartı | aXet'te lint yalnız CLI'nin gömülü incelemesinde (yazma yolu) belgeli; ayrı tüketici komutu yok → açık kalem |
+| Teslim öncesi ortak kontrol programı (kontrol listesi satırlarını ölçüp kapsama tablosu basan program) | aXet'e taşınmadı; karşılığı (b)/(c) öz-denetimindeki elle kapsama tablosu + mevcut çevrimdışı kontroller (`abaplint_run.py`, UI5 `check_*.py`) |
 | Metodoloji junction'ı arama talimatı | aXet'te junction yok |
 | Seans işaretli çekme script'i ve düzenleme öncesi engelleyici kanca | Hook yok; karşılığı `adt_get` çekme kaydı + `adt_push_source` kıyası (ana oturumda) |
 | UI5 MCP araçları (API referansı, linter, manifest doğrulama) ve tarayıcı otomasyonu ile doğrulama seviyeleri | aXet yerel MCP'yi yok sayar (ölçüldü); UI5 yöntemi ve script'li kontroller `%sap-ui5-fiori`'de |

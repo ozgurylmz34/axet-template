@@ -118,8 +118,21 @@ paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.
      sessizce belirlenmez.
    · ⚠ Görsel adlarının `capture_kd_screens.js` yapılandırmasındaki `{"do":"shot","name":...}` adlarıyla
      eşliğini araç **ÖLÇMEZ** — iki dosya birbirinden bağımsız yazılır, eşliği yazan sağlar.
-4. **PDF:** `--pdf` ya da `node <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js in.html out.pdf` (A4, arka plan açık,
-   kenar 14/16/12/12 mm; `file://` Node Playwright'ta çalışır).
+4. **PDF:** `--pdf` ya da `node <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js in.html out.pdf` (A4, arka plan açık;
+   kenar boşluğu: belgede CSS `@page` varsa o geçerlidir — `build_doc_pdf` HTML'i 16/14/18/14 mm taşır — yoksa 14/16/12/12 mm;
+   `file://` Node Playwright'ta çalışır).
+   İsteğe bağlı bayraklar (`build_doc_pdf.py` / `build_kd_pdf.py` yalnız `--pdf` ile kabul eder, `html_to_pdf.js`'e geçirir):
+   · `--sayfa-no` — her sayfanın altına "Sayfa X / Y". Altbilgi mevcut alt boşluğa yerleşir, gövdeyi daraltmaz (sayfa
+     sayısı değişmez). Chromium altbilgiyi sayfanın alt kenarına göre sabit yere basar (kutunun alt kenarı kenardan
+     ~5.3 mm yukarıda; Chrome ve Edge'de ölçüldü). Bu yüzden gereken alt boşluk = 5.3 mm + altbilgi yüksekliği (8 pt
+     metinde ~4 mm) + 2 mm pay ≈ 11.3 mm; araç bu hesabı `ALTBILGI:` satırında basar. Alt boşluk belgeden ölçülür;
+     bundan azsa, ölçülemiyorsa (dış `<link>`/`@import` stil sayfası okunamaz) ya da viewport'a bağlı bir medya sorgusu
+     daha küçük bir değer verebiliyorsa PDF YAZILMAZ, çıkış 2 (`[DURDU]`). Hedefte önceki koşumdan kalan PDF silinmez;
+     stderr'e "hedefte onceki PDF duruyor, bu kosumda yazilmadi" düşer. Çare: `@page` margin-bottom'u büyüt, stili
+     `<style>` içine göm ya da bayraksız üret.
+   · `--yer-imi` — başlıklardan (h1–h6) PDF yer imleri. Araç sayıyı PDF'in kendisinden okur
+     (`YER-IMI PDF: N yer imi / M baslik`); fark ya da yokluk stderr'e UYARI düşer, çıkış kodu değişmez.
+   Bayraksız çıktı eskisiyle aynıdır. Teslim edilmiş bir dokümanı yeniden üretirken bayrak eklemek PDF'i değiştirir.
 5. **Uygulama içi yardım kopyası:** `build_kd_pdf.py … --help-dir <app>/webapp/help` HTML'i `kullanici-kilavuzu.html` adıyla ve
    görselleri `screenshots/` altına kopyalar (canlıda görünmesi yeniden deploy ister).
 
@@ -155,6 +168,9 @@ python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/verify_doc_html.py docs/KD-S
 | Görsel metin olarak çıkıyor | `![](…)` kod bloğu içinde | bloğun tamamını değiştir (`--map`) |
 | İkinci dokümanın diyagramı birincinin yerine geçti | aynı klasörde aynı PNG adı | kimlik ön eki (varsayılan) ya da `--prefix` |
 | Diyagram çıktıda kod olarak görünüyor | `mmdc` yok ya da render hatası | kur/düzelt; `verify_doc_html.py` raw-mermaid |
+| Mermaid kaynağının bir kısmı HTML/PDF'te düz metin olarak görünüyor; kaynak `<!-- … -->` içinde "gizlenmişti" | mermaid oku `A --> B` içindeki ilk `-->` HTML yorumunu orada kapatır; hata yok | mermaid kaynağını HTML yorumunda saklama — render edilen çitte bırak ya da ayrı `.mmd` dosyasında tut. `verify_doc_html.py` ham mermaid aramasını yalnız `<pre>` bloklarında ve `language-mermaid` sınıfında yapar, yorumdan taşan metni **yakalamaz**: üretilen HTML'in görünür metninde `-->` ve `graph TD` / `flowchart` ara (ekip dersi, 2026-10-10) |
+| Kaynak değişmediği hâlde her üretimde diyagram PNG'leri değişmiş görünüyor (`git status` → `M …png`, yardım kopyası da) | üretici her koşuda mermaid'i yeniden çizer; PNG baytları kenar yumuşatma gürültüsüyle farklı çıkar | "dosya değişti" ≠ "içerik değişti": Markdown'daki mermaid bloğu değişmediyse o PNG'leri commit'e alma, yalnız o dosyaları adıyla geri al (`git restore -- <png yolu>`); dizin ya da joker vermeden (ekip dersi, 2026-10-10, dört doküman turu) |
+| PDF metninde ş/ğ/ı/ç `�` görünüyor (Windows, `pdftotext`) | `pdftotext` kodlama bayrağı verilmedi; PDF sağlam | metin sondası daima `pdftotext -enc UTF-8 <pdf> -`; bayraksız ölçüm sahte "bozuk karakter" bulgusu üretir (ekip dersi, 2026-10-10) |
 | Arayüz İngilizce | dil parametresi yok | `?sap-ui-language=tr` |
 | Konsolda `UnicodeEncodeError` | Windows konsol kod sayfası | script'ler UTF-8'e ayarlar; çıktıyı dosyaya yaz |
 | Mock boş ya da yanlış servis | `ui5-mock.yaml` eski | `urlPath` + `metadata.xml` güncelle |

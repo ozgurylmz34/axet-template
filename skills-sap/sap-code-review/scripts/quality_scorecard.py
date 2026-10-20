@@ -32,8 +32,8 @@ KAPI ADLARI KODDAN TÜRETİLİR (elle tutulan liste bayatlar ve sahte güven ür
   validator:<check_ad>  diskteki gerçek `check_*.py` dosyaları
   test:<takım dizini>   diskteki gerçek test takımları
   sap:<adt_aracı>       araç kataloğundaki `adt_*` araçları; `sinif` = okuma|yazma (`gate.py` READ_TOOLS)
-⚠ `adt_syntax_check` bizde YAZMA sınıfıdır (SAP'ye gider) — ücretsiz bir ön kontrol değildir; karne
-bunu ayrıca işaretler.
+⚠ Yazma sınıfı `sap:` kapıları (ör. `adt_classrun`) SAP'ye yazar — ücretsiz bir ön kontrol değildir; karne
+bunları ayrıca işaretler. `adt_syntax_check` Z195'ten beri salt-okur checkrun'dır (okuma sınıfı).
 
 Kullanım:
     python quality_scorecard.py kaydet --kapi validator:check_abaplint --sonuc pass \

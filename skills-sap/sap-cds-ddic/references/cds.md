@@ -156,7 +156,7 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
   `row_limit`'i açık ver ve her dilimde `row_count < row_limit` olduğunu göster (`%sap-adt-foundation` → `foundation-query.md` §1.1).
 - Kaynak vaka: 2026-08-03.
 
-### CDS-DCL-03 · Bilinen tuzak: DCL boşluğunu ölçerken ve düzeltirken gözden kaçanlar (S/4)
+### AX-CDS-DCL-01 · Bilinen tuzak: DCL boşluğunu ölçerken ve düzeltirken gözden kaçanlar (S/4)
 - **Belirti:** okuma hatasız; yetkili kullanıcıda dolu, dar yetkilide eksik. Üstelik bir kaydetmeden sonra dolu olan alan boşalmış.
 - **Kök neden 1 — yazma yoluna bulaşma:** "oku → kullanıcı başka alanı değiştirir → hepsini geri yaz" deseninde okuma DCL yüzünden
   sessizce boş döndüyse geri yazma gerçek verinin üstüne boş yazar = geri alınamaz veri kaybı. Aynı sonucu frontend'deki bir
@@ -187,6 +187,10 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
 @EndUserText.label: '<master_language metni, spesifikasyondan>'
 define view zsd001_ddl_order_destination as select from ...
 ```
+- `@EndUserText.label` **en çok 40 karakter**: aşılırsa aktivasyon hata değil **W** verir (`Annotation value '…' length (N)
+  too long. Type must be 'String(40)'`) ve değer ön yüzde kesilebilir. Obje açıklaması (`adtcore:description`, 60) tam
+  yazıldığı için "açıklama doğru" readback'i bu uyarıyı GÖSTERMEZ — etiket listesini ≤40'a göre hazırla, aktivasyon
+  yanıtındaki uyarıları oku (ekip dersi, 2026-09-30: "≤60" diye geçen 12 objede 5 uyarı; alan etiketleri de dahil).
 - `@AbapCatalog.preserveKey` S/4'te deprecated (uyarı: `Annotation 'AbapCatalog.preserveKey' is deprecated`) → yeni view'da kullanma, taşırken kaldır.
 - Diğer info seviyesindeki aktivasyon uyarıları normaldir.
 - En az bir `key` alan; `sum()`/`count()` varsa `group by`.

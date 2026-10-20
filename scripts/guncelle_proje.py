@@ -29,6 +29,7 @@ KAPSAM — bakılmayanlar (bu motor ÖLÇMEZ):
     kaynak yolda V6/V6d (silme ya da "sende değişmiş, duruyor"), hedef yolda V2 olarak görünür.
     Yerel değişiklik KAYBOLMAZ (V6d silmez), ama "taşındı" diye raporlanmaz.
   · `templates/package/**` (K5: kullanıcı doldurur, taban anlamsız) — yalnız bilgi satırı.
+  · git: motor commit atmaz; tek istisna `conn/README.md` V6 silmesini index'e sahnelemesidir (Z164 sahneleme istisnası).
   · testler/bütünlük turu: proje şablonunun test komutu yoktur; ölçüm klon tarafının işidir.
   · değişikliğin ANLAMCA doğru olduğu · aXet'in yeni bağlamı fiilen yüklediği · canlı SAP.
 """
@@ -928,6 +929,8 @@ def komut_geri_al(b: Baglam, args) -> int:
             hedef.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(kaynak, hedef)
             print(f"GERİ ALINDI: {rel}")
+            if rel == CONN_README_ESKI:   # Z164 sahneleme istisnası: kapanışın sahnelediği silme index'te kalırsa olağan commit siler
+                print(f"  {CONN_README_ESKI} (git): {conn_readme_sahnelemesini_geri_al(p.kok)}")
         elif yoktu.is_file():
             p.sil(rel)
             print(f"GERİ ALINDI (silindi): {rel} — güncellemeden önce yoktu")
@@ -940,6 +943,104 @@ def komut_geri_al(b: Baglam, args) -> int:
 # =====================================================================================================
 # KAPANIŞ
 # =====================================================================================================
+CONN_README_ESKI = "conn/README.md"
+CONN_README_YENI = "docs/sap-baglanti.md"
+
+
+def _git(kok: Path, *args: str) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(["git", "-C", str(kok), *args], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _ilk_satir(r: subprocess.CompletedProcess | None) -> str:
+    if r is None:
+        return "git çalıştırılamadı"
+    return next(iter((r.stderr or "").strip().splitlines()), "çıktı yok")
+
+
+def conn_readme_silmesini_sahnele(kok: Path) -> tuple[bool, str]:
+    """Z164 sahneleme istisnası (kullanıcı kararı 2026-10-19: "Motor silmeyi sahnelesin"; IS-LISTESI ⓐ seçeneği DEĞİL) — DAR İSTİSNA, LİSTE DEĞİL: motorun git index'ine yazdığı TEK yol
+    `CONN_README_ESKI`'dir ve yalnız V6'da (yerel=taban, motor sildi) + kapanış KAPANDI iken çağrılır. Sebep: `conn/`
+    ajan denylist'inde olduğu için silmeyi ajan sahneleyemez; sahnelenmezse Z164 şikâyeti son bir kez tekrar ederdi.
+    Commit ATILMAZ. Döner: (git_tarafi_tamam, rapor satırı) — `False` = kullanıcıya iş kaldı ya da ölçülemedi.
+
+    Kullanıcıya komut YALNIZ gerçekten koşulabildiği yerde verilir (dosya izleniyor ama `git rm` başarısız). İzlenmeyen
+    dosya GERÇEK bir durumdur (ilk commit atılmamış proje: `yeni_proje.py` commit atmaz, ajan `conn/`u ekleyemez) —
+    orada `git rm --cached` "pathspec did not match" ile düşer ⇒ komut verilmez, "git işi yok" denir."""
+    if not _git_deposu_mu(kok):
+        return True, "proje git deposu değil — yapılacak git işi yok."
+    if (kok / CONN_README_ESKI).exists():
+        return False, f"sahnelenmedi: `{CONN_README_ESKI}` diskte duruyor (silme doğrulanmadı) — index'e dokunulmadı."
+    r = _git(kok, "ls-files", "--error-unmatch", "--", CONN_README_ESKI)
+    if r is None or r.returncode not in (0, 1):
+        return False, (f"sahnelenmedi: izlenme durumu ÖLÇÜLEMEDİ ({_ilk_satir(r)}) — kendi terminalinde "
+                       f"`git status -- {CONN_README_ESKI}` ile bak.")
+    if r.returncode == 1:
+        h = _git(kok, "cat-file", "-e", f"HEAD:{CONN_README_ESKI}")
+        if h is not None and h.returncode == 0:
+            return True, "silme zaten sahnelenmiş (index'te yok, HEAD'de var) — olağan commit'le gider."
+        return True, "dosya git'te izlenmiyordu (HEAD'de de yok) — yapılacak git işi yok."
+    rm = _git(kok, "rm", "--cached", "--quiet", "--", CONN_README_ESKI)
+    if rm is None or rm.returncode != 0:
+        return False, (f"sahnelenemedi: `git rm --cached` başarısız ({_ilk_satir(rm)}) — kendi terminalinde: "
+                       f"`git rm --cached {CONN_README_ESKI}` + commit.")
+    return True, ("silme git index'ine sahnelendi (motor, commit YOK) — projenin olağan commit'iyle gider; "
+                  "`conn/` için kullanıcıya ayrı commit adımı kalmadı.")
+
+
+def conn_readme_sahnelemesini_geri_al(kok: Path) -> str:
+    """Z164 sahneleme istisnasının tersi: `geri-al` `CONN_README_ESKI`'yi diske geri yazdığında kapanışın sahnelediği silme index'te
+    kalırsa sonraki olağan commit dosyayı SESSİZCE siler (ölçüldü). Dosya HEAD'de varsa ve index'te yoksa
+    `git reset -q HEAD -- <yol>` ile silme geri alınır. Sessiz geçiş yok: her dal bir satır döner."""
+    if not _git_deposu_mu(kok):
+        return "proje git deposu değil — index işi yok."
+    h = _git(kok, "cat-file", "-e", f"HEAD:{CONN_README_ESKI}")
+    if h is None or h.returncode != 0:
+        return "HEAD'de yok (izlenmiyordu) — index işi yok."
+    r = _git(kok, "ls-files", "--error-unmatch", "--", CONN_README_ESKI)
+    if r is not None and r.returncode == 0:
+        return "index'te zaten var — sahnelenmiş silme yok."
+    if r is None or r.returncode != 1:
+        return (f"index durumu ÖLÇÜLEMEDİ ({_ilk_satir(r)}) — kendi terminalinde: "
+                f"`git reset -q HEAD -- {CONN_README_ESKI}`.")
+    s = _git(kok, "reset", "-q", "HEAD", "--", CONN_README_ESKI)
+    if s is None or s.returncode != 0:
+        return (f"sahnelenmiş silme GERİ ALINAMADI ({_ilk_satir(s)}) — kendi terminalinde: "
+                f"`git reset -q HEAD -- {CONN_README_ESKI}`.")
+    return "sahnelenmiş silme index'ten geri alındı (index HEAD ile aynı)."
+
+
+def conn_readme_tasima_satirlari(b: Baglam, plan: dict, durum: dict, kapandi: bool) -> list[str]:
+    """Z164: `conn/README.md` → `docs/sap-baglanti.md` taşımasının kapanış satırları (yoksa boş liste).
+
+    aynı (V6, silindi) → taşındı + silme sahnelenir · değişmiş (V6d) → ezilmedi, uyarı, sahneleme yok ·
+    yok → yeni yerde oluştu (V2). Sahneleme YALNIZ `kapandi` iken (eksik yok): KAPANMADI kapanışta kullanıcı
+    `geri-al` diyebilir; index'e yazılmış silme o yolda geride kalırdı (F2, bağımsız inceleme 2026-10-19)."""
+    kalem = {d["yol"]: d for d in plan["dosyalar"]}
+    eski, yeni = kalem.get(CONN_README_ESKI), kalem.get(CONN_README_YENI)
+    yeni_yazildi = bool(yeni) and durum["dosyalar"].get(CONN_README_YENI, {}).get("durum") == "dogrulandi"
+    out: list[str] = []
+    if eski and eski.get("vaka") == "V6" and durum["dosyalar"].get(CONN_README_ESKI, {}).get("durum") == "dogrulandi":
+        out.append(f"TAŞINDI: `{CONN_README_ESKI}` sende değişmemişti → silindi; açıklama artık `{CONN_README_YENI}`"
+                   f"{'' if yeni_yazildi else ' (yeni dosya bu kapanışta DOĞRULANMADI — yukarıdaki satırına bak)'}.")
+        if kapandi:
+            _tamam, satir = conn_readme_silmesini_sahnele(b.p.kok)
+        else:
+            satir = ("silme index'e sahnelenMEDİ — kapanış KAPANMADI; eksikler giderilip kapanış yeniden koşulunca "
+                     "sahnelenir.")
+        out.append(f"`{CONN_README_ESKI}`: {satir}")
+    elif eski and eski.get("vaka") == "V6d":
+        out.append(f"UYARI: `{CONN_README_ESKI}` sende değiştirilmiş → EZİLMEDİ, yerinde duruyor (git'e de "
+                   f"dokunulmadı). Şablonun güncel açıklaması `{CONN_README_YENI}`'de; kendi notlarını oraya taşıyıp "
+                   "eski dosyayı kendin silebilirsin (aXet `conn/` altına dokunamaz).")
+    elif yeni and yeni.get("vaka") == "V2" and yeni_yazildi:
+        out.append(f"OLUŞTU: `{CONN_README_YENI}` (projede `{CONN_README_ESKI}` yoktu).")
+    return out
+
+
 def komut_kapanis(b: Baglam, args) -> int:
     p, plan = b.p, plan_oku(b.p)
     onay_dogrula(b)
@@ -1015,22 +1116,25 @@ def komut_kapanis(b: Baglam, args) -> int:
         rapor += ["", "## Ekip reposu",
                   "Bu değişiklikler proje reposuna commit edilecek; ekip arkadaşların pull edince "
                   "onlara da gelir. Commit KULLANICININ onayıyla atılır; push asla."]
-    # Z97/Z110 (karar 2026-09-26): `conn/README.md` şablon gereği İZLENİR (`.gitignore`: `!conn/README.md`), ama modelin
-    # `git add conn/...` denemesi denylist'e takılır (canlı ölçüldü: kullanıcı "commit et" dedi, model conn/README.md'yi
-    # eklemeye kalktı, "Access denied"). Model bu dosyayı hiç sahnelemez; commit'i kullanıcıya bırakılır. SAP dışı
-    # projede conn/ yoktur ⇒ bölüm basılmaz. Komut yalnız bu kapanışta GERÇEKTEN yazılan conn/ dosyaları için verilir.
+    # Z164 ⓑ (kullanıcı kararı 2026-10-19; Z97/Z110'u değiştirir): bağlantı açıklaması `conn/README.md`'den
+    # `docs/sap-baglanti.md`'ye TAŞINDI. Sebep: `conn/` ajan denylist'indedir (`conn`) ⇒ izlenen README'nin her
+    # güncellemesi commit'i kullanıcıya düşürüyordu ("conn/README.md hâlâ bekliyor"). Taşıma için ayrı kod YOK: şablonda
+    # yol değişince eski yol V6 (yerel=taban → silinir) ya da V6d (yerel değişmiş → dokunulmaz), yeni yol V2 (yazılır)
+    # olur — bu bölüm sonucu kullanıcı diliyle söyler. Commit atılmaz; motorun index'e yazdığı TEK durum V6'da
+    # `conn/README.md` silmesinin sahnelenmesidir (Z164 sahneleme istisnası, `conn_readme_silmesini_sahnele`).
+    conn_tasima = conn_readme_tasima_satirlari(b, plan, durum, kapandi=not eksikler)
+    if conn_tasima:
+        rapor += ["", f"## SAP bağlantı açıklaması — `{CONN_README_ESKI}` → `{CONN_README_YENI}`", *conn_tasima]
+    # Şablonda `conn/` altında artık dosya yok; ileride biri gelirse model onu sahneleyemez (denylist) ⇒ komut verilir.
     conn_yazilan = [d["yol"] for d in plan["dosyalar"]
                     if d["yol"].startswith("conn/")
                     and durum["dosyalar"].get(d["yol"], {}).get("durum") == "dogrulandi"
-                    and durum["dosyalar"].get(d["yol"], {}).get("karar") != "yerel"]
-    if p.sap or conn_yazilan:
+                    and durum["dosyalar"].get(d["yol"], {}).get("karar") != "yerel"
+                    and d.get("vaka") != "V6"]
+    if conn_yazilan:
         rapor += ["", "## conn/ — commit kullanıcının",
-                  "aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez (`git add -A` / `git add .` ile de "
-                  "sahnelemez); `conn/README.md`'nin commit'i kullanıcıya bırakılır (şablon onu izler, bağlantı "
-                  "dosyaları `.gitignore`'dadır)."]
-        if conn_yazilan:
-            rapor += [f"Bu güncellemede yazıldı: {', '.join(conn_yazilan)} — kendi terminalinde: "
-                      f"`git add {' '.join(conn_yazilan)}` + commit."]
+                  "aXet `conn/` altına git'te dokunamaz (denylist) — bu güncellemede yazıldı: "
+                  f"{', '.join(conn_yazilan)}; kendi terminalinde: `git add {' '.join(conn_yazilan)}` + commit."]
     # Z48 (ürün kararı): `guncelle-proje` manifest'i KENDİSİ yenilemez — davranış yüzeyi onayı
     # bilinçli olarak kullanıcının terminalinde kalır; aksi güvenlik tasarımını deler. Yalnız tam
     # komut verilir.

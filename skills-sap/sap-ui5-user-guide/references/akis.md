@@ -177,6 +177,12 @@ Her PNG `view` aracıyla açılır (bir mesajda tek `view` — `gorsel-kontrol.m
 - Kaynak **daima** `$APP/docs/KD-….md`'dir. HTML/PDF/yardım kopyası adım 8'de üretilir; üretilmiş HTML'e elle yama
   yapılmaz. Markdown kaynağı olmayan eski bir KD güncellenecekse önce bir kerelik Markdown'a çevrilir (kullanıcıya
   söylenir), sonra bu akış izlenir.
+- ⛔ **Önceki KD yalnız kullanıcı verirse okunur.** Kullanıcı bu konuşmada önceki KD'nin dosya yolunu verdiyse
+  ya da "şu KD'yi güncelle" diye adını söylediyse o dosya **diskteki hâliyle** okunur. Diskte yoksa git
+  geçmişinden geri getirilmez (`git show <rev>:<yol>`, `git log -p`, `git checkout <rev> -- <yol>`, `git restore
+  --source`) — kullanıcıya sorulur. Kullanıcı "eski KD'yi kullanma" dediyse hiçbir yolla okunmaz. (Ölçüldü
+  2026-10-03: eski KD dosyaları proje dışına taşınmışken model eski KD'yi git geçmişinden iki kez çıkardı;
+  `tuzaklar.md` T28.)
 - İskelet `%sap-fs-ts-docs` → `templates/KD-template.md`; bölüm kuralları `%sap-fs-ts-docs` → `references/kd-authoring.md`.
 - Adım 3'teki ekran envanterinin her satırı bir bölüm; her bölümde görsel, adım adım akış, alan/buton tablosu.
 - Görseller KD'ye `build_kd_pdf.py` eşleme dosyasıyla girer; eşleme dosyasındaki `img` adları `ekranlar.json`'daki

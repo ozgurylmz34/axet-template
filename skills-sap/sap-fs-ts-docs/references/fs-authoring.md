@@ -92,7 +92,7 @@ istekle çelişiyorsa: isteği uygula, çelişkiyi soru olarak getir.
 
 ### Defter / havuz tasarımı — giriş, tüketim, düzeltme birlikte
 FS bir defter, havuz ya da bakiye tasarlıyorsa (tahsis havuzu, FIFO lotu, kota, bakiye hesabı) **üç blok birlikte**
-yazılır; yalnız tüketimi anlatmak eksik FS'tir (DOC-FS-08):
+yazılır; yalnız tüketimi anlatmak eksik FS'tir (AX-DOC-FS-01):
 1. **Giriş:** kayıt (lot) hangi belge/kalemden doğar (anahtar) · ne zaman doğar · tarih kuralı (öncelik zinciri) ·
    miktar · kaynak belge iptal edilir ya da yeniden kesilirse ne olur · dış kaynaktan gecikmeli gelen veri beklenirken durum.
 2. **Tüketim:** sıra kuralı (ör. FIFO) · tetikleyen an · o anda alınan anlık görüntü · eşzamanlılık/kilit.
@@ -128,7 +128,7 @@ her giriş kuralı TS'te ve build'de ayrı bir soru olarak geri gelir.
    raporun kendisinden okunur. Gerekçe: üretici kuralı anlatan doküman o kuralın bütün kaynak zincirini (arayüz, davranış
    tanımı, uygulama kodu) doğrulamayı üstlenir, bunu da rapordan test edemez. İnceleme böyle bir cümlede bulgu verirse
    önce "rapordan gözlenebilir mi?" diye sorulur; gözlenemiyorsa cümle düzeltilmez, **çıkarılır**. Düzeltme turunda
-   nitelendirme eklemek her seferinde yeni bir yanlış iddia doğurur (DOC-CR-04).
+   nitelendirme eklemek her seferinde yeni bir yanlış iddia doğurur (AX-DOC-CR-01).
 
 ## 6. Bölüm yapısı (zorunlu)
 Şablon tüm bölümleri taşır; burada her bölümün kuralı var.

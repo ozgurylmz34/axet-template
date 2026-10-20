@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from _common import call_main, sample, write_png
 
@@ -248,6 +249,29 @@ class ManifestMainTest(unittest.TestCase):
         rc, _, err = call_main(build_kd_pdf.main, [self.html, "--manifest", self.man, "--write-clean"])
         self.assertEqual(2, rc)
         self.assertIn("--write-clean biçim A içindir", err)
+
+    # --- Z201: --sayfa-no / --yer-imi build_doc_pdf.to_pdf'e geçirilir; bayraksız çağrı eskisiyle aynı ------------
+    def test_pdf_bayraklari_to_pdf_e_gecer(self):
+        self._yaz({"steps": [{"heading": "Adım", "text": "Açıklama.", "img": "kd-01.png"}]})
+        with mock.patch.object(build_kd_pdf.build_doc_pdf, "to_pdf", return_value=0) as tp:
+            rc, out, err = call_main(build_kd_pdf.main, [self.html, "--manifest", self.man, "--pdf", "--sayfa-no",
+                                                         "--yer-imi"])
+        self.assertEqual(0, rc, out + err)
+        tp.assert_called_once_with(self.html, bayraklar=("--sayfa-no", "--yer-imi"))
+
+    def test_KONTROL_pdf_bayraksiz_to_pdf_bos_bayrakla(self):
+        self._yaz({"steps": [{"heading": "Adım", "text": "Açıklama.", "img": "kd-01.png"}]})
+        with mock.patch.object(build_kd_pdf.build_doc_pdf, "to_pdf", return_value=0) as tp:
+            rc, out, err = call_main(build_kd_pdf.main, [self.html, "--manifest", self.man, "--pdf"])
+        self.assertEqual(0, rc, out + err)
+        tp.assert_called_once_with(self.html, bayraklar=())
+
+    def test_pdf_bayragi_pdfsiz_reddedilir(self):
+        self._yaz({"steps": [{"heading": "H", "text": "x"}]})
+        rc, _, err = call_main(build_kd_pdf.main, [self.html, "--manifest", self.man, "--sayfa-no"])
+        self.assertEqual(2, rc)
+        self.assertIn("--sayfa-no yalnız --pdf ile", err)
+        self.assertFalse(os.path.exists(self.html), "reddedilen çağrı HTML yazmamalı")
 
 
 

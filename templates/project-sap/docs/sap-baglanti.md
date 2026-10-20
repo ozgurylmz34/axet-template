@@ -1,6 +1,6 @@
-# conn — SAP sistemleri (DEV / QA)
+# SAP bağlantısı — sistem dosyaları (`conn/`)
 
-Her SAP sistemi bu klasörde bir dosyadır: `DEV.env`, `QA.env`. Aktif bağlantı proje kökündeki `.conn_adt`'dir.
+Her SAP sistemi `conn/` klasöründe bir dosyadır: `conn/DEV.env`, `conn/QA.env`. Aktif bağlantı proje kökündeki `.conn_adt`'dir.
 
 1. Proje klasöründeki `KURULUMU-TAMAMLA.cmd`'ye çift tıkla. `DEV.env` ve `QA.env` şablonlarını yazar (var olanı
    ezmez) ve hangi dosyaya hangi alanları yazacağını tam yoluyla söyler (dosyayı açmaz; Not Defteri ile sen açarsın).
@@ -12,8 +12,8 @@ Her SAP sistemi bu klasörde bir dosyadır: `DEV.env`, `QA.env`. Aktif bağlant�
    olur; eskisi `conn/.conn_adt.bak` olarak saklanır.
 
 Bilmen gerekenler:
-- Parola dosyada **düz metin** durur. `conn/` içindeki dosyalar git'e girmez (`.gitignore`: `conn/*`); yalnız bu
-  README izlenir.
+- Parola dosyada **düz metin** durur. `conn/` içindeki dosyalar git'e girmez (`.gitignore`: `conn/*`) ve aXet
+  onları okuyamaz (`.axetcode-denylist`: `conn`). Bu açıklama o yüzden `conn/` dışında, `docs/` altında durur.
 - `<...>` değeri kalmış dosyaya geçilmez.
 - QA ve PRD salt-okunurdur; SAP'ye yazma yalnız DEV'de.
 - Dosyaların içeriğini sohbete yapıştırma, aXet'e okutma.

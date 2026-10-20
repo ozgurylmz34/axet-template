@@ -295,6 +295,13 @@ sap.ui.define([
 - ODataModel Component'te kurulmaz, manifest yönetir.
 - Kullanılan her sınıf (`JSONModel` vb.) `sap.ui.define` bağımlılığıdır; global `sap.ui.model.json.JSONModel`
   kullanımı async/strict'te fırlatır.
+- **BaseController `navTo` sarmalayıcısı üçüncü argümanı düşürür:** şablonlardaki yaygın
+  `navTo: function (sRoute, oParams) { this.getRouter().navTo(sRoute, oParams); }` yalnız iki argüman iletir;
+  `this.navTo("filter", {}, true)` yazınca `bReplace` sessizce düşer ve geçmişe kayıt eklenir. Yönlendirme (guard)
+  senaryosunda geri tuşu korunan sayfayı açar, guard yine yönlendirir ⇒ geri tuşuyla uygulamadan çıkılamaz. Çare:
+  `this.getRouter().navTo("filter", {}, true)` ya da sarmalayıcıyı `navTo(sRoute, oParams, bReplace)` diye genişlet.
+  Argüman sayısı uyuşmazlığı hata vermez — replace isteyen her yönlendirmede sarmalayıcının imzasını oku (ekip dersi,
+  2026-10-05, Router 1.120.23 kaynağıyla; kod yorumu "replace" diyordu, davranış ekleme idi).
 
 `model/models.js`:
 ```javascript

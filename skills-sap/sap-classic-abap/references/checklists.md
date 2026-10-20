@@ -9,10 +9,10 @@
 ## Faz 1 — Yapı (kod yazmadan)
 | ID | Kontrol | Önem | Ref |
 |---|---|---|---|
-| CLC-PRF | Profil `ecc` ya da `s4_private`; paket `_CLC` (değilse sor) | BLOCKER | `%sap-dev` naming §3 |
+| AX-CLC-PRF-01 | Profil `ecc` ya da `s4_private`; paket `_CLC` (değilse sor) | BLOCKER | `%sap-dev` naming §3 |
 | CLC-07 | Tek gövde yok: ana program = `INCLUDE` + olay blokları; kod `_T01/_C01/_F01/_O01/_I01` include'larında (PROG/I) | BLOCKER | `programs-includes.md` §1 |
 | CLC-NAM | Program `<GÖVDE>_P_<AD>` (≤ 26), include `<GÖVDE>_I_<AD>_<X>NN`, yerel sınıflar `lcl_*` | BLOCKER | naming §4.1 |
-| CLC-TTL | TITLE kullanıcıdan; include açıklaması TITLE + sonek | BLOCKER | naming §6 |
+| AX-CLC-TTL-01 | TITLE kullanıcıdan; include açıklaması TITLE + sonek | BLOCKER | naming §6 |
 
 ## Faz 2 — ALV (template-first)
 | ID | Kontrol | Önem | Ref |
@@ -20,8 +20,8 @@
 | CLC-ALV1 | ALV kurulumu programda satır içi (`lcl_event` + `lvc_t_fcat`); ortak ALV sınıfı yok | BLOCKER | `alv-report.md` §1 |
 | CLC-ALV2 | Kolon başlıkları `master_language`'de ve tam, spesifikasyondan | BLOCKER | kesin yasak D |
 | CLC-ALV3 | ALV paritesi yerleşikten (`i_save = 'A'`) gerçekten çalışıyor | WARNING | SAP çekirdeği |
-| CLC-ALV4 | Field catalog yolu (yapı / manuel) kullanıcıya soruldu ya da TS'te gerekçeli | WARNING | `alv-report.md` §3 |
-| CLC-ALV5 | Olay işleyicide satır = `es_row_no-row_id` | BLOCKER | `alv-report.md` §4 |
+| AX-CLC-ALV-01 | Field catalog yolu (yapı / manuel) kullanıcıya soruldu ya da TS'te gerekçeli | WARNING | `alv-report.md` §3 |
+| AX-CLC-ALV-02 | Olay işleyicide satır = `es_row_no-row_id` | BLOCKER | `alv-report.md` §4 |
 
 ## Faz 3 — Ekran + GUI status
 | ID | Kontrol | Önem | Ref |
@@ -32,16 +32,16 @@
 | CLC-SCR4 | Menü/toolbar temiz; `act` korundu (`00256`) | WARNING | §3 |
 | CLC-SCR5 | BACK/EXIT/CANCEL + ESC çalışır; status üretildi (`00264`); BACK/CANCEL → `LEAVE TO SCREEN 0`, EXIT → `LEAVE PROGRAM` | BLOCKER | §3, `alv-report.md` §5 |
 | CLC-SCR6 | Üreteç yolunda donör açıkça verildi ve tanı mesajında nav eşlemesi "açık" görüldü | BLOCKER | §3 |
-| CLC-SCR7 | PAI'de `CLEAR` ok-code / `sy-ucomm`; her toolbar fcode'u için `CASE` dalı | BLOCKER | `alv-report.md` §5 |
+| AX-CLC-SCR-01 | PAI'de `CLEAR` ok-code / `sy-ucomm`; her toolbar fcode'u için `CASE` dalı | BLOCKER | `alv-report.md` §5 |
 
 ## Faz 4 — Metin + kesin yasaklar
 | ID | Kontrol | Önem | Ref |
 |---|---|---|---|
 | CLC-TXT | Seçim metinleri / `TEXT-xxx` / GUI başlığı `master_language`'de, metin havuzunda (push kaynağı metin havuzunu kapsamaz) | BLOCKER | `programs-includes.md` §3 |
-| CLC-SEL | Seçim ekranı adları ≤ 8, radyo grubu ≤ 4; `TEXT-xxx = …` yok | BLOCKER | `programs-includes.md` §2 |
+| AX-CLC-SEL-01 | Seçim ekranı adları ≤ 8, radyo grubu ≤ 4; `TEXT-xxx = …` yok | BLOCKER | `programs-includes.md` §2 |
 | CLC-005 | Standart tabloya doğrudan DML yok (BAPI/RFC); standart program/exit/ekran değişmez; transport kullanıcının | BLOCKER | SAP çekirdeği A/B/C |
-| CLC-ATC | ATC: öncelik politikası (proje `AGENTS.md`; yoksa öncelik 1 zorunlu, 2/3 açık onayla) | BLOCKER | `alv-report.md` §8 |
-| CLC-ATC2 | ATC önce/sonra bulgu sayısı `SELECT`'i barındıran sınıf/programda ölçüldü: "nested DB read" ailesi bulguyu döngüyü yazana değil `SELECT`'i içeren metodun sınıfına yazar (döngüyü taşımak bulguyu taşımaz; çağrılan metot yeni bir döngüden çağrılınca bulgu ORADA artabilir — ekip dersi) | WARNING | `alv-report.md` §8 |
+| AX-CLC-ATC-01 | ATC: öncelik politikası (proje `AGENTS.md`; yoksa öncelik 1 zorunlu, 2/3 açık onayla) | BLOCKER | `alv-report.md` §8 |
+| AX-CLC-ATC-02 | ATC önce/sonra bulgu sayısı `SELECT`'i barındıran sınıf/programda ölçüldü: "nested DB read" ailesi bulguyu döngüyü yazana değil `SELECT`'i içeren metodun sınıfına yazar (döngüyü taşımak bulguyu taşımaz; çağrılan metot yeni bir döngüden çağrılınca bulgu ORADA artabilir — ekip dersi) | WARNING | `alv-report.md` §8 |
 
 ## Faz 5 — Datafield diyalog ekranı (yalnız tek kayıtlık modal form)
 | ID | Kontrol | Önem | Ref |

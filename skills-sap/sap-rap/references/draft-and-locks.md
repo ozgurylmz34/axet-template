@@ -129,7 +129,7 @@ dinleyicisi bayrağa bakar · heartbeat aralığı kilit zaman aşımından kıs
 > sildiği için kullanıcının **başka sekmede** (S2) tuttuğu kilit düşer. Bayrağı `_releaseLock` içinde sıfırlamak tüm
 > çağıranları kapsar. Bırakma URL'i `sServiceUrl + "/ReleaseLock?…"` — `sServiceUrl` sondaki `/`'ı ve `sap-client`'ı
 > taşımaz (eksik `/` ölçülen vakada 307 → 403; eksik `sap-client` iki client açık tarayıcıda bırakmayı öbür client'a
-> gönderir). UI reçetesi: `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.4–7.5, kontrol FE-48 / FE-49 / UI-SAVE-06.
+> gönderir). UI reçetesi: `%sap-ui5-fiori` → `freestyle-odata-v2.md` §7.4–7.5, kontrol FE-48 / FE-49 / UI-SAVE-05.
 
 | # | Senaryo | Sonuç |
 |---|---|---|

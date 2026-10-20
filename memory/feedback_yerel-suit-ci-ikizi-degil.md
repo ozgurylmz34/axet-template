@@ -15,6 +15,10 @@ vakada da yalnız bir ajan tanımı satırı ve bir docstring değişmişken "g�
 koştu, kullanıcı durdurdu ("gerekmiyorsa neden çalıştırıyorsun").
 **Nasıl uygulanır:**
 - Kabuk/yol/dosya sistemi davranışını sınayan testin en az bir bağlamı başka bir işletim sistemi olmalı; "başka dizin" yetmez.
+- Dosya yolu / dizin gezinmesi / bağ çözümü içeren değişiklikte dört platform eksenini işin BAŞINDA yaz: ① harf duyarlılığı
+  ② `..` çözümü (sözcüksel mi fiziksel mi) ③ Windows junction ④ POSIX symlink. Windows'ta harf duyarlı açılan geçici dizin
+  yalnız ①'i taklit eder; ②–④'ün kanıtı gerçek Linux CI koşusudur, ölçülemeyen ekseni "DOĞRULANAMADI" diye yaz (ekip
+  dersi: Python 3.11 `rglob` junction'a iner, POSIX symlink'ine inmez — Windows'ta yeşil, Linux CI'da kırmızı).
 - Düzeltmeyi "yerelde yeşil" diye kapatma; merge'i CI'ye bağla (aXet reposunda `.github/workflows/testler.yml`).
 - Takımı koşma kararı `git diff --stat`'tan: dokunulan dosya takımın ölçtüğü çalıştırılabilir kod mu (script, test, hook,
   doğrulayıcı)? Yalnız markdown/yorum/docstring/hafıza değiştiyse takım yeni bilgi üretmez; emin değilsen hedefli
@@ -22,5 +26,5 @@ koştu, kullanıcı durdurdu ("gerekmiyorsa neden çalıştırıyorsun").
 - Yeşil takım yalnız baktığı yüzey kadar şey söyler: [[yesil-sinyal-kapsamini-sor]].
 Önceki kayıt: bulundu [[yesil-sinyal-kapsamini-sor]] (geçen test takımı kapsamı kadar söyler) — bu kayıt ortam farkını ve
 takımın ne zaman koşulacağını ekler; aranan: `memory/`, `core/`, `maintenance/UPDATE-PROCEDURE.md` — CI, yerel, takım
-Son-doğrulama: 2026-09-25 (ekip dersinden uyarlandı; aXet'te ayrıca ölçülmedi)
+Son-doğrulama: 2026-10-19 (dört eksen maddesi eklendi; ekip dersinden uyarlandı; aXet'te ayrıca ölçülmedi)
 Applies-to: CI'lı proje repoları ve aXet template bakımı — test koşumu ve kapanış kanıtı

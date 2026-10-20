@@ -57,33 +57,33 @@ Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki
 
 | görev | validator | önem | ne kontrol eder | ilgili satır |
 |---|---|---|---|---|
-| `cds_creation` | `check_window_function_compatibility.py` | BLOCKER | `OVER (PARTITION BY …)` window fonksiyonu | `%sap-cds-ddic` CDS-WIN |
-| `cds_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation (ör. `preserveKey`) | CDS-DEPR |
-| `cds_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN alanında nitelenmiş referans annotation'ı | CDS-CUR |
-| `cds_creation` | `check_released_objects.py` | WARNING | `from`/`join`'de halefi olan standart tablo | BE-03 · CDS-FROM-3 |
-| `cds_creation` | `check_standard_table_fields.py` | WARNING | standart tablo alanları hedef sistemde var mı (SAP okur) | CDS-FROM-2 |
-| `cds_update` | `check_window_function_compatibility.py` | BLOCKER | window fonksiyonu | CDS-WIN |
-| `cds_update` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | CDS-DEPR |
-| `cds_update` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | CDS-CUR |
+| `cds_creation` | `check_window_function_compatibility.py` | BLOCKER | `OVER (PARTITION BY …)` window fonksiyonu | `%sap-cds-ddic` C-CDS-WIN-01 |
+| `cds_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation (ör. `preserveKey`) | C-CDS-DEPR-01 |
+| `cds_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN alanında nitelenmiş referans annotation'ı | C-CDS-CUR-02 |
+| `cds_creation` | `check_released_objects.py` | WARNING | `from`/`join`'de halefi olan standart tablo | BE-03 · C-CDS-FROM-04 |
+| `cds_creation` | `check_standard_table_fields.py` | WARNING | standart tablo alanları hedef sistemde var mı (SAP okur) | C-CDS-FROM-03 |
+| `cds_update` | `check_window_function_compatibility.py` | BLOCKER | window fonksiyonu | C-CDS-WIN-01 |
+| `cds_update` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | C-CDS-DEPR-01 |
+| `cds_update` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | C-CDS-CUR-02 |
 | `cds_update` | `check_released_objects.py` | WARNING | halefi olan standart tablo | BE-03 |
-| `table_creation` | `check_struct_field_dtel_active.py` | BLOCKER | alan tipindeki Z/Y ve `/ad-alanı/` DTEL'ler sistemde var ve aktif mi (standart DTEL hariç; DTEL değilse yapı/tablo/tablo tipi sondası) | TBL-DTEL |
-| `table_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı (tablo kipi) | TBL-CUR |
+| `table_creation` | `check_struct_field_dtel_active.py` | BLOCKER | alan tipindeki Z/Y ve `/ad-alanı/` DTEL'ler sistemde var ve aktif mi (standart DTEL hariç; DTEL değilse yapı/tablo/tablo tipi sondası) | C-TBL-DTEL-01 |
+| `table_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı (tablo kipi) | C-TBL-CUR-02 |
 | `table_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | — |
-| `table_update` | `check_struct_field_dtel_active.py` | BLOCKER | Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi | TBL-DTEL |
-| `table_update` | `check_table_field_drop.py` | BLOCKER | mevcut alan silme / yeniden adlandırma / tip değişimi (canlı kaynakla fark) | BE-16 · TBL-DROP |
-| `table_update` | `check_cds_currency_reference.py` | BLOCKER | yeni CURR/QUAN referansı | TBL-CUR |
+| `table_update` | `check_struct_field_dtel_active.py` | BLOCKER | Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi | C-TBL-DTEL-01 |
+| `table_update` | `check_table_field_drop.py` | BLOCKER | mevcut alan silme / yeniden adlandırma / tip değişimi (canlı kaynakla fark) | BE-16 · C-TBL-DROP-01 |
+| `table_update` | `check_cds_currency_reference.py` | BLOCKER | yeni CURR/QUAN referansı | C-TBL-CUR-02 |
 | `table_update` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | — |
 | `table_update` | `check_standard_table_fields.py` | WARNING | standart alanlar hedef sistemde var mı | — |
-| `struct_creation` | `check_struct_field_dtel_active.py` | BLOCKER | Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi | STR-FIELD-2 |
-| `struct_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | STR-CUR |
-| `struct_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | STR-DEPR |
-| `struct_creation` | `check_standard_table_fields.py` | WARNING | standart alanlar hedef sistemde var mı | STR-FIELD-3 |
-| `struct_post_create` | `check_sap_struct_consistency.py` | BLOCKER | sistemdeki yapı yerel artefaktla tutarlı mı | STR-VERIFY |
+| `struct_creation` | `check_struct_field_dtel_active.py` | BLOCKER | Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi | C-STR-FIELD-02 |
+| `struct_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | C-STR-CUR-02 |
+| `struct_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | C-STR-DEPR-01 |
+| `struct_creation` | `check_standard_table_fields.py` | WARNING | standart alanlar hedef sistemde var mı | C-STR-FIELD-03 |
+| `struct_post_create` | `check_sap_struct_consistency.py` | BLOCKER | sistemdeki yapı yerel artefaktla tutarlı mı | AX-STR-VERIFY-01 |
 | `struct_post_create` | `check_sap_active_version.py` | BLOCKER | sistemde aktif sürüm var mı | BE-15 |
 | `sap_active_check` | `check_sap_active_version.py` | BLOCKER | sistemde aktif sürüm var mı | BE-15 |
-| `sap_active_check` | `check_sap_master_language.py` | WARNING | obje ana dili = projenin `master_language`'i | DE-LANG |
-| `domain_creation_csv` | `check_domain_output_length.py` | BLOCKER | domain çıktı uzunluğu formülü | DE-DOM |
-| `dtel_creation` | `check_dtel_creation_labels.py` | BLOCKER | 4 etiket + açıklama dolu, uzunluk sınırında, domain bağı | DE-LABEL |
+| `sap_active_check` | `check_sap_master_language.py` | WARNING | obje ana dili = projenin `master_language`'i | DE-TR-01 |
+| `domain_creation_csv` | `check_domain_output_length.py` | BLOCKER | domain çıktı uzunluğu formülü | DE-DOM-01 |
+| `dtel_creation` | `check_dtel_creation_labels.py` | BLOCKER | 4 etiket + açıklama dolu, uzunluk sınırında, domain bağı | DE-TR-02 |
 | `dtel_update` | — | — | boş zincir (bilinçli) | — |
 | `class_push` | `check_method_param_type_c.py` | BLOCKER | metot parametresinde `TYPE c LENGTH n` | BE-10a |
 | `class_push` | `check_decimal_write_to.py` | WARNING | API gövdesi kuran sınıfta `WRITE … TO` | BE-04 |
@@ -97,14 +97,14 @@ Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki
 | `interface_push` | `check_method_param_type_c.py` | BLOCKER | arayüz metot parametresinde `TYPE c LENGTH n` | BE-10a |
 | `interface_push` | `check_decimal_write_to.py` | WARNING | `WRITE … TO` | BE-04 |
 | `interface_push` | `check_released_objects.py` | WARNING | halefi olan standart tablo | BE-03 |
-| `struct_fields_dtel` | `check_struct_field_dtel_active.py` | BLOCKER | `adt_struct_create` her çağrıda: `fields[]`'ten kurulan (yazılacak) DDL'deki Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi; süre bütçesi dolarsa ÖLÇÜLEMEDİ | STR-FIELD-2 |
-| `rap_cds_creation` | `check_window_function_compatibility.py` | BLOCKER | window fonksiyonu | CDS-WIN |
-| `rap_cds_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | CDS-DEPR |
-| `rap_cds_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | CDS-CUR |
-| `rap_cds_creation` | `check_rap_readonly_consumption.py` | BLOCKER | BO'suz salt okunur tüketim view'ında projection/root | CDS-CONSUME |
+| `struct_fields_dtel` | `check_struct_field_dtel_active.py` | BLOCKER | `adt_struct_create` her çağrıda: `fields[]`'ten kurulan (yazılacak) DDL'deki Z/Y ve `/ad-alanı/` DTEL'ler var ve aktif mi; süre bütçesi dolarsa ÖLÇÜLEMEDİ | C-STR-FIELD-02 |
+| `rap_cds_creation` | `check_window_function_compatibility.py` | BLOCKER | window fonksiyonu | C-CDS-WIN-01 |
+| `rap_cds_creation` | `check_deprecated_annotations.py` | WARNING | deprecated annotation | C-CDS-DEPR-01 |
+| `rap_cds_creation` | `check_cds_currency_reference.py` | BLOCKER | CURR/QUAN referansı | C-CDS-CUR-02 |
+| `rap_cds_creation` | `check_rap_readonly_consumption.py` | BLOCKER | BO'suz salt okunur tüketim view'ında projection/root | C-CDS-CONSUME-01 |
 | `rap_cds_creation` | `check_reuse_gate.py` | WARNING | yerel kopya / ortak value-help yeniden kullanımı | `%sap-rap` checklists §A value-help satırı |
 | `rap_cds_creation` | `check_released_objects.py` | WARNING | halefi olan standart tablo | BE-03 |
-| `rap_cds_creation` | `check_standard_table_fields.py` | WARNING | standart alanlar hedef sistemde var mı | CDS-FROM-2 |
+| `rap_cds_creation` | `check_standard_table_fields.py` | WARNING | standart alanlar hedef sistemde var mı | C-CDS-FROM-03 |
 | `rap_bdef_creation` | `check_rap_managed_etag.py` | BLOCKER | managed BO'da `lock master` + `etag master` | `%sap-rap` checklists §B |
 | `rap_bdef_creation` | `check_audit_fields_autofill.py` | WARNING | audit alanları var, doldurma determination'ı yok | BE-11 |
 | `rap_bdef_creation` | `check_bdef_backtick.py` | BLOCKER | BDEF yorumunda ters tırnak | BE-62 |
@@ -114,7 +114,7 @@ Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki
 `struct_post_create` ve `sap_active_check` yazma sonrası kontrollerdir; hangi aracın çağırdığı bu dosyada ölçülmedi.
 
 ## 3. İnceleme satırlarının otomasyon durumu
-Toplam 92 satır (`checklist-*.md`; 2026-10-04 dosyalardan yeniden sayıldı — önceki 89 bayattı, kategoriler toplamı 90'dı).
+Toplam 99 satır (`checklist-*.md`; 2026-10-19 dosyalardan yeniden sayıldı: 92 + BE-82…BE-88).
 
 **Zincirdeki validator satırı tam karşılar (6):** BE-10a · BE-04 · BE-62 · BE-11 · BE-16 · BE-03.
 Önem farkı: BE-04 ve BE-11 zincirde WARNING, incelemede BLOCKER; BE-03 politikaya bağlı.
@@ -122,18 +122,18 @@ Toplam 92 satır (`checklist-*.md`; 2026-10-04 dosyalardan yeniden sayıldı —
 **Kısmi — validator sinyali ya da kısmi kapsam (6):** BE-47 · BE-48 · BE-36 (abaplint `parser_error`) · BE-28 (yalnız (c)) ·
 BE-15 (push içerik geri okuması + alan kaybı) · BE-01 (kapı kaynak taraması + Z/Y önek guardrail'i).
 
-**Kısmi — okuma aracı ya da script, zincirde değil (5):** SR-02 (CLI önceden çekim ister) · BE-12, BE-31, CC-01 (`adt_atc_check`) ·
-CC-03 (`released_successors.py status`).
+**Kısmi — okuma aracı ya da script, zincirde değil (8):** AX-SR-02 (CLI önceden çekim ister) · BE-12, BE-31, BE-85, BE-87, BE-88, AX-CC-01 (`adt_atc_check`) ·
+AX-CC-03 (`released_successors.py status`).
 
-**Otomasyon YOK — elle yürünür (75):**
-- ortak: SR-01 · SR-03 · BE-02 · BE-18 · BE-66 · BE-64 · BE-70 · BE-65
+**Otomasyon YOK — elle yürünür (79):**
+- ortak: AX-SR-01 · AX-SR-03 · BE-02 · BE-18 · BE-66 · BE-64 · BE-70 · BE-65
 - ABAP: BE-10b · BE-55 · BE-57 · BE-22 · BE-23 · BE-51 · BE-29 · BE-30 · BE-35 · BE-40 · BE-41 · BE-46 · BE-44 · BE-50 · BE-52 ·
-  BE-39 · BE-56 · BE-58 · BE-63 · BE-54 · BE-49 · BE-69 · BE-34 · BE-37 · BE-71 · BE-72 · BE-73 · BE-74 · BE-75 ·
-  BE-76 · BE-77 · BE-78 · BE-79 · BE-80 · BE-81
+  BE-39 · BE-56 · BE-58 · BE-63 · BE-54 · BE-49 · BE-69 · BE-34 · BE-37 · BE-71 · BE-72 · BE-83 · BE-73 · BE-74 · BE-75 ·
+  BE-76 · BE-77 · BE-78 · BE-79 · BE-80 · BE-81 · BE-82 · BE-84 · BE-86
 - CDS/DDIC: BE-27 · BE-32 · BE-33 · BE-38 · BE-45 · BE-59 · BE-61 · BE-05 · BE-07 · BE-13 · BE-43
 - RAP: BE-26 · BE-20 · BE-60 · BE-06 · BE-21 · BE-24 · BE-08 · BE-09 · BE-17 · BE-53 · BE-42
-- OData: BE-14 · OD-01 · OD-02 · OD-03 · OD-04 · OD-05
-- clean core: BE-68 · BE-67 · BE-25 · CC-02
+- OData: BE-14 · AX-OD-01 · AX-OD-02 · AX-OD-03 · AX-OD-04 · AX-OD-05
+- clean core: BE-68 · BE-67 · BE-25 · AX-CC-02
 
 Deterministik yakalanabilecek adaylar (açık kalem; kapıya eklemek araç değişikliğidir → kullanıcı onayı):
 BE-26 (handler'da commit deyimleri) · BE-20 (`READ ENTITIES … BY \_assoc` anahtar dışı alan) · BE-61 (CDS `"` yorum, SRVD yorum) ·
@@ -147,6 +147,8 @@ BE-10b (yetim yorum) · BE-55 (satır içi `TABLE OF` parametre) · BE-49 (adlan
 | CDS/SRVD yorum sözdizimi | doğrulayıcıya bağlıydı | yok → BE-61 elle |
 | Paket/obje adlandırma (klasik include türetme dahil) | doğrulayıcıya bağlıydı | yok → BE-49 elle |
 | UI5 freestyle tuzakları, liste ekranı grid standardı | FE listesine bağlıydı | `%sap-ui5-fiori` kapsamı |
+| ABAP Doc yetim yorum ön taraması (BE-10b) | ortak kontrol listesi programı + `class_push` yazma kapısında BLOCKER | yok → BE-10b elle (`checklist-abap.md`) |
+| Push öncesi yerel metni Pretty Printer ile biçimleme (BE-88) | yerel biçimleme yolu; "biçimleyici çıktısı ↔ dosya farkı = 0" ön kanıtı | yok → `adt_pretty_print` canlıdan okur; kanıt push + aktivasyon sonrası ATC `CI_PRETTY_PRINT` = 0 (`%sap-classic-abap` `classes.md` §7.1) |
 
 ## 5. Elle koşum ve okuma
 ```
@@ -172,7 +174,7 @@ Okuma kuralları:
   `offline_downgraded_gates` raporda yazılarak. Gerçek bulgu ve dosyası olmayan gate etkilenmez.
 - `--strict`: WARNING'leri BLOCKER karara çevirir (`cleancore_policy: strict` projede clean core satırları için uygun).
 - `check_released_objects.py` harita yoksa `SKIP` metni ve `status=SKIPPED measured=false` durum satırı basar, çıkış 0 → `run_review` SKIP (WARNING) sayar (2026-09-14; öncesinde durum satırı yoktu, PASS sayılıyordu).
-  Harita durumunu ayrıca `released_successors.py status` ile ölç (CC-03).
+  Harita durumunu ayrıca `released_successors.py status` ile ölç (AX-CC-03).
 - `run_review` `checklist_reference` alanı bugün hep `null`'dır (aXet'te görev → liste eşlemesi boş); inceleme listeleri bu skill'dedir.
 
 ## 6. Kaynak ↔ aXet eşlemesi ve alınmayanlar

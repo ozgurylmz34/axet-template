@@ -14,7 +14,7 @@ description: >
 # SAP kod incelemesi — kontrol listeli bağımsız inceleme
 
 > **Profil:** clean core satırları `ecc`'de uygulanmaz, `s4_public`/`btp_abap`'ta zorunludur, `s4_private`'ta `cleancore_policy`'ye
-> bağlıdır (`references/clean-core.md` §1); profil yeteneği varsayımı SR-03 satırıdır.
+> bağlıdır (`references/clean-core.md` §1); profil yeteneği varsayımı AX-SR-03 satırıdır.
 
 > Genel akış `%code-review`'dadır; bu skill SAP backend'ine özgü parçaları ekler: obje tipi kontrol listeleri
 > (kimlikli satırlar), çevrimdışı kontroller ve inceleyici brifingi.
@@ -73,12 +73,13 @@ Okuma kuralları:
 - "Push'ta zincir yok" satırlarında yazma kapısı hiçbir gate koşmaz; inceleme `run_review`'u elle koşar.
 - `abaplint_run.py` çıkış 0 yalnız her dosya ölçülüp temizse; 3 = ölçülemedi (araç yok, çıktı doğrulanamadı), 4 = kısmi
   ölçüm. abaplint derleme kanıtı değildir.
-- `adt_syntax_check` bir inceleme aracı değildir: yazma sınıfıdır (bekleyen sürümü aktive eder).
+- `adt_syntax_check` salt-okur checkrun'dır (okuma sınıfı; bekleyen sürümü aktive etmez): `valid: null` = ölçülemedi, temiz DEĞİL; ATC/ABAP Unit yerine geçmez.
 - `quality_scorecard.py` **bir kapı DEĞİL, rapordur**: koşan kapıları append-only bir deftere yazar ve tek bir karne
   üretir (`not-run` ayrı sütun · artefaktsız `pass` geçersiz · 0 test ya da dar kapsam `warn` · kaydedilmemiş kapı
   varken hüküm `KISMI`). Hiçbir akışa bloklayıcı olarak bağlanmaz; çıkış kodunu **insan** okur.
 
-Ayrıntı: `references/validator-map.md` (satır ↔ validator, kapsam) · `references/clean-core.md` · `references/abaplint.md` · `references/quality-scorecard.md` (kapı defteri + karne).
+Ayrıntı: `references/validator-map.md` (satır ↔ validator, kapsam) · `references/clean-core.md` (§2.1 seviye × politika) · `references/abaplint.md` · `references/quality-scorecard.md` (kapı defteri + karne) ·
+`references/atc-fix-patterns.md` (ATC bulgusu düzeltme kalıpları, önce okunacak bağlam) · stil (`ÖNERİ` düzeyi): `%sap-dev` `references/clean-abap.md`.
 
 ### 4. Bağımsız inceleyici
 `references/reviewer-brief.md`'deki brifingi doldur → `agent` aracıyla **taze** alt ajan. İlgili kontrol listesi tablolarını ve
@@ -97,8 +98,9 @@ Ayrıntı: `references/validator-map.md` (satır ↔ validator, kapsam) · `refe
 Listede olmayan ve tekrar edebilecek bir tuzak bulunduysa ders yalnız nota ya da hafızaya yazılmaz:
 1. Düzelt (ana oturum).
 2. Çalışan deseni ilgili obje tipi skill'inin referansına yaz.
-3. İlgili `references/checklist-*.md`'ye satır **öner**: sıradaki boş kimlik (backend `BE-82`, OData `OD-06`, clean core `CC-04`,
-   ortak `SR-04`'ten başlar), altı sütun dolu: ne · nasıl · önem · otomasyon · kaynak ders (tarih + kanıt).
+3. İlgili `references/checklist-*.md`'ye satır **öner**: aXet'e özgü yeni madde `AX-<aile>-<nn>` alır; çekirdek ailelerinde
+   (`BE-`, `FE-`, `DOC-*`, `UI-*` …) numara verilmez (sıradaki: backend `AX-BE-01`, OData `AX-OD-06`, clean core `AX-CC-04`,
+   ortak `AX-SR-04`; kök test takımındaki kimlik hizası testi zorlar), altı sütun dolu: ne · nasıl · önem · otomasyon · kaynak ders (tarih + kanıt).
    Otomasyon sütununa yalnız gerçekten var olan validator yazılır (`tests/test_checklists.py` zorlar); yoksa `YOK`.
 4. Deterministik yakalanabiliyorsa validator adayı olarak açık kalem yaz. Yazma kapısına validator eklemek araç
    değişikliğidir → önce kullanıcıya açıkla, onay al.

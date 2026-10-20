@@ -76,7 +76,7 @@ Dokuz adım sırayla yürür; bir adımın çıkış ölçütü tutmadan sonraki
    gereksiz beyaz alan). Bulgu → senaryoyu ya da veriyi düzelt → 5'e dön.
 7. **Yazım.** Kaynak **daima** `docs/KD-….md`'dir (Markdown kanonik); HTML/PDF ve `webapp/help` kopyası adım 8'de
    üretilir, HTML'e elle yama yapılmaz. Markdown'ı olmayan eski bir KD güncellenecekse önce bir kerelik Markdown'a
-   çevrilir. `%sap-fs-ts-docs` → `references/kd-authoring.md` bölüm yapısı + `templates/KD-template.md` iskeleti;
+   çevrilir; önceki KD yalnız kullanıcının bu konuşmada verdiği dosyadan okunur (Rules). `%sap-fs-ts-docs` → `references/kd-authoring.md` bölüm yapısı + `templates/KD-template.md` iskeleti;
    görsel adları `ekranlar.json`'daki `shot` adlarıyla birebir.
    Yazar öz kontrolü: `%sap-fs-ts-docs` → `references/doc-checklist.md` §A.
 8. **Üretim.** `python $D/build_kd_pdf.py <KD.md> <KD.html> --map <eşleme.json> --trim-from <ham klasör> --pdf
@@ -126,4 +126,10 @@ Her script başta **KAPSAM** satırı basar (neye bakıp neye bakmadığı); "0 
 - Bir eşik ya da beklenti (görsel sayısı, assert metni) tutmayınca gevşetilmez; gevşetmek gerekiyorsa gerekçesiyle
   kullanıcıya sorulur ve raporda **ayrı satırda** yazılır. `metadata.xml`'e ya da üretilmiş HTML'e elle yama yapılmaz.
 - "Çekim OK" / "PDF üretildi" mesajı kanıt değildir: her kareye bakılır, HTML/PDF sayılarla doğrulanır, bağımsız okuma yapılır.
+- ⛔ **Önceki KD yalnız kullanıcı verirse okunur.** Kullanıcı bu konuşmada önceki KD'nin dosya yolunu verdiyse
+  ya da "şu KD'yi güncelle" diye adını söylediyse o dosya **diskteki hâliyle** okunur. Diskte yoksa git
+  geçmişinden geri getirilmez (`git show <rev>:<yol>`, `git log -p`, `git checkout <rev> -- <yol>`, `git restore
+  --source`) — kullanıcıya sorulur. Kullanıcı "eski KD'yi kullanma" dediyse hiçbir yolla okunmaz. (Ölçüldü
+  2026-10-03: eski KD dosyaları proje dışına taşınmışken model eski KD'yi git geçmişinden iki kez çıkardı;
+  `tuzaklar.md` T28.)
 - Kurulum, mock verisi ya da senaryo sorunu çözülünce yeni tuzak `references/tuzaklar.md`'ye önerilir (kullanıcı onayıyla).

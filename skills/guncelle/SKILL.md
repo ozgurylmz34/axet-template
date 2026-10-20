@@ -71,6 +71,8 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
    Kapanış `KAPANDI — test borcu var: %testler` dediyse bunu da söyle: koşulmayan takımlar yeşil
    DEĞİLDİR; kullanıcı isterse güncellemeden sonra `%testler` ile koşar (süreyi `%testler` önce söyler).
    `<TMP>` artık gereksizdir; kullanıcıya yolunu söyle, silmesini kendisi seçsin.
+   RAPOR'da ya da sonrasında `doctor` FAIL/WARN satırı görürsen her birini `<KLON>/docs/onboarding.md` §5 "`doctor` bir şey bulursa" üç sınıfına koy
+   (① ONAR · ② KULLANICI · ③ ŞABLON HATASI → `%hata-bildir` taslağı, göndermek kullanıcının) ve sınıfıyla raporla.
 8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md` 16. adım —
    `python "<KLON>/scripts/tarayici_hazirla.py"`. İlk satırı (`TARAYICI: HAZIR|ATLANDI|EKSİK — …`) AYNEN
    aktar. HAZIR değilse de güncelleme **tamamlanmıştır**; eksik kalan o satırda yazar.

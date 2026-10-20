@@ -58,8 +58,8 @@ description: >
 ### 1. Hangi doküman → ne okunur, ne kullanılır
 | İş | Önce oku | Şablon | Script |
 |---|---|---|---|
-| FS yaz / revize et | `references/fs-authoring.md` | `templates/FS-template.md` | `check_fs_no_analysis_log.py` (gövdede analiz günlüğü izi, İlke 2b) |
-| FS'ten TS çıkar / TS gözden geçir | `references/ts-authoring.md` | `templates/TS-template.md` | `gen_field_table.py` (CDS→alan tablosu), `check_fm_signature_doc_sync.py` (FM imzası ↔ doküman, §5.3) |
+| FS yaz / revize et | `references/fs-authoring.md` | `templates/FS-template.md` · mutabakat için ≤ 2 sayfa özet: `templates/FS-summary-template.md` | `check_fs_no_analysis_log.py` (gövdede analiz günlüğü izi, İlke 2b) |
+| FS'ten TS çıkar / TS gözden geçir | `references/ts-authoring.md` | `templates/TS-template.md` · mesaj tabanlı arayüz (EDI vb.): `templates/integration-sheet-template.md` | `gen_field_table.py` (CDS→alan tablosu), `check_fm_signature_doc_sync.py` (FM imzası ↔ doküman, §5.3) |
 | KD yaz | `references/kd-authoring.md` | `templates/KD-template.md` | `capture_kd_screens.js`, `build_kd_pdf.py` |
 | İnceleme (her tip) | `references/doc-checklist.md` | brifing bloğu aynı dosyada §E | `verify_doc_html.py` (yalnız mekanik kısım) |
 | FS↔TS↔KD izlenebilirlik, yeniden yazımda kayıp | `references/traceability.md` | — | `doc_equivalence_check.py` |
@@ -127,14 +127,14 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 | `references/traceability.md` | numaralandırma, dosya adı, teslim biçimi, durum akışı, donmuş kod ve teslim paketi kuralları, izlenebilirlik matrisi, yayılım tablosu, veri kaybı kontrolü, tersine mühendislik |
 | `references/pdf-with-screenshots.md` | bağımlılıklar, temiz ekran görüntüsü, HTML/PDF, doğrulama, Mermaid/Marp, alan tablosu, tuzaklar |
 | `references/live-confirmation-tour.md` | C-1…C-5 ölçüm başlıkları, CLI çağrıları, rapor biçimi |
-| `templates/FS-template.md` · `TS-template.md` · `KD-template.md` | zorunlu bölümleri taşıyan boş iskeletler |
+| `templates/FS-template.md` · `TS-template.md` · `KD-template.md` | zorunlu bölümleri taşıyan boş iskeletler · ek: `FS-summary-template.md` (FS özeti, tam FS'in yerine geçmez) · `integration-sheet-template.md` (tek mesaj akışı: eşleme, otorite, hata/yeniden işleme) |
 | `scripts/build_doc_pdf.py` · `html_to_pdf.js` · `doc_tools.py` | Markdown → HTML (TR slug'lı içindekiler, Mermaid → PNG) → PDF |
 | `scripts/build_kd_pdf.py` | KD: ekran görüntüsü kırpma, yer tutucu blokları görüntüyle değiştirme (eşleme dosyası) **ya da** adım manifestinden Markdown üretme (`--manifest`), uygulama yardım kopyası |
 | `scripts/capture_kd_screens.js` | yapılandırma dosyasıyla adım adım ekran çekimi + model verisi enjeksiyonu (UI5 mock) |
 | `scripts/verify_doc_html.py` | ölü içindekiler bağlantısı, ham Mermaid sızıntısı, görsel sayısı/eksik dosya, PDF bağlantı sayısı |
 | `scripts/doc_equivalence_check.py` | yeniden yazımda veri kaybı (kimlik, mockup, değer, cümle) + kapanmış karar ters yönü |
 | `scripts/check_fs_no_analysis_log.py` | FS gövdesinde analiz günlüğü izi sayımı (sürüm etiketi, inceleme kimliği, süreç ifadesi, kullanıcı alıntısı, önceden→şimdi) + §1.1 satır uzunluğu (DOC-FS-05/06a); uyarıdır, kapı değil |
-| `scripts/check_fm_signature_doc_sync.py` | dokümandaki `<!-- FM-IMZA: <FM> -->` bloğu ↔ FM kaynağındaki imza parametreleri, iki yönde (EKSİK · HAYALET); kaynak kökü `sap-project.json` `source_root` (DOC-TS-08); uyarıdır, kapı değil |
+| `scripts/check_fm_signature_doc_sync.py` | dokümandaki `<!-- FM-IMZA: <FM> -->` bloğu ↔ FM kaynağındaki imza parametreleri, iki yönde (EKSİK · HAYALET); kaynak kökü `sap-project.json` `source_root` (AX-DOC-TS-03); uyarıdır, kapı değil |
 | `scripts/gen_field_table.py` | CDS (+ interface CDS, BDEF, CSV) → alan tablosu |
 | `scripts/program_to_spec.py` | ABAP/CDS kaynağından taslak FS/TS (yalnız kaynakta olan) |
 | `tests/run_tests.py` | çevrimdışı testler (SAP'ye ve tarayıcıya bağlanmaz) |

@@ -36,8 +36,9 @@ from __future__ import annotations
 import re
 from typing import Any
 from urllib.parse import quote
-from xml.sax.saxutils import escape as _xml_escape
 from xml.sax.saxutils import unescape as _xml_unescape
+
+from utils.xml_kacis import attr_escape  # Z194: öznitelik kaçışı tek kaynak
 
 from sapadt import pull_state as _pull_state
 from sapadt._app import profil_tool
@@ -263,7 +264,7 @@ def adt_set_description(name: str, object_type: str, description: str, transport
         return _hata("description_too_long",
                      f"description {len(yeni)} karakter > objenin descriptionTextLimit {sinir_m.group(1)} — yazma yapılmadı. "
                      "Kısaltmak onaylı metni değiştirir; metin sahibine sor.", **temel, http=http)
-    yeni_govde = govde[:m.start(1)] + _xml_escape(yeni, {'"': "&quot;"}) + govde[m.end(1):]
+    yeni_govde = govde[:m.start(1)] + attr_escape(yeni) + govde[m.end(1):]
     _k2, m2 = _kok_aciklama(yeni_govde)
     if m2 is None or _xml_unescape(m2.group(1), {"&quot;": '"', "&apos;": "'"}) != yeni:
         return _hata("envelope_unrecognized", "Öznitelik değişimi doğrulanamadı (beklenmeyen envelope biçimi) — yazma yapılmadı.",

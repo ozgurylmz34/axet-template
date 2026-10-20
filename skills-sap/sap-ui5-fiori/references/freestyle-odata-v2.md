@@ -146,11 +146,35 @@ alanlar **ayrı JSON modelde** (yol anahtarlı) tutulur.
 | C4 | Yazma hedefi **çağıran input'un binding yolundan** türetilir: `oEvt.getSource().getBinding("value").getPath()` | Aynı tipte iki alan (örn. iki muhatap) tek handler'ı paylaşınca sabit hedef hep aynı alana yazar, diğeri boş kalır. Her F4'ten sonra **kendi** alanı doluyor mu ölç |
 | C5 | Değer yazılmıyorsa üç nokta birebir eşleşmeli: (1) Input value binding'i `{model>/path}` + context, (2) `valueHelpRequest` → dialog `confirm` → `setProperty`, (3) aynı model adı + aynı yol. Item şablonu `title/description` VH entity'sinde **olan** property'lere bağlı | Yanlış model adı (`v` ↔ `ui`), mutlak/göreli yol uyumsuzluğu, olmayan property (`getTitle()` boş) |
 | C6 | VH listesi **boş geliyorsa** önce servis: VH entity set'i tüketen servisin `$metadata`'sında **var mı** | Ortak VH yeniden adlandırıldıktan sonra bir tüketici serviste `expose` atlanmıştı; UI kodu doğruydu. Düzeltme backend'de (`%sap-rap`), UI redeploy gerekmez |
-| C7 | **Elle girilen değer VH'de yoksa** reddedilir: `change` handler değeri VH entity'sine karşı doğrular → `setValueState("Error")` + `valueStateText` + veri modelinde `<X>Invalid = true`; save/create bu bayrağı kontrol edip **bloklar**. Geçerli yol (VH'de var / F4 seçimi / boş) → `None` + bayrak temizlenir | Yalnız `valueState`'e güvenilmez (satır/context değişiminde kaybolur) |
+| C7 | **Elle girilen değer VH'de yoksa** reddedilir: `change` handler değeri VH entity'sine karşı doğrular → `setValueState("Error")` + `valueStateText` + veri modelinde `<X>Invalid = true`; save/create bu bayrağı kontrol edip **bloklar**. Geçerli yol = alana değer yazan **her** yol → her birinde `None` + bayrak temizlenir: **kullanıcı yolu** (VH'de var / F4 seçimi / alanı boşaltma / başarılı create) **ve kod yolu** (toplu doldurma, başka alandan türetme, F4 `confirm`'ünün yan alanlara yazması). Kontrol: `<X>Invalid = false` yapan yerler ile o alana değer yazan yerler `rg` ile sayılıp eşlenir; değer yazıp bayrağa dokunmayan yol = ihlal (FE-34) | Yalnız `valueState`'e güvenilmez (satır/context değişiminde kaybolur). Kaynak vakada kod yoluyla geçerli değer yazan üç fonksiyon bayrağı temizlemiyordu ⇒ save kapısı **tamamen geçerli kaydı** blokladı; liste yalnız kullanıcı yollarını sayıyordu |
 | C8 | Alt tanım (ad/açıklama) her VH alanında gösterilir: input + altında `<Text class="zxx001FieldDesc">` | Kod çalışır ama standart eksik |
 
 Rapor/liste **filtre ekranındaki** VH deseni farklıdır (MultiInput + ValueHelpDialog, çoklu değer + aralık) →
 `list-grid-alv.md` §6.
+
+### 3.1 Filtre ekranı: yazılı metin → token (zorunlu, FE-50)
+Kullanıcı değeri F4 açmadan **yazabilmeli** (`1500` + Enter). `MultiInput`'a validator konmazsa yazılan metin token
+olmaz, alanda metin olarak kalır; liste/ara işleyicisi yalnız `getTokens()` okuyorsa bu metin **sessizce yok sayılır**
+⇒ rapor süzgeçsiz, geniş sonuç döner (canlı ölçüm: müşteri alanına yazılan değer `$filter`'a hiç girmedi; zorunlu
+alanda kullanıcı "değer girdim" derken "zorunlu alan" uyarısı aldı). Kaynaktaki kanonik rapor kopyasında validator
+**yoktu** ve ondan türeyen kopyalar aynı kusuru taşıdı — kopyaladığın şablonda `addValidator` + Listele kapısı yoksa eksik say.
+
+Her `MultiInput` için:
+1. `oMI.addValidator(fn)` — Enter / Tab / odak kaybında metin → token. Token VH'nin ürettiği token'la **aynı anlamı**
+   taşır (düz değer · joker · `defaultOp`, `list-grid-alv.md` §6.2 `_parseSearchTerm`); yeni token türü icat edilmez.
+   Çok satırlı yapıştırma (UI5 yerleşik, satır başına token) bozulmaz.
+2. **Kod alanında büyük harf** (domain `LOWERCASE` boş — satış org., müşteri, malzeme …): yazılan değer **ve** VH
+   "Koşulları tanımla" aralık değerleri (`value1`/`value2`) seçim kurucuda `toUpperCase()`. Yoksa küçük harf BE'ye
+   olduğu gibi gider ⇒ HATASIZ boş sonuç. Serbest metin alanında çevrilmez; ayrım `$metadata`/DDIC'ten ölçülür.
+3. **Uzunluk:** `$metadata` `MaxLength`'i aşan terim token olmaz, nedeni söylenir (toast).
+4. **Yazılı koşul işareti** (`!=x`, `<x`, `>x`, `=x`) düz değer token'ı olmaz — kullanıcı VH "Koşulları tanımla"ya yönlendirilir.
+5. **Listele/Ara kapısı:** herhangi bir `MultiInput`'ta `getValue()` boş değilse (token'a dönüşmemiş metin) çağrı
+   YAPILMAZ, alan adını söyleyen hata verilir. Sessiz yok sayma yasaktır.
+6. **VH "Tamam":** alanda kalmış yazılı metin kaybolmaz — geçerliyse token'a dönüşür, tekrarsa eklenmez (tekrar
+   karşılaştırması büyük harfe çevrilmiş değerle; yazılı değeri silmez).
+
+**Ölçüm:** kaynak okuması yetmez (kod ≠ kablolama) — yaz + Enter → token sayısı, ardından Listele'nin ağ izindeki
+`$filter`'ında değer VAR MI; kontrol grubu VH'den seçilen aynı değer. `check_filter_search_pattern.py` bu maddeye bakmaz.
 
 ## 4. Tuzak listesi (T1–T7) ve otomatik yakalananlar
 
@@ -191,7 +215,7 @@ kullanılır (§5.3).
 | Canlı Edm tipi | Gönderilen |
 |---|---|
 | `Edm.Boolean` | `true`/`false` (`'X'`/`''` değil → `Failed to read property '<X>' at offset N`) |
-| `Edm.DateTime` / `DateTimeOffset` | `Date` nesnesi. `DatePicker value="{…}" valueFormat="yyyy-MM-dd"` modeli **string** tutar → payload'da `new Date(Date.UTC(y, m - 1, d))` (saat dilimi kaymasına karşı UTC parçaları). `DatePicker dateValue="{…}"` **yerel** gece yarısı verir: tarih-yalnız alanda (`sap:display-format="Date"`) payload'dan önce seçilen takvim gününün UTC gece yarısına çevrilir (`checklists.md` FE-44) |
+| `Edm.DateTime` / `DateTimeOffset` | `Date` nesnesi. `DatePicker value="{…}" valueFormat="yyyy-MM-dd"` modeli **string** tutar → payload'da `new Date(Date.UTC(y, m - 1, d))` (saat dilimi kaymasına karşı UTC parçaları). `DatePicker dateValue="{…}"` **yerel** gece yarısı verir: tarih-yalnız alanda (`sap:display-format="Date"`) payload'dan önce seçilen takvim gününün UTC gece yarısına çevrilir (`checklists.md` FE-45) |
 | `Edm.Decimal` | model değeri ne ise; decimal'in backend'de string'e çevrilmesi `%sap-odata-backend` → `references/serialization.md` §1 |
 | boş tarih | `null` |
 
@@ -220,6 +244,11 @@ onNumericLiveChange: function (oEvent) {
 QUAN alanı `"14.000"` gelir; `<Text text="{v>Qty} {v>Unit}"/>` düz birleştirme `14.000 ADT` basar. Grid hücresi
 formatter'lıyken detay paneli ham kalabiliyor (kopyalarken atlanıyor). Her miktar `Text`/`Label` binding'i formatter
 kullanır: `{ parts: ['v>Qty', 'v>Unit'], formatter: '.formatter.qty' }` (sondaki sıfırları kırpan; `String(Math.round(q * 1000) / 1000)`).
+Başka bir formatter ya da tip kullanılırsa şart **yerel ayardan bağımsızlıktır**: girdi her zaman `.` ondalık ayraçlı ham
+dizedir (`"14.000"`); Türkçe yerel ayarda (`,` ondalık · `.` binlik) ekranda `"14.000"` → **14** ve `"0.000"` → **0**
+görünmeli. ⛔ `type: 'sap.ui.model.type.Float'` + `source: { decimalSeparator: '.' }` bu şartı **karşılamaz** (kaynakta
+ölçüldü, TR yerel ayar: `"14.000"` → 14000, `"0.000"` → boş). Tetik: miktar gösteren her yeni binding ve bir paneli
+başka panelden kopyalarken. Kanıt: TR yerel ayarla açılan ekranda bu iki değerin görünen çıktısı (FE-35).
 
 ### 5.6 İki koleksiyonu anahtarla birleştirirken sıfır dolgusu
 OData entity okuması conversion exit uygular (`OrderItem = "10"`), ham CDS/RAP façade uygulamayabilir (`"000010"`).
@@ -230,6 +259,15 @@ var keyOf = function (no, it) { var n = parseInt(it, 10); return no + "|" + (isN
 Aynı tuzak VBELN/POSNR/MATNR gibi her dolgulu alanda. Tespit statik analizle yapılamadı; runtime'da iki tarafın
 anahtarları model API'siyle okunup karşılaştırıldı (`runtime-verification.md` §4). Backend tarafı:
 `%sap-odata-backend` → `references/serialization.md` §3.
+
+### 5.7 Boş `Edm.Decimal` `null` değil `"0.000"` gelir (FE-52)
+ABAP'ta paketli sayının "boş" hâli yoktur, ilk değeri 0'dır; ABAP tabanlı V2 servis boş bırakılmış decimal alanı
+`"0.000"` diye serileştirir (canlı yanıtta ölçüldü). "Boş" kararını değere bağlayan formatter/koşul (`=== null`,
+`== null`, `!değer`) canlıda boş görünmesi gereken satırda `0,00` basar. Kaynak vakada taklit BE `null` gönderdiği için
+duman testi **sahte yeşildi**. Doğrusu: boşluk BE'nin açık verdiği bir durum alanından/bayraktan türetilir (ör. "bu durumda
+fark hesaplanmaz"). Mock verisi ve duman testi taklidi BE'nin **gerçek** yanıt şeklini taşır: alan değerleri canlı
+`$metadata`'dan ve canlıdan kaydedilmiş bir yanıt örneğinden alınır (§5.3, FE-28). Kanıt: canlı yanıtta alanın ham
+değeri = mock'taki değer.
 
 ## 6. Kullanıcı geri bildirimi ve hata metni
 
@@ -329,7 +367,7 @@ havuzu paylaşılır ama metadata havuzu paylaşılmaz; kanıt AĞ İZİNDEN (ik
 (bayt değil — bayt sabitini doğrudan vermek sınırı 1024² kat gevşetir) ve değer **falsy** ise (çözülmeyen binding,
 `null`, `0`) kontrol **sessizce atlanır**; sınırı birim dönüşümüyle ver ve değerin dolu geldiğini ölç.
 
-Denetim: `checklists.md` **FE-46** (414) / **FE-47** (`metadataUrlParams`).
+Denetim: `checklists.md` **FE-42** (414) / **FE-43** (`metadataUrlParams`) / **FE-44** (istemci boyut kapısı).
 
 ### 7.4 Elle kurulan istek `sap-client` TAŞIMAZ — ana modelin istemci parametrelerini devret
 
@@ -370,7 +408,7 @@ _secondModelUrl: function (sBaseUrl, oMain) {
 - `aUrlParams` UI5'in iç alanıdır (lint `sap-no-ui5base-prop` uyarır) — bilinçli istisna: public karşılığı yok;
   `Array.isArray` koruması alan kaybolursa eski davranışa (çereze) düşer, patlamaz.
 - Ham istek URL'i: `oMain.sServiceUrl + "/<Yol>?" + <kendi sorgun> + "&" + params.join("&")`.
-- `metadataUrlParams` devri (§7.3, FE-47) **ayrıca** gerekir — biri öbürünün yerine geçmez.
+- `metadataUrlParams` devri (§7.3, FE-43) **ayrıca** gerekir — biri öbürünün yerine geçmez.
 
 **Doğrulama (kaynak okuması YETMEZ — ağ izi + ayırıcı veri):** aynı tarayıcıda iki client'lı iki sekme aç: önce A,
 sonra B, sonra A'da elle kurulan modeli/isteği tetikle. İstek URL'inde `sap-client=<A>` ve dönen veri A'nın verisi
@@ -380,7 +418,7 @@ yerel `webapp/` dosyaları servis edilerek aynı ölçüm koşulabilir (Playwrig
 
 **Kardeş taraması ZORUNLU:** `new ODataModel(`, `new XMLHttpRequest`, `fetch(` ve `sServiceUrl +` geçen **her**
 satır — tek util çoğu kez birebir kopyalarla birden çok uygulamada yaşar (ölçülen vakada 14 kopya). Denetim:
-`checklists.md` **FE-48** · UI-BOOT-06. Sayfadan ayrılırken gönderilen istek (belge kilidi bırakma) ayrıca §7.5 /
+`checklists.md` **FE-48** · UI-BOOT-05. Sayfadan ayrılırken gönderilen istek (belge kilidi bırakma) ayrıca §7.5 /
 **FE-49**'a tabidir.
 
 ### 7.5 Sayfadan ayrılırken senkron XHR GİTMEZ — `fetch` + `keepalive`
@@ -406,7 +444,7 @@ fetch(oModel.sServiceUrl + "/ReleaseLock?<KeyParam>=" + encodeURIComponent("'" +
   belgeye tekrar bırakma gider ve kullanıcının **başka sekmede** tuttuğu kilidi düşürür (backend bırakma
   `locked_by = sy-uname` kaydını siler). Kilit sözleşmesinin tamamı: `%sap-rap` → `draft-and-locks.md` §6.
 
-Denetim: `checklists.md` **FE-49** · UI-SAVE-06.
+Denetim: `checklists.md` **FE-49** · UI-SAVE-05.
 
 ## 8. Canlı `$metadata` ile statik çapraz kontrol
 
@@ -461,7 +499,7 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/check_ui_odata_refs.py --app 
 Varsayılan `useBatch:false`: her işlem anında gider, **changeset yoktur → kısmi başarı mümkündür** (S10). `useBatch:true`
 seçilen akışta deferred group + tek `submitChanges`, sonuç `oData.__batchResponses` içinde her işlem için ayrı kontrol
 edilir (≥ 400 olan var mı). İki mod aynı ekranda karıştırılmaz. **Tek istisna:** dosya/base64/uzun metin taşıyan
-function import — `manifest.json` değişmez, o çağrı için ayrı bir `useBatch:true` model açılır (§7.3, FE-46).
+function import — `manifest.json` değişmez, o çağrı için ayrı bir `useBatch:true` model açılır (§7.3, FE-42).
 
 ---
 
@@ -480,3 +518,5 @@ function import — `manifest.json` değişmez, o çağrı için ayrı bir `useB
 - §7.4 (elle kurulan istek `sap-client`) ve §7.5 (sayfadan ayrılırken senkron XHR) kaynakta standart + playbook +
   kontrol listesine dağılmıştı; burada tek yerde. §7.3 örneği kaynakta da aynı `sap-client` kusurunu taşıyordu,
   kaynak düzeltmesiyle birlikte düzeltildi. Müşteri client numaraları ve kayıt sayıları çıkarıldı.
+- §3.1 (yazılı metin → token) kaynakta kodlama standardı + playbook + kontrol listesine dağılmıştı; kaynaktaki kanonik
+  rapor uygulamasının adı ve yolu çıkarıldı (o kopyada validator yoktu). §5.7 kaynak kontrol listesi satırından.

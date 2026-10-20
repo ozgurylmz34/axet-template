@@ -108,6 +108,14 @@ Servis kontrolleri (sırayla):
   döndürür — ekranda biçim farkı görülürse değeri string'e çevir). Araç, `MaxLength`'e sığmadığı için kestiği
   değer yardımı / yabancı anahtar değerlerini raporda **KESİLEN** satırında `Set.Alan` olarak listeler — o alanları
   elle gözden geçir.
+- **Yanıt şekli backend'i izler, yalnız veri değil:** veri temiz olsa bile mock'un **yanıt şekli** gerçek arka ucu
+  izlemezse kılavuz sistemin hiç üretmediği bir ekranı belgeler. Ekip dersi (2026-10-01/02, iki ayrı KD, aynı sınıf;
+  her vaka bağımsız incelemede yakalandı): sabit başarı dönen kaydet mock'u (gerçek arka uç hata kalınca hata penceresi
+  açar) · ön kontrolün hiç üretmediği satırlar · mock'ta eksik mesaj → boş açıklama · tek satır sanılan, mesaj başına
+  çok satırlı sonuç · ters kayıtta takas edilmiş kaynak/hedef · arka ucun BÜYÜK HARF bastığı durum adı mock'ta normal
+  yazımla. Mock'u kurarken her eylem için arka uç metodunu oku: dönen mesajların **sırası, tipi, sayısı**, başarısız dal,
+  metin kaynağı (mesaj sınıfı / domain metni — canlıdan birebir). Mock'ta görünen her satır için "arka uç bunu üretir
+  mi?" diye sor; üretmediği satır uydurmadır. Kontrol: `gorsel-kontrol.md` G14.
 - Davranış değiştirmek gerekiyorsa aynı adla `.js` dosyası (MockserverAPI). V2'de entity set'e bağlı function import
   o set'in dosyasında `executeAction` olarak yazılır (DefiningMockdata). KD için çoğunlukla gerekmez — dolu durumu
   model verisi enjeksiyonuyla kurmak daha az iştir (`tuzaklar.md` T17).

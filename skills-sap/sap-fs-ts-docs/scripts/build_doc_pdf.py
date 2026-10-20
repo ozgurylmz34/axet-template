@@ -2,14 +2,20 @@
 """Genel doküman derleyici: Markdown → tek dosya HTML (Mermaid → PNG, figür sarma, TR slug'lı içindekiler, A4 CSS) → PDF.
 
 Kullanım:
-    python build_doc_pdf.py <girdi.md> <cikti.html> ["Başlık"] [--also parca2.md ...] [--prefix <ad>] [--pdf] [--pdf-out <yol>]
+    python build_doc_pdf.py <girdi.md> <cikti.html> ["Başlık"] [--also parca2.md ...] [--prefix <ad>]
+                            [--pdf] [--pdf-out <yol>] [--sayfa-no] [--yer-imi]
 
-  --also   : ek Markdown parçaları sırayla birleştirilir (beş parçalı TS gibi).
-  --prefix : Mermaid PNG ön eki; verilmezse çıktı adındaki doküman kimliğinden türetilir.
-  --pdf    : HTML'den sonra `html_to_pdf.js` ile PDF üretir.
+  --also     : ek Markdown parçaları sırayla birleştirilir (beş parçalı TS gibi).
+  --prefix   : Mermaid PNG ön eki; verilmezse çıktı adındaki doküman kimliğinden türetilir.
+  --pdf      : HTML'den sonra `html_to_pdf.js` ile PDF üretir.
+  --sayfa-no : (isteğe bağlı, yalnız --pdf/--pdf-out ile) her sayfanın altına "Sayfa X / Y". Alt boşluk belgeden
+               ölçülür; yetmiyor ya da ölçülemiyorsa PDF yazılmaz, çıkış 2 (DURDU).
+  --yer-imi  : (isteğe bağlı, yalnız --pdf/--pdf-out ile) başlıklardan PDF yer imleri; yer imi sayısı PDF'ten okunur.
+  Bayraksız PDF eskisiyle aynıdır. Daha önce teslim edilmiş bir dokümanın yeniden üretiminde bayrak eklemek PDF'i
+  değiştirir (sayfa sayısı değişmez, altbilgi/yer imi eklenir).
 
 Görseller HTML'in yanındaki `screenshots/` klasöründen göreli yolla okunur.
-Çıkış: 0 başarılı · 2 eksik bağımlılık / okunamayan girdi · 1 PDF üretim hatası.
+Çıkış: 0 başarılı · 2 eksik bağımlılık / okunamayan girdi / kullanım hatası / --sayfa-no DURDU · 1 PDF üretim hatası.
 """
 import argparse
 import html as _html
@@ -143,14 +149,24 @@ def build(md_path, html_path, title=None, diagram_prefix_value=None, also=None):
     return counts
 
 
-def to_pdf(html_path, pdf_path=None):
-    """HTML → PDF (`node html_to_pdf.js`, bu script'in komşusu). Döner: çıkış kodu."""
+PDF_BAYRAKLARI = ("--sayfa-no", "--yer-imi")   # html_to_pdf.js'in BILINEN_BAYRAK kümesiyle aynı
+
+
+def to_pdf(html_path, pdf_path=None, bayraklar=()):
+    """HTML → PDF (`node html_to_pdf.js`, bu script'in komşusu). Döner: çıkış kodu.
+
+    `bayraklar`: PDF_BAYRAKLARI alt kümesi; boşsa komut satırı eskisiyle AYNIDIR."""
+    bilinmeyen = [b for b in bayraklar if b not in PDF_BAYRAKLARI]
+    if bilinmeyen:
+        print("HATA: bilinmeyen PDF bayrağı: %s (bilinen: %s)" % (" ".join(bilinmeyen), " ".join(PDF_BAYRAKLARI)),
+              file=sys.stderr)
+        return 2
     pdfjs = os.path.join(os.path.dirname(os.path.abspath(__file__)), "html_to_pdf.js")
     if not shutil.which("node"):
         print("HATA: node bulunamadı; PDF üretilemedi. Node.js kurulmalı.", file=sys.stderr)
         return 2
     pdf_path = pdf_path or (html_path[:-5] + ".pdf" if html_path.endswith(".html") else html_path + ".pdf")
-    r = subprocess.run(["node", pdfjs, os.path.abspath(html_path), os.path.abspath(pdf_path)],
+    r = subprocess.run(["node", pdfjs, os.path.abspath(html_path), os.path.abspath(pdf_path)] + list(bayraklar),
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     out = (r.stdout or "").strip()
     err = (r.stderr or "").strip()
@@ -158,6 +174,10 @@ def to_pdf(html_path, pdf_path=None):
         print(out)
     if r.returncode != 0:
         print(err or "PDF üretimi başarısız", file=sys.stderr)
+    elif err:
+        # Çıkış 0'da da stderr'e UYARI düşebilir (ör. --yer-imi üretim sonrası denetimi). Eski biçim onu yalnız
+        # hata durumunda basıyor, başarıda YUTUYORDU.
+        print(err, file=sys.stderr)
     return r.returncode
 
 
@@ -170,12 +190,23 @@ def main(argv):
     ap.add_argument("--prefix", default=None)
     ap.add_argument("--pdf", action="store_true")
     ap.add_argument("--pdf-out", default=None)
+    ap.add_argument("--sayfa-no", action="store_true", help="PDF altbilgisine 'Sayfa X / Y' (yalnız --pdf ile)")
+    ap.add_argument("--yer-imi", action="store_true", help="başlıklardan PDF yer imleri (yalnız --pdf ile)")
     a = ap.parse_args(argv)
+    bayraklar = pdf_bayraklari(a)
+    if bayraklar and not (a.pdf or a.pdf_out):
+        print("HATA: %s yalnız --pdf / --pdf-out ile anlamlıdır" % " ".join(bayraklar), file=sys.stderr)
+        return 2
     print(SCOPE)
     build(a.md, a.html, a.title, a.prefix, a.also)
     if a.pdf or a.pdf_out:
-        return to_pdf(a.html, a.pdf_out)
+        return to_pdf(a.html, a.pdf_out, bayraklar)
     return 0
+
+
+def pdf_bayraklari(a):
+    """argparse sonucundan html_to_pdf.js bayrakları (build_kd_pdf de kullanır)."""
+    return tuple(b for b, acik in (("--sayfa-no", a.sayfa_no), ("--yer-imi", a.yer_imi)) if acik)
 
 
 if __name__ == "__main__":

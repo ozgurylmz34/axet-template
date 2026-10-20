@@ -1491,6 +1491,62 @@ def check_ps_politika(windows: bool | None = None, okuyucu=None, which=None) -> 
                     + (f": {', '.join(shimler)}" if shimler else "") + f") PowerShell'de çalışır ({PS_KAPSAM})")
 
 
+YORUMLAYICI_ETIKETI = "skill yorumlayıcısı (`python`)"
+_YORUMLAYICI_ISARET = "AXET-YORUMLAYICI-OK"
+# `%guncelle` bütünlük turunda doctor adımının bütçesi 45 sn (`guncelle.BUTUNLUK_ADIM_SN`); tek yoklama onu
+# yiyemez. Başlamayan yorumlayıcı (Store yönlendiricisi) zaten saniyesinde döner — 10 sn bol.
+_YORUMLAYICI_SN = 10
+_YORUMLAYICI_KAPSAM = ("KAPSAM: skill komutlarının çağırdığı `python`, doctor sürecinin PATH'iyle çözüldü — aXet "
+                       "kabuğunun (bash aracı) PATH'i ayrıca ÖLÇÜLMEDİ; FAIL üretmez")
+_YORUMLAYICI_DUZELTME = ("aXet-Kur.cmd'ye tekrar çift tıkla (gerçek Python'u kullanıcı PATH'inin başına ekler), "
+                         "sonra yeni pencere / yeni aXet oturumu aç")
+
+
+def _yorumlayici_kos(yol: str) -> tuple[int, str]:
+    try:
+        r = subprocess.run([yol, "-c", f"import sys; print('{_YORUMLAYICI_ISARET}', *sys.version_info[:3])"],
+                           capture_output=True, text=True, timeout=_YORUMLAYICI_SN, stdin=subprocess.DEVNULL)
+        return r.returncode, (r.stdout or "") + (r.stderr or "")
+    except Exception as exc:  # noqa: BLE001 — ölçüm hatası: satır ÖLÇÜLEMEDİ/başlamıyor olur, doctor çökmez
+        return -1, f"{type(exc).__name__}: {exc}"
+
+
+def check_yorumlayici(which=None, kos=None, kendi: str | None = None) -> None:
+    """Z205 (kaynak ekip çekirdeğindeki doctor yorumlayıcı satırının uyarlaması): doctor'u koşan yorumlayıcı ile
+    skill komutlarının çağırdığı PATH'teki `python` AYRIŞABİLİR — Windows'ta
+    `%LOCALAPPDATA%/Microsoft/WindowsApps/python.exe` Microsoft Store yönlendiricisidir; PATH'te öndeyse `python …`
+    komutları başlamaz, oysa doctor'un kendi `python:` satırı PASS der.
+    Tek satır, WARN-only (yeni kapı değil); ölçülemeyen durum temiz sayılmaz. `which`/`kos`/`kendi` enjekte edilir."""
+    bul = which or shutil.which
+    calistir = kos or _yorumlayici_kos
+    kendi = kendi or sys.executable
+    asgari = ".".join(map(str, inst.PY_ASGARI))
+    yol = bul("python")
+    if not yol:
+        add("WARN", f"{YORUMLAYICI_ETIKETI} PATH'te YOK — skill komutları (`python …`) başlamaz; doctor şununla koştu: "
+                    f"{kendi} → {_YORUMLAYICI_DUZELTME} ({_YORUMLAYICI_KAPSAM})")
+        return
+    rc, out = calistir(yol)
+    m = re.search(rf"^{_YORUMLAYICI_ISARET} (\d+) (\d+) (\d+)\s*$", out, re.M)
+    if rc != 0 or not m:
+        son = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "çıktı yok")
+        ipucu = (" — Microsoft Store YÖNLENDİRİCİSİ (WindowsApps): Ayarlar > Uygulamalar > Gelişmiş uygulama ayarları > "
+                 "Uygulama yürütme diğer adları'ndan `python.exe`'yi kapat ya da " if "windowsapps" in yol.lower()
+                 else " → ")
+        add("WARN", f"{YORUMLAYICI_ETIKETI} {yol} BAŞLAMIYOR (rc={rc}: {son[:90]!r}){ipucu}{_YORUMLAYICI_DUZELTME} "
+                    f"({_YORUMLAYICI_KAPSAM})")
+        return
+    surum = tuple(int(x) for x in m.groups())
+    s = ".".join(map(str, surum))
+    farkli = ("" if os.path.normcase(os.path.realpath(yol)) == os.path.normcase(os.path.realpath(kendi))
+              else f"; doctor'un kendi yorumlayıcısından FARKLI: {kendi}")
+    if surum[:2] < tuple(inst.PY_ASGARI):
+        add("WARN", f"{YORUMLAYICI_ETIKETI} {yol} Python {s} < {asgari}{farkli} → {_YORUMLAYICI_DUZELTME} "
+                    f"({_YORUMLAYICI_KAPSAM})")
+    else:
+        add("PASS", f"{YORUMLAYICI_ETIKETI} {yol} çalışıyor (Python {s} ≥ {asgari}){farkli} ({_YORUMLAYICI_KAPSAM})")
+
+
 def check_live(sap: bool, cwd: Path) -> None:
     exe = shutil.which("axet-code")
     if not exe:
@@ -1558,6 +1614,7 @@ def main() -> int:
         check_baglam_boyutu(cwd)
         for name, info, ok in inst.check_env():
             add("INFO" if ok is None else ("PASS" if ok else "WARN"), f"{name}: {info}")  # None = isteğe bağlı araç yok
+        check_yorumlayici()
         check_ps_politika()
         check_git_kimlik(cwd)
         check_paketler(sap or (cwd / "sap-project.json").exists())
@@ -1579,6 +1636,8 @@ def main() -> int:
               "SAP Python paketleri yalnız ZORUNLU liste (install.ZORUNLU_PAKETLER) için ve yalnız bu yorumlayıcıda "
               "import edilerek ölçülür — sürüm alt sınırı ve isteğe bağlı skill paketleri (python-docx/pptx, openpyxl, "
               "markdown, Pillow) denetlenmez · "
+              "skill yorumlayıcısı (`python`) yalnız doctor sürecinin PATH'iyle çözülür — aXet kabuğunun PATH'i "
+              "ölçülmez · "
               "PowerShell yürütme politikası yalnız Windows PowerShell 5.1 kayıt defterinden okunur (pwsh 7 ve süreç "
               "kapsamı ölçülmez) ve CLI PowerShell'de fiilen çalıştırılmaz (yalnız .ps1 shim'inin varlığı) · "
               "AGENTS.md SAP satırında yalnız anahtar taşıyan `- SAP` satırlarının profil/master_language'i (FAIL) ile "

@@ -145,6 +145,9 @@ def build_map(source: object) -> tuple[dict, dict]:
         stats['alinan'] += 1
     if records and stats['gecersiz_kayit'] == len(records):
         raise DataError('kaynaktaki kayıtların hiçbiri nesne değil')
+    # Bölüm içi anahtar sırası kaynak dosyanın kayıt sırasına bağlı kalmasın: aynı içerik → aynı dosya (diff'te
+    # yalnız gerçek değişiklik görünür). Ekip çekirdeğindeki yenileme script'i de bölümleri ada göre sıralar.
+    sections = {s: dict(sorted(sections[s].items())) for s in SECTIONS}
     return sections, stats
 
 

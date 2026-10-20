@@ -5,10 +5,10 @@ istenirse uygulama içi yardım kopyasını günceller.
 İki girdi biçimi vardır; biri verilir, ikisi birden değil:
     A) elle yazılmış Markdown + eşleme dosyası
        python build_kd_pdf.py <KD.md> <KD.html> --map eslesme.json [--title "Başlık"] [--trim-from <ham_klasör>]
-                              [--write-clean] [--help-dir <app>/webapp/help] [--pdf]
+                              [--write-clean] [--help-dir <app>/webapp/help] [--pdf [--sayfa-no] [--yer-imi]]
     B) makine üretimi manifest (Markdown elle yazılmaz)
        python build_kd_pdf.py <KD.html> --manifest kilavuz.json [--write-md <KD.md>] [--title ...]
-                              [--trim-from <ham_klasör>] [--help-dir ...] [--pdf]
+                              [--trim-from <ham_klasör>] [--help-dir ...] [--pdf [--sayfa-no] [--yer-imi]]
 
 Eşleme dosyası:
     {
@@ -41,7 +41,11 @@ Manifest dosyası (biçim B, `--manifest`):
   · Görsel adları `capture_kd_screens.js` yapılandırmasındaki `{"do":"shot","name":...}` adlarıyla
     aynı yazılır — bu eşliği araç ÖLÇMEZ (iki dosya birbirinden bağımsız yazılır).
 
-Çıkış: 0 başarılı · 1 eşleşmeyen anahtar / eksik görsel / PDF hatası · 2 eksik bağımlılık ya da okunamayan girdi.
+--sayfa-no / --yer-imi: yalnız --pdf ile; `build_doc_pdf.py` ile aynı anlam (sayfa numarası altbilgisi · başlıklardan
+PDF yer imi). Bayraksız PDF eskisiyle aynıdır.
+
+Çıkış: 0 başarılı · 1 eşleşmeyen anahtar / eksik görsel / PDF hatası · 2 eksik bağımlılık ya da okunamayan girdi
+(--sayfa-no DURDU da 2'dir: alt boşluk altbilgiye yetmiyor ya da ölçülemiyor).
 """
 import argparse
 import json
@@ -210,8 +214,14 @@ def main(argv):
     ap.add_argument("--write-clean", action="store_true")
     ap.add_argument("--help-dir", default=None)
     ap.add_argument("--pdf", action="store_true")
+    ap.add_argument("--sayfa-no", action="store_true", help="PDF altbilgisine 'Sayfa X / Y' (yalnız --pdf ile)")
+    ap.add_argument("--yer-imi", action="store_true", help="başlıklardan PDF yer imleri (yalnız --pdf ile)")
     a = ap.parse_args(argv)
     print(SCOPE)
+    pdf_bayrak = build_doc_pdf.pdf_bayraklari(a)
+    if pdf_bayrak and not a.pdf:
+        print("HATA: %s yalnız --pdf ile anlamlıdır" % " ".join(pdf_bayrak), file=sys.stderr)
+        return 2
 
     # Girdi biçimi TEK olur: ikisi birlikte verilirse hangisinin kazandığı sessizce belirlenmez.
     if a.manifest and (a.md or a.map):
@@ -298,7 +308,7 @@ def main(argv):
         print("BULGU: görsel dosyası yok: screenshots/%s" % img)
         rc = 1
     if a.pdf:
-        prc = build_doc_pdf.to_pdf(a.html)
+        prc = build_doc_pdf.to_pdf(a.html, bayraklar=pdf_bayrak)
         rc = prc if prc == 2 else (rc or prc)
     return rc
 

@@ -10,7 +10,8 @@ aXet'te iki katmanda ölçüldü:
 
 Bu testler GERÇEK kod yolunu (gerçek `_build_session` + `requests` + `urllib3`) yerel bir sahte
 HTTP sunucusuna (127.0.0.1) karşı koşar ve sunucuya ULAŞAN POST'ları sayar. SAP'ye bağlanmaz.
-Kalibrasyon: aynı sunucuda classrun DIŞI bir yol 504'te hâlâ 4 POST alır (sayaç tekrarı görebiliyor).
+Kalibrasyon: aynı sunucuda okuma amaçlı POST yolu (checkruns) 504'te hâlâ 4 POST alır (sayaç tekrarı
+görebiliyor); Z207'den beri yan etkili yol (activation) 1 POST alır.
 """
 from __future__ import annotations
 
@@ -240,20 +241,25 @@ class ClassrunTekPost(unittest.TestCase):
         ok = "K-28" in bolumler and kh_ok is None
         self.kaydet("işaret → known_errors_hint K-28 · 200 → ipucu yok", "K-28", [bolumler, kh_ok], ok)
 
-    # Kalibrasyon (doğru-pozitif): classrun DIŞI yol eski adapter'da — 504 → 4 POST -----------
+    # Kalibrasyon (doğru-pozitif): okuma amaçlı POST yolu — 504 → 4 POST (sayaç tekrarı görür) ----
+    # Z207 (2026-10-19): genel adapter artık POST'u tekrarlamaz; tekrar gören yol okuma-POST izinli
+    # listesindeki checkruns'tır. Yan etkili activation 1 POST alır (genel kural; ayrıntı
+    # `test_yan_etkili_tekrar.py`).
     def test_classrun_disi_yol_kalibrasyon_adapter_degismedi(self):
-        yol = "/sap/bc/adt/activation"
-        self.sunucu.plan[yol] = [(504, "gw")]
-        try:
-            self.adt.session.post(self.sunucu.url + yol, timeout=5)
-            sonuc = "yanit"
-        except requests.exceptions.RetryError:
-            sonuc = "RetryError"
-        time.sleep(0.05)
-        n = self.sunucu.sayac.get(yol, 0)
-        ok = n == 4 and sonuc == "RetryError"
-        self.kaydet("kalibrasyon: classrun dışı yol 504 → 4 POST (push/activate davranışı aynı)",
-                    "4 POST", [n, sonuc], ok)
+        def _post(yol):
+            self.sunucu.plan[yol] = [(504, "gw")]
+            try:
+                self.adt.session.post(self.sunucu.url + yol, timeout=5)
+                sonuc = "yanit"
+            except requests.exceptions.RetryError:
+                sonuc = "RetryError"
+            time.sleep(0.05)
+            return self.sunucu.sayac.get(yol, 0), sonuc
+        okuma = _post("/sap/bc/adt/checkruns")
+        aktivasyon = _post("/sap/bc/adt/activation")
+        ok = okuma == (4, "RetryError") and aktivasyon == (1, "yanit")
+        self.kaydet("kalibrasyon: okuma-POST 504 → 4 POST · activation 504 → 1 POST (Z207)",
+                    "4 / 1 POST", [okuma, aktivasyon], ok)
 
 
 if __name__ == "__main__":

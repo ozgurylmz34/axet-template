@@ -121,6 +121,7 @@ description: >
 | `references/forms-f1-help.md` | Adobe Forms iş bölümü + driver + kontrol listesi, Yol D özeti; F1/SE61 ITF standardı ve üretimi |
 | `references/checklists.md` | klasik dialog programı ön kontrol listesi (5 faz) |
 | `references/known-errors-classic.md` | belirti → dosya/bölüm indeksi |
+| `%sap-dev` → `references/clean-abap.md` | ABAP stili (yalnız yeni/değişen satır): Clean ABAP + OO alt kümesi, CLN-nn / OO-n; kapı değil, incelemede `ÖNERİ`; bu skill'in kuralları (ALV satır içi, include yapısı) önceliklidir — ayıklananlar §1 |
 | `references/screen-gen-kit.md` | ekran üreteci kiti: 16 parametre, `EV_RC` bantları + `nav_remap=ON` sinyali, dört şablonun üreteç çağrıları, hangi şablondan başla, kite özgü tuzaklar, kaynaktan fark |
 | `templates/classic-alv-list.prog.abap` | ALV liste programı **iskeleti** (tek gövde gösterir; gerçek programda include'lara bölünür) |
 | `templates/classic-dynpro-dialog.prog.abap` | tek kayıtlık modal diyalog ekranı şablonu |
@@ -133,7 +134,7 @@ description: >
   Tip playbook'u eksik görünüyorsa "yapılamaz" deme: paketteki çalışan `.abap` kaynaklarını ve benzer Z objeyi oku.
 - Klasik program **tek gövde yazılmaz**; ALV kurulumu **programda satır içi**, ortak ALV sınıfı yaratılmaz.
 - Yeniden kullanılacak araç objesine (FM, grup, sınıf) ilk kullanan programın adı verilmez; ad aracın amacını yansıtır — yaratmadan önce sor.
-- `adt_classrun` ve `adt_syntax_check` **yazma sınıfıdır**. Diyalog bağlamı isteyen FM'ler classrun ile koşmaz.
+- `adt_classrun` **yazma sınıfıdır**; `adt_syntax_check` salt-okur checkrun'dır (okuma sınıfı). Diyalog bağlamı isteyen FM'ler classrun ile koşmaz.
 - Standart programlar (ör. CUA donörü) yalnız **okunur**; standart program/status/ekran/exit yazılmaz (yasak A).
   Ekran/status üreteci hedef adı Z/Y olmalı; korumayı var olmayan bir adla dene.
 - ATC: proje `AGENTS.md` politikası geçerli; yoksa öncelik 1 bulgular zorunlu düzeltilir, öncelik 2/3 kullanıcıya gösterilip

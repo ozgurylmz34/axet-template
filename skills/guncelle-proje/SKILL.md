@@ -31,9 +31,10 @@ Hükmü ve raporu SCRIPT verir; sen yalnız yargı gereken yerde kullanıcıya s
 3. **Taban uydurma YASAK.** `VTB` (taban bilinmiyor) dosyada otomatik birleştirme yapılmaz;
    kullanıcı "yeniyi al / yereli koru / elle" seçer.
 4. **Commit ajanın işi değil.** Proje reposuna commit KULLANICININ onayıyla atılır; `push` asla.
-   **`conn/` altında README dahil hiçbir dosyayı git'e EKLEMEZSİN** (`git add conn/...` denylist'e takılır;
-   `git add -A` / `git add .` ile de sahneleme — yolları tek tek ekle). `conn/README.md` şablon gereği
-   izlenir; commit'ini kullanıcı kendi terminalinde atar — kapanış raporunun "conn/" bölümünü aynen ver.
+   **`conn/` altında hiçbir dosyayı git'e EKLEMEZSİN** (`git add conn/...` denylist'e takılır;
+   `git add -A` / `git add .` ile de sahneleme — yolları tek tek ekle). Bağlantı açıklaması `conn/README.md`'den
+   `docs/sap-baglanti.md`'ye taşındı: motor eski dosya sende değişmemişse siler ve silmeyi kapanış KAPANDI
+   iken index'e kendisi sahneler (commit atmaz; `geri-al` bunu da geri alır); sende değişmişse dokunmaz. Kapanış raporunun "SAP bağlantı açıklaması" bölümünü aynen ver.
 5. Script'in çıktısını **aynen** göster; raporu sen yazma.
 
 ## How to use this skill
@@ -103,7 +104,7 @@ KOŞMAZSIN.
   verilmeden `doctor` onaysız değişiklik gösterir. Kısayolu/komutu sen çalıştırma.
 - Proje bir ekip reposuysa: "bu değişiklikler commit edilince ekip arkadaşlarına da gider".
 - Commit kararı kullanıcınındır; sen commit/push YAPMAZSIN. Kullanıcı "commit et" derse bile `conn/`
-  altındaki dosyaları (README dahil) ekleme: raporun "conn/ — commit kullanıcının" bölümündeki komutu ver.
+  altındaki dosyaları ekleme: raporda `conn/` için kendi terminali komutu varsa onu aynen ver.
 
 ## Yapmayacakların
 `git reset --hard` · `git push` · `--force` · `git clean` · `plan.json`/`durum.json`/`onay.json`'u elle

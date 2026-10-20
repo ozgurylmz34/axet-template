@@ -6,7 +6,6 @@
 secrets/
 conn/*
 !conn/*.example
-!conn/README.md
 .saml_cookies.json
 
 # Doldurulmuş proje reçetesi — müşteri adı, peyzaj, kişiler taşıyabilir.

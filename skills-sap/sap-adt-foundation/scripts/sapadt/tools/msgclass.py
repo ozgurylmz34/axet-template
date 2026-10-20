@@ -45,7 +45,6 @@ from __future__ import annotations
 import re
 from typing import Any
 from urllib.parse import quote
-from xml.sax.saxutils import escape as _xml_escape
 
 from sapadt import pull_state as _pull_state
 from sapadt._app import profil_tool
@@ -68,13 +67,9 @@ _SM12 = ("Araç enqueue kilidini SİLMEZ (Kesin Yasak C). SM12'de kendi kilidini
 
 
 # `"` + TAB/LF/CR: XML öznitelik değeri NORMALLEŞTİRMESİ çıplak TAB/LF/CR'yi boşluğa çevirir ⇒ kaçışlanmazsa geri
-# gönderilen CANLI metin SAP'de farklı okunur ve o mesaj sessizce "güncellenir" (kaynak çekirdek populate_message_class.py:204-218,
-# playbook adt-message-class.md §27.5 T13).
-_ATTR_KACIS = {'"': "&quot;", "\t": "&#9;", "\n": "&#10;", "\r": "&#13;"}
-
-
-def _att(v) -> str:
-    return _xml_escape(str(v), _ATTR_KACIS)
+# gönderilen CANLI metin SAP'de farklı okunur ve o mesaj sessizce "güncellenir" (playbook adt-message-class.md §27.5 T13).
+# Z194: kaçış kümesi tek kaynakta — utils/xml_kacis.py `attr_escape` (aynı küme: & < > " TAB LF CR).
+from utils.xml_kacis import attr_escape as _att  # noqa: E402
 
 
 def _metin(v) -> str:

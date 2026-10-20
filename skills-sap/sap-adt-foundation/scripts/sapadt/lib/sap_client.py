@@ -31,6 +31,7 @@ from typing import Optional, List, Dict, Any
 from sap_adt_lib import (
     SAPADTClient,
     SAPTransportError,
+    SAPValidationError,
     check_sap_config,
     create_conn_file,
     create_conn_template,
@@ -38,6 +39,7 @@ from sap_adt_lib import (
     get_explicit_working_dir,
     validate_sap_config
 )
+from utils.xml_kacis import attr_escape  # Z194: öznitelik kaçışı tek kaynak
 from object_types import (
     get_object_url,
     get_source_url,
@@ -410,18 +412,44 @@ class SAPClient:
                 print(f"      [FALLBACK] [FAIL] {method_name}: {str(fb_err)[:200]}")
                 if 'transport' in str(fb_err).lower() or 'CORRNR' in str(fb_err):
                     print(f"      [FALLBACK] [STOP] Ghost transport risk detected — aborting fallback")
-                    print(f"      [FALLBACK] Use SE01/SM12 to clean up, then retry.")
+                    # Kesin Yasak C: kilit/transport temizliği ÖNERİLMEZ, yalnız kontrol.
+                    print(f"      [FALLBACK] SE01/SE09 ve SM12'de durumu KONTROL ET; temizlik karari kullanicidadir.")
                     break  # Abort entire fallback on transport mismatch
             finally:
                 if fallback_lock and fallback_lock != 'NO_LOCK_SUPPORT':
                     try:
-                        self.adt_client.unlock_object(object_url, fallback_lock)
-                        fallback_lock = None
-                        print(f"      [FALLBACK] Unlocked.")
+                        if self._kilit_birak(object_url, fallback_lock):
+                            print(f"      [FALLBACK] Unlocked.")
+                        fallback_lock = None   # Z195 ③: False'ta da yeniden deneme YOK
                     except Exception:
-                        print(f"      [FALLBACK] [WARNING] Unlock failed — use SM12 to release manually")
+                        # Z195 ③ / Kesin Yasak C: eskiden "use SM12 to release manually" (kilit silme önerisi).
+                        from sap_adt_lib import kilit_birakilamadi_uyarisi
+                        print(kilit_birakilamadi_uyarisi(method_name))
 
         return any_success
+
+    def _kilit_birak(self, object_url: str, lock_handle: str,
+                     result: Optional[Dict[str, Any]] = None) -> bool:
+        """Z195 ③ (2026-10-19): `unlock_object` + DÖNÜŞÜ OKU — tek yardımcı (kaynak çekirdekle aynı sözleşme).
+
+        `unlock_object` tüm stratejiler düşünce `False` döner. False → tek satır uyarı
+        (`sap_adt_lib.kilit_birakilamadi_uyarisi`) + verilmişse `result['lock_released'] = False`.
+        Yazma sonucu (`success`) DEĞİŞMEZ, akış KESİLMEZ, bu yardımcı YENİDEN DENEMEZ. İstisna
+        çağırana AYNEN yükselir — her çağıranın mevcut `except` dalı korunur.
+        """
+        ok = self.adt_client.unlock_object(object_url, lock_handle)
+        if ok is False:
+            from sap_adt_lib import kilit_birakilamadi_uyarisi
+            obje = ''
+            try:
+                obje = self.adt_client._object_name_from_url(object_url)
+            except Exception:
+                pass
+            print(kilit_birakilamadi_uyarisi(obje))
+            if isinstance(result, dict):
+                result['lock_released'] = False
+            return False
+        return True
 
     def _find_existing_transport(self, object_name: str, object_type_str: str, requested_transport: str) -> str:
         """Query E071+E070 to find the K-type workbench request already owning this object.
@@ -721,9 +749,10 @@ class SAPClient:
 
             if lock_handle and lock_handle != 'NO_LOCK_SUPPORT':
                 try:
-                    self.adt_client.unlock_object(object_url, lock_handle)
+                    self._kilit_birak(object_url, lock_handle, result)   # Z195 ③
                     lock_handle = None
                 except Exception as unlock_err:
+                    result['lock_released'] = False
                     print(f"      [WARNING] Pre-activation unlock failed: {str(unlock_err)[:100]}")
 
             # Aktivasyon ANA SINIF üzerinden — alt-include tek başına aktive edilmez.
@@ -743,9 +772,9 @@ class SAPClient:
             result['error_type'] = type(e).__name__
             if lock_handle and lock_handle not in ('NO_LOCK_SUPPORT', 'IMPLICIT_LOCK', None, ''):
                 try:
-                    self.adt_client.unlock_object(object_url, lock_handle)
+                    self._kilit_birak(object_url, lock_handle, result)   # Z195 ③
                 except Exception:
-                    pass
+                    result['lock_released'] = False
             return result
 
     def push_object(self, object_name: str, object_type: str = 'class', transport: Optional[str] = None, source_file: Optional[str] = None) -> Dict[str, Any]:
@@ -918,8 +947,16 @@ class SAPClient:
                     # vakada sessizce kurtarıldı, ancak kurtarmasız bir yolda (populate_
                     # tables, sonra `.ccau`) ortaya çıktı — teşhis o güne kadar gecikti.
                     # "Araç kendiliğinden çalıştı" GİRDİNİN DOĞRU OLDUĞUNU KANITLAMAZ.
+                    # Z195 ③: "aynı kullanıcı" İSTEĞİN sahibi demek DEĞİLDİR — IS_LINK_UP boş = o istek
+                    # altında GÖREVİN var; istek başkasınınki olabilir. Sahip lib'in okuduğu E070.AS4USER'dan.
+                    _sahip = getattr(self.adt_client, '_last_lock_istek_sahibi', None)
+                    _sahip_metni = f"sahibi {_sahip}" if _sahip else "sahip okunamadı"
                     print(f"      [WARN] İSTENEN TRANSPORT KABUL EDİLMEDİ: {transport} "
-                          f"— SAP {corrnr_retry} atadı (aynı kullanıcı, CORRNR uyuşmazlığı).")
+                          f"— SAP {corrnr_retry} atadı (istek {corrnr_retry}: {_sahip_metni}; "
+                          f"altında GÖREVİN var, CORRNR uyuşmazlığı).")
+                    if _sahip and str(_sahip).upper() != str(getattr(self.adt_client, 'user', '') or '').upper():
+                        print(f"      [WARN] DİKKAT: istek {corrnr_retry} BAŞKA kullanıcıya ait "
+                              f"({_sahip}) — değişikliğin onun isteğine iner.")
                     print(f"      [WARN] Kurtarma yapılıyor (Bug 11 auto-retry) — bu bir "
                           f"DÜZELTMEDİR, girdinin doğru olduğunun kanıtı DEĞİLDİR.")
                     print(f"      [WARN] Muhtemel sebep: araca GÖREV (S) numarası verildi; "
@@ -1174,7 +1211,7 @@ class SAPClient:
                                     try:
                                         self.adt_client.set_object_source(source_url, source_code, fb_lock2,
                                                                           fb_eff2, etag=pre_lock_etag)
-                                        self.adt_client.unlock_object(object_url, fb_lock2)
+                                        self._kilit_birak(object_url, fb_lock2, result)   # Z195 ③
                                         fb_lock2 = None
                                         act_b5 = self.adt_client.activate_object(object_name, object_url)
                                         if isinstance(act_b5, dict) and act_b5.get('success'):
@@ -1186,9 +1223,9 @@ class SAPClient:
                                     finally:
                                         if fb_lock2 and fb_lock2 != 'NO_LOCK_SUPPORT':
                                             try:
-                                                self.adt_client.unlock_object(object_url, fb_lock2)
+                                                self._kilit_birak(object_url, fb_lock2, result)   # Z195 ③
                                             except Exception:
-                                                pass
+                                                result['lock_released'] = False
                                 except Exception as b5_err:
                                     print(f"      [FALLBACK B.5] Error: {str(b5_err)[:150]}")
 
@@ -1305,8 +1342,8 @@ class SAPClient:
                         else:
                             result['lock_released'] = False
                             print(f"          [WARNING] Unlock failed after 2 attempts: {str(e)[:100]}")
-                            print(f"          [WARNING] Kilit kalmış olabilir — araç silmez; kullanıcı SM12'de "
-                                  f"kendi kilidini kontrol eder")
+                            from sap_adt_lib import kilit_birakilamadi_uyarisi   # Z195 ③ tek kaynak
+                            print(kilit_birakilamadi_uyarisi(object_name))
 
     def create_object(self, object_type: str, name: str, package: str,
                      description: str, transport: Optional[str] = None) -> Optional[str]:
@@ -1364,6 +1401,10 @@ class SAPClient:
                 print(f"\n[ERROR] {result.get('message')}")
                 return None
 
+        except SAPValidationError:
+            # Z194: girdi/yapılandırma reddi (ör. sorumlu çözülemedi) istek GİTMEDEN doğar;
+            # yutulursa araç katmanı "yaratıldı mı?" varlık sondası için ağa çıkar.
+            raise
         except Exception as e:
             print(f"\n[ERROR] {str(e)}")
             return None
@@ -1454,8 +1495,9 @@ class SAPClient:
                 try:
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] delete_object - unlocking object")
-                    self.adt_client.unlock_object(object_url, lock_handle)
-                    print("     Object unlocked")
+                    # Z195 ③: False → tek kaynak uyarı; silme sonucu (dönüş) DEĞİŞMEZ.
+                    if self._kilit_birak(object_url, lock_handle):
+                        print("     Object unlocked")
                 except Exception as e:
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] delete_object - unlock failed: {str(e)}")
@@ -2742,7 +2784,7 @@ class SAPClient:
 <ttyp:tableType xmlns:ttyp="http://www.sap.com/dictionary/tabletype"
                 xmlns:adtcore="http://www.sap.com/adt/core"
                 adtcore:name="{name.upper()}"
-                adtcore:description="{description}"
+                adtcore:description="{attr_escape(description)}"
                 adtcore:masterLanguage="{self.adt_client.language}">
     <adtcore:packageRef adtcore:name="{package.upper()}"/>
     <ttyp:rowType>
@@ -2831,7 +2873,7 @@ class SAPClient:
 <mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass"
                  xmlns:adtcore="http://www.sap.com/adt/core"
                  adtcore:name="{name.upper()}"
-                 adtcore:description="{description}">
+                 adtcore:description="{attr_escape(description)}">
     <adtcore:packageRef adtcore:name="{package.upper()}"/>
 </mc:messageClass>'''
 
@@ -2920,7 +2962,7 @@ class SAPClient:
 <enqu:lockobject xmlns:enqu="http://www.sap.com/adt/ddic/enqu"
                  xmlns:adtcore="http://www.sap.com/adt/core"
                  adtcore:name="{name.upper()}"
-                 adtcore:description="{description}">
+                 adtcore:description="{attr_escape(description)}">
     <adtcore:packageRef adtcore:name="{package.upper()}"/>
     <enqu:content>
         <enqu:allowRFC>{allow_rfc_str}</enqu:allowRFC>

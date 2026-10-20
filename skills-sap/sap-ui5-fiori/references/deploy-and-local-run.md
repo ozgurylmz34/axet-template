@@ -16,9 +16,15 @@ npm run start-noflp          # index.html açar (flp.html değil)
 - Kurulum yalnız `ui/` kökünde (`app-skeleton.md` §2). `npm install` ağdan indirir → kullanıcıya söyle, onayla koş.
 - Sunucu arka planda başlatılır; **port** (varsayılan 8080; çakışırsa fiori tools başka port seçer) çıktıdan okunur ve
   kullanıcıya adres olarak verilir.
-- Canlı backend'e **proxy** üzerinden bağlanır: tarayıcı kullanıcıdan SAP kullanıcı/parolasını ister (basic auth
-  popup'ı). `FIORI_TOOLS_USER`/`FIORI_TOOLS_PASSWORD` ortam değişkenleri **yalnız deploy** içindir; çalıştırma
-  proxy'sinde kullanılmaz.
+- Canlı backend'e **proxy** üzerinden bağlanır. Kimlik verilmezse tarayıcı SAP kullanıcı/parolasını ister (basic auth
+  popup'ı) ve proxy SAP'ye kimlik göndermez. **Kimlikli çalıştırma:** geliştirici aynı kabukta `FIORI_TOOLS_USER` /
+  `FIORI_TOOLS_PASSWORD` set edip `npx fiori run --config ui5.yaml --port <p>` koşar (değişkenler §3.3'teki gibi
+  geliştiricinin kabuğunda; model parolayı okumaz/yazdırmaz). Ekip ölçümünde (s4_private 2025) bu yolla proxy
+  `$metadata` **200** döndü; eski "bu değişkenler yalnız deploy içindir, çalıştırma proxy'sinde kullanılmaz" notu bu
+  ölçümle çürüdü. aXet'te ayrıca ölçülmedi.
+- **Ekran `busy`'de asılı kaldıysa BLOCKER yazmadan önce:** proxy üzerinden `$metadata` → 401 ve doğrudan SAP'ye kimlikle
+  aynı `$metadata` → 200 ise sorun kimlik artefaktıdır, ürün kusuru değil — sunucuyu kimlikle yeniden başlat. Tarayıcı
+  turunun ön koşul kanıtı: proxy `$metadata` → 200.
 
 ### 1.1 Kullanıcı/parola popup'ı — iki ayrı tuzak (karıştırma)
 

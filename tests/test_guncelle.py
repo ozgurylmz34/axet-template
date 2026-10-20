@@ -23,6 +23,7 @@ import io
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -2746,6 +2747,31 @@ class AkisTest3(AkisTestTaban):
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn("## Test borcu\n- yok", rapor)
 
+    def test_Z163_rapor_butunluk_ATLANDI_ve_OLCULEMEDI_ayri_yazilir(self):
+        """Z163: RAPOR.md "Bütünlük turu" satırı adımın `not` alanını taşır — koşul gereği ATLANAN adım
+        zaman aşımı / bütçe bitti ÖLÇÜLEMEDİ'si gibi görünmez. Kapanış hükmü (çıkış + KAPANDI satırı)
+        üç durumdan da ETKİLENMEZ (kontrol: aynı akışta değiştirilmemiş kayıtla aynı çıkış)."""
+        self._kapanisa_kadar()
+        yol = self.f.durum_dizini() / "butunluk.json"
+        b = json.loads(yol.read_text(encoding="utf-8"))
+        b["adimlar"] = [
+            {"ad": "doctor", "cikis": 0},
+            {"ad": "doctor --skills", "cikis": None, "not": "ATLANDI — koşul sağlanmadı"},
+            {"ad": "sap-code-review takımı", "cikis": None, "not": "ÖLÇÜLEMEDİ — 45 sn zaman aşımı (bütçe)"},
+            {"ad": "foundation test_static", "cikis": None,
+             "not": "ÖLÇÜLEMEDİ — 60 sn bütünlük bütçesi doldu"},
+        ]
+        yol.write_text(json.dumps(b, ensure_ascii=False), encoding="utf-8")  # mühür alanı aynen kalır
+        r = self.f.calistir("kapanis")
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertIn("KAPANDI", self.cikti(r))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertIn("- doctor: PASS", rapor)
+        self.assertIn("- doctor --skills: ATLANDI — koşul sağlanmadı", rapor)
+        self.assertIn("- sap-code-review takımı: ÖLÇÜLEMEDİ — 45 sn zaman aşımı (bütçe)", rapor)
+        self.assertIn("- foundation test_static: ÖLÇÜLEMEDİ — 60 sn bütünlük bütçesi doldu", rapor)
+        self.assertNotIn("- doctor --skills: ÖLÇÜLEMEDİ", rapor)
+
     def test_kapanis_BIRLESIK_sonucu_KAPANIS_COMMITINE_girer(self):
         """⛔ SESSİZ VERİ KAYBI kapsayıcısı (BLOCKER-1/4).
 
@@ -2815,6 +2841,54 @@ class AkisTest3(AkisTestTaban):
         rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
         self.assertIn("KAPSAM —", rapor)
         self.assertIn("bakılmayanlar", rapor)
+
+
+class Z163ButunlukRaporSatiriTest(unittest.TestCase):
+    """Z163 birim ölçümü: `cikis is None` üç ayrı durumdur (ATLANDI · zaman aşımı · bütçe bitti);
+    rapor satırı ve özet sayımı bunları ayırır. Akış testi: `AkisTest3.test_Z163_…`."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(AXET_HOME / "scripts"))
+        import guncelle  # noqa: PLC0415
+        cls.g = guncelle
+
+    def test_Z163_ATLANDI_satiri_alarm_degil(self):
+        a = {"ad": "doctor --skills", "cikis": None, "not": self.g.BUTUNLUK_ATLANDI}
+        self.assertEqual(self.g.butunluk_durumu(a), "ATLANDI")
+        self.assertEqual(self.g.butunluk_rapor_satiri(a), "- doctor --skills: ATLANDI — koşul sağlanmadı")
+
+    def test_Z163_zaman_asimi_OLCULEMEDI_notuyla(self):
+        a = {"ad": "doctor", "cikis": None, "not": "ÖLÇÜLEMEDİ — 45 sn zaman aşımı (bütçe)"}
+        self.assertEqual(self.g.butunluk_durumu(a), "ÖLÇÜLEMEDİ")
+        self.assertEqual(self.g.butunluk_rapor_satiri(a), "- doctor: ÖLÇÜLEMEDİ — 45 sn zaman aşımı (bütçe)")
+
+    def test_Z163_butce_bitti_OLCULEMEDI_notuyla(self):
+        a = {"ad": "install --dry-run", "cikis": None, "not": "ÖLÇÜLEMEDİ — 60 sn bütünlük bütçesi doldu"}
+        self.assertEqual(self.g.butunluk_durumu(a), "ÖLÇÜLEMEDİ")
+        self.assertEqual(self.g.butunluk_rapor_satiri(a),
+                         "- install --dry-run: ÖLÇÜLEMEDİ — 60 sn bütünlük bütçesi doldu")
+
+    def test_Z163_KONTROL_notsuz_kayit_ve_kosan_adimlar(self):
+        """Notsuz eski kayıt ÖLÇÜLEMEDİ kalır (temiz DEĞİL); koşan adım PASS/FAIL — ayrım onları değiştirmez."""
+        self.assertEqual(self.g.butunluk_rapor_satiri({"ad": "x", "cikis": None}), "- x: ÖLÇÜLEMEDİ")
+        self.assertEqual(self.g.butunluk_rapor_satiri({"ad": "x", "cikis": 0}), "- x: PASS")
+        self.assertEqual(self.g.butunluk_rapor_satiri({"ad": "x", "cikis": 2}), "- x: FAIL")
+
+    def test_Z163_ozet_satiri_ATLANDI_ayri_sayilir(self):
+        """`komut_butunluk` özet satırı: koşulu sağlanmayan adım ÖLÇÜLEMEDİ sayısına GİRMEZ."""
+        b = mock.MagicMock()
+        b.k.durum_dizini = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        b.k.kok = b.k.durum_dizini
+        b.k.blob_sha.return_value = None
+        b.harita = {}
+        out = io.StringIO()
+        with mock.patch.object(self.g, "_izole_tmp", return_value=({}, str(b.k.durum_dizini / "tmp"))),                 mock.patch.object(self.g, "_plan_muhru", return_value={}),                 mock.patch.object(self.g, "_run", side_effect=AssertionError("koşulmamalıydı")),                 mock.patch.object(self.g, "BUTUNLUK_BUTCE_SN", 0), contextlib.redirect_stdout(out):
+            self.g.komut_butunluk(b, argparse.Namespace())
+        ozet = [s for s in out.getvalue().splitlines() if s.startswith("Bütünlük:")]
+        # plan boş ⇒ üst sınıf yok ⇒ koşullu 3 adım ATLANDI; bütçe 0 ⇒ koşulsuz 2 adım ÖLÇÜLEMEDİ
+        self.assertEqual(ozet, ["Bütünlük: 0 geçti · 0 FAIL · 2 ÖLÇÜLEMEDİ · 3 ATLANDI (koşul gereği, alarm değil)"],
+                         out.getvalue())
 
 
 class Z58AtlandiNedeniBirimTest(unittest.TestCase):

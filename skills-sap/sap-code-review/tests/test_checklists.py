@@ -2,7 +2,8 @@
 """Kontrol listeleri ve referansların iç tutarlılığı — koddan türetilir, elle tutulan liste yok.
 
 Zorlananlar:
-- satır biçimi (6 sütun, önem kümesi), kimlik tekliği, SKILL §6'daki "sıradaki kimlik"lerin güncelliği
+- satır biçimi (6 sütun, önem kümesi), kimlik tekliği, SKILL §6'daki "sıradaki kimlik"lerin güncelliği (yalnız `AX-`
+  ailesinde: çekirdek ailelerinde aXet numara vermez — Z206, kök `tests/test_kimlik_hizasi.py`)
 - Otomasyon iddiaları: `görev` → `check_x.py` (ÖNEM) çifti gerçekten yazma kapısı zincirinde mi
 - adı geçen her .py / .md / %skill / adt_* aracı / başka skill kimliği gerçekten var mı
 - validator-map.md §1-§2 tablolarının `_reviewer.py` ve `run_review.py` ile eşitliği
@@ -25,7 +26,7 @@ TOOL_CATALOG = SKILLS_SAP / 'sap-adt-foundation' / 'references' / 'tool-catalog.
 
 CHECKLISTS = sorted(REFS.glob('checklist-*.md'))
 DOCS = [SKILL / 'SKILL.md'] + sorted(REFS.glob('*.md'))
-ROW_RE = re.compile(r'^\|\s*((BE|SR|OD|CC)-(\d+)[a-z]?)\s*\|')
+ROW_RE = re.compile(r'^\|\s*((?:AX-)?(BE|SR|OD|CC)-(\d+)[a-z]?)\s*\|')
 CELL_SPLIT = re.compile(r'(?<!\\)\|')
 SEVERITIES = {'BLOCKER', 'WARNING', 'WARNING · strict: BLOCKER'}
 PAIR_RE = re.compile(r'`([a-z0-9_]+)`\s*→\s*`(check_[a-z0-9_]+\.py)`(?:\s*\((BLOCKER|WARNING))?')
@@ -82,14 +83,20 @@ class ChecklistRowTests(unittest.TestCase):
             seen[m.group(1)] = f'{f.name}:{n}'
 
     def test_next_free_ids_in_skill_are_ahead(self):
+        # Z206: sıradaki numara yalnız AX- ailesinde verilir; çekirdek ailesi (BE-) numarasını çekirdekten alır.
+        families = set()
         maxima = {}
         for _, _, m, _ in _rows():
-            maxima[m.group(2)] = max(maxima.get(m.group(2), 0), int(m.group(3)))
+            families.add(m.group(2))
+            if m.group(1).startswith('AX-'):
+                maxima[m.group(2)] = max(maxima.get(m.group(2), 0), int(m.group(3)))
         section6 = re.search(r'^### 6\..*?(?=^## )', _text(SKILL / 'SKILL.md'), re.M | re.S).group(0)
-        announced = dict((p, int(n)) for p, n in re.findall(r'`(BE|OD|CC|SR)-(\d+)`', section6))
-        self.assertEqual(set(announced), set(maxima), 'SKILL §6 her önek için sıradaki kimliği vermeli')
+        announced = dict((p, int(n)) for p, n in re.findall(r'`AX-(BE|OD|CC|SR)-(\d+)`', section6))
+        self.assertEqual(set(announced), families, 'SKILL §6 her aile için sıradaki AX- kimliğini vermeli')
+        bare = re.findall(r'`(BE|OD|CC|SR)-(\d+)`', section6)
+        self.assertEqual(bare, [], f'SKILL §6 çekirdek ailesinde/öneksiz sıradaki numara veriyor: {bare}')
         for prefix, nxt in announced.items():
-            self.assertGreater(nxt, maxima[prefix], f'SKILL §6 {prefix}-{nxt} kullanılmış ya da geride')
+            self.assertGreater(nxt, maxima.get(prefix, 0), f'SKILL §6 AX-{prefix}-{nxt} kullanılmış ya da geride')
 
 
 class ReferenceExistenceTests(unittest.TestCase):

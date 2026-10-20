@@ -49,7 +49,7 @@ CALL FUNCTION 'FP_JOB_CLOSE'.
 | AF-DRV-01 | `FP_JOB_OPEN` → `FP_FUNCTION_MODULE_NAME` → çağrı → `FP_JOB_CLOSE`; `ls_outputparams` / `ls_docparams` | WARNING |
 | AF-DRV-02 | Dil/ülke `ls_docparams-langu` (proje dili), `-country`. Yasal çıktı (e-İrsaliye/e-Fatura) → SAP Document Compliance / eDocument; ayrı konu | WARNING |
 | AF-DRV-03 | PDF `ls_formoutput-pdf` (XSTRING) → spool / e-posta eki (`email.md` §5; CL_BCS §6, gönderen politikası §1, RAP'tan ayrı LUW §6.1) / indirme | WARNING |
-| AF-ERR | `FP_JOB_OPEN/CLOSE` istisnaları + `cx_fp_runtime` yakalanır | WARNING |
+| AX-AF-ERR-01 | `FP_JOB_OPEN/CLOSE` istisnaları + `cx_fp_runtime` yakalanır | WARNING |
 | AF-NAM-01 | Driver `<GÖVDE>_P_<AD>`, include'lara bölünür (`programs-includes.md` §1) | BLOCKER |
 | AF-005 | Z driver; standart çıktı objesine dokunulmaz (kesin yasak A) | BLOCKER |
 
@@ -69,7 +69,7 @@ kurulur, `CL_FP_ADS_UTIL=>RENDER_PDF` ADS'e gönderip PDF xstring alır. SFPF/SF
 - **Kural:** Yol D yalnız **kullanıcının açık seçimiyle** açılır (yerleşim modelde kalır, Designer bakımı olmaz — bunu
   kullanıcı bilerek seçer). Model Yol D'yi kendiliğinden seçmez; iki yolu bu tabloyla sunar, kararı kullanıcı verir.
 - Yasal çıktı (e-İrsaliye/e-Fatura) bu yoldan **yapılmaz** (AF-DRV-02).
-- §A.3'ten Yol D'de yalnız **AF-005** geçerlidir; AF-DIV-02 · AF-IF-01 · AF-DRV-01..03 · AF-ERR · AF-NAM-01 SFP'ye özgüdür
+- §A.3'ten Yol D'de yalnız **AF-005** geçerlidir; AF-DIV-02 · AF-IF-01 · AF-DRV-01..03 · AX-AF-ERR-01 · AF-NAM-01 SFP'ye özgüdür
   (interface/driver programı yoktur; çağıran Z sınıf/FM projenin genel adlandırmasına uyar).
 - Reçete, tuzaklar ve Yol D kontrol listesi: `%sap-pdf-output`. Mail eki olarak gönderim: `email.md` §6.
 

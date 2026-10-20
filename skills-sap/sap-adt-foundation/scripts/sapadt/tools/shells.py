@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from urllib.parse import quote
-from xml.sax.saxutils import escape as _xml_escape
+from utils.xml_kacis import attr_escape as _att  # Z194: tek kaynak (sapadt/__init__ lib/'i sys.path'e ekler)
 
 GENEL = "genel"   # sap_client.create_object yolu (class/interface/program/include) — değişmedi
 
@@ -141,10 +141,6 @@ def extra_dogrula(tip: str, extra) -> dict:
 
 
 # ── istek kurucuları ─────────────────────────────────────────────────────────────────────────
-def _att(v) -> str:
-    return _xml_escape(str(v), {'"': "&quot;"})
-
-
 def _paket_ref_tam(package: str) -> str:
     return (f'  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{quote(package.lower(), safe="")}"\n'
             f'                      adtcore:type="DEVC/K"\n'

@@ -124,7 +124,7 @@ başarısız denemelerden sonra çalışan yeni yöntem → `%remember`.
 ## Rules
 - Tahmin yok: annotation, sözdizimi, alan adı ve CDS fonksiyon desteği mevcut çalışan artefakttan ya da referanstan
   doğrulanır; yetenek iddiası **canlı aktivasyonla** verilir, sürüm numarasından çıkarılmaz.
-- `adt_syntax_check` bu tiplerde güvenilir sözdizimi kapısı değildir ve yazma sınıfıdır; tek güvenilir kapı aktivasyondur.
+- `adt_syntax_check` (salt-okur checkrun, okuma sınıfı) bu tiplerde aktivasyonun yerini tutmaz; tek güvenilir kapı aktivasyondur.
 - Veri önizlemenin/SQL ucunun 400'ü uç sınırıdır, CDS dil sınırı değildir; kararı aktivasyonla ver.
 - Yazma yolu yalnız CLI'dir; "araç yok" satırındaki REST akışları teşhis ve araç aktarımı bilgisidir.
 - Alan silme, rename, tip değişikliği: yazma yolu analizi + tüketici listesi + kullanıcı kararı; CLI `ack_drop` kabul etmez.

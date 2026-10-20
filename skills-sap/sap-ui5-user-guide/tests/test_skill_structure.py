@@ -108,6 +108,19 @@ class SkillStructureTest(unittest.TestCase):
     def setUp(self):
         self.skill_md = _read(os.path.join(SKILL, "SKILL.md"))
 
+    def test_onceki_kd_git_gecmisi_kurali(self):
+        """Z183: önceki KD yalnız kullanıcı verirse okunur, git geçmişinden geri getirilmez (2026-10-03 KD turunda
+        model eski KD'yi git geçmişinden iki kez çıkardı). Koşul doğrulanabilir olgu: "bu konuşmada ... verdiyse"."""
+        rules = self.skill_md.split("## Rules", 1)[1]
+        akis7 = _read(os.path.join(SKILL, "references", "akis.md")).split("## 7. Yazım", 1)[1].split("\n## ", 1)[0]
+        tuzak = _read(os.path.join(SKILL, "references", "tuzaklar.md"))
+        for ad, metin in (("SKILL.md Rules", rules), ("akis.md §7", akis7)):
+            tek = " ".join(metin.split())
+            for parca in ("Önceki KD yalnız kullanıcı verirse okunur", "bu konuşmada", "diskteki hâliyle",
+                          "git geçmişinden geri getirilmez", "`git show <rev>:<yol>`", "eski KD'yi kullanma"):
+                self.assertIn(parca, tek, "%s: %r yok" % (ad, parca))
+        self.assertRegex(tuzak, r"(?m)^\| T28 \|.*git geçmişinden geri getirilmez")
+
     def test_frontmatter_local_rules(self):
         fm = _frontmatter(self.skill_md)
         self.assertIsNotNone(fm, "frontmatter yok")

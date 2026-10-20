@@ -97,6 +97,13 @@ kullanıcıya sor ya da teknik spesifikasyonda gerekçesiyle yaz.
 Şablondan türeyen programın iskelet etiketleri (fcat başlıkları) satır içi kalabilir (kullanıcı kararı; tek dilli
 proje). Seçim ekranı metinleri istisna değildir → `programs-includes.md` §3.
 
+**Metin uzunluğu — sessiz kesilme (syntax/ATC uyarmaz):**
+- `cl_gui_alv_grid` toolbar düğmesi `STB_BUTTON-QUICKINFO` tipi `ICONQUICK` = **CHAR30** → 30'u aşan ipucu kesilir;
+  ipuçlarını ≤30 karaktere yaz.
+- `MESSAGE sNNN(<sınıf>) WITH lv_file` → `SY-MSGV1` (`SYMSGV`) = **CHAR50** → uzun dosya yolu `&1`'de kesilir. Tam yol
+  gerekiyorsa yolu `&1..&4`'e böl ya da mesajda yalnız dosya adını göster.
+Metin tasarlarken hedef alanın DDIC uzunluğunu ölç (ekip dersi, 2026-10-05).
+
 ## 8. Kapanış kontrolleri
 - `adt_atc_check` — öncelik politikası proje `AGENTS.md`'sindedir. Politika yoksa kaynak ekipteki uygulama: **öncelik 1
   bulgular zorunlu düzeltilir; öncelik 2/3 kullanıcıya gösterilir ve açık onayla geçilir** (sessiz geçiş yok).

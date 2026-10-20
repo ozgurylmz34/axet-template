@@ -38,6 +38,7 @@
 | "araç bozuk" hissi · aynı hata tekrar tekrar | G-1 … G-6 |
 | "obje ne zaman değişti" — `E070-AS4DATE` her objede aynı tarih · sürüm geçmişi ucu `406` | K-27 |
 | classrun `500`/`502`/`504` · zaman aşımı · `islenmis_olabilir: true` | K-28 |
+| standart DTEL/domain metni `adt_get`'te İngilizce geldi (TR ekrana alıntı) | K-29 |
 
 ---
 
@@ -95,6 +96,9 @@
   transport'u işaret ettiği için teşhis yanlış yere saptı.
 - Değer dış dokümandan varsayılmış, canlıda ölçülmemişti ⇒ **Ölçülmemiş bir değere göre kapı kurma.** Kaydet, yaz, ama akışı ona bağlama.
 - `IS_LINK_UP='X'` → obje, kullanıcının görevi olmayan yabancı bir isteğe kayıtlı; SAP'nin döndürdüğü `CORRNR` otoritedir.
+  `IS_LINK_UP` boş + `CORRNR` farklı → o istek altında kullanıcının GÖREVİ var; isteğin KENDİSİ başkasına ait olabilir
+  ("senin isteğin" demek değildir). Z195'ten beri iki dalın hata metni istek sahibini `E070.AS4USER`'dan adıyla verir
+  (`Istek <K> (sahibi <AD>)`; okunamazsa `sahip okunamadı: <sebep>`, dal aynen çalışır).
 - **Bir obje yazılamıyorsa merdiven (ucuzdan pahalıya):**
   1. Bu obje tipi **daha önce yazılabiliyor muydu?** Evetse regresyon ara (araç tarafında `git log -S '<sembol>'`,
      objenin `changedAt`'i) — SAP'yi kovalama. (Vakayı çözen soru buydu: regresyonu ayıran tip değil **tarih**ti.)
@@ -147,7 +151,8 @@
     yaratma bileşiklerinde iç içe (`steps.create.error:"locked"`).
   - Aktivasyon 403'ü: aktivasyon hatası metninde sahip + aynı tarif. Mesaj sınıfı/açıklama araçları: `lock_conflict`.
   - UNLOCK düşerse: düz yolda `result.lock_released:false` (bırakma `finally`'de yazıldığı için `ok:true` ile yan yana
-    olabilir) · BDEF yolunda `unlock_warning`.
+    olabilir) + Z195'ten beri üst seviyede `lock_released:false` + `lock_notice` · BDEF yolunda `unlock_warning`.
+    Tüm kütüphane yolları tek metni basar: `[WARN] KILIT BIRAKILAMADI: <obje> … SM12'de KONTROL ET`.
 - **Yapılacaklar:**
   1. Çok objeli bir yazma turundan **önce** her obje için `adt_lock_check`. `locked:null` = **ölçülemedi** (K-08),
      "kilitsiz" diye okunmaz; kullanıcıya böyle bildir.
@@ -167,9 +172,11 @@
 - Aktivasyon hükmü tek kaynaktandır: `sap_adt_lib.aktivasyon_govde_hukmu` (True/False/None). `None` (yalnız generation ya da
   bayraksız gövde) → bağımsız worklist sondası; sonda ölçemezse `success:false` + `dogrulanamadi:true` (başarı değil).
   `version="active"` metadata kontrolü bunun üstüne ek şarttır, tek başına kanıt değildir.
-- `adt_syntax_check` salt-okuma değildir: bekleyen **temiz** sürümü aktive eder (ölçüm: inaktif sayısı 1 → 0; aktif kaynak
-  push edilene eşitlendi); hatalıysa etmez. Araç kod göndermez — sunucuda **o an bekleyen** sürümü aktive eder; bilinçli
-  bekletilen bir aktivasyon sırasını bozar. Aracın kendi `activationExecuted:false` dönüşü bu vakada yanıltıcıydı.
+- `syntax_check_via_activation` (eski `adt_syntax_check` alt katmanı) salt-okuma değildir: bekleyen **temiz** sürümü aktive eder
+  (ölçüm: inaktif sayısı 1 → 0; aktif kaynak push edilene eşitlendi); hatalıysa etmez. Kod göndermez — sunucuda **o an bekleyen**
+  sürümü aktive eder; bilinçli bekletilen bir aktivasyon sırasını bozar. `activationExecuted:false` dönüşü bu vakada yanıltıcıydı.
+  **Z195 (2026-10-19):** `adt_syntax_check` aracı artık salt-okur checkrun'dır (okuma sınıfı); bu yol yalnız push'un aktivasyon
+  öncesi ön kontrolünde kalır.
 - Bağımlı obje: kök CDS'e alan eklemek bağlı behavior definition'ı sessizce inaktif bırakabilir; doğrulama HTTP 200'e
   bakıyordu ("obje var") ve yanlış "bitti" teste sızdı.
 
@@ -282,8 +289,8 @@
 - Sözdizimi kontrolü CDS/sınıf etkileşiminde ve SADL ile üretilen entity tiplerinde yanlış hata raporlayabilir → aktivasyon
   ile çapraz doğrula, SAP GUI'den kontrol ettir. Ama `parser_error`'ı körü körüne yanlış-pozitif sayma: çalışan referansla kıyasla.
 - **Ayırt et — "hata" ile "ölçülemedi" aynı şey değildir:** `valid:false` (+ `errors`) = SAP bir hata döndürdü.
-  `valid:null` = kontrol **ölçülemedi** (SAP kontrolü koşmadı: boş/kısa gövde, yalnız generation); MCP `adt_syntax_check`
-  bunu `ok:false, error:"sozdizimi_belirsiz"` + `valid_reason` ile verir, `SAPClient.syntax_check`
+  `valid:null` = kontrol **ölçülemedi** (SAP kontrolü koşmadı: boş/kısa gövde, yalnız generation; checkrun'da `notProcessed`,
+  rapor yok, HTTP ≠ 200); `adt_syntax_check` bunu `ok:false, error:"sozdizimi_belirsiz"` + `valid_reason` ile verir, `SAPClient.syntax_check`
   `[UNVERIFIED] Syntax NOT measured (OLCULEMEDI): <sebep>` basar. İkincisi "kod hatalı" demek değildir, "geçerli" de değildir;
   sebebi oku. Push'un aktivasyon öncesi ön-kontrolü ölçülemezse push durmaz ama `syntax_precheck:"olculemedi"` taşır.
 
@@ -331,8 +338,24 @@
   hatası (ör. VPN kapalıyken `getaddrinfo failed`) ve CSRF token alımındaki hata işaretlenir — istek SAP'ye gitmemiş olsa bile
   (fazla uyarı yönünde güvenli).
 - **Sınır:** davranış yerel sahte HTTP sunucusuyla ölçüldü (`tests/test_classrun_tek_post.py`); SAP'ye karşı
-  DOĞRULANMADI. Diğer POST'lar (push/activate/yaratma) aynı HTTP katmanından geçer ve `502/503/504`/zaman aşımında
-  hâlâ tekrarlanır — bu madde onları kapsamaz.
+  DOĞRULANMADI. Z207'den (2026-10-19) beri genel HTTP katmanı da POST/PUT/DELETE'i `502/503/504`/okuma zaman aşımında
+  tekrarlamaz; yalnız GET/HEAD/OPTIONS ve okuma amaçlı POST uçları yeniden denenir (`IMPLEMENTATION.md` §25.4).
+  Bu yalnız HTTP adapter katmanıdır. Uygulama katmanı yan etkili isteği hâlâ tekrar edebilir: `_retry_request` (Z52) beş
+  yaratma çağrısında 5xx/zaman aşımını kendisi 3 kez dener; ayrıca yaklaşım döngüleri 503'te sonraki yaklaşıma geçer —
+  sahte sunucuda `set_object_source` 4 PUT · `delete_object` (kilit + transport) 5 DELETE · `create_object` `PROG/P` 3 POST.
+  İlk istek SAP'de işlendiyse sonrakiler 404 / "zaten var" alır ve araç yanlış "silinemedi" / "yaratılamadı" raporlar (çift
+  obje oluşmaz). AÇIK — canlı ölçüm bekliyor (`IMPLEMENTATION.md` §25.4). Bu madde (classrun) onları kapsamaz.
+
+## K-29 · `adt_get` standart DTEL'de ana dil metnini verir — TR alıntısı DD04T'den
+- **Belirti:** standart bir veri elemanının etiketi `adt_get` ile "alıntılandı", TR ekrana/belgeye İngilizce etiket girdi.
+- **Kök sebep:** yanıt `language="TR"` taşısa da ana dili EN olan obje için `adt_get` **ana dil** metnini döndürdü
+  (ekip dersi, 2026-10-09: DD04T'de dil `T` satırı Türkçe etiketi taşıyordu; İngilizce metin yalnız E/D satırlarındaydı).
+  "Alıntı" damgası metni doğru kılmaz; alıntı kuralı onay turunu da atlattığı için yanlış dil kimseye görünmez.
+- **ÇALIŞAN YÖNTEM:** standart DTEL metnini TR alıntılarken
+  `cli adt_sql_query '{"query":"SELECT scrtext_s, scrtext_m, scrtext_l, reptext FROM dd04t WHERE rollname = '\''<DTEL>'\'' AND ddlanguage = '\''T'\'' AND as4local = '\''A'\''"}'`
+  (domain sabit metni için `dd07t`, `ddlanguage = 'T'`). Satır yoksa "TR metni yok" yaz; İngilizceyi çevirip alıntı diye sunma.
+- **Sınır:** Z objelerde (ana dil TR) `adt_get` doğru dili verir — fark ana dildedir. Ölçüm tek sistemde; aXet aracıyla
+  ayrıca ölçülmedi.
 
 ---
 
@@ -395,3 +418,5 @@ CDS-DCL-01/02) · #22, #23 klasik Dynpro üretimi → `%sap-classic-abap` `refer
 
 **2026-09-25 eşitlemesinde eklenen (ekip dersi):** K-23'e include `prog` tipiyle 404 sahte negatifi; K-27 (`E070-AS4DATE` ≠ obje değişim tarihi, sürüm geçmişi ucu ve
 `Accept` başlığı). Kaynaktaki transport/obje adları ve ham GET kod deseni alınmadı.
+
+**2026-10-19 eşitlemesinde eklenen (ekip dersi):** K-29 (`adt_get` standart DTEL'de ana dil metni; TR alıntısı DD04T'den).

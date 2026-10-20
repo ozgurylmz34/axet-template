@@ -21,6 +21,10 @@
 - **Harf duyarsızlığı:** düz `substringof` ölçülen sistemde harf-duyarsız çalıştı (küçük harfli terim, büyük harfle kayıtlı adı buldu, 200). Kaynak bunu
   DB collation'ına bağlıyor. Sınır: tek sistem; başka DB/collation ya da ABAP'ta süzme yapan DPC için
   **DOĞRULANMADI** (§3).
+- **`substringof` + `MaxLength`:** terim, alanın `$metadata` `MaxLength`'inden uzunsa SADL tabanlı serviste isteğin
+  **tamamı 400** döner (ekip ölçümü 2026-10-09); çok alanlı OR'da tek kısa alan bütün aramayı düşürür. Harf duyarsızlığı
+  Türkçede tam değil: `{i, I, ı}` tek sınıf, `İ` ayrı. İstemci reçetesi (alan süzgeci + varyantlar):
+  `%sap-ui5-fiori` → `references/list-grid-alv.md` §6.2.
 
 ## 2. Wildcard sözleşmesi (UI ↔ backend)
 Ekip standardındaki arama terimi yorumlaması (istemci tarafında yapılır, backend'e fonksiyon olarak gelir):

@@ -9,6 +9,8 @@
 **2026-09-21 eki (DDIC şeridi, Z38/Z39/Z40):** yazma +3 (`adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`) → yazma 16 · toplam 40 (`--list`, çevrimdışı ölçüldü).
 **2026-09-25 eki (Z128):** okuma +1 (`adt_pretty_print`) → okuma 25 · yazma 16 · toplam 41 (`--list`, çevrimdışı ölçüldü).
 **2026-09-26 eki (Z39 kalanı):** okuma +1 (`adt_textpool_read`) → okuma 26 · yazma 16 · toplam 42 (`--list`, çevrimdışı ölçüldü).
+**2026-10-19 eki (Z195):** önceki ölçüm okuma 27 · yazma 16 · toplam 43 (Z166 `adt_dump_read` dahil) → `adt_syntax_check` salt-okur
+checkrun'a geçip okumaya taşındı + yeni `adt_get_method` → okuma 29 · yazma 15 · toplam 44 (`--list`, çevrimdışı ölçüldü).
 Profil etiketlerinin tamamı ve yetenek matrisi: `references/profiles.md` (rehber; etiket tablosu kodla test edilir).
 `adt_set_description` yalnız `s4_private`'ta açıktır ve transport ister.
 `adt_unit_run` `allow_risky_tests=true` verilirse yazma sınıfına geçer (`--list`: `write_when`).
@@ -295,6 +297,39 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
   biçimlediği (oturum kullanıcısının ADT biçim ayarı olduğu varsayılıyor) canlı **ÖLÇÜLMEDİ**. ATC'nin Pretty Print kontrolü ATC varyantının
   parametreleriyle biçimler: iki ayar farklıysa sonuç ATC'ninkiyle uyuşmayabilir. Sınıf `class` tipinde yalnız ana kaynak
   (`/source/main`) biçimlenir, alt-include'lar ayrı çağrılır. Kullanım: `sap-classic-abap` → `references/classes.md` §7.1.
+
+### `adt_syntax_check` (salt-okur checkrun — OKUMA, 2026-10-19, Z195)
+- **Amaç:** bekleyen (inaktif) sürümün sözdizimi denetimi; **SAP'de hiçbir şey değişmez** (kilit · kaynak PUT · aktivasyon · transport yok).
+- **Argümanlar:** `name` (Z/Y — standart ad araç içinde `ADR_0005_A` ile reddedilir) · `object_type="class"`. Yalnız yazılabilir tier (DEV).
+- **Çağrı:** tek istek — `POST /sap/bc/adt/checkruns?reporters=abapCheckRun`, gövde `chkrun:checkObjectList` (`version="inactive"`).
+- **Dönüş:** `{ok, valid: true|false, errors, warnings, source:"checkrun", scope}`; `errors[]` = `{type, message, line, column, href, t100}`.
+  Ölçülemediyse `{ok:false, error:"sozdizimi_belirsiz", valid:null, valid_reason, message, scope}` — boş/bozuk yanıt, rapor ya da
+  `abapCheckRun` raporu yok, obje raporlanmadı, `status≠processed` (tipe bağlı — canlı ölçüm 2026-10-19, DEV, salt okuma: inaktif sürümü olmayan Z tablosunda
+  `notProcessed` "Error while importing object … from the database"; inaktif sürümü olmayan Z sınıfında `processed`, aktif sürüm
+  denetlenir → `valid:true`),
+  tanınmayan mesaj tipi, HTTP ≠ 200 ya da ağ istisnası. `valid:false` yalnız `ok:true` iken "hatalı"dır.
+- **Uyarılar:** `scope` = KAPSAM BEYANI: ATC, ABAP Unit, co-activation ve yetki denetimi DEĞİL · aktivasyonun yerini tutmaz (aktivasyonda
+  çıkan hatalar burada görünmeyebilir) · eski aktive eden yol (`syntax_check_via_activation`) araçtan KALDIRILDI; kütüphanede push'un
+  aktivasyon öncesi ön kontrolü olarak durur · kaynak çekirdekte canlı ölçüldü (DEV, 4 tip: sınıf · FM · tablo · CDS — aktivasyon ön
+  denetimiyle aynı kök hata + satır/kolon; temiz inaktif sürüm aktive OLMADI); aXet'te canlı **ÖLÇÜLMEDİ** (sahte sunucu testi:
+  `tests/test_checkrun_sozdizimi.py`). ⚠ **FM desteklenmez (generic URL yok):** aXet aracı `object_type="function"`/`"func"`'ı
+  checkrun'dan ÖNCE reddeder — `object_types.get_object_url` FM için `ValueError` verir (FM'in ADT ucu fonksiyon grubunu içerir,
+  grup adı FM adından türetilemez). Kaynak çekirdekteki FM ölçümü aXet'te karşılıksızdır.
+
+### `adt_get_method` (tek metot gövdesi — OKUMA, 2026-10-19, Z195)
+- **Amaç:** sınıfın ana kaynağından TEK metodun `METHOD <ad>.` .. `ENDMETHOD.` bloğunu döndürür; tüm sınıfı bağlama almadan okuma.
+- **Argümanlar:** `name` (standart sınıf da okunabilir) · `method` (arayüz metodu `zif_x~m`) · `output_path=null` · `overwrite=false`.
+- **Çağrı:** tek istek — `GET /sap/bc/adt/oo/classes/<ad>/source/main` (`adt_get` ile aynı uç; sürüm verilmez = en güncel, bekleyen
+  inaktif sürüm varsa o).
+- **Dönüş:** `{ok, name, method, found, start_line, end_line, source | output_path+written+line_count, scope, client_log}`.
+  `found:false` = aranan yüzeyde yok (`scope` okunur: yerel sınıflar / test include'ları / makrolar ARANMAZ ⇒ "metot yok" demek değildir).
+  `belirsiz` (ana kaynakta birden çok aynı adlı blok — yerel sınıf; `matches[]`) ve `kapanmamis` (`ENDMETHOD.` yok) ⇒ `ok:false, found:null`.
+  Sınır satır yapısından güvenle çıkarılamazsa da `belirsiz` (`source` yok): tek satırlık `METHOD a. ENDMETHOD.` · satır ortasında
+  zincirli `ENDMETHOD.` · bitişten önce yeni `METHOD` satırı. Tam satır yorumundaki ENDMETHOD sayılmaz; çok satırlı string şablonu
+  içinde satır başına düşen `ENDMETHOD.` hâlâ bitiş sayılır (bilinen sınır).
+- **Yerel dosya kuralları:** `adt_get`/`adt_pretty_print` ile aynı (proje kökü içi · kaynak uzantısı · `.axet-code/` ve denylist dışı;
+  var olan dosya `overwrite=false` iken `output_exists`; yol denetimi SAP'ye gitmeden). Pull kaydı (`sap-pull-state.json`) YAZMAZ —
+  metodu düzenleyip geri yazmak için tam kaynak `adt_get` ile çekilir. aXet'te canlı **ÖLÇÜLMEDİ**.
 
 ## Yazma sınıfı
 Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--sap-write` · kapsam beyanı. Guard'lar ağdan önce.
@@ -592,14 +627,6 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   `read_failed` (HTTP ≠ 200 ya da istisna; okunabilen alt kaynak `parts` içinde korunur).
 - **Kapsam (`not_checked`):** liste başlıkları (headings; okuma Accept tipi belgelenmedi — ÖLÇÜLEMEDİ) · sembolün/seçimin programda kullanılıp kullanılmadığı ·
   programın varlığı/aktifliği (404 yalnız metin öğeleri ucu için).
-
-### `adt_syntax_check` (adına rağmen YAZMA)
-- **Amaç:** sözdizimi kontrolü — gerçek semantik "temizse aktive et".
-- **Argümanlar:** `name` (Z/Y) · `object_type="class"`.
-- **Dönüş:** `{ok, valid: true|false|null, errors, warnings}`; koşmadıysa `{ok:false, error:"sozdizimi_belirsiz", valid:null, valid_reason}`.
-- **Uyarılar:** ⚠ bekleyen temiz sürümü AKTİVE EDER (ölçüm: inaktif 1→0), kod göndermez → sunucudaki bekleyen sürüm devreye girer;
-  bilinçli bekletilen aktivasyon sırasını bozar · push zaten aktivasyon öncesi kontrol içerir → ayrı tur gereksiz ·
-  `valid:false` yalnız `ok:true` iken "hatalı".
 
 ### `adt_screen_generate` (klasik Dynpro + GUI status üreteci — YAZMA)
 - **Amaç:** projede bulunan **Z/Y ekran üreteci RFC FM'ini** (imzası kaynak kılavuzdaki 16 parametrelik üreteçle aynı) SOAP-RFC

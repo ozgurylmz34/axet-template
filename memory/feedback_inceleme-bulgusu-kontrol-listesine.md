@@ -12,7 +12,9 @@ kaçar. Kaynak vakada bir kaydetme hatası serisinden 4 tuzak çıktı (metadata
 yutma, commit bariyeri, Create/Change ekranları arasında kopya kayması); bu yüzden yöntem notunun yanında inceleme
 listesine de eklendi.
 **Nasıl uygulanır:** Bulgu çıkınca: (1) düzelt, (2) ilgili skill referansına çalışan deseni/tuzağı yaz, (3) kontrol
-listesine madde öner: kontrol + önem (BLOCKER/WARNING) + referans. aXet'te liste yerleri: SAP skill'lerinin
+listesine madde öner: kontrol + önem (BLOCKER/WARNING) + referans. Kimlik: aXet'e özgü madde `AX-<aile>-<nn>`
+alır; çekirdek ailelerinde (`BE-`, `FE-`, `DOC-*` …) aXet numara vermez — aynı numara iki depoda farklı kurala gidiyordu
+(2026-10-19 hizası; kök test takımı zorlar). aXet'te liste yerleri: SAP skill'lerinin
 `references/checklists.md` dosyaları, genel incelemede `%code-review` kontrol listesi. Template reposundaki skill
 değişikliği ekibe gider → kullanıcıya öner, onay ve commit/PR ile gir.
 Önceki kayıt: yok

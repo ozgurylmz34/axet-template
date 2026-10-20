@@ -34,6 +34,7 @@ Bir adım geçmeden sonrakine geçme; kullanıcı atlamak isterse atlanan adım�
 | 4 | Günlük kullanım | — | `docs/onboarding.md` §4'ü özetle |
 
 Eksik adımda yönlendirme:
+- **`doctor` FAIL/WARN:** her satırı `docs/onboarding.md` §5 "`doctor` bir şey bulursa" üç sınıfına koy (① ONAR · ② KULLANICI · ③ ŞABLON HATASI → `%hata-bildir` taslağı, göndermek kullanıcının); sınıflamayı burada yeniden yazma.
 - **1 eksik:** kullanıcı `aXet-Kur.cmd`'yi indirip çift tıklar (`docs/onboarding.md` §1); terminal komutu verme.
   Klon zaten varsa güncelleme yolu aXet'te `%guncelle`; `kur.cmd` yalnız sorun gidermede (§5).
 - **3 eksik:** `%yeni-proje` skill'ine geç; proje kurulunca buraya dön.

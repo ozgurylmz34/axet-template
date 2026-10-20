@@ -12,7 +12,7 @@ description: Use when the user wants to report an aXet bug, a wrong or missing r
 
 **Bu akış DEĞİL:**
 - SAP sistemindeki sorun (dump, yetki, transport, sistem ayarı) → SAP ekibinin/Basis'in işidir; aXet'e bildirilmez. Sorun aXet'in bir SAP aracının yanlış davranmasıysa bildirilir.
-- `doctor.py` FAIL veriyorsa önce kurulum sorunudur: `<AXET_HOME>/docs/onboarding.md` "Sorun giderme" bölümünü uygula. FAIL kapanmıyorsa ya da çözüm yanlış görünüyorsa o zaman bildir.
+- `doctor.py` FAIL/WARN veriyorsa her satırı önce `<AXET_HOME>/docs/onboarding.md` §5 "`doctor` bir şey bulursa" üç sınıfına koy (① ONAR · ② KULLANICI · ③ ŞABLON HATASI); doctor satırları için bu akış yalnız ③'tür. ① uygulandığı hâlde FAIL sürüyorsa ya da çözüm yanlış görünüyorsa o zaman bildir.
 - Projeye özel bir kural/karar → `%remember`.
 
 `<AXET_HOME>` = bu skill klasörünün iki üstü (`<AXET_HOME>/skills/hata-bildir/SKILL.md`); yolu buradan türet, varsayma, kullanıcıya özel yol yazma.
@@ -21,7 +21,7 @@ description: Use when the user wants to report an aXet bug, a wrong or missing r
 
 ## How to use this skill
 1. **Konuyu netleştir.** Kullanıcıya sor (bildiklerini tekrar sorma): ne yapıyordun · hangi adımları izledin · ne bekliyordun, ne oldu · hata mı öneri mi. Tek cümlelik özet çıkar: *hangi mekanizma, hangi koşulda, ne yanlış yapıyor*. "Çalışmıyor" tek başına bildirim değildir. Tek bildirim tek konu: iki ayrı sorun iki ayrı dosyadır. Bir konuda birden çok iddia varsa numarala (İ1, İ2 …); bakımcı her birini ayrı ölçer.
-2. **Kurulum mu, aXet mi?** `python "<AXET_HOME>/scripts/doctor.py"`: son satırdaki `SONUÇ: N FAIL · M WARN` sayılarını ve `[PASS]` satır sayısını al. Konuyla ilgili FAIL varsa önce onboarding "Sorun giderme"yi uygula; FAIL kapanınca sorun da kapanıyorsa bu bir bildirim değil, kurulum adımıdır.
+2. **Kurulum mu, aXet mi?** `python "<AXET_HOME>/scripts/doctor.py"`: son satırdaki `SONUÇ: N FAIL · M WARN` sayılarını ve `[PASS]` satır sayısını al. Konuyla ilgili FAIL/WARN varsa önce onboarding §5 üç sınıf kuralını uygula (① onar, ② kullanıcıya bırak); FAIL kapanınca sorun da kapanıyorsa bu bir bildirim değil, kurulum adımıdır.
 3. **Güncel aXet'te hâlâ var mı?** Klonun geride olabilir; bakımcı bildirimini güncel sürüme karşı okur. Salt-okur ölç (çalışma ağacını değiştirmez; ağ gerekir, hesap gerekmez):
    ```bash
    git -C "<AXET_HOME>" fetch -q origin

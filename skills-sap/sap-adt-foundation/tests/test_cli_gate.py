@@ -71,8 +71,10 @@ class Kapi(unittest.TestCase):
         tools = {t["name"]: t for t in data["result"]["tools"]}
         okuma = sorted(n for n, t in tools.items() if t["class"] == "read")
         yazma = sorted(n for n, t in tools.items() if t["class"] == "write")
-        H.kaydet("1a --list okuma sayısı", "27", str(len(okuma)), len(okuma) == 27)
-        self.assertEqual(len(okuma), 27, okuma)  # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read · Z166: +adt_dump_read
+        H.kaydet("1a --list okuma sayısı", "29", str(len(okuma)), len(okuma) == 29)
+        # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read · Z166: +adt_dump_read
+        # Z195 (2026-10-19): +adt_syntax_check (salt-okur checkrun, yazmadan taşındı) · +adt_get_method (yeni)
+        self.assertEqual(len(okuma), 29, okuma)
         for ad in ("adt_revisions", "adt_system_info", "adt_object_structure", "sap_doctor", "adt_pretty_print"):
             self.assertEqual((tools[ad]["class"], tools[ad]["available_on"]), ("read", ["all"]), ad)
         tr = tools["adt_textpool_read"]
@@ -87,13 +89,20 @@ class Kapi(unittest.TestCase):
         H.kaydet("1e adt_set_description: write · s4_private · transport · argümanlar", "hepsi doğru",
                  json.dumps({k: sd.get(k) for k in ("class", "available_on", "requires_transport")}), ok_sd)
         self.assertTrue(ok_sd, sd)
-        for ad in ("adt_syntax_check", "adt_classrun"):
-            H.kaydet(f"1b {ad} sınıfı", "write", tools[ad]["class"], tools[ad]["class"] == "write")
-            self.assertEqual(tools[ad]["class"], "write")
+        # Z195 ①: adt_syntax_check artık salt-okur checkrun ⇒ OKUMA; adt_classrun yazma kalır (kontrol grubu)
+        for ad, beklenen in (("adt_syntax_check", "read"), ("adt_get_method", "read"), ("adt_classrun", "write")):
+            H.kaydet(f"1b {ad} sınıfı", beklenen, tools[ad]["class"], tools[ad]["class"] == beklenen)
+            self.assertEqual(tools[ad]["class"], beklenen)
+        gm = tools["adt_get_method"]
+        ok_gm = (gm["available_on"] == ["all"] and not gm.get("requires_transport")
+                 and {a["name"] for a in gm["args"]} == {"name", "method", "output_path", "overwrite"})
+        H.kaydet("1g adt_get_method: read · all · transport yok · argümanlar", "hepsi doğru",
+                 json.dumps({k: gm.get(k) for k in ("class", "available_on", "requires_transport")}), ok_gm)
+        self.assertTrue(ok_gm, gm)
         self.assertIn("write_when", tools["adt_unit_run"])
         self.assertEqual(set(yazma), {"adt_activate", "adt_classrun", "adt_delete", "adt_domain_create",
                                       "adt_dtel_create", "adt_post_shell", "adt_publish_service",
-                                      "adt_push_source", "adt_struct_create", "adt_syntax_check",
+                                      "adt_push_source", "adt_struct_create",
                                       "adt_screen_generate", "adt_msgclass_write", "adt_set_description",
                                       "adt_table_create", "adt_ttyp_create", "adt_textpool_write"})
         mw = tools["adt_msgclass_write"]
@@ -193,7 +202,6 @@ class Kapi(unittest.TestCase):
                                 "long_label": "c", "heading_label": "d"},
             "adt_struct_create": {"name": "BAPIRET2", "fields": [{"name": "F", "type": "char10"}],
                                   "description": "x", "package": "$TMP", "transport": TR},
-            "adt_syntax_check": {"name": "SAPMV45A", "object_type": "program"},
             "adt_screen_generate": {"fm_name": "ZAXET_FM_SCREEN_GEN", "program": "SAPMV45A",
                                     "title": "Liste", "transport": TR},
             "adt_msgclass_write": {"name": "VL", "transport": TR,
@@ -212,6 +220,11 @@ class Kapi(unittest.TestCase):
         for ad, args in std.items():
             self.kos(f"5 {ad} standart ad", [ad, "--args-json", json.dumps(args), *S1],
                      project=p, rc=2, code="ADR_0005_A")
+        # Z195 ①: adt_syntax_check okuma sınıfına geçti (yazma kümesinden çıktı) ama ARAÇ İÇİ namespace
+        # kapısı korunur — `--sap-write` olmadan da standart ad reddedilir (ağa gidilmeden).
+        self.kos("5 adt_syntax_check (okuma) standart ad — araç içi kapı",
+                 ["adt_syntax_check", "--args-json", json.dumps({"name": "SAPMV45A", "object_type": "program"})],
+                 project=p, rc=2, code="ADR_0005_A")
         self.kos("5 adt_activate also[] standart ad",
                  ["adt_activate", "--args-json", json.dumps({"name": "ZAXET_X", "object_type": "class",
                                                              "also": [{"name": "MARA", "object_type": "tabl"}]}), *S1],

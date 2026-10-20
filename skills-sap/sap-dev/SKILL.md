@@ -65,9 +65,13 @@ Her şeyi değil, ilgili olanı oku.
 |---|---|
 | Obje ya da paket adı | `references/naming.md` + paketin `.rules.md` Naming tablosu (paket kuralı önceliklidir) |
 | ABAP kodu (sınıf, program, FM, SELECT, range, kur) | `references/coding-patterns.md` |
+| Sebebi bilinmeyen hata, dump, yanlış veri, ara ara bozulma, yavaşlama | önce `%diagnosing-bugs` (kök neden); düzeltme kapsamı belli olunca bu tabloya dön |
+| ABAP stili (yalnız yeni/değişen satır), sınıf tasarımı, "desen uygulayayım mı" | `references/clean-abap.md` (Clean ABAP alt kümesi; kapı değil, `ÖNERİ`) |
+| ECC / eski sistem geliştirmesini S/4'te yeniden yazma | `references/ecc-to-s4-rewrite.md` (TS öncesi ön kontrol) + `%sap-intake-triage` `references/protocol.md` §5 |
+| Çok kalemli model yargısını betiğe bağlama (toplu ATC düzeltmesi, eşleme satırları) | `references/batch-judgment-queue.md` |
 | SAP'de okuma, indirme, push, aktivasyon, silme, where-used, kilit, transport | `%sap-adt-foundation` ve referansları |
 | Yeni DDIC tablo / yapı / DTEL | `references/naming.md` §5 alan tipleme sırası; tablo öncesi alan + DTEL + anahtar tasarımını göster, açık onay al |
-| "Standart tablo yerine ne kullanılır" (clean core) | `references/coding-patterns.md` §7 + ATC (`%sap-adt-foundation` → `foundation-query.md`) |
+| "Standart tablo yerine ne kullanılır" (clean core) | `references/coding-patterns.md` §7 + ATC (`%sap-adt-foundation` → `foundation-query.md`); seviye (A-D) × `cleancore_policy`: `%sap-code-review` `references/clean-core.md` §2.1 |
 | Liste / rapor ekranı | SAP çekirdeği ALV paritesi kuralı; UI5 mekaniği → `%sap-ui5-fiori` (`list-grid-alv.md`) |
 | UI5 freestyle / Fiori ekranı, filtre ekranı, value-help, lokal çalıştırma, BSP deploy | `%sap-ui5-fiori` |
 | Standart veriye yazma ihtiyacı (belge/ana veri create, update, delete, action; EML mi BAPI mi OData mı) | **Kod yazmadan önce** `references/write-api-selection.md` — bağlam/commit (ADIM 0) → released RAP BO/EML (4 canlı teyit) → released BAPI → released OData → BAPI/RFC FM → BDC → manuel (kesin yasak B); seçim ve reddedilenler TS §6.4'e ya da kullanıcıya |

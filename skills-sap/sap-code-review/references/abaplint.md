@@ -37,7 +37,7 @@ bu ayarla çalışırken `ABAP release: v789 (… on-premise 757 …)` basıyor.
 DOĞRULANMADI; sürüme bağlı bir bulguda (yeni sözdizimi) kesin karar push/aktivasyondur.
 
 ## 3. Sürüm pini ve ağ
-- Pin: `@abaplint/cli@2.120.38` — yazma kapısıyla aynı (eşitliği `tests/test_abaplint_run.py` zorlar). Pin değişikliği
+- Pin: `@abaplint/cli@2.120.64` — yazma kapısıyla aynı (eşitliği `tests/test_abaplint_run.py` zorlar). Pin değişikliği
   yazma kapısında bilinçli bir karardır; bu script onu izler, önde gitmez.
 - Varsayılan koşum `npx --yes <pin>`: önbellekte yoksa npm kayıt defterinden indirir. Genel (global) kurulum yapmaz.
 - `--offline`: `npx --no` + npm çevrimdışı ayarı; yalnız önbellekteki pin kullanılır, indirme yapılmaz.

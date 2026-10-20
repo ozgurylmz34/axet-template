@@ -156,10 +156,11 @@ class TemplateAdaptationTest(unittest.TestCase):
 
     def test_review_ids_are_template_formats(self):
         for satir in ("DOC-KD-03 bulgusu kapatıldı.", "DOC-TS-05 gereği eklendi.", "DOC-CR-02 düzeltmesi.",
-                      "Karar ADR 12 ile alındı."):
+                      "Karar ADR 12 ile alındı.", "AX-DOC-FS-01 bulgusu kapatıldı."):
             with self.subTest(satir=satir):
                 self.assertEqual(1, _counts(_doc(satir))[0][m.B])
-        for satir in ("H-1 eksikliği giderilir.", "Kalem M-2 hatası verir.", "Kalem L-3 ile kapanır.", "PDOC-FS-051 kodu."):
+        for satir in ("H-1 eksikliği giderilir.", "Kalem M-2 hatası verir.", "Kalem L-3 ile kapanır.", "PDOC-FS-051 kodu.",
+                      "ZAX-DOC-FS-01 kodu."):
             with self.subTest(satir=satir):
                 self.assertEqual(0, _counts(_doc(satir))[0][m.B])
 

@@ -117,13 +117,38 @@ kurdur; projede farklıysa spesifikasyondan al.
 - Eski sistemden kopyalanan standart tablo/alan adlarını hedef sistemde doğrula.
 - Klasik program tek gövde yazılmaz: ana program yalnız `INCLUDE` satırları ve olay blokları; kod include'lara
   (`references/naming.md` §4.1).
-- Metot silinince önündeki ABAP Doc yorumunu da sil: sahipsiz yorum sınıf push'unda 400 döndürebilir.
+- Metot silinince önündeki ABAP Doc yorumunu da sil: sahipsiz yorum sınıf push'unda 400 döndürebilir (metot dışındaki
+  tüm yorum konumları: `%sap-code-review` `checklist-abap.md` BE-10b).
 - `TYPES … WITH EMPTY KEY` tanımlı iç tabloda ölçütsüz `SORT itab.` ve `DELETE ADJACENT DUPLICATES FROM itab.`
   birincil anahtara dayanır — ve o anahtar boştur; ATC "check the semantics of the statement" der. Etki bağlama göre
   değişir (sıralama bir doğruluk kuralıysa, ör. kilitleri artan sırada alma, kural sessizce delinmiş olabilir; yalnız
   `FOR ALL ENTRIES` girdisi hazırlıyorsa etki verimliliktir), ama düzeltme her durumda aynı ve güvenlidir:
   `SORT itab BY table_line ASCENDING.` · `DELETE ADJACENT DUPLICATES FROM itab COMPARING table_line.` "Bugün no-op
-  muydu" sorusunu ölçmeden koda yazma. Yerel kontrol bunu görmez; ATC koşunca görünür (ekip dersi).
+  muydu" sorusunu ölçmeden koda yazma. Yerel kontrol bunu görmez; ATC koşunca görünür (ekip dersi; BE-85).
+- **Sorted/hashed tablo satırı `CHANGING` parametresine verilmez.** Birincil anahtar alanları salt okunurdur ⇒ satırı
+  gösteren field-symbol *kısmen korumalıdır*; bağlama anında program düşer — metot anahtara hiç yazmasa bile
+  (`MOVE_TO_LIT_NOTALLOWED_NODATA` / `CX_SY_DYN_CALL_ILLEGAL_TYPE`, *"… is at least partly protected against changes"*;
+  mesajdaki alan anahtar alan olmayabilir). Sözdizimi, aktivasyon, abaplint ve ATC **hepsi geçer**; ilk çalıştırmada
+  patlar. Kaynak vakada iki inceleme riski görüp "anahtar alana yazılmıyor" diye geçti — bu kalıpta kanıt değildir.
+  ```abap
+  " mt_item TYPE HASHED TABLE OF ty_out WITH UNIQUE KEY vbeln posnr
+  " ⛔ YANLIŞ
+  LOOP AT mt_item ASSIGNING FIELD-SYMBOL(<ls_item>).
+    calc_quantities( CHANGING cs_out = <ls_item> ).
+  ENDLOOP.
+  " ✅ DOĞRU — kopya üzerinde çalış, anahtarla geri yaz (metot anahtar alanı değiştirmemeli)
+  DATA ls_item TYPE ty_out.
+  LOOP AT mt_item INTO ls_item.
+    calc_quantities( CHANGING cs_out = ls_item ).
+    MODIFY TABLE mt_item FROM ls_item.
+  ENDLOOP.
+  ```
+  `<fs> = ls_item.` ile bütün satırı geri atamak da anahtar alana yazar (aynı döküm). `ASSIGN itab[ … ] TO <fs>` ile
+  alınan satırda anahtar dışı alana doğrudan atama ve `IMPORTING` parametresine verme serbesttir. Kardeş taraması:
+  aynı döngüde ardışık birkaç `CHANGING` çağrısı olur. İnceleme satırı: BE-84 (komşu BE-71).
+- Sabit genişlikli CHAR alanı `|{ f ALPHA = OUT }|` ile dizeye çevirince sonda boşluk kalır (sıfırlar atılır, genişlik
+  korunur) → sonucu birleştirmeden, karşılaştırmadan ya da uzunluğunu sınırlamadan önce `condense( |{ f ALPHA = OUT }| )`.
+  Kural ifadeye bağlıdır, konuya değil (e-posta dışı bir motorda da çıktı; BE-86).
 
 **Ekip kodlama kuralları:**
 - `CHECK sy-subrc = 0.` yazma; `IF sy-subrc = 0. … ENDIF.` kullan (akış görünür kalır).
@@ -133,6 +158,19 @@ kurdur; projede farklıysa spesifikasyondan al.
   (büyük tipte `SUM` sığmıyorsa §2 Yol B).
 - Başta belli olan sonuç tablosunu döngüde `READ` + `INSERT` ile değil `VALUE #( FOR … )` ile kur. Satır içi
   `FIELD-SYMBOL(<x>)` aynı kapsamda iki kez tanımlanamaz; gerekiyorsa DATA bloğunda tanımla.
+
+**Değişken ve sabit ön ekleri (ekip kuralı):** sihirli sayı/dize yerine `CONSTANTS` ya da metin elemanı.
+Paket `.rules.md` farklı bir ön ek öngörüyorsa o geçerlidir. Obje adları (sınıf, tablo, program) bu tabloya değil
+`naming.md`'ye tabidir.
+
+| Ne | Global | Yerel |
+|---|---|---|
+| Sabit | `c_` | `c_` |
+| Elemanter değişken | `gv_` | `lv_` |
+| İç tablo | `gt_` | `lt_` |
+| Yapı | `gs_` | `ls_` |
+| Obje referansı | `go_` | `lo_` |
+| Seçim ekranı | `s_<ad>` (`SELECT-OPTIONS`) · `p_<ad>` (`PARAMETERS`) — ad ≤ 8 karakter: `%sap-classic-abap` `references/programs-includes.md` §2 | — |
 
 **Bilinen tuzak — standart tablo alanını DDL metninde aramak.**
 - **Belirti:** "`MARA.MATKL` yok", "`LIKP.WBSTK` yok" hükmü; alan gerçekte vardır. Elle yazılan bir kontrol script'i ya da
@@ -168,7 +206,7 @@ kurdur; projede farklıysa spesifikasyondan al.
   ② Varlık da kanıt değildir: o tabloyu standart akış da okuyor olabilir. Yalnız size özel okumaları ayırt edici say;
   izi `PROGRAM` kolonuyla kendi sınıf/programına filtrele, ham `STATEMENT_WITH_VALUES` + `USER_NAME` kolonlarını oku
   (vakada kanıt, WHERE'e enjekte edilmiş CDS yetki reddi koşuluydu). Kullanıcıya özgü farklarda kontrol grubu için
-  `%sap-cds-ddic` `references/cds.md` CDS-DCL-03.
+  `%sap-cds-ddic` `references/cds.md` AX-CDS-DCL-01.
 - Yerel yardımcı Python script'i yazıyorsan Windows konsolu (`cp1252`) Unicode basamayabilir:
   `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` ya da ASCII çıktı. Geçici script `.tmp/`'ye.
 
@@ -185,7 +223,7 @@ manuel) ve hangi canlı teyitle: `write-api-selection.md`.
 | `VBAK` / `VBAP` | released satış belgesi CDS (okuma); yazma `write-api-selection.md` (ölçülmüş: `I_SalesOrderTP` EML) |
 | `LIKP` / `LIPS` | released teslimat CDS (okuma); yazma `write-api-selection.md` (released BO kapsamı ölçülmedi) |
 | `T001` | released organizasyon CDS |
-| `CL_GUI_ALV_GRID` | `CL_SALV_TABLE` (klasik) / UI5 grid (RAP) |
+| `CL_GUI_ALV_GRID` | released değil (clean core uyarısı verir). Salt okunur liste → `CL_SALV_TABLE`; düzenlenebilir / özel toolbar / hücre olayı / kolon kişiselleştirme → GRID kalır, released alternatif kullanılmadığı için gerekçe kullanıcıya bildirilir (aşağıdaki son paragraf). Senaryo tablosunun tek kaynağı: `%sap-classic-abap` → `references/alv-report.md` §2. RAP'ta UI5 grid |
 | `CL_GUI_ALV_TREE` | `CL_SALV_TREE` |
 
 Released CDS adını tahmin etme: sistemde `adt_search_objects` ile ara, `adt_get` ile oku. Emin olunamayan

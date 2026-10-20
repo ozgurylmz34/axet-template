@@ -199,6 +199,72 @@ class DdicAdOnerisiKuraliTest(unittest.TestCase):
         bas = rb.index("```text\n", rb.index("### S1 — Kesin yasaklar")) + len("```text\n")
         self.assertEqual(kanonik, rb[bas:rb.index("```", bas)].strip())
 
+    def test_rol_brifingi_s2_arac_siniflari_cli_listesiyle_ayni(self):
+        """Z202: S2 araç listesi elle yazılıydı ve 8 araç geride kalmıştı (bağımsız inceleme bulgusu). Liste, CLI
+        `--list` çıktısının (`gate.tool_class`) sınıflarıyla aynı olmalı. KAPSAM: araç adı + sınıf; açıklama metni değil."""
+        import json
+        cli = SAP / "sap-adt-foundation" / "scripts" / "sap_adt_cli.py"
+        p = subprocess.run([sys.executable, "-B", str(cli), "--list"], capture_output=True, text=True,
+                           encoding="utf-8", timeout=120)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        araclar = json.loads(p.stdout)["result"]["tools"]
+        okuma = {a["name"] for a in araclar if a["class"] == "read"}
+        yazma = {a["name"] for a in araclar if a["class"] == "write" or a.get("write_when")}
+        self.assertGreater(len(okuma), 20, "CLI listesi beklenenden kısa — ölçüm körleşmiş olabilir")
+        rb = _oku(SAP / "sap-dev" / "references" / "role-briefs.md")
+        bas = rb.index("```text\n", rb.index("### S2 — ")) + len("```text\n")
+        s2 = rb[bas:rb.index("```", bas)]
+        ad_rx = re.compile(r"\b(?:ping|sap_doctor|adt_[a-z_]+)\b")
+        okuma_metni = s2[s2.index("OKUMA sınıfı"):s2.index("YAZMA sınıfı")]
+        yazma_metni = s2[s2.index("YAZMA sınıfı"):s2.index("- Hiçbir komuta")]
+        self.assertEqual(set(ad_rx.findall(okuma_metni)), okuma, "S2 OKUMA listesi CLI okuma sınıfıyla ayrışıyor")
+        self.assertEqual(set(ad_rx.findall(yazma_metni)), yazma, "S2 YAZMA listesi CLI yazma sınıfıyla ayrışıyor")
+
+    def test_inceleme_brifleri_kanit_tipi_kapsama_ve_kalan_dogrulamalari_ister(self):
+        """Z202: bağımsız inceleme çıktısı kanıt tipi etiketi, kapsama tablosu ve sistemde kalan doğrulamalar ister;
+        semptom yaması ↔ kök düzeltme sorusu sorulur. KAPSAM: metnin varlığı; inceleyicinin uyguladığı değil."""
+        rb = _oku(SAP / "sap-code-review" / "references" / "reviewer-brief.md")
+        cikti = rb[rb.index("## 8. ÇIKTI"):rb.index("## Ana oturum")]
+        self.assertIn("[TİP·ÖNEM·KANIT]", cikti)
+        self.assertIn("KAPSAMA TABLOSU", cikti)
+        self.assertIn("SİSTEMDE KALAN DOĞRULAMALAR", cikti)
+        kanit = rb[rb.index("## 5. KANIT KURALLARI"):rb.index("## ROL: SAP KOD İNCELEYİCİ")]
+        self.assertRegex(kanit, r"yalnız bir dokümanda duruyorsa o bulgu BLOCKER olamaz")
+        self.assertIn("Kural kaynağı bulguyu `doküman` YAPMAZ", kanit)
+        # Bulgu kapısının istisnası İKİ tavanı da sayar (okunamayan iddia + KANIT TİPİ); yoksa okunamayan iddia NOT'a
+        # düşer, B<n> doğmaz, KARAR PASS olur (bug gate B1).
+        self.assertRegex(kanit, r"BULGU KAPISI[^\n]*İstisna[^\n]*TAVANLI BULGU(?:[^\n]*\n){1,2}"
+                                r"[^\n]*ⓐ okunamayan iddia[^\n]*ⓑ yalnız dokümana dayanan")
+        self.assertRegex(kanit, r"okunamayan bir iddiadan doğan not \"SİSTEMDE KALAN DOĞRULAMALAR\"a")
+        # ÖNEM kümesi kapalıdır (BLOCKER | WARNING): boş politika ayrı bir önem kelimesi üretmez (bug gate B2).
+        self.assertRegex(rb, r"politika boşsa\s+WARNING yaz")
+        self.assertNotIn("önem DOĞRULANMADI yaz", rb)
+        self.assertRegex(rb, r"(?i)kardeş\s+ça[gğ]")
+        cr = _oku(AXET_HOME / "skills" / "code-review" / "SKILL.md")
+        for parca in ("KANIT TİPİ", "KAPSAMA TABLOSU", "SİSTEMDE KALAN DOĞRULAMALAR"):
+            with self.subTest(parca=parca):
+                self.assertIn(parca, cr)
+        self.assertRegex(cr, r"(?i)kardeş\s+ça[gğ]")
+        # Başlık tek başına yetmez: tavan kuralının kendisi (doküman-tek davranış iddiası BLOCKER olamaz) aranır.
+        self.assertRegex(cr, r"yalnız dokümanda duruyorsa bulgu BLOCKER olamaz:\s*en fazla WARNING")
+
+    def test_rol_brifleri_yazim_ani_ve_oz_denetim_tasir(self):
+        """Z202: backend ve UI5 alt görev brifleri yazım anı satırlarını (kontrol listesi kimliğiyle) ve teslim öncesi
+        öz-denetimi taşır. KAPSAM: kimliklerin brifte anılması; kontrol listesinde tanımlı olduğu (lider entegrasyonu)."""
+        rb = _oku(SAP / "sap-dev" / "references" / "role-briefs.md")
+        be = rb[rb.index("## ROL: BACKEND ALT GÖREVİ"):rb.index("## (c)")]
+        fe = rb[rb.index("## ROL: UI5 ALT GÖREVİ"):rb.index("## (d)")]
+        for blok, kimlikler in ((be, ("BE-10b", "BE-80", "BE-85", "BE-86", "BE-87", "BE-88")),
+                                (fe, ("FE-34", "FE-35", "FE-51", "FE-52"))):
+            self.assertIn("YAZIM ANI KURALLARI", blok)
+            self.assertIn("TESLİM ÖNCESİ ÖZ-DENETİM", blok)
+            self.assertIn("KAPSAMA TABLOSU", blok)
+            for k in kimlikler:
+                with self.subTest(kimlik=k):
+                    self.assertIn(f"({k})", blok)
+        self.assertIn("abaplint_run.py", be)
+        self.assertIn("check_ui5_freestyle_traps.py", fe)
+
     def test_append_kopyalari_yaratim_yasagini_tasir(self):
         """Z103: append adını anan ikincil metinler yaratım yasağını da söyler (yalnız 'ad önerilmez' T4 hatasını üretti)."""
         yollar = [SAP / "sap-dev" / "references" / "naming.md", SAP / "sap-adt-foundation" / "references" / "foundation-ops.md",

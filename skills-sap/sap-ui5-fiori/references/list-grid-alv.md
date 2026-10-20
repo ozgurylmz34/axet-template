@@ -62,6 +62,15 @@
 5. **Kolon göster/gizle + varyant + Excel** = kişiselleştirme yardımcısı (§3).
 
 **Binding:** `oTable.getBinding("rows")` (m.Table'da `"items"`); sayım `rowsUpdated` → `getBinding("rows").getLength()`.
+
+**"Filtre girilmeden liste istek atmasın" (doğrudan `#/liste` açılışı, F5):** view'da `rows="{path: …, suspended: true}"`
++ route eşleşince filtre yaz + `resume()` deseni **tutmaz**: binding askıdayken tablo render'ı `getContexts()` ile
+filtresiz `$skip=0&$top=…&$inlinecount=allpages` isteği atar (ekip ölçümü, UI5 1.120.23, mock, 3 temiz yüklemede 3/3);
+`filter()` da askıyı yok sayar. Çalışan desen: view'da `rows` binding'i YOK; route eşleşince zorunlu filtre boşsa
+`this.getRouter().navTo("filter", {}, true)` + `return`; doluysa ilk girişte
+`oTable.bindRows({ path, parameters: { countMode: "Inline" }, filters: this._buildFilters() })`, sonraki girişlerde mevcut
+binding'e `filter()`. `getBinding("rows")` kullanan yardımcılar (kişiselleştirme, Excel, sayaç) `null` kontrolü yapar.
+"İlk istek gitmesin" iddiası Network'te ölçülür; kaynak okuması yetmez.
 Master-detail: `selectionMode="Single"` + anahtar kolonda `Link press` ya da `rowActionTemplate` (Navigation) → `navTo`.
 
 **Saat alanı:** `Edm.Time` → `type: 'sap.ui.model.odata.type.Time'`; Excel kolonunda `EdmType.Time`.
@@ -125,6 +134,24 @@ Rapor/liste seçim ekranı ABAP SELECT-OPTIONS gibi davranır, **kullanıcı ist
   tanımla" / aralık sekmesi). Tek değerli `<Input>` kullanılmaz.
 - İstisnalar: tarih = `DateRangeSelection`; durum/bayrak = `SegmentedButton`.
 - Manifest libs'te `sap.ui.comp`.
+- **Yazılı metin → token (MUST):** her `MultiInput`'a validator (`addValidator`) — VH'den seçilen token'la aynı anlamı
+  taşır. Validator yoksa yazılıp Enter/Tab'lanan değer token olmaz; zorunlu alanda uyarı görünür ama zorunlu olmayan
+  alanda değer **`$filter`'a hiç girmez** ve rapor süzgeçsiz, daha geniş sonuç döner — hata yok (ekip ölçümü 2026-10-16:
+  aynı şablondan türeyen 8 rapor uygulamasının 8'inde eksikti). Aynı yerde: kod alanında büyük harf · `MaxLength` + uyarı
+  · yazılı koşul işaretini (`>`, `*` …) reddet ya da çevir · Listele'de token'a dönüşmemiş metin varsa durdur ve söyle ·
+  VH Tamam'da alanda kalan yazılı metni koru. Ölçüm: yaz + Enter → Listele → ağ izinde `$filter`.
+- **VH "Koşulları tanımla" sekmesi büyük harfe çevrilmez:** `EQ zx01` token'a olduğu gibi girer; alanın domain'inde
+  `LOWERCASE` boşsa veritabanında küçük harfli anahtar yoktur ⇒ sorgu **hatasız 0 satır**. Seçim kurucuda range
+  `value1`/`value2`'yi tek noktada `.toUpperCase()` yap (Enter'la yazılanı büyüten validator VH koşul sekmesini görmez —
+  iki ayrı kod yolu). Test: koşul sekmesine küçük harf + aynı değerin büyük harfli kontrolü yan yana.
+- **Desteklenmeyen range türü sessizce düşürülmez:** `setExcludeRangeOperations([], "string")` "Hariç tut" seçeneğini
+  KALDIRMADI (UI5 1.120.23, canlı ölçüm); seçim kurucu `exclude` aralığını atlayınca dışlanan değer sonuçta kalır, hata
+  yok. Backend'in desteklemediği türü (exclude, desteklenmeyen operatör) VH Tamam'da ya da seçim doğrulamasında
+  **reddet + mesaj**; "gizledim" iddiasını tarayıcıda operatör listesine bakarak ölç.
+- **`DateRangeSelection` ikinci tarihi gün sonudur:** `secondDateValue` seçilen günün 23:59:59'unu taşır. "En çok 12 ay"
+  gibi sınır denetimini ham `getTime()` farkıyla yaparsan 01.01–31.12 aralığı sınırı aşmış görünür. İki ucu karşılaştırmadan
+  önce gün başına indir (`new Date(y, m, d)`); sınır ve sınır+1 gün (29.02 dahil) vakalarını tarayıcıda dene. Backend'e
+  gönderim ayrı kuraldır (V2 date-only — `freestyle-odata-v2.md`).
 
 ### 6.2 Arama: harf-duyarsız "içeren", `caseSensitive:false` YOK
 ```javascript
@@ -134,6 +161,15 @@ new Filter("Name", FilterOperator.Contains, q);            // düz substringof
 - `caseSensitive:false` UI5 V2'de `$filter`'a `toupper()`/`tolower()` enjekte eder; SAP Gateway (`/IWBEP`) bunları
   desteklemez → **HTTP 400 "Function toupper/tolower is not supported"** (SAP Note 1797736) → arama hiç sonuç
   döndürmez. Düz `substringof` ölçülen sistemde harf-duyarsızdı (DB collation) — başka sistemde bir kez ölç.
+- **Çok alanlı OR aramasında `MaxLength` süzgeci (MUST):** SAP Gateway'de `substringof('<terim>', Alan)` terimi alanın
+  `$metadata` `MaxLength`'inden uzunsa **isteğin tamamı 400** döner — OR zincirindeki tek kısa alan (ör. posta kodu, 10)
+  bütün aramayı öldürür; hata yutulursa ekran sessizce "bulunamadı" der. Her alanı terimin uzunluğuna göre süz; hiç alan
+  kalmazsa boş sonuç + "terim çok uzun" bilgisi.
+- **Türkçe harf sınıfı tam değil:** ölçülen sunucuda `{i, I, ı}` tek sınıf, `İ` ayrı (`istanbul` 5 · `İstanbul` 10
+  satır); hem i hem ı içeren çok kelimeli küçük harfli terim hiçbir varyantla bulunmadı. Varyant kur: orijinal ·
+  i-sınıfı → `I` · i-sınıfı → `İ` · Türkçe büyük harf eşlemesi (i → İ, ı → I); tekilleştir ve URL uzunluğunu ölç
+  (ekip ölçümü: 4 varyant × 6–7 alan ≈ 6 KB). Tek kelimelik testte iki kusur da görünmez (ekip dersi, 2026-10-09).
+  Backend yarısı: `%sap-odata-backend` → `references/filter-search.md` §1.
 - Wildcard yardımcısı (tek ortak fonksiyon; F4 araması, kolon filtresi, düz token aynı yardımcıyı kullanır):
   ```javascript
   _parseSearchTerm: function (sPath, sRaw, sDefaultOp) {
@@ -165,6 +201,14 @@ sırala + tipe duyarlı operatörlü filtre: metin Contains/EQ/StartsWith/EndsWi
 bool EQ) + `infoToolbar` aktif filtre çubuğu (`Alan op değer ✕` + "Tümünü temizle") + kolon göster/gizle popover +
 Excel (aynı kapsam sorusu) + `localStorage` durum. Yatay/sanal scroll yoktur; `importance` + `minScreenWidth` +
 `demandPopin` ile dar ekranda pop-in. Binding `"items"`, seçim `removeSelections(true)`.
+
+**Taşan kolonu "esnek" kolonla çözme:** sabit kolon toplamı tablo genişliğini aşınca (`fixedLayout` varsayılan) genişliksiz
+kolon **0 px**'e düşer — metin harf harf kırılır, satır uzar; hepsi sabit hâl yalnız yatay kaydırıyordu, yani "düzeltme"
+regresyondu (ekip ölçümü 2026-10-16, diyalog içinde `sap.m.Table`, UI5 1.120). Çare: bütün kolonlar sabit, toplam ≤
+kap genişliği; dar ekranda `minScreenWidth` / `demandPopin`. İkinci gizli neden: genişliği varsayılan `100%` olan tabloya
+`sapUiSmallMarginBeginEnd` verilince tablo kabından 1rem taşar → `width="calc(100% - 2rem)"`. Genişlik düzeltmesini tek
+ekranda değil merdivenle ölç (1600 / 1366 / 1280 / 1180 / 1093 / 1024 px; Windows %125 ölçekte 1366 ekran ≈ 1093 CSS px):
+`th` genişliği + kabın `scrollWidth`/`clientWidth`.
 
 ## 8. Kontrol listesi (liste ekranı)
 - [ ] Grid; `sap.ui.table` + `sap.ui.export` libs; `check_list_view_grid.py` PASS

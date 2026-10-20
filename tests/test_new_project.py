@@ -88,17 +88,18 @@ class NewProjectTest(GeciciTest):
         self.assertNotIn("Sonraki adımlar", r.stdout)
 
     def test_sap_conn_readme_makine_yolu_tasimaz(self):
-        # Z83: conn/README.md git'e AÇIK tutulur (`conn/*` + `!conn/README.md`) ⇒ klonun mutlak yolunu taşımamalı
+        # Z83: bağlantı açıklaması git'e AÇIK tutulur ⇒ klonun mutlak yolunu taşımamalı. Z164: açıklama artık
+        # `conn/README.md` değil `docs/sap-baglanti.md` (conn/ ajan denylist'inde; commit hep kullanıcıya düşüyordu).
         d = self.proje(sap=True)
-        readme = d / "conn" / "README.md"
+        readme = d / "docs" / "sap-baglanti.md"
         self.assertTrue(readme.is_file())
         metin = readme.read_text(encoding="utf-8")
         self.assertNotIn("<AXET_HOME>", metin)
         self.assertNotIn(AXET_HOME.resolve().as_posix(), metin)
         self.assertIn("setup_credentials.py", metin)
         # kontrol grubu: dosya gerçekten git'e açık (kapalı olsaydı yol taşıması zararsız olurdu)
-        r = self.git(d, "check-ignore", "-q", "conn/README.md", kontrol=False)
-        self.assertEqual(r.returncode, 1, "conn/README.md git'e kapalı görünüyor — test varsayımı geçersiz")
+        r = self.git(d, "check-ignore", "-q", "docs/sap-baglanti.md", kontrol=False)
+        self.assertEqual(r.returncode, 1, "docs/sap-baglanti.md git'e kapalı görünüyor — test varsayımı geçersiz")
 
     def test_proje_hafizasi_git_e_acik(self):
         """Proje hafızası (.axet-code/memory) PROJE reposunda izlenir; ayrı bir hafıza git'i gerekmez.

@@ -102,7 +102,7 @@ mesaj (her duruma ayrı açıklama + aksiyon) · görüntüsüz uzun anlatım ·
 değiştirildiyse eski kayıtlar eski alanda kalır ve iki popülasyon birlikte yaşar. Böyle bir cümle yazmadan önce:
 ① değişikliğin karar kaydında veri göçü kararını ara ② canlıda **eski tarihli** kayıtla karşı örnek ara (yalnız yeni
 kayıtlara bakmak kör kanıttır) ③ göç yoksa cümleyi daralt ("değişiklikten önceki kayıtlarda bilgi X alanında kalmış
-olabilir"). Aynı alanın kayıt kategorisine göre farklı anlam taşıyıp taşımadığına da bakılır (DOC-CR-05).
+olabilir"). Aynı alanın kayıt kategorisine göre farklı anlam taşıyıp taşımadığına da bakılır (AX-DOC-CR-02).
 
 ## 8. Uygulama içi yardım kopyası
 UI5 uygulaması bir "Kullanıcı kılavuzu" düğmesiyle KD HTML'ini açıyorsa (`webapp/help/…`), KD her üretildiğinde kopya ve

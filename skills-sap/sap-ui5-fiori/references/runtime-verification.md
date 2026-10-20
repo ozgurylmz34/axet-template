@@ -97,6 +97,13 @@ sap.ui.core.Element.registry.get("<view-id>").getController().onClearFilters(); 
 Buton sağlığı: `getEnabled()`, `getVisible()`, `mEventRegistry.press`, `getDomRef().offsetParent`.
 `Element.registry` API'si yeni sürümlerde değişebilir — proje UI5 sürümünde DOĞRULANMADI.
 
+**Klavye kısayolu (Ctrl+A) testi — tık değil odak:** `sap.ui.table` (`selectionMode="MultiToggle"`) hücresine fare tıkı +
+Ctrl+A yolunda hiç `rowSelectionChange` gelmedi; aynı hücreye `locator.focus()` + Ctrl+A `selectAll` olayını üretti
+(`enableSelectAll="false"` iken de; ekip ölçümü 2026-10-17, UI5 1.120.23, deploy edilmiş uygulama). Tık yolu "kısayol
+etkisiz" sonucunu verir ve koruma kodu hiç sınanmadan yeşil görünür. Önce `focus()` yolunu koş, olay sayacıyla (ör.
+`rowSelectionChange` dinleyicisi) "olay geldi" kanıtını al; olay 0 ise "olay tetiklenmedi — test yolu doğrulanmadı" yaz.
+Tık yolunun neden olay üretmediği ölçülmedi.
+
 ### 4.3 Durumu DOM'dan değil modelden, sayıyla oku
 - `view.getModel("<ad>").getData()` / `getProperty("/items").length` — `sap.ui.table` sanal satır DOM'u satır sayısında
   yanıltır.
@@ -230,6 +237,13 @@ sır diskte kalır). CLI config ile sırları `open` anında belleğe alır: dos
 - dotenv değeri **tırnakla** yazılır: tırnaksız değer `#`'de kesilir (ölçüldü: `ab#cd` → alan `ab` ile doldu). Değeri
   İÇERMEDİĞİ tırnağı seç (`'` → `` ` `` → `"`); satır sonu taşıyan ya da üç tırnak türünü de içeren sır bu yolla verilemez.
 - Basic-auth için `httpCredentials` yeterli çıktı. `extraHTTPHeaders` ile elle başlık kurma **ÖLÇÜLMEDİ**.
+- ⚠ **Doğrudan SAP BSP'ye (`/sap/bc/ui5_ui5/sap/<bsp>/index.html`, deploy edilmiş uygulama):** ekip ölçümünde (2026-10-15,
+  Playwright node kütüphanesi) `httpCredentials` **401** ile düştü; aynı kimlik önden gönderilen başlıkla
+  (`extraHTTPHeaders: { Authorization: 'Basic …' }`) index 200, `$metadata` 200 verdi. Mekanizma ölçülmedi
+  (`httpCredentials` kimliği yalnız `WWW-Authenticate` meydan okumasından sonra gönderir; SAP ICF'in ilk yanıtı bu akışa
+  uymuyor olabilir). 401 görünce "parola yanlış" deme, önce önden başlıkla dene. Başlık da sırdır: komut metnine yazılmaz,
+  aynı geçici config yolundan verilir — playwright-cli'de `contextOptions.extraHTTPHeaders` ile **ÖLÇÜLMEDİ**. Lokal
+  `fiori run` turu ayrı yoldur (proxy kimliği, `deploy-and-local-run.md` §1).
 - Sızma şüphesinde: çıktıyı redakte et, geçici dosyaları sil, kimlik bilgisinin değiştirilmesini kullanıcıya öner.
 
 **Sınırlar**

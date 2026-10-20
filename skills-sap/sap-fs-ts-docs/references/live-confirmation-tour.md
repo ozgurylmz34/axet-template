@@ -15,7 +15,7 @@ dördü DEV'de zaten yapılmıştı · "geri dönüşün son noktası" denen eş
   `%sap-dev` → `references/role-briefs.md` **S1** (kesin yasaklar) + **S2** (yalnız okuma sınıfı CLI) + **S4** blokları ve bu dosyanın
   §1 tablosu **metin olarak** yapıştırılır. Alt ajanın `bash` ile CLI çağırabildiği bu template'te ölçülmedi (DOĞRULANMADI);
   çağıramıyorsa ölçümü ana oturum yapar, **değerlendirmeyi** taze inceleyici ölçüm çıktısı üzerinden yapar.
-- Yalnız **okuma sınıfı** araçlar. Yazma sınıfı araç (`adt_syntax_check` ve `adt_classrun` dahil) bu turda çağrılmaz.
+- Yalnız **okuma sınıfı** araçlar. Yazma sınıfı araç (`adt_classrun` dahil) bu turda çağrılmaz.
 - SAP bağlantısı yoksa (`.conn` dosyası yok, `ping` başarısız) tur **koşulamaz**: rapora beş başlığın hepsi "ÖLÇÜLEMEDİ — bağlantı
   yok" yazılır ve TS durumu "canlı teyit bekliyor" olur. Build kapısı açılmaz.
 

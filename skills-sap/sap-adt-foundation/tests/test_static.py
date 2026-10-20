@@ -30,9 +30,11 @@ YASAK_PY = {
 YAZMA_METODLARI = re.compile(
     r"^(create_[a-z_]+|push_object|activate_object|delete_object|lock_object|unlock_object|"
     r"set_object_source|run_classrun|syntax_check)$")
+# Z195 ① (2026-10-19): `adt_syntax_check` salt-okur checkrun'a geçti (okuma sınıfı) ⇒ araç listesinden çıktı.
+# `syntax_check` METODU (SAPClient — aktivasyon yolu, push ön kontrolü) yukarıda yazma metodu olarak KALIR.
 YAZMA_ARACLARI = re.compile(
     r"^adt_(post_shell|push_source|delete|activate|publish_service|classrun|domain_create|"
-    r"dtel_create|struct_create|syntax_check|unit_run|screen_generate|msgclass_write|set_description)$")
+    r"dtel_create|struct_create|unit_run|screen_generate|msgclass_write|set_description)$")
 # Örnek bağlantı şablonunda yer tutucusuz yazılabilen, SIR OLMAYAN anahtarlar (varsayılan davranış değerleri).
 SIR_OLMAYAN_ORNEK = frozenset({"ADT_SAP_SSL_VERIFY", "ADT_SAP_TIER"})
 

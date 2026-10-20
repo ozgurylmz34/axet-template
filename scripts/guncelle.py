@@ -2289,6 +2289,28 @@ ASGARI_GUVENCE_YOLLARI = [
 # akışı DURDURMAZ (FAIL değildir; ölçülemedi ≠ temiz — RAPOR.md'de görünür).
 BUTUNLUK_BUTCE_SN = 60
 BUTUNLUK_ADIM_SN = 45
+# Z163: `cikis is None` ÜÇ ayrı durumdur — koşulu sağlanmadığı için ATLANAN adım (alarm DEĞİL) ile
+# zaman aşımı / bütçe / betik yok (ÖLÇÜLEMEDİ; 'temiz' DEĞİL). Ayrımı adımın `not` alanı taşır.
+BUTUNLUK_ATLANDI = "ATLANDI — koşul sağlanmadı"
+
+
+def butunluk_durumu(adim: dict) -> str:
+    """Bir bütünlük adımının hükmü: PASS · FAIL · ATLANDI · ÖLÇÜLEMEDİ (Z163)."""
+    if adim.get("cikis") is None:
+        return "ATLANDI" if str(adim.get("not") or "").startswith("ATLANDI") else "ÖLÇÜLEMEDİ"
+    return "PASS" if adim["cikis"] == 0 else "FAIL"
+
+
+def butunluk_rapor_satiri(adim: dict) -> str:
+    """RAPOR.md "Bütünlük turu" satırı. Koşmayan adımda `not` aynen taşınır: kullanıcı ATLANDI'yı
+    (koşul gereği, alarm değil) zaman aşımı / bütçe bitti ÖLÇÜLEMEDİ'sinden ayırabilsin (Z163)."""
+    durum = butunluk_durumu(adim)
+    if durum in ("PASS", "FAIL"):
+        return f"- {adim['ad']}: {durum}"
+    not_ = str(adim.get("not") or "").strip()
+    if not not_:
+        return f"- {adim['ad']}: {durum}"
+    return f"- {adim['ad']}: {not_ if not_.startswith(durum) else f'{durum} — {not_}'}"
 
 
 def komut_butunluk(b: Baglam, args) -> int:
@@ -2308,7 +2330,7 @@ def komut_butunluk(b: Baglam, args) -> int:
 
     def kos(ad: str, komut: str, kosul: bool = True) -> None:
         if not kosul:
-            adimlar.append({"ad": ad, "cikis": None, "not": "ATLANDI — koşul sağlanmadı"})
+            adimlar.append({"ad": ad, "cikis": None, "not": BUTUNLUK_ATLANDI})
             return
         parcalar = _komutu_coz(komut)
         betik = _betik_yolu(parcalar)
@@ -2374,7 +2396,8 @@ def komut_butunluk(b: Baglam, args) -> int:
         print(g)
 
     fail = [a for a in adimlar if a.get("cikis") not in (0, None)]
-    olculemedi = [a for a in adimlar if a.get("cikis") is None]
+    olculemedi = [a for a in adimlar if butunluk_durumu(a) == "ÖLÇÜLEMEDİ"]
+    atlandi = [a for a in adimlar if butunluk_durumu(a) == "ATLANDI"]
     _yaz_json(k.durum_dizini / "butunluk.json", {
         "zaman": _simdi(), "plan": _plan_muhru(plan), "adimlar": adimlar,
         "asgari_guvence": guvence,
@@ -2382,8 +2405,8 @@ def komut_butunluk(b: Baglam, args) -> int:
                        "validator, markdown link) BU TURDA YOK — iş paketi P8. Koşulamayan "
                        "adımlar 'ÖLÇÜLEMEDİ' yazılır; ölçülemedi ≠ temiz.",
     })
-    print(f"Bütünlük: {len(adimlar) - len(fail) - len(olculemedi)} geçti · {len(fail)} FAIL · "
-          f"{len(olculemedi)} ÖLÇÜLEMEDİ")
+    print(f"Bütünlük: {len(adimlar) - len(fail) - len(olculemedi) - len(atlandi)} geçti · {len(fail)} FAIL · "
+          f"{len(olculemedi)} ÖLÇÜLEMEDİ · {len(atlandi)} ATLANDI (koşul gereği, alarm değil)")
     return 1 if fail else 0
 
 
@@ -2822,9 +2845,7 @@ def komut_kapanis(b: Baglam, args) -> int:
         rapor += ["- yok"]
     rapor += ["", "## Bütünlük turu"]
     if butunluk:
-        rapor += [f"- {a['ad']}: " + ("ÖLÇÜLEMEDİ" if a.get("cikis") is None
-                                      else ("PASS" if a["cikis"] == 0 else "FAIL"))
-                  for a in butunluk["adimlar"]]
+        rapor += [butunluk_rapor_satiri(a) for a in butunluk["adimlar"]]
         rapor += ["", "## Asgari güvence"] + [f"- {g}" for g in butunluk["asgari_guvence"]]
     else:
         rapor += ["- ÖLÇÜLEMEDİ (bütünlük turu koşmadı) — 'temiz' DEĞİL"]

@@ -99,18 +99,20 @@ class SahteKlon:
                 fh.write(icerik)
 
     def uret(self, sap: bool = False, onceden: dict | None = None,
-             ikili: dict | None = None, kisayol: bool | None = None) -> "SahteKlon":
+             ikili: dict | None = None, kisayol: bool | None = None,
+             ek_v1: dict | None = None) -> "SahteKlon":
         """onceden: new_project'ten ÖNCE projede duran dosyalar (rel -> içerik); aXet'in kendi yazdıkları gibi.
         ikili: şablona eklenecek ikili dosyalar (klon-göreli yol -> bayt).
         kisayol: resmi `KURULUMU-TAMAMLA.cmd`'yi `yeni_proje.py` gibi yaz (varsayılan: SAP projesinde evet —
-        gerçek SAP projeleri `yeni_proje.py` ile doğar, Z70)."""
+        gerçek SAP projeleri `yeni_proje.py` ile doğar, Z70).
+        ek_v1: V1 şablonuna eklenecek metin dosyaları (klon-göreli yol -> içerik; Z164 conn/README.md gibi)."""
         (self.home / "scripts").mkdir(parents=True)
         for ad in KOPYALANAN_SCRIPTLER:
             shutil.copy2(GERCEK_SCRIPTS / ad, self.home / "scripts" / ad)
         (self.home / "core" / "sap").mkdir(parents=True)
         shutil.copy2(AXET_HOME / "core" / "sap" / "00-sap.md",
                      self.home / "core" / "sap" / "00-sap.md")
-        self._yaz(V1_SABLON)
+        self._yaz({**V1_SABLON, **(ek_v1 or {})})
         for yol, bayt in (ikili or {}).items():
             (self.home / yol).parent.mkdir(parents=True, exist_ok=True)
             (self.home / yol).write_bytes(bayt)
@@ -189,10 +191,11 @@ class SahteKlon:
 
 class ProjeTemel(GeciciTest):
     sap = False
+    ek_v1: dict | None = None
 
     def setUp(self) -> None:
         super().setUp()
-        self.f = SahteKlon(self, self.tmp).uret(sap=self.sap)
+        self.f = SahteKlon(self, self.tmp).uret(sap=self.sap, ek_v1=self.ek_v1)
 
     def planla(self, onayla: bool = True, ad: str | None = None) -> subprocess.CompletedProcess:
         if onayla:
@@ -1505,14 +1508,15 @@ class Z79SapDisiTest(ProjeTemel):
         self.assertIn('behavior_manifest.py" generate --project-dir "', rapor)
 
 
-CONN_KURALI = "aXet `conn/` altında README dahil hiçbir dosyayı git'e eklemez"
+CONN_BOLUMU = "## conn/ — commit kullanıcının"
+CONN_TASIMA_BOLUMU = "## SAP bağlantı açıklaması — `conn/README.md` → `docs/sap-baglanti.md`"
 
 
 class Z97ConnCommitTest(ProjeTemel):
-    """Z97/Z110 (karar 2026-09-26): `conn/README.md` şablon gereği İZLENİR (`.gitignore`: `!conn/README.md`) ama
-    modelin `git add conn/...` denemesi denylist'e takılır (ölçüldü, canlı: kullanıcı "commit et" dedi → model
-    `git add conn/README.md` → "Access denied"). Kapanış raporu bunu AÇIKÇA söyler: conn/ altında README dahil hiçbir
-    dosyayı model git'e eklemez, `conn/README.md`'nin commit'i kullanıcıya bırakılır.
+    """Z97/Z110 → Z164 (kullanıcı kararı 2026-10-19): modelin `git add conn/...` denemesi denylist'e takılır (canlı
+    ölçüldü 2026-09-26: "commit et" → `git add conn/README.md` → "Access denied"). Bağlantı açıklaması artık
+    `docs/sap-baglanti.md`'de durduğu için şablonda `conn/` altında izlenen dosya yok ⇒ "conn/ — commit kullanıcının"
+    bölümü HER SAP kapanışında basılmaz; yalnız bu kapanışta `conn/` altına GERÇEKTEN bir dosya yazıldıysa komutla basılır.
 
     KAPSAM — bakılmayan: modelin bu cümleye fiilen uyduğu (canlı ölçüm işi) · denylist'in kendisi (test_install).
     """
@@ -1529,18 +1533,19 @@ class Z97ConnCommitTest(ProjeTemel):
         self.assertEqual(k.returncode, 0, self.cikti(k))
         return (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
 
-    def test_conn_readme_yazilinca_rapor_commiti_kullaniciya_birakir(self):
-        rapor = self._kapanis({"templates/project-sap/conn/README.md": "# conn v2\n"})
-        self.assertIn("[PASS] conn/README.md", rapor, "önkoşul: conn/README.md bu kapanışta yazılmış olmalı")
-        self.assertIn(CONN_KURALI, rapor)
-        self.assertIn("git add conn/README.md", rapor, "kullanıcıya kendi terminali için komut verilmeli")
+    def test_conn_altina_dosya_yazilinca_rapor_commiti_kullaniciya_birakir(self):
+        rapor = self._kapanis({"templates/project-sap/conn/DEV.env.example": "SID=<SID>\n"})
+        self.assertIn("[PASS] conn/DEV.env.example", rapor, "önkoşul: dosya bu kapanışta yazılmış olmalı")
+        self.assertIn(CONN_BOLUMU, rapor)
+        self.assertIn("git add conn/DEV.env.example", rapor, "kullanıcıya kendi terminali için komut verilmeli")
 
-    def test_conn_yazilmayan_SAP_kapanisinda_kural_var_komut_yok(self):
-        """Kontrol grubu: plan conn/'a dokunmasa da SAP projesinde kural cümlesi durur (model `git add -A` ile de
-        conn/README.md'yi sahnelemesin), ama yazılmamış dosya için komut verilmez."""
+    def test_Z164_conn_yazilmayan_SAP_kapanisinda_conn_bolumu_yok(self):
+        """Z164: eski davranış her SAP kapanışında "conn/README.md commit'i kullanıcının" diye basıyordu
+        (kullanıcının şikâyeti: "hâlâ bekliyor"). Artık conn/'a dokunmayan kapanışta bölüm yok."""
         rapor = self._kapanis({"templates/project/proje-recetesi.ornek.md": "# Reçete v2\nA\nB\nC\n"})
-        self.assertIn(CONN_KURALI, rapor)
-        self.assertNotIn("git add conn/README.md", rapor)
+        self.assertNotIn(CONN_BOLUMU, rapor)
+        self.assertNotIn("git add conn/", rapor)
+        self.assertNotIn("README dahil", rapor)
 
 
 class Z97SkillMetniTest(unittest.TestCase):
@@ -1549,9 +1554,264 @@ class Z97SkillMetniTest(unittest.TestCase):
 
     def test_skill_conn_altini_git_e_eklememeyi_soyler(self):
         metin = (AXET_HOME / "skills" / "guncelle-proje" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("`conn/` altında README dahil hiçbir dosyayı git'e EKLEMEZSİN", metin)
-        self.assertIn("`conn/README.md` şablon gereği", metin)
-        self.assertIn("conn/ — commit kullanıcının", metin, "skill raporun bölüm adına işaret etmeli")
+        self.assertIn("`conn/` altında hiçbir dosyayı git'e EKLEMEZSİN", metin)
+        self.assertIn("`docs/sap-baglanti.md`", metin, "Z164: skill yeni yolu söylemeli")
+        self.assertIn("SAP bağlantı açıklaması", metin, "skill raporun bölüm adına işaret etmeli")
+        self.assertNotIn("`conn/README.md` şablon gereği", metin, "Z164: eski 'şablon izler' iddiası kalmamalı")
+
+
+Z164_V1 = {"templates/project-sap/conn/README.md": "# conn v1\nsetup_credentials.py\n",
+           "templates/project/eski-not.md": "# eski not\n"}
+Z164_V2 = {"templates/project-sap/conn/README.md": None,
+           "templates/project-sap/docs/sap-baglanti.md": "# SAP bağlantısı v2\nsetup_credentials.py\n",
+           "templates/project/eski-not.md": None}
+
+
+class Z164ConnReadmeTasimaTest(ProjeTemel):
+    """Z164 (kullanıcı kararları 2026-10-19: ⓑ taşıma + ⓐ motor yalnız silmeyi sahneler).
+
+    `conn/README.md` şablonda `docs/sap-baglanti.md`'ye taşındı. Gerçek git deposunda (repo DIŞI geçici kök, Z96):
+    aynı (V6) → silinir + silme index'e sahnelenir, başka hiçbir şey sahnelenmez · değişmiş (V6d) → ezilmez, uyarı,
+    index'e dokunulmaz. Dar kapsam: aynı kapanışta silinen BAŞKA bir V6 dosyası (`eski-not.md`) index'te kalır —
+    istisna liste değil, tek sabit. "Yok → oluşur" kolu: `Z164YokTest`.
+
+    KAPSAM — bakılmayan: commit (motor atmaz; kullanıcı atar) · modelin raporu kullanıcıya aktarması (canlı iş) ·
+    gerçek bir tüketici projesinde koşum."""
+    sap = True
+    ek_v1 = Z164_V1
+
+    def setUp(self) -> None:
+        super().setUp()
+        # önkoşul: kurulum conn/README.md'yi yazdı; proje ilk commit'iyle onu İZLİYOR (eski şablon `!conn/README.md`)
+        self.assertTrue((self.f.proje / "conn" / "README.md").is_file(), "önkoşul: kurulum conn/README.md yazmalı")
+        self.git(self.f.proje, "add", "-A")
+        self.git(self.f.proje, "commit", "-q", "-m", "ilk")
+        self.git(self.f.proje, "ls-files", "--error-unmatch", "conn/README.md")
+
+    def _akis(self, yerel_koru: tuple[str, ...] = (), kapanis_kodu: int = 0) -> str:
+        self.f.ilerlet(Z164_V2)
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        for rel in yerel_koru:   # V6d yargı vakasıdır: kullanıcı "yereli koru" der (skill akışı)
+            i = self.f.calistir("isaretle", rel, "--karar", "yerel")
+            self.assertEqual(i.returncode, 0, self.cikti(i))
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, kapanis_kodu, self.cikti(k))
+        return (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+
+    def _sahnelenen(self) -> list[str]:
+        return self.git(self.f.proje, "diff", "--cached", "--name-status").stdout.splitlines()
+
+    def test_ayni_V6_tasinir_ve_yalniz_conn_readme_silmesi_sahnelenir(self):
+        rapor = self._akis()
+        v = self.f.vakalar()
+        self.assertEqual((v.get("conn/README.md"), v.get("docs/sap-baglanti.md"), v.get("eski-not.md")),
+                         ("V6", "V2", "V6"), "önkoşul: vaka makinesi taşımayı V6 + V2 olarak görmeli")
+        self.assertFalse((self.f.proje / "conn" / "README.md").exists(), "V6: eski dosya diskten silinmeli")
+        self.assertTrue((self.f.proje / "docs" / "sap-baglanti.md").is_file(), "yeni dosya diskte olmalı")
+        self.assertIn(CONN_TASIMA_BOLUMU, rapor)
+        self.assertIn("TAŞINDI: `conn/README.md`", rapor)
+        self.assertIn("silme git index'ine sahnelendi", rapor)
+        self.assertNotIn(CONN_BOLUMU, rapor, "V6 silmesi için kullanıcıya `git add` komutu verilmez")
+        self.assertEqual(self._sahnelenen(), ["D\tconn/README.md"],
+                         "index'e YALNIZ conn/README.md silmesi yazılmalı (yeni dosya da diğer V6 da değil)")
+
+    def test_dar_kapsam_baska_V6_silmesi_index_te_kalir(self):
+        self._akis()
+        self.assertFalse((self.f.proje / "eski-not.md").exists(), "önkoşul: diğer V6 diskten silindi")
+        self.git(self.f.proje, "ls-files", "--error-unmatch", "eski-not.md")   # index'te hâlâ var
+        self.assertNotIn("D\teski-not.md", self._sahnelenen())
+        r = self.git(self.f.proje, "ls-files", "--error-unmatch", "docs/sap-baglanti.md", kontrol=False)
+        self.assertNotEqual(r.returncode, 0, "motor yeni dosyayı git'e EKLEMEMELİ (commit/sahneleme kullanıcının)")
+
+    def test_V6d_degismis_ezilmez_uyarilir_sahnelenmez(self):
+        self.f.yerel_degistir("conn/README.md", "# conn v1\nkendi notum\n")
+        rapor = self._akis(yerel_koru=("conn/README.md",))
+        self.assertEqual(self.f.vakalar().get("conn/README.md"), "V6d")
+        self.assertEqual(self.f.oku("conn/README.md"), "# conn v1\nkendi notum\n", "V6d: yerel dosya ezilmemeli")
+        self.assertIn("UYARI: `conn/README.md` sende değiştirilmiş → EZİLMEDİ", rapor)
+        self.assertNotIn("sahnelendi", rapor)
+        self.assertNotIn("D\tconn/README.md", self._sahnelenen(), "V6d'de index'e dokunulmamalı")
+
+    def test_F2a_KAPANMADI_kapanista_sahneleme_yok(self):
+        """F2(a) (bağımsız inceleme 2026-10-19): kapanış eksikle bittiyse (burada başka bir V6d kararsız) index'e
+        yazılmaz — kullanıcı `geri-al` diyebilir; sahnelenmiş silme o yolda geride kalırdı."""
+        self.f.yerel_degistir("eski-not.md", "# eski not YEREL\n")
+        rapor = self._akis(kapanis_kodu=1)
+        self.assertIn("## KAPANMADI", rapor, "önkoşul: kapanış eksikle bitmeli")
+        self.assertEqual(self.f.vakalar().get("conn/README.md"), "V6")
+        self.assertFalse((self.f.proje / "conn" / "README.md").exists(), "önkoşul: V6 diskten sildi")
+        self.assertIn("sahnelenMEDİ — kapanış KAPANMADI", rapor)
+        self.assertEqual(self._sahnelenen(), [], "KAPANMADI kapanışta index'e hiçbir şey yazılmamalı")
+
+    def test_F2b_sahneleme_sonrasi_geri_al_index_i_temizler(self):
+        """F2(b): kapanış silmeyi sahneledikten sonra `geri-al --hepsi` dosyayı diske geri yazar VE index'teki silmeyi
+        geri alır (ölçülen kusur: disk geri gelmiş, index'te `D conn/README.md` kalmış → sonraki commit siler)."""
+        self._akis()
+        self.assertEqual(self._sahnelenen(), ["D\tconn/README.md"], "önkoşul: silme sahnelenmiş olmalı")
+        g = self.f.calistir("geri-al", "--hepsi")
+        self.assertEqual(g.returncode, 0, self.cikti(g))
+        self.assertTrue((self.f.proje / "conn" / "README.md").is_file(), "geri-al dosyayı diske yazmalı")
+        self.assertIn("sahnelenmiş silme index'ten geri alındı", g.stdout)
+        self.assertEqual(self._sahnelenen(), [], "geri-al sonrası index HEAD ile aynı olmalı")
+        self.git(self.f.proje, "ls-files", "--error-unmatch", "conn/README.md")
+
+
+class Z164IzlenmeyenTest(ProjeTemel):
+    """F1 (bağımsız inceleme 2026-10-19): README projede var ama HİÇ commit'lenmemiş — gerçek durum (`yeni_proje.py` ilk
+    commit'i atmaz, ajan `conn/`u denylist yüzünden ekleyemez). V6 silince git'e yapılacak iş YOKTUR: rapor
+    `git rm --cached` komutu VERMEZ (komut "pathspec did not match" ile düşerdi)."""
+    sap = True
+    ek_v1 = Z164_V1
+
+    def test_hic_commitlenmemis_V6_komut_basmaz(self):
+        r = self.git(self.f.proje, "ls-files", "--error-unmatch", "conn/README.md", kontrol=False)
+        self.assertNotEqual(r.returncode, 0, "önkoşul: README izlenmiyor olmalı")
+        self.f.ilerlet(Z164_V2)
+        self.assertEqual(self.planla().returncode, 0)
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertEqual(self.f.vakalar().get("conn/README.md"), "V6")
+        self.assertIn("TAŞINDI: `conn/README.md`", rapor)
+        self.assertIn("git'te izlenmiyordu (HEAD'de de yok) — yapılacak git işi yok", rapor)
+        self.assertNotIn("git rm --cached", rapor, "koşulamayacak komut verilmemeli")
+        self.assertNotIn("sahnelenemedi", rapor)
+
+
+class Z164YokTest(ProjeTemel):
+    """Z164 kontrol grubu: projede `conn/README.md` HİÇ yoktu (bugünkü fixture'ın varsayılanı) → yeni yerde oluşur;
+    sahneleme adımı hiç koşmaz."""
+    sap = True
+
+    def test_yoksa_yeni_yerde_olusur(self):
+        self.f.ilerlet({"templates/project-sap/docs/sap-baglanti.md": "# SAP bağlantısı v2\n"})
+        r = self.planla()
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        u = self.f.calistir("uygula", "--otomatik")
+        self.assertEqual(u.returncode, 0, self.cikti(u))
+        k = self.f.calistir("kapanis")
+        self.assertEqual(k.returncode, 0, self.cikti(k))
+        rapor = (self.f.durum_dizini() / "RAPOR.md").read_text(encoding="utf-8")
+        self.assertEqual(self.f.vakalar().get("docs/sap-baglanti.md"), "V2")
+        self.assertIn("OLUŞTU: `docs/sap-baglanti.md`", rapor)
+        self.assertNotIn("sahnele", rapor)
+
+
+class Z164SahnelemeBirimTest(GeciciTest):
+    """`conn_readme_silmesini_sahnele` + `conn_readme_sahnelemesini_geri_al` doğrudan (gerçek git, repo DIŞI geçici
+    kök): her dal bir satır yazar (sessiz geçiş yok); kullanıcıya komut YALNIZ koşulabildiği yerde (izleniyor ama
+    `git rm` düştü) verilir; izlenmeyen dosyada `git rm` HİÇ koşmaz (çağrı kaydıyla)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        import guncelle_proje
+        self.gp = guncelle_proje
+        self.cagrilar: list[tuple[str, ...]] = []
+        self._gercek = guncelle_proje._git
+        test_env = self.env
+
+        def kaydeden(kok, *args):
+            self.cagrilar.append(args)
+            # testin git ortamıyla koş (global config yok sayılır) — davranış aynı, yalnız ortam izole
+            return subprocess.run(["git", "-C", str(kok), *args], capture_output=True, text=True, env=test_env,
+                                  stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace")
+        guncelle_proje._git = kaydeden
+
+    def tearDown(self) -> None:
+        self.gp._git = self._gercek
+        super().tearDown()
+
+    def _depo(self, ad: str, dosyalar: dict) -> Path:
+        d = self.tmp / ad
+        d.mkdir()
+        self.git(d, "init", "-q", "-b", "main")
+        for rel, icerik in dosyalar.items():
+            (d / rel).parent.mkdir(parents=True, exist_ok=True)
+            (d / rel).write_text(icerik, encoding="utf-8")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-q", "-m", "ilk")
+        return d
+
+    def test_git_disi_klasor_bilgi_komut_yok(self):
+        """F1: git deposu olmayan projede yapılacak git işi yok ⇒ bilgi satırı, komut YOK, git hiç çağrılmaz."""
+        d = self.tmp / "gitsiz"
+        d.mkdir()
+        ok, satir = self.gp.conn_readme_silmesini_sahnele(d)
+        self.assertTrue(ok, satir)
+        self.assertIn("proje git deposu değil — yapılacak git işi yok", satir)
+        self.assertNotIn("git rm", satir)
+        self.assertEqual(self.cagrilar, [], "git deposu olmayan yerde git hiç çağrılmamalı")
+
+    def test_izlenmeyen_dosyada_git_rm_kosmaz_komut_yok(self):
+        """F1: izlenmeyen + HEAD'de yok → `git rm` koşmaz VE kullanıcıya da verilmez (rc=128 pathspec ile düşerdi)."""
+        d = self._depo("depo", {"a.txt": "a\n"})
+        ok, satir = self.gp.conn_readme_silmesini_sahnele(d)
+        self.assertTrue(ok, satir)
+        self.assertIn("git'te izlenmiyordu (HEAD'de de yok) — yapılacak git işi yok", satir)
+        self.assertNotIn("git rm", satir)
+        self.assertNotIn("rm", [a[0] for a in self.cagrilar], "izlenmeyen dosyada `git rm` koşmamalı")
+        self.assertEqual(self.git(d, "diff", "--cached", "--name-only").stdout.strip(), "")
+
+    def test_rm_basarisizsa_yedek_komut_verilir(self):
+        """Kontrol grubu: komut YALNIZ gerçekten koşulabildiği yerde kalır — dosya izleniyor ama `git rm` düştü."""
+        d = self._depo("depo4", {"conn/README.md": "x\n"})
+        (d / "conn" / "README.md").unlink()
+        onceki = self.gp._git
+
+        def rm_dusen(kok, *args):
+            if args and args[0] == "rm":
+                return subprocess.CompletedProcess(["git", *args], 1, "", "fatal: index.lock var\n")
+            return onceki(kok, *args)
+        self.gp._git = rm_dusen
+        ok, satir = self.gp.conn_readme_silmesini_sahnele(d)
+        self.assertFalse(ok)
+        self.assertIn("sahnelenemedi: `git rm --cached` başarısız (fatal: index.lock var)", satir)
+        self.assertIn("kendi terminalinde: `git rm --cached conn/README.md`", satir)
+
+    def test_izlenen_silinmis_dosya_sahnelenir_baska_hicbir_sey_sahnelenmez(self):
+        d = self._depo("depo2", {"conn/README.md": "x\n", "b.txt": "b\n", "c.txt": "c\n"})
+        (d / "conn" / "README.md").unlink()
+        (d / "b.txt").write_text("b2\n", encoding="utf-8")   # izlenen başka değişiklik: sahnelenmemeli
+        (d / "c.txt").unlink()                               # başka bir silme: sahnelenmemeli
+        ok, satir = self.gp.conn_readme_silmesini_sahnele(d)
+        self.assertTrue(ok, satir)
+        self.assertEqual(self.git(d, "diff", "--cached", "--name-status").stdout.splitlines(), ["D\tconn/README.md"])
+        self.assertEqual((d / "b.txt").read_text(encoding="utf-8"), "b2\n", "diskteki dosyaya dokunulmamalı")
+        ok2, satir2 = self.gp.conn_readme_silmesini_sahnele(d)   # ikinci çağrı: zaten sahnelenmiş
+        self.assertTrue(ok2)
+        self.assertIn("zaten sahnelenmiş", satir2)
+
+    def test_diskte_duruyorsa_sahnelemez(self):
+        d = self._depo("depo3", {"conn/README.md": "x\n"})
+        ok, satir = self.gp.conn_readme_silmesini_sahnele(d)
+        self.assertFalse(ok)
+        self.assertIn("diskte duruyor", satir)
+        self.assertNotIn("git rm", satir)
+        self.assertEqual(self.git(d, "diff", "--cached", "--name-only").stdout.strip(), "")
+
+    def test_geri_al_yardimcisi_sahnelenmis_silmeyi_geri_alir(self):
+        d = self._depo("depo5", {"conn/README.md": "x\n", "b.txt": "b\n"})
+        (d / "conn" / "README.md").unlink()
+        self.assertTrue(self.gp.conn_readme_silmesini_sahnele(d)[0])
+        (d / "conn" / "README.md").write_text("x\n", encoding="utf-8")   # geri-al diske yazdı
+        satir = self.gp.conn_readme_sahnelemesini_geri_al(d)
+        self.assertIn("geri alındı", satir)
+        self.assertEqual(self.git(d, "diff", "--cached", "--name-only").stdout.strip(), "")
+        self.assertIn("sahnelenmiş silme yok", self.gp.conn_readme_sahnelemesini_geri_al(d), "ikinci çağrı no-op")
+
+    def test_geri_al_yardimcisi_git_disi_ve_izlenmeyen_bilgi_verir(self):
+        d = self.tmp / "gitsiz2"
+        d.mkdir()
+        self.assertIn("git deposu değil — index işi yok", self.gp.conn_readme_sahnelemesini_geri_al(d))
+        self.assertEqual(self.cagrilar, [])
+        d2 = self._depo("depo6", {"a.txt": "a\n"})
+        self.assertIn("HEAD'de yok", self.gp.conn_readme_sahnelemesini_geri_al(d2))
+        self.assertNotIn("reset", [a[0] for a in self.cagrilar])
 
 
 class Z97SapDisiConnTest(ProjeTemel):

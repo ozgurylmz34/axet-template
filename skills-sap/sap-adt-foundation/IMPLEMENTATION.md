@@ -70,7 +70,7 @@ Kullanan script'ler: `sapadt/populate.py` (CLI `on_kontrol` üzerinden) · `sap-
 Red kararını `log=True` iken kapı kendisi loglar; izin verilen işlemin sonucunu çağıran loglar.
 
 ### KURAL — kapısız yazma yok
-`sapadt` içindeki yazma metodlarını (`create_*`, `push_object`, `activate_object`, `delete_object`, `lock_object/unlock_object`, `set_object_source`, `run_classrun`, `syntax_check`) ya da yazma araçlarını (`adt_post_shell`, `adt_push_source`, `adt_delete`, `adt_activate`, `adt_publish_service`, `adt_classrun`, `adt_*_create`, `adt_syntax_check`, `adt_unit_run`, `adt_screen_generate`, `adt_msgclass_write`) **`gate.check_write`'tan geçmeden çağıran script repoya girmez.**
+`sapadt` içindeki yazma metodlarını (`create_*`, `push_object`, `activate_object`, `delete_object`, `lock_object/unlock_object`, `set_object_source`, `run_classrun`, `syntax_check`) ya da yazma araçlarını (`adt_post_shell`, `adt_push_source`, `adt_delete`, `adt_activate`, `adt_publish_service`, `adt_classrun`, `adt_*_create`, `adt_unit_run`, `adt_screen_generate`, `adt_msgclass_write`; `adt_syntax_check` Z195'ten beri okuma sınıfı) **`gate.check_write`'tan geçmeden çağıran script repoya girmez.**
 Statik kontrol: `tests/test_static.py::gate_atlatan_mi` — AST ile çağrı düğümlerini tarar; yazma çağrısı olup `check_write(...)` çağrısı olmayan dosya testi kırar. İstisna: yazma metodlarını tanımlayan/içeriden bağlayan `lib/sap_adt_lib.py`, `lib/sap_client.py`, `lib/rap_service.py`, `lib/auth/`, `tools/` ve `tests/`. Tarayıcının kendisi pozitif/negatif örnekle sınanır.
 
 ## 3. Ne değişti ve NEDEN
@@ -232,7 +232,7 @@ Geri alınınca 3/3 OK. Araç katmanı süreç-içi testle (`test_inprocess_guar
 - Dize içindeki SQL: ADBC (`cl_sql_statement->execute_update( 'UPDATE …' )`), dinamik SQL metni — literaller taranmaz.
 - `DELETE FROM DATABASE` / `EXPORT … TO DATABASE` (INDX cluster): SAP'nin cluster API'si, doğrudan SQL değil → işaretlenmez (onaylandı 2026-09-13).
 - Standart tabloya yazan FM/BAPI dışı rutin çağrıları (`CALL FUNCTION 'X' IN UPDATE TASK` içinde ne yapıldığı), `PERFORM … ON COMMIT`, makro (`DEFINE`) gövdeleri, `INCLUDE` edilen başka objeler.
-- SAP'de zaten bulunan kod: `adt_activate`, `adt_syntax_check` (bekleyen sürümü aktive eder), `adt_classrun` kaynak metni almaz → taranmaz.
+- SAP'de zaten bulunan kod: `adt_activate`, `adt_syntax_check` (Z195'ten beri salt-okur checkrun), `adt_classrun` kaynak metni almaz → taranmaz.
 - Bildirim başka include'daysa (TOP include) yalnız önek kuralı kalır → öneksiz iç tablo adı yanlış pozitif verir (mesaj satırı gösterir).
 - Müşterinin `/Z`,`/Y` dışı kendi namespace'i BLOCKER alır; desteklemek yapılandırma değişikliği ister — bugün desteklenmiyor.
 - **DOĞRULANMADI** (SAP dokümanı/canlı derleyiciyle teyit edilmedi): `EXEC SQL` içinde `"` ABAP yorumu mu tanımlayıcı mı (tanımlayıcı sayıldı → `"` yorumundaki SQL yanlış pozitif olabilir); AMDP gövdesinde 1. sütun `*` (yorum sayıldı; DML `*` ile başlayamayacağı için kaçırma üretmez); `|…|` şablonunun gömülü ifade dışında satır aşamayacağı varsayımı; HANA `INSERT` INTO'suz biçimi tanınmaz.
@@ -904,7 +904,7 @@ mesajı "EU 510 sınıfı" demez · (4) kilit çakışması metni bilinen-hata i
 `known_errors_hint`'in CLI giriş noktasından (`sap_adt_cli.py:243`) tetiklendiği — H1 fonksiyonu doğrudan, çıkış kodu 1 ile çağırır ·
 aynı süreçte iki kilit alan gerçek araç akışı (D3 populate; gate: tek CLI çağrısında tetiklenmez).
 
-**Açık kalemler:** (1) push kilit alanlarını üst seviyeye taşıma (`error:"locked"`, `lock_owner`, `lock_released`; `push_object`
+**Açık kalemler:** (1) push kilit alanlarını üst seviyeye taşıma (`error:"locked"`, `lock_owner`, `lock_released` — `lock_released` kısmı Z195 §25.3'te kapandı; `push_object`
 `SAPLockError.lock_owner`'ı `result`'a yazmıyor) — yanıt sözleşmesi değişikliği, dal kapsamı dışı; `ok:true` + `result.lock_released:false`
 hâlinde üst `ok`'a bakan çağıran kalan kilidi görmez · (2) aktivasyon öncesi unlock False iken aktivasyonu koşmama · (3) 18.7'deki
 L3 kaydı ve önceki kalemler.
@@ -1119,7 +1119,7 @@ M7 `unmeasured` düşürüldü (K1d) · M8 include eşlemesi `None` (K1a/d).
 - Tekrar deneme kapalıyken canlıda geçici 429/502/503/504 cevaplarının sıklığı (gelirse aday ÖLÇÜLEMEDİ → BLOCKER; yanlış BLOCKER oranı ölçülmedi).
 
 ### 20.5 Açık kalemler
-- Standart DTEL (Z/Y/ad-alanı dışı) varlığı bu gate'in kapsamı dışında (STR-FIELD-3; `check_standard_table_fields.py` yalnız WARNING ve struct alan tipine bakmıyor — ölçülmedi).
+- Standart DTEL (Z/Y/ad-alanı dışı) varlığı bu gate'in kapsamı dışında (C-STR-FIELD-03; `check_standard_table_fields.py` yalnız WARNING ve struct alan tipine bakmıyor — ölçülmedi).
 - `run_reviewer` sarmalayıcısının kendi SKIP'leri (`run_review_script_missing`, `reviewer_exception`) struct yolunda da yazmayı durdurmaz (mevcut sözleşme; görünür not ile).
 - Sarmalayıcı zaman aşımında Windows'ta yalnız `run_review` süreci öldürülür; o anda koşan validator alt süreci kendi süresi bitene kadar yaşar
   (DTEL gate'i için artık bütçeyle sınırlı; `check_standard_table_fields.py` gibi bütçesiz ağ validator'ları için sınırsız — önceden var, ölçülmedi).
@@ -1136,7 +1136,7 @@ M7 `unmeasured` düşürüldü (K1d) · M8 include eşlemesi `None` (K1a/d).
 
 ### 20.6 Bug gate düzeltmeleri (2026-09-14, taze bug-expert BLOCKER → B1-B5)
 Prior-art: kaynak çekirdek `playbook/checklists/table-update.md` "Önemli Vakalar" 7 ("checklist satırı ≠ çalıştırılan validator" — reviewer-kör
-vakası) · kaynak çekirdek `struct-creation.md` C-STR-FIELD-02 (BLOCKER) · template `sap-cds-ddic/references/checklists.md:70` (STR-FIELD-2).
+vakası) · kaynak çekirdek `struct-creation.md` C-STR-FIELD-02 (BLOCKER) · template `sap-cds-ddic/references/checklists.md:72` (C-STR-FIELD-02).
 
 | Bulgu | Önce (ölçülen) | Sonra |
 |---|---|---|
@@ -1268,7 +1268,7 @@ tek tek CR, LF, U+2028, U+2029, U+0085 çıkarıldı (her birinde yalnız o kara
 
 DOĞRULANMADI: canlı SAP'nin `--`, çok satırlı etiket ya da U+2028/U+0085 içeren DDL'i nasıl ayrıştırdığı (artık gönderilmiyor) · Windows dışı davranış.
 Açık kalemler (dokunulmadı): artefaktlı yolda `--` kör noktası (`ddic_dtel.py` `_STRING_YORUM`; artefakt metni kullanıcıdan gelir, bu kural onu kapsamaz) ·
-POST XML kaçışı (`sap_adt_lib.create_structure` POST gövdesi) · ADT_* env mirası · sarmalayıcı SKIP.
+~~POST XML kaçışı (`sap_adt_lib.create_structure` POST gövdesi)~~ → KAPANDI §25.1 (Z194) · ADT_* env mirası · sarmalayıcı SKIP.
 
 ### 20.9 K10 — inceleme zincirinin süre bütçesi: ölç → uzat → BLOCKER (2026-09-17)
 
@@ -1465,3 +1465,147 @@ Canlı SAP'de ölçülmedi.
 - **Testler:** `test_std_ext_gate.py` `Z117Tarayici` (5) + `Kapi.test_std_ext_gate_z117` · `test_verdict_reviewer_k1_d1.py` B4b ·
   `test_ddic_textpool.py` R1-R5 · `test_cli_gate.py` test_01 (okuma 26, `adt_textpool_read` satırı) · abapGit
   `test_dml_scanner_runtime_error_is_structured_fail`. Kırmızı-önce ve mutasyonlar: iş listesinde Z117 / Z39 kapanış notu.
+
+## 25. Uyum turu 6 — XML kaçışı tek kaynak, salt-okur sözdizimi, yan etkili istek tekrarı (2026-10-19)
+
+### 25.1 Z194 — XML öznitelik/eleman kaçışı TEK KAYNAK + sorumlu çözülemezse istek yok
+
+Kaynak çekirdek kuralı: `scripts/utils/xml_kacis.py` (2026-10-18). Ölçüm (düzeltme öncesi): `create_object` `responsible_xml = responsible or
+self.user` → kullanıcı boşsa `adtcore:responsible="None"`; açıklama öznitelikleri kaçışsız (`create_object` ×4, DTEL, yapı, tablo, CDS,
+tip grubu, FUGR, FM, DDLX, DCL, BIMP; `sap_client` TTYP/MSAG/ENQU ×3); DTEL'in dört etiketi ve yapı/tablo `blue:source` eleman metni
+kaçışsız; kaçış yapan YEDİ ayrı kopya (`_xml_escape`, domain `_att` lambda'sı, `esc`, `_xe` — `"` kaçırmıyordu —, `tools/shells._att`,
+`tools/msgclass._att`, `utils/ddic_ttyp._att`; `tools/description.py` satır içi).
+
+- **Tek kaynak:** `lib/utils/xml_kacis.py` — `attr_escape` (`& < > "` + TAB/LF/CR; `None` → boş) · `text_escape` (`& < >`) ·
+  `sorumlu_coz(verilen, client)` (verilen > `client.user`; boş → `None`) · `SORUMLU_YOK_MESAJI`. Yedi kopya buna bağlandı
+  (`_xml_escape` adı geri uyum için kalır, gövdesi `attr_escape`).
+- **Sorumlu:** `create_object` ve `create_dataelement` sorumluyu CSRF dahil HİÇBİR ağ çağrısından önce çözer; çözülemezse
+  `SAPValidationError`. `SAPClient.create_object` bu hatayı artık yutmaz (yutsaydı araç katmanı varlık sondası için ağa çıkardı).
+- **Yerel XML de:** `user_transports_from_table` E070 yedeğinin ürettiği XML'de `owner/desc/status/target` + kök kullanıcı kaçışlı
+  (çağıran ayrıştırır; `&` içeren talep metni ayrıştırmayı düşürüyordu).
+- **Kaçışlanmayanlar (bilerek):** ad/paket/dil/URI/transport numarası gibi tanımlayıcılar ve önceden kaçışlanmış ara değişkenler.
+  Tanımlayıcılar ad/namespace kurallarıyla sınırlıdır; kural dışı bir değer iyi biçimsiz gövde üretir ve SAP 400 ile reddeder
+  (sessiz yanlış veri doğmaz).
+- **DDL düzeyi (kapsam dışı, açık):** `create_table` `@EndUserText.label : '{description}'` — tek tırnak DDL dizesini bozar; XML
+  değil DDL kaçışıdır, bu kalemde değişmedi.
+- **Testler:** `tests/test_xml_kacis.py` (10): yardımcı vektörleri · `sorumlu_coz` · kopyaların kimlikle tek kaynağa bağlı olduğu ·
+  `create_object` 4 tip gövdesi `&<"'` ile ayrıştırılır ve değer aynen geri okunur · sorumlu boş → 0 istek, CSRF yok · `SAPClient`
+  hatayı yutmaz · DTEL açıklama + sorumlu + 4 etiket aynen, uzunluk ham metinden · DTEL sorumlu boş → 0 istek · FUGR + FM gövdesi ·
+  E070 yerel XML. Mutasyonlar 7/7 test ADIYLA kırıldı, md5 geri yükleme eşit.
+
+### 25.2 Z195 ①② — `adt_syntax_check` salt-okur checkrun · yeni `adt_get_method`
+
+Ölçüm (düzeltme öncesi): `tools/query.py::adt_syntax_check` → `SAPClient.syntax_check` → `syntax_check_via_activation`
+(`preauditRequested=true`); bekleyen TEMİZ sürüm aktive oluyordu (2026-07-31 ölçümü: inaktif 1 → 0) ⇒ araç yazma kümesindeydi
+(`--list`: okuma 27 · yazma 16 · toplam 43).
+
+- **Lib:** `checkrun_govdesi` · `checkrun_ayristir` (hüküm `temiz` | `hatali` | `OLCULEMEDI`; belirsiz her durum `OLCULEMEDI` —
+  boş/bozuk gövde, rapor yok, `abapCheckRun` raporu yok, beklenen obje raporlanmadı, `status≠processed`, tanınmayan mesaj tipi) ·
+  `SAPADTClient.check_run(object_url, version='inactive')` — tek `POST /sap/bc/adt/checkruns?reporters=abapCheckRun`; ağ istisnası ve
+  HTTP ≠ 200 `OLCULEMEDI` (istisna fırlatmaz); geçersiz `version` ağdan önce `SAPValidationError`. Her dönüşte `kapsam` (KAPSAM BEYANI).
+- **Araç:** `adt_syntax_check` yalnız `check_run` çağırır; dönüş anahtarları korundu + `source:"checkrun"` · `scope`. Araç içi
+  namespace (ADR 0005-A) ve yazılabilir tier kapıları kaynak çekirdekle aynı biçimde KORUNDU. `gate.READ_TOOLS`'a alındı.
+- **Eski yol araçtan KALDIRILDI (bilinçli fark):** kaynak çekirdek eski yolu bir sabitle geri açılabilir bıraktı. aXet'te sınıf ADLA
+  belirlenir (`gate.READ_TOOLS`) ⇒ sabitle geri açılan yan etkili yol okuma kapısından YAZARDI. Geri dönüş = commit geri alma + aracı
+  yazma kümesine taşıma. `SAPClient.syntax_check` / `syntax_check_via_activation` kütüphanede durur (push'un aktivasyon öncesi ön
+  kontrolü; yazma akışının içindedir).
+- **`adt_get_method` (tools/diag.py):** `_atom._read_source_object(name, "oo/classes")` (tek GET, `source/main`) → `METHOD <ad>.` ..
+  `ENDMETHOD.` metinsel. Birden çok blok `belirsiz`, kapanmamış blok `kapanmamis` (ikisi de `found:null`). `output_path` `adt_get` ile
+  aynı yol kuralı; pull kaydı YAZMAZ. Okuma kümesinde, `available_on: all`.
+  **Sınır belirsizliği (2026-10-19 inceleme düzeltmesi):** ölçüm (düzeltme öncesi) — `METHOD a. ENDMETHOD.` tek satır + ardından
+  `METHOD b.` → `a` için b'nin gövdesi `found:true` ile dönüyordu; `y = 2. ENDMETHOD.` zincirli bitiş atlanıyordu. Artık sınır güvenle
+  çıkarılamazsa (METHOD satırında ENDMETHOD · satır ortasında ENDMETHOD · bitişten önce yeni `METHOD` satırı) `belirsiz` + `found:null`,
+  `source` dönmez; tam satır yorumundaki (`*` sütun 1, satır başı `"`) ENDMETHOD sayılmaz. Bilinen sınır (DÜZELTİLMEDİ): çok satırlı
+  string şablonu içinde satır başına düşen `ENDMETHOD.` hâlâ bitiş sayılır.
+- **Sayılar (`--list`, çevrimdışı):** okuma 29 · yazma 15 · toplam 44.
+- **Testler:** `tests/test_checkrun_sozdizimi.py` (25 test / 38 senaryo — C7-C10 sınır belirsizliği, 5 mutasyon ADIYLA kırıldı; kaynak çekirdeğin canlı DEV yanıt gövdeleri
+  `tests/fixtures/checkrun_sozdizimi/`, jenerik `ZSD001_*`) — kapanış ölçütü: gerçek `_build_session` + yerel sahte HTTP sunucusunda
+  araç YALNIZ checkruns'a 1 POST (PUT 0 · aktivasyon 0 · kilit 0). `test_cli_gate` (okuma 29, yazma kümesi, araç içi namespace
+  kapısı `--sap-write`'sız) · `test_verdict_activation` J12/J13 checkrun'a uyarlandı (J11 `SAPClient.syntax_check` aynen). Mutasyon
+  10/10 test ADIYLA kırıldı; `sap-code-review` karne testleri (`sap:adt_syntax_check` artık okuma) READ_TOOLS mutasyonunda 2 test
+  ADIYLA kırıldı. aXet'te canlı SAP ölçümü YOK (DOĞRULANMADI).
+
+### 25.3 Z195 ③ — kilit BIRAKILAMADI dürüst bildirimi + istek sahibi metni (+ D13)
+
+Ölçüm (düzeltme öncesi): `unlock_object` 2026-09-14'ten beri dürüst (`False`) ve `push_object` dönüşü okuyordu; ama
+`_release_lock_after_failure` okumuyordu (`False`'ta da "Lock released" basıyordu) · `safe_unlock` hep `True` · struct DDL
+PUT'u, BDEF PUT'u, metot-include fallback'i, `push_class_include` (2 yer), B.5 çift-PUT (2 yer), `delete_object` dönüşü
+okumuyordu · FOREIGN ve IS_LINK_UP-boş CORRNR uyuşmazlığı metinleri sahibi söylemiyordu, boş dal "your own transport"
+diyordu · beş metin SM12'de kilidi silmeyi/bırakmayı öneriyordu (Kesin Yasak C) · `adt_push_source` `lock_released`'ı
+yalnız nested `result`'ta taşıyordu.
+
+- **Tek kaynak:** `sap_adt_lib.kilit_birakilamadi_uyarisi(obje)` (`[WARN] KILIT BIRAKILAMADI` imzası; "SM12'de KONTROL ET;
+  silme/bırakma kararı kullanıcıda") · `sap_client._kilit_birak(url, handle, result)` (dönüşü okur, `False` → uyarı +
+  `result['lock_released']=False`; yeniden denemez, istisna çağırana yükselir).
+- **İstek sahibi:** `SAPADTClient._istek_sahibi_metni(trkorr)` — salt-okur tek `SELECT AS4USER FROM E070` (`run_query`);
+  10 karakter dışı istek numarası sorgu atmaz; ASLA istisna fırlatmaz; değer `_last_lock_istek_sahibi`'de (her `lock_object`
+  başında sıfırlanır). Kilit sorgudan ÖNCE bırakılır. Bug-11 kurtarma uyarısı sahibi adlandırır, başka kullanıcıysa `DİKKAT`.
+- **Kullanıcı adı maskelemesi:** kaynak çekirdekteki kelime sınırlı maskeleme (`kimlik_maskele`) yalnız `sap_reason`
+  (SAP hata gövdesinden kısa sebep) yolunda çalışır; istek sahibi metni orada da maskesizdir. aXet'te `sap_reason` yolu YOK,
+  çıktı katmanı (`redact.py`) parola / `user:pass` / host maskeler, çıplak kullanıcı adını maskelemez ⇒ uygulanacak çağıran
+  olmadığı için PORT EDİLMEDİ. Yol yalnız yazılabilir tier'da (DEV) koşar.
+- **Bilinçli fark (korundu):** aXet `push_object` aktivasyon öncesi unlock `False`'ta handle'ı TUTAR, `finally` 2 kez dener
+  (2026-09-14, `test_kilit_politikasi` S4/S6); kaynak çekirdek handle'ı bırakıp yeniden denemez. Değiştirilmedi.
+- **D13:** ① push yanıtında kilit alanları — `lock_released:false` + `lock_notice` artık ÜST seviyede (§18 açık kalem (1)'in
+  `lock_released` kısmı kapandı; `error:"locked"` / `lock_owner` üst seviyede hâlâ YOK). ② aktivasyon öncesi unlock `False`
+  iken aktivasyonu koşmama — YAPILMADI (§18 açık kalem (2) açık; canlıda aktivasyonun kendi kilidiyle 403 verip vermediği
+  DOĞRULANMADI, lider kararı).
+- **Testler:** `tests/test_kilit_bildirimi.py` (13 test): tek kaynak metin · `_release_lock_after_failure` · `safe_unlock` ·
+  FOREIGN/boş link-up gerçek `lock_object` ile (sahip adı, `KONTROL ET`, kilit sorgudan önce) · E070 okunamaz (500 ·
+  istisna · bozuk XML · alan yok) → dal aynen · biçimsiz istek sorgu atmaz · önceki objenin sahibi taşınmaz · Bug-11 uyarısı ·
+  `push_object` · `adt_push_source` üst seviye (+ kontrol grubu) · üretimde SM12 silme önerisi 0. Mutasyon 12/12 test ADIYLA
+  kırıldı. `test_kilit_politikasi` 24/24 (davranış korundu). aXet'te canlı SAP ölçümü YOK (DOĞRULANMADI).
+
+### 25.4 Z207 — genel HTTP adapter'ı yan etkili istekleri yeniden göndermez
+
+Ölçüm (düzeltme öncesi, gerçek `_build_session` + yerel sahte sunucu, her uç 503): genel adapter
+`Retry(total=3, status_forcelist=(429,502,503,504), allowed_methods=GET/HEAD/PUT/POST/DELETE)` taşıyordu → yaratma POST'u
+(sınıf, tablo), kaynak PUT'u, aktivasyon, DELETE, LOCK/UNLOCK, transport kaydı, ATC koşusu, ABAP Unit koşusu **4'er istek**;
+yalnız classrun 1 (Z190 ayrı adapter'ı). İlk istek SAP'de işlenmiş olabilir ⇒ yan etki 4 kez.
+
+- **Kural:** genel adapter yalnız `GUVENLI_YENIDEN_DENEME_METOTLARI = ('GET','HEAD','OPTIONS')`'ı durum (429/502/503/504) ve
+  okuma zaman aşımında yeniden dener. Bağlantı KURMA tekrarı metottan bağımsız açık kalır (istek henüz gitmemiştir). 500 yine
+  listede yok (2026-08-19 gerekçesi aynen).
+- **Okuma amaçlı POST izinli listesi (`OKUMA_POST_ONEKLERI`):** `checkruns` (Z195 ① salt-okur sözdizimi) ·
+  `datapreview/freestyle` (SELECT önizleme) · `repository/nodestructure` (paket ağacı) ·
+  `repository/informationsystem/usageReferences` (where-used) · `abapsource/prettyprinter` (biçimleme, kaydetmez). Ayrı
+  adapter, POST tekrarı açık; mount anahtarı `self.url + önek` ⇒ yalnız bu sistemin uçları. Gerekçe uç sözleşmesidir —
+  sunucuda durum yaratmadıkları canlı ÖLÇÜLMEDİ. **Bilinçli dışarıda:** `atc/runs` · `atc/worklists` (koşu/iş listesi yaratır)
+  · `abapunit/testruns` (test koşturur; riskli testler veri değiştirebilir) · `oo/classrun`.
+- **Classrun önek kuralı KORUNDU:** genel kural artık classrun POST'unu da tekrarlamaz; Z190 mount'u derinlemesine savunma
+  olarak durur — izinli listeye ileride geniş bir önek (ör. `/sap/bc/adt/oo/`) eklenirse en uzun önek kuralı classrun'u yine
+  tekrarsız tutar. Davranış farkı yalnız bağlantı sayacı (classrun `connect=2`, genel `total=3`).
+- **Ölçüm (düzeltme sonrası, aynı düzenek — HTTP adapter katmanı, oturumdan tek istek):** yan etkili 10 uç → 1 istek (503 yanıtı
+  çağırana ulaşır, `RetryError` değil) · okuma GET ve 5 okuma-POST öneki → 4 · classrun → 1. Okuma zaman aşımında yaratma POST'u
+  ve kaynak PUT'u 1, GET 4. Bu ölçüm uygulama katmanındaki döngüleri KAPSAMAZ (aşağıdaki iki madde).
+- **BİLİNÇLİ İSTİSNA — ikinci katman (değişmedi, lider kararı 2026-10-19):** `_retry_request` (Z52, `max_retries=3`) beş yaratma çağrısında (DTEL · domain ·
+  struct · tablo · CDS) 5xx/504/zaman aşımını uygulama katmanında kendisi yeniden dener. Ölçüm: önce 503 → 4 POST + `RetryError`
+  (uygulama tekrarı hiç devreye girmiyordu), okuma zaman aşımı → **12 POST** (adapter 4 × uygulama 3); sonra 503 → 3 ·
+  zaman aşımı → 3. "Yaratma POST'u 1 kez" bu beş çağrıda SAĞLANMAZ; `already_exists_after_retry` telafisi (Z52) bu katmana
+  dayanır ve artık 503'te de çalışır. Gerekçe: yaratma tekrarı ÇİFT OBJE üretemez (ikinci deneme "already exists" alır).
+  Gerekçe kodda `_retry_request` yorumunda ve testin adında durur. `RetryError`'a bağımlı üretim kodu yok (grep: yalnız test).
+- **AÇIK — uygulama katmanı yaklaşım döngüleri (canlı ölçüm bekliyor; bu turda davranış DEĞİŞMEDİ):** Z207'nin kapattığı
+  genel HTTP adapter katmanındaki tekrardır; uçtan uca "yan etkili istek 1 kez" SAĞLANMAZ. Üç kütüphane döngüsü 2xx dışı
+  yanıtta (503 dahil) bir sonraki parametre/biçim yaklaşımına geçer ve aynı yan etkili isteği yeniden gönderir. Ölçüm
+  (2026-10-19, gerçek `_build_session` + yerel sahte sunucu, her yanıt 503):
+  · `set_object_source` (kaynak PUT, 4 transport yaklaşımı; 2xx ve 412 dışı yanıtta sonrakine geçer) → **4 PUT**
+    (transport verilse de verilmese de) · 503 sonra 200 → 2 PUT + başarı.
+  · `delete_object` (yaklaşım listesi kilit/transport'a göre süzülür) → kilit + transport **5 DELETE** · yalnız kilit 2 ·
+    `NO_LOCK_SUPPORT` + transport 2 · ikisi de yok 1. 503 sonra 404 → 5 DELETE + `SAPADTError("Failed to delete object")`;
+    hatanın `status_code`'u **None** (son yanıt 4xx olduğu için `if last_response` yanlış döner ve kod `'unknown'` olur) ⇒
+    404 çağırana görünmez.
+  · `create_object` → `PROG/P` **3 POST** · `PROG/I` 3 · `CLAS/OC` 1 · `INTF/OI` 1 (yeniden kuyruğa alma yalnız 415/400
+    önerisinde; 503'te yalnız baştaki yaklaşım listesi tükenir). `adt_post_shell` program yolu bu çağrıdan geçer
+    (`tools/atom.py` `client.create_object`). 503 sonra 400 "already exists" → 3 POST + `Failed to create PROG/P after 3 attempts`.
+  Sonuç (sahte sunucuda ölçülen yanıt dizisinin yorumu; ilk isteğin SAP'de işlenip işlenmediği canlıda ÖLÇÜLMEDİ): ilk DELETE
+  işlendiyse sonrakiler 404 alır → araç **yanlış "silinemedi"** raporlar; ilk `PROG/P` POST'u işlendiyse sonrakiler "zaten
+  var" alır → **yanlış "yaratılamadı"** raporu. Çift obje oluşmaz (aynı ad ikinci kez yaratılamaz). PUT tekrarı aynı kaynağı
+  yeniden yazar. Davranış düzeltmesi yapılmadı: 500/503'ün bu döngülerde "başka yaklaşım dene" anlamı taşıyıp taşımadığı
+  canlıda ölçülmeden değiştirmek tahmin olur. Ölçüm betiği turun scratch'inde kaldı (repoya alınmadı); kalıcı test yok.
+- **Ayrıca:** `check_struct_field_dtel_active._tekrar_denemeyi_kapat` yalnız `https://`/`http://` mount'unu değiştirir;
+  okuma-POST mount'ları kalır, gate yalnız `/ddic/` GET'i attığı için etkilenmez.
+- **Testler:** `tests/test_yan_etkili_tekrar.py` (8 test): yan etkili 11 uç (classrun dahil) 503 → 1 · GET/HEAD 503 → 4 ·
+  okuma-POST önekleri (alt yol + sorgu dizgesiyle) → 4 · okuma zaman aşımı POST 1 / PUT 1 / GET 4 · genel adapter bağlantı
+  tekrarı açık, durum/okuma POST'ta kapalı · izinli liste dar ve host'a bağlı · `new_session` sonrası kural korunur ·
+  Y8 bilinçli istisna `test_z207_istisnasi_yaratma_post_3_kez_z52_telafisine_dayanir` (503 → 3 · zaman aşımı → 3). `test_classrun_tek_post` kalibrasyonu okuma-POST yoluna taşındı
+  (checkruns 504 → 4 · activation 504 → 1). Mutasyon 9/9 test ADIYLA kırıldı. Canlı SAP ölçümü YOK (DOĞRULANMADI).
