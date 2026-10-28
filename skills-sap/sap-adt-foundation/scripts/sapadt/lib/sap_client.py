@@ -107,6 +107,42 @@ def sap_hata_govdesi(exc) -> Optional[Dict[str, Any]]:
             'body_excerpt': govde[:SAP_HATA_GOVDE_SINIRI]}
 
 
+SAP_GOVDE_IMZASI = "[SAP-GOVDE]"
+
+
+def _sap_govdesi_eki(adt, exc) -> str:
+    """Z211 ek (2026-10-28, lider kararı): `create_*` sarmalayıcısının `[ERROR]` satırına SAP yanıt GÖVDESİ eki.
+
+    NEDEN: `SAPADTError.__str__` yalnız `[kod] mesaj` verir, `response_text` taşımaz; `create_*` sarmalayıcıları
+    istisnayı yutup yalnız `str(e)` bastığı için SAP'nin anlattığı sebep (ör. 500 gövdesi) araç yanıtına hiç
+    ULAŞMIYORDU (ölçüldü: domain yaratma 500/503 → log yalnız `[ERROR] [500] Failed to create domain …`).
+    Z211 500'ü tekrarlamayı bıraktı; teşhisin kaybolmaması için gövde de görünür olmalı.
+
+    Kurallar: istisna gövde taşımıyorsa '' (davranış aynı) · gövde ÖNCE `sapadt.redact` ile temizlenir (bağlantı
+    host'u + kullanıcı/parola + desenler), SONRA `SAP_HATA_GOVDE_SINIRI` karaktere kesilir (sır kesim sınırına
+    düşüp yarım sızmasın) ve kesildiği yazılır · boşluklar tek satıra indirgenir (log satır bazlı ayrıştırılır)
+    · redaksiyon modülü yüklenemezse gövde BASILMAZ (sızdırmak yerine yok saymak; satır bunu söyler).
+    Sebep metni mevcut `sap_hata_govdesi`'nden (XML `<message>` / HTML `<title>`); desen yeniden türetilmez.
+    """
+    ham = getattr(exc, 'response_text', None)
+    if not ham:
+        return ""
+    try:
+        from sapadt import redact as _redact
+    except Exception:  # noqa: BLE001 — sızdırmak yerine basmamak
+        return f"\n{SAP_GOVDE_IMZASI} (gövde var ama redaksiyon modülü yüklenemedi — BASILMADI)"
+    sirlar = sorted(set(_redact.host_sirlari(getattr(adt, 'url', None))
+                        + _redact.bilinen_sirlar(getattr(adt, 'user', None), getattr(adt, 'password', None))),
+                    key=len, reverse=True)
+    govde = _redact.temizle_metin(" ".join(str(ham).split()), sirlar)
+    sebep = _redact.temizle_metin(" ".join(str((sap_hata_govdesi(exc) or {}).get('message') or '').split()), sirlar)
+    if len(sebep) > SAP_HATA_GOVDE_SINIRI:   # sebep de sınırlı (tur 7 bug-gate F2: <message> uzunluğu serbest)
+        sebep = sebep[:SAP_HATA_GOVDE_SINIRI] + " …(KESİLDİ)"
+    kesik = (f" (ilk {SAP_HATA_GOVDE_SINIRI}/{len(govde)} karakter, KESİLDİ)"
+             if len(govde) > SAP_HATA_GOVDE_SINIRI else "")
+    return f"\n{SAP_GOVDE_IMZASI} sebep: {sebep} · govde{kesik}: {govde[:SAP_HATA_GOVDE_SINIRI]}"
+
+
 def worklist_ana_objeleri(govde: str) -> List[Dict[str, Any]]:
     """Aktive-bekleyen worklist govdesi -> OBJE-seviyesi girdiler.
 
@@ -368,23 +404,38 @@ class SAPClient:
         Returns:
             True if at least one method include was successfully updated
         """
-        import re as _re
+        # Z213 (2026-10-28; kaynak çekirdek #362): blok sınırı TEK KAYNAKTAN —
+        # `lib/utils/abap_metot_blok.py` (okuma yolu `adt_get_method` de aynı kararı kullanır). Eski satır-başı
+        # çapalı regex tek satırlık `METHOD a. … ENDMETHOD.` ve satır ortasındaki `ENDMETHOD.` bitişini kaçırıp
+        # SONRAKİ metodun gövdesini de içeren bloğu bu include'a PUT ediyordu (yazma yolu). Sınır belirlenemezse
+        # (kapanmamış / METHOD-ENDMETHOD karışık / araya METHOD girdi / `ENDMETHOD.`'dan sonra aynı satırda kod —
+        # `ENDMETHOD. ENDCLASS.`, aXet eki) blok YAZILMAZ: kilit alınmaz, PUT yapılmaz,
+        # metot atlanır. Davranış korunan eksen: birden çok eşleşmede İLK blok kullanılır (eskisi gibi).
+        # ⛔ AMDP (`METHOD … BY DATABASE …`) blok PUT EDİLMEZ (kaynak çekirdek kapsam kararı): eski regex
+        # (`METHOD <ad>` + `.`) AMDP başlığını tanımadığı için bu metotlarda PUT hiç yoktu ve metot include ucunun
+        # AMDP gövdesini kabul edip etmediği canlıda ÖLÇÜLMEDİ ⇒ eski davranış korunur. Okuma yolu AMDP'yi döndürür.
+        from utils.abap_metot_blok import SINIR_BELIRSIZ, amdp_baslik_mi, metot_bloklari
         any_success = False
 
         for method_name in method_names:
             print(f"\n      [FALLBACK] Method include fallback for: {method_name}")
 
             # Extract the METHOD...ENDMETHOD block from merged source
-            method_pattern = _re.compile(
-                rf'(^\s*METHOD\s+{_re.escape(method_name)}\s*\..*?^\s*ENDMETHOD\s*\.)',
-                _re.IGNORECASE | _re.DOTALL | _re.MULTILINE
-            )
-            method_match = method_pattern.search(source_code)
-            if not method_match:
+            bloklar = metot_bloklari(source_code, method_name)
+            if not bloklar:
                 print(f"      [FALLBACK] METHOD {method_name} not found in source — skipping")
                 continue
+            _bas, _son, method_block = bloklar[0]
+            if _son is None or _son == SINIR_BELIRSIZ:
+                neden = "kapanmamis" if _son is None else SINIR_BELIRSIZ
+                print(f"      [FALLBACK] [SKIP] METHOD {method_name} (satir {_bas}) blok siniri "
+                      f"belirlenemedi ({neden}) — PUT YAPILMADI, govde OLCULEMEDI")
+                continue
+            if amdp_baslik_mi(method_block):
+                print(f"      [FALLBACK] [SKIP] METHOD {method_name} AMDP (BY DATABASE) — fallback "
+                      f"kapsam disi, PUT YAPILMADI")
+                continue
 
-            method_block = method_match.group(1)
             if not method_block.endswith('\n'):
                 method_block += '\n'
             print(f"      [FALLBACK] Extracted {len(method_block)} chars")
@@ -1406,7 +1457,7 @@ class SAPClient:
             # yutulursa araç katmanı "yaratıldı mı?" varlık sondası için ağa çıkar.
             raise
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return None
 
     def delete_object(self, object_name: str, object_type: str = 'class',
@@ -2414,7 +2465,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             # aXet 2026-09-14: domain tip bilgisi ÖLÇÜLEMEDİ → yutulmaz, çağıran (adt_dtel_create) yapılandırılmış
             # hata (`validation_error` + mesaj) görsün. Diğer istisnalar eskisi gibi False.
             from sap_adt_lib import DomainTipBilgisiHatasi
@@ -2484,7 +2535,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_structure(self, name: str, fields: list, description: str,
@@ -2549,7 +2600,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_table(self, name: str, description: str, package: str,
@@ -2650,7 +2701,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_cds_view(self, name: str, cds_source: str, description: str,
@@ -2731,7 +2782,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     # ===== New Object Type Wrappers (Added 2026-02-02) =====
@@ -2821,7 +2872,7 @@ class SAPClient:
             return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_message_class(self, name: str, description: str, package: str,
@@ -2894,7 +2945,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_lock_object(self, name: str, primary_table: str, description: str,
@@ -2989,7 +3040,7 @@ class SAPClient:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def run_sql_query(self, query: str, max_rows: int = 100) -> Optional[Dict[str, Any]]:
@@ -3126,7 +3177,7 @@ constants:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def get_ddic_object(self, object_type: str, name: str) -> Optional[str]:
@@ -3202,7 +3253,7 @@ constants:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_function_module(self, name: str, function_group: str, description: str,
@@ -3288,7 +3339,7 @@ constants:
                 return False
 
         except Exception as e:
-            print(f"\n[ERROR] {str(e)}")
+            print(f"\n[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     # ===== Function Module (FM) çözümleme — Q261 =====
@@ -3632,7 +3683,7 @@ constants:
             print(f"[ERROR] {(result or {}).get('message', 'metadata extension yaratılamadı')}")
             return False
         except Exception as e:
-            print(f"[ERROR] {str(e)}")
+            print(f"[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_access_control(self, name: str, source: str, description: str,
@@ -3673,7 +3724,7 @@ constants:
             print(f"[ERROR] {(result or {}).get('message', 'access control yaratılamadı')}")
             return False
         except Exception as e:
-            print(f"[ERROR] {str(e)}")
+            print(f"[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return False
 
     def create_behavior_definition(self, name: str, root_entity: str,
@@ -3726,7 +3777,7 @@ constants:
                 return result
             return result
         except Exception as e:
-            print(f"[ERROR] {str(e)}")
+            print(f"[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return {'success': False, 'error': str(e)}
 
     def create_behavior_implementation(self, name: str, behavior_definition: str,
@@ -3776,7 +3827,7 @@ constants:
                 return result
             return result
         except Exception as e:
-            print(f"[ERROR] {str(e)}")
+            print(f"[ERROR] {str(e)}" + _sap_govdesi_eki(self.adt_client, e))
             return {'success': False, 'error': str(e)}
 
 

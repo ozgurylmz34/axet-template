@@ -33,7 +33,7 @@ if sys.platform == 'win32' and hasattr(sys.stdout, 'reconfigure'):
 
 CONFIG = Path(__file__).resolve().parents[1] / 'abaplint' / 'abaplint.json'
 
-# Sürüm PİNLİ (2026-07-26; BUMP 2026-08-28: 2.120.5 → 2.120.38; BUMP 2026-10-19: → 2.120.64). Pin'siz `@abaplint/cli`
+# Sürüm PİNLİ (2026-07-26; BUMP 2026-08-28: 2.120.5 → 2.120.38; BUMP 2026-10-19: → 2.120.64; BUMP 2026-10-28: → 2.120.89). Pin'siz `@abaplint/cli`
 # her koşumda upstream latest'i çeker → lint davranışı bizden habersiz değişir (upstream'de
 # 2 haftada 43 commit) + tedarik-zinciri yüzeyi. Bump = BİLİNÇLİ karar: burayı güncelle,
 # bir class/program üzerinde koş, farkı gör.
@@ -53,8 +53,15 @@ CONFIG = Path(__file__).resolve().parents[1] / 'abaplint' / 'abaplint.json'
 # (dosya, satır, kural, mesaj) dörtlüsü BİREBİR AYNI. *Tek fark paralel koşumda node çökmesiydi; aynı dosya
 # tek başına iki sürümde 3'er kez → 6/6 OK. Kural seti ve çıktı biçimi değişmedi. Bu repoda yan yana koşum
 # YAPILMADI (ağ gerektirir; abaplint duman testi `ABAPLINT_SMOKE=1` ile ayrıca koşulur).
+# 2026-10-28 bump'ı (2.120.64 → 2.120.89) ekip çekirdeğindeki aynı pin değişikliğini izler (orada 195 dosya, 28 = 28
+# bulgu birebir). Bu repoda da YAN YANA ÖLÇÜLDÜ: repodaki 13 ABAP dosyası (7 `.clas.abap` + 6 `.prog.abap`; fixture +
+# şablon), bu gate ile dosya başına SIRALI koşum, iki sürüm:
+#   2.120.64 → 5 OK · 8 FINDING · toplam 11 bulgu   ·   2.120.89 → aynı
+# Sürüm adı dışında tüm çıktı (bulgu satırları + AXET-GATE-STATUS) BİREBİR AYNI. Negatif kontrol: 2.120.9999 → npm
+# ETARGET → FAIL (C-ABLINT-FAILOPEN) ⇒ pin gerçekten çekilen sürümü belirliyor. 2.120.84 BDEF ayrıştırıcısı getirdi;
+# bu gate yalnız `.clas.abap`/`.prog.abap` aldığı için `.bdef` kapsam dışı kalır (bump bunu değiştirmez).
 # Fetch edilemezse (offline/cache yok) aşağıdaki except → SKIP (reviewer kırılmaz, mevcut davranış).
-ABAPLINT_PIN = '@abaplint/cli@2.120.64'
+ABAPLINT_PIN = '@abaplint/cli@2.120.89'
 ISSUE_RE = re.compile(r'^(.*\.abap)\[(\d+),\s*(\d+)\]\s*-\s*(.+?)\s*\(([a-z_]+)\)\s*\[[EWI]\]\s*$')
 
 # ⛔ FAIL-OPEN KİLİDİ (2026-08-14) — "bulgu satırı görmedim" ≠ "temiz".

@@ -229,20 +229,35 @@ class SayfaNoYerImiTest(unittest.TestCase):
 
 
 _SAHTE_PLAYWRIGHT = r"""
-// Sahte playwright-core: tarayıcı açmaz; page.pdf seçeneklerini ve evaluate sayısını JSON'a yazar.
+// Sahte playwright-core: tarayıcı açmaz; page.pdf seçeneklerini, evaluate sayısını ve sayfa başına çağrıları JSON'a
+// yazar. SAHTE_HATA: "pdf" -> page.pdf dosya YAZMADAN atar · "close" -> PDF yazıldıktan SONRA browser.close atar ·
+// "launch" -> tarayıcı başlatılamaz.
 const fs = require("fs");
 const kayit = process.env.SAHTE_KAYIT;
+const hata = process.env.SAHTE_HATA || "";
 const olcum = JSON.parse(process.env.SAHTE_OLCUM || "null");
-const durum = { pdf: null, evaluate: 0 };
+const durum = { pdf: null, evaluate: 0, sayfalar: [] };
 const yaz = () => fs.writeFileSync(kayit, JSON.stringify(durum));
-const page = {
-  goto: async () => {}, emulateMedia: async () => {},
-  evaluate: async (fn, arg) => { durum.evaluate++; yaz();
-    return arg === undefined ? { toplam: 0, uygulanan: 0, geri: 0 } : olcum; },
-  pdf: async (o) => { durum.pdf = o; yaz(); fs.writeFileSync(o.path, "%PDF-1.4 sahte"); },
+const yeniSayfa = () => {
+  const iz = { goto: 0, setContent: 0, evaluate: [], close: 0 };
+  durum.sayfalar.push(iz);
+  return {
+    goto: async () => { iz.goto++; }, emulateMedia: async () => {},
+    setContent: async () => { iz.setContent++; yaz(); }, close: async () => { iz.close++; yaz(); },
+    evaluate: async (fn, arg) => { durum.evaluate++;
+      const tur = arg === undefined ? "baslik" : typeof arg === "string" ? "altbilgi" : "alt-bosluk";
+      iz.evaluate.push(tur); yaz();
+      if (tur === "baslik") return { toplam: 0, uygulanan: 0, geri: 0 };
+      if (tur === "altbilgi") return olcum.altbilgiMm;
+      const o = Object.assign({}, olcum); delete o.altbilgiMm; return o; },
+    pdf: async (o) => { if (hata === "pdf") throw new Error("sahte pdf hatasi");
+      durum.pdf = o; yaz(); fs.writeFileSync(o.path, "%PDF-1.4 sahte"); },
+  };
 };
-module.exports = { chromium: { launch: async () => ({
-  newContext: async () => ({ newPage: async () => page }), close: async () => {} }) } };
+module.exports = { chromium: { launch: async () => {
+  if (hata === "launch") throw new Error("sahte launch hatasi");
+  return { newContext: async () => ({ newPage: async () => yeniSayfa() }),
+           close: async () => { if (hata === "close") throw new Error("sahte close hatasi"); } }; } } };
 """
 
 
@@ -273,10 +288,11 @@ class SahteTarayiciTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _kos(self, *bayrak, olcum=None):
+    def _kos(self, *bayrak, olcum=None, hata=""):
         if os.path.exists(self.kayit):
             os.remove(self.kayit)
-        env = dict(os.environ, PLAYWRIGHT_CORE_PATH=self.pw, SAHTE_KAYIT=self.kayit, SAHTE_OLCUM=json.dumps(olcum))
+        env = dict(os.environ, PLAYWRIGHT_CORE_PATH=self.pw, SAHTE_KAYIT=self.kayit, SAHTE_OLCUM=json.dumps(olcum),
+                   SAHTE_HATA=hata)
         r = subprocess.run([node_path(), os.path.join(SCRIPTS, "html_to_pdf.js"), self.html, self.pdf, *bayrak],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=60)
         kayit = None
@@ -304,7 +320,7 @@ class SahteTarayiciTest(unittest.TestCase):
         self.assertEqual(2, r.returncode, r.stdout + r.stderr)
         self.assertIn("[DURDU]", r.stderr)
         self.assertIsNone(kayit["pdf"])
-        m = re.search(r"gereken ([\d.]+)mm = alt ic bosluk ([\d.]+)mm \+ altbilgi 4\.0mm \+ pay 2mm", r.stdout)
+        m = re.search(r"gereken ([\d.]+)mm = alt ic bosluk ([\d.]+)mm \+ altbilgi 4\.0mm \(ayri sayfada\) \+ pay 2mm", r.stdout)
         self.assertTrue(m, r.stdout)
         gerek = float(m.group(1))
         self.assertAlmostEqual(gerek, float(m.group(2)) + 4.0 + 2, places=1)
@@ -341,6 +357,101 @@ class SahteTarayiciTest(unittest.TestCase):
         self.assertEqual(2, r.returncode, r.stdout + r.stderr)
         self.assertNotIn("onceki PDF", r.stderr)
         self.assertFalse(os.path.exists(self.pdf))
+
+    def test_altbilgi_ayri_bos_sayfada_olculur(self):
+        """Altbilgi yüksekliği belgenin sayfasında DEĞİL, setContent ile açılan ayrı boş sayfada ölçülür (belge CSS'i
+        — ata zoom/display:none dahil — ona ulaşamaz). Belge sayfasında yalnız alt boşluk ölçümü koşar."""
+        r, kayit = self._kos("--sayfa-no", olcum=self._olcum(30.0))
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        belge, *diger = kayit["sayfalar"]
+        self.assertEqual((1, ["alt-bosluk"]), (belge["goto"], belge["evaluate"]))
+        self.assertEqual(1, len(diger), kayit["sayfalar"])
+        self.assertEqual({"goto": 0, "setContent": 1, "evaluate": ["altbilgi"], "close": 1}, diger[0])
+        self.assertIn("altbilgi 4.0mm (ayri sayfada)", r.stdout)
+
+    def test_hata_yolunda_onceki_pdf_silinmez_uyari_basar(self):
+        """PDF yazılmadan çıkılan HATA yolları (page.pdf hatası exit 1 · tarayıcı başlatılamadı exit 2) da hedefteki
+        eski PDF'i silmez ve sessiz kalmaz — DURDU dalıyla aynı uyarı."""
+        with open(self.pdf, "w", encoding="utf-8") as fh:
+            fh.write("%PDF eski")
+        for hata, rc, bayrak in (("pdf", 1, ("--sayfa-no",)), ("pdf", 1, ()), ("launch", 2, ())):
+            r, _ = self._kos(*bayrak, olcum=self._olcum(30.0), hata=hata)
+            self.assertEqual(rc, r.returncode, (hata, bayrak, r.stdout + r.stderr))
+            self.assertIn("sahte " + hata + " hatasi", r.stderr)
+            self.assertIn("UYARI: hedefte onceki PDF duruyor, bu kosumda yazilmadi: ", r.stderr, (hata, bayrak))
+            with open(self.pdf, encoding="utf-8") as fh:
+                self.assertEqual("%PDF eski", fh.read())
+
+    def test_KONTROL_hata_yolunda_uyari_yalniz_yazilmadiysa(self):
+        """Doğru-negatif: hedef yokken hata → uyarı yok · PDF YAZILDIKTAN sonra gelen hata (browser.close) → exit 1
+        ama uyarı yok (dosya bu koşunun çıktısıdır)."""
+        r, _ = self._kos("--sayfa-no", olcum=self._olcum(30.0), hata="pdf")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("onceki PDF", r.stderr)
+        self.assertFalse(os.path.exists(self.pdf))
+        with open(self.pdf, "w", encoding="utf-8") as fh:
+            fh.write("%PDF eski")
+        r, kayit = self._kos("--sayfa-no", olcum=self._olcum(30.0), hata="close")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("sahte close hatasi", r.stderr)
+        self.assertNotIn("onceki PDF", r.stderr)
+        self.assertIsNotNone(kayit["pdf"])
+        with open(self.pdf, encoding="utf-8") as fh:
+            self.assertEqual("%PDF-1.4 sahte", fh.read())
+
+
+@unittest.skipUnless(BROWSER_TESTS, "tarayıcı testi kapalı (SAP_FS_TS_DOCS_BROWSER_TESTS=1 ile açılır)")
+@unittest.skipUnless(node_path(), "node bulunamadı")
+class SayfaNoOlcumYalitimTest(unittest.TestCase):
+    """--sayfa-no ölçümleri belgenin CSS'inden yalıtık (kaynak çekirdek Issue #360 vektörleri P12b · P13e · P13f ve
+    kardeşleri). Gerçek tarayıcı, gerçek html_to_pdf.js; hüküm aracın ALTBILGI satırı + çıkış kodu."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _kos(self, ad, alt, css=""):
+        html = os.path.join(self.tmp.name, ad + ".html")
+        with open(html, "w", encoding="utf-8") as fh:
+            fh.write("<html><head><meta charset='utf-8'><style>@page{margin:10mm 10mm %s 10mm} %s</style></head>"
+                     "<body><div>gövde</div></body></html>" % (alt, css))
+        r = run_node("html_to_pdf.js", html, os.path.join(self.tmp.name, ad + ".pdf"), "--sayfa-no")
+        m = re.search(r"etkin alt bosluk ([\d.]+)mm .*altbilgi ([\d.]+)mm", r.stdout)
+        self.assertTrue(m, r.stdout + r.stderr)
+        return r, float(m.group(1)), float(m.group(2))
+
+    def test_uzunluk_olcumu_belge_cssinden_yalitik(self):
+        r, etkin, _ = self._kos("kontrol", "20mm")
+        self.assertEqual((0, 20.0), (r.returncode, etkin), r.stdout + r.stderr)   # kontrol: düz belge
+        # (beklenen etkin mm = baskıdaki değer, beklenen rc) — baskıda @page uzunluğu KÖKE göre çözülür
+        vakalar = {
+            # ölçüm elemanını KÜÇÜLTEN belge kuralı — eski düz div 0.3 mm sanıp SAHTE DURDU veriyordu
+            "kucultme": ("20mm", "div{max-height:1px !important}", 20.0, 0),
+            # ŞİŞİREN kural — eski düz div 6 mm'yi daha büyük sanıp SESSİZ geçiyordu (baskıda altbilgi biner)
+            "sisirme": ("6mm", "div{padding:20px !important}", 6.0, 2),
+            # P13e: 2em KÖKÜN yazı boyutuna göre (30px → 15.9 mm); eski gövdeye göre 5.3 mm sanıp sahte DURDU
+            "em_kok": ("2em", "html{font-size:30px} body{font-size:10px}", 15.9, 0),
+            # P13f: 3lh KÖKÜN satır yüksekliğiyle (6.3 mm); font-size-yalnız miras 14.3 mm sanıp sessiz geçerdi
+            "lh_kok": ("3lh", "html{line-height:0.5}", 6.3, 2),
+        }
+        for ad, (alt, css, beklenen, rc) in vakalar.items():
+            r, etkin, _ = self._kos(ad, alt, css)
+            self.assertEqual((rc, beklenen), (r.returncode, etkin), (ad, r.stdout + r.stderr))
+
+    def test_altbilgi_olcumu_belge_cssinden_yalitik(self):
+        r, _, taban = self._kos("kontrol", "20mm")
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertTrue(3.5 <= taban <= 4.5, taban)   # kontrol: 8 pt şablon ≈ 4 mm
+        # P12b (eski: belge içinde 42.3 mm → sahte DURDU) · ata zoom ve display:none (belge içi gölge kökü de
+        # etkiler: 0.8 / 0 mm → sessiz geçiş yönü). Ayrı sayfada üçü de tabanla AYNI.
+        for ad, css in (("p12b", "div{font-size:40pt !important;line-height:3 !important}"),
+                        ("zoom", "html{zoom:0.2}"), ("gizli", "*{display:none !important}")):
+            r, _, altbilgi = self._kos(ad, "20mm", css)
+            self.assertEqual(taban, altbilgi, (ad, r.stdout + r.stderr))
+            if ad == "p12b":
+                self.assertEqual(0, r.returncode, r.stdout + r.stderr)
 
 
 if __name__ == "__main__":

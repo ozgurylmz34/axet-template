@@ -5,7 +5,7 @@ kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullan�
 bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu okuyan tüm projelere yansır; projelerdeki
 şablon kopyaları (`AGENTS.md`, `.githooks`, denylist …) `%guncelle-proje` ile getirilir.
 
-> Sürüm: v0.5.20 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.21 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 

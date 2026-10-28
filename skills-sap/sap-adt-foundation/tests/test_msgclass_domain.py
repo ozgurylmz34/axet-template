@@ -366,16 +366,75 @@ class DomainVeMesajSinifi(unittest.TestCase):
     def test_D7_domain_post_zaten_var_aktivasyon_yok(self):
         adt, ist = self._domain_kur(post=[(405, self.VAR_GOVDE)])
         r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
-        adt2, ist2 = self._domain_kur(post=[(500, "Internal Server Error"), (405, self.VAR_GOVDE)], gercek_retry=True)
+        # Z211 (2026-10-28): Z52 kolu 500 → 503 — 500 artık tekrar EDİLMEZ (D7c); telafi 502/503/504'te yaşar.
+        adt2, ist2 = self._domain_kur(post=[(503, "Service Unavailable"), (405, self.VAR_GOVDE)], gercek_retry=True)
         r2 = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
         post2 = [c for c in adt2.cagri if c["method"] == "POST"]
         ok = (r.get("ok") is False and r.get("error") == "already_exists" and ist.aktive_edildi == 0
               and r2.get("ok") is False and r2.get("error") == "already_exists_after_retry" and ist2.aktive_edildi == 0
               and len(post2) == 2 and "adt_get" in str(r2.get("message")))
-        self.kaydet("D7 domain: POST 405 AlreadyExists → already_exists, aktivasyon YOK · 500→retry→405 → after_retry",
+        self.kaydet("D7 domain: POST 405 AlreadyExists → already_exists, aktivasyon YOK · 503→retry→405 → after_retry",
                     "already_exists · after_retry · aktivasyon 0",
                     f"{r.get('error')} akt={ist.aktive_edildi} · {r2.get('error')} akt={ist2.aktive_edildi} "
                     f"post={len(post2)}", ok)
+
+    def test_D7c_domain_500_tek_post_govde_logda_redakte_ve_kesik(self):
+        """Z211 (2026-10-28; kaynak çekirdek #363 + lider kararı c): yaratma POST'u 500 → 1 POST (tekrar YOK), aktivasyon
+        YOK, `after_retry` DEĞİL; SAP'nin 500 gövdesi `steps.create.log`'da `[SAP-GOVDE]` satırıyla görünür — bağlantı
+        host'u `sapadt.redact` ile maskelenmiş (`***`), gövde `SAP_HATA_GOVDE_SINIRI` karaktere kesilmiş ve kesildiği
+        yazılı. Kontrol: gövdesiz 500 → `[SAP-GOVDE]` satırı YOK (davranış eskisi gibi)."""
+        import sap_client as SC  # type: ignore
+        govde = ("<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+                 "<message>Kayit bloke: CTS_WBO_API 019</message><detail>http://%s:8000/sap/bc/adt "
+                 "%s</detail></exc:exception>" % (SAHTE_HOST, "x" * 700))
+        adt, ist = self._domain_kur(post=[(500, govde), (405, self.VAR_GOVDE)], gercek_retry=True)
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        post = [c for c in adt.cagri if c["method"] == "POST"]
+        log = str((r.get("steps") or {}).get("create", {}).get("log", ""))
+        satir = next((s for s in log.splitlines() if s.startswith(SC.SAP_GOVDE_IMZASI)), "")
+        adt0, ist0 = self._domain_kur(post=[(500, "")], gercek_retry=True)
+        r0 = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        log0 = str((r0.get("steps") or {}).get("create", {}).get("log", ""))
+        ok = (r.get("ok") is False and r.get("error") not in ("already_exists_after_retry", "already_exists")
+              and len(post) == 1 and ist.aktive_edildi == 0
+              and "CTS_WBO_API 019" in satir and "sebep: Kayit bloke: CTS_WBO_API 019" in satir
+              and SAHTE_HOST not in log and "***" in satir and "KESİLDİ" in satir
+              and len(satir) < SC.SAP_HATA_GOVDE_SINIRI + 200
+              and SC.SAP_GOVDE_IMZASI not in log0 and "[ERROR] [500]" in log0)
+        self.kaydet("D7c domain POST 500 → 1 POST · aktivasyon 0 · log'da SAP gövdesi (host ***, KESİLDİ) · gövdesiz "
+                    "500 kontrolü ek satır yok", "POST 1 · gövde var · host yok · kesik",
+                    f"err={r.get('error')} post={len(post)} akt={ist.aktive_edildi} satir={satir[:120]} "
+                    f"host_logda={SAHTE_HOST in log} log0={log0[-60:]}", ok)
+
+    def test_D7d_uzun_sebep_de_kesilir(self):
+        """Tur 7 bug-gate F2: `<message>` metninin uzunluğu serbest — sebep de `SAP_HATA_GOVDE_SINIRI`'nda kesilir.
+        Kontrol: kısa sebep (D7c) kesilmez."""
+        import sap_client as SC  # type: ignore
+        uzun = "M" * 700
+        govde = ("<exc:exception xmlns:exc=\"http://www.sap.com/abapxml/types/communicationframework\">"
+                 "<message>%s %s</message></exc:exception>" % (uzun, SAHTE_HOST))
+        self._domain_kur(post=[(500, govde)], gercek_retry=True)
+        r = self.comp.adt_domain_create("ZAXET_D_X", "CHAR", 10, "Test alanı", "ZAXET_PKG", TR)
+        log = str((r.get("steps") or {}).get("create", {}).get("log", ""))
+        satir = next((s for s in log.splitlines() if s.startswith(SC.SAP_GOVDE_IMZASI)), "")
+        sebep = satir.split(" · govde", 1)[0]
+        ok = ("…(KESİLDİ)" in sebep and "M" * SC.SAP_HATA_GOVDE_SINIRI in sebep
+              and "M" * (SC.SAP_HATA_GOVDE_SINIRI + 1) not in sebep and SAHTE_HOST not in log
+              and len(satir) < 2 * SC.SAP_HATA_GOVDE_SINIRI + 200)
+        self.kaydet("D7d 700 karakterlik <message> → sebep 500'de kesik + işaretli · satır sınırlı · host yok",
+                    "sebep KESİLDİ · satır < 2×sınır+200", f"sebep_len={len(sebep)} satir_len={len(satir)}", ok)
+
+    def test_D7e_durum_kodu_sap_govdesinden_okunmaz(self):
+        """Tur 7 bug-gate önerisi: `[SAP-GOVDE]` satırındaki `[404]` HTTP durumu sayılmaz. Kontrol: aracın kendi
+        `[503]` satırı sayılır."""
+        import sap_client as SC  # type: ignore
+        from sapadt.tools import atom as _atom  # type: ignore
+        kod, aciklama = _atom._create_hata_sinifi("[ERROR] [503] Failed to create domain\n"
+                                                  + SC.SAP_GOVDE_IMZASI + " sebep: x · govde: <html>Error [404] page</html>")
+        ok = (kod == "create_failed" and "503" in aciklama and "404" not in aciklama
+              and _atom._SAP_GOVDE_IMZASI == SC.SAP_GOVDE_IMZASI)
+        self.kaydet("D7e durum kodu yalnız aracın satırından (503) · SAP gövdesindeki [404] sayılmaz", "503, 404 yok",
+                    aciklama, ok)
 
     def test_D9_baglanti_hatasi_retry_sonrasi_zaten_var(self):
         """Bug gate MEDIUM (v0.5.1): POST gitti, SAP işledi, yanıt gelmeden bağlantı koptu (ConnectionError) → kütüphane

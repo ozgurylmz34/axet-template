@@ -3814,6 +3814,122 @@
      ]
     }
    ]
+  },
+  {
+   "etiket": "v0.5.21",
+   "tarih": "2026-10-28",
+   "kalemler": [
+    {
+     "id": "0.5.21-01",
+     "tur": "duzeltme",
+     "kritik": true,
+     "baslik": "Metot bloğu sınırı tek yerden bulunur: sınır belirsizse metot include'una yazılmaz · `adt_get_method` tek satırlık metodu da okur",
+     "neden": "Aktivasyon geri dönüşünde sınıfın metot include'larına yazılırken metodun bitişi satır başındaki `ENDMETHOD` ile aranıyordu. Tek satırlık metot (`METHOD a. … ENDMETHOD.`), satır ortasındaki `ENDMETHOD.` ya da çok satırlı metin şablonu içinde satır başına gelen `ENDMETHOD` yanlış bloğu seçtirip komşu metodun gövdesini yanlış include'a yazdırabiliyordu. Artık okuma (`adt_get_method`) ve yazma yolu aynı modülü kullanır: bitiş, `METHOD`'dan sonraki ilk `METHOD`/`ENDMETHOD` deyimidir (satırın neresinde olursa); yorum satırları, tırnak/şablon içleri ve `method = …` gibi tanımlayıcılar bitiş sayılmaz. Sınır belirlenemiyorsa (araya başka `METHOD` giriyorsa ya da `ENDMETHOD.`'dan sonra aynı satırda `ENDCLASS.` gibi bir deyim varsa) ya da blok kapanmıyorsa kilit alınmaz ve PUT yapılmaz; AMDP bloğu bu yolla yazılmaz. `adt_get_method` hata kodları aynıdır; tek satırlık metot ve satır ortasındaki `ENDMETHOD.` artık `found:true` döner (önceden `belirsiz`). `ENDMETHOD. ENDCLASS.` satırında biten metot ise `belirsiz` döner (gövde dönmez). Gerçek bir sistemde 6 sınıfın 85 metodu eski ve yeni kodla okundu: başlangıç, bitiş ve gövde 85'inde de birebir aynı. Kritik işaretli, çünkü yanlış include'a yazılan gövde sessiz kaynak bozulmasıdır.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/abap_metot_blok.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/diag.py",
+      "skills-sap/sap-adt-foundation/references/tool-catalog.md",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_abap_metot_blok.py",
+      "skills-sap/sap-adt-foundation/tests/test_checkrun_sozdizimi.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_abap_metot_blok",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_checkrun_sozdizimi"
+     ]
+    },
+    {
+     "id": "0.5.21-02",
+     "tur": "duzeltme",
+     "kritik": true,
+     "baslik": "Yaratma çağrısında 500 hatası yeniden gönderilmez · son denemenin SAP yanıtı kaybolmaz · hata gövdesi gizlenip kısaltılarak log'a yazılır",
+     "neden": "Beş yaratma çağrısının kendi yeniden deneme döngüsü HTTP 500'de de isteği üç kez gönderiyor ve son denemeden sonra da bekleyip SAP'nin yanıt gövdesini kaybediyordu; teşhis yalnız \"başarısız\" olarak kalıyordu. Artık 500 yeniden denenmez (502/503/504, 408 ve CSRF yenilemesi eskisi gibi), son denemeden sonra beklenmez ve son yanıt gövdesiyle döner. Obje yaratma hatasında SAP'nin hata gövdesi log'a eklenir: önce bağlantı adı, parola ve bilinen sırlar gizlenir, sonra gövde de SAP'nin sebep metni de 500 karaktere kısaltılır (\"KESİLDİ\" notuyla); gizleme modülü yüklenemezse gövde hiç yazılmaz. Transport yaratma bu eke dahil değildir. Hata özetindeki HTTP durum kodları yalnız aracın kendi satırından okunur; SAP gövdesindeki `[404]` gibi metin durum kodu sayılmaz. Kritik işaretli, çünkü yan etkili bir isteğin tekrarı geri alınamaz.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py",
+      "skills-sap/sap-adt-foundation/IMPLEMENTATION.md",
+      "skills-sap/sap-adt-foundation/tests/test_yan_etkili_tekrar.py",
+      "skills-sap/sap-adt-foundation/tests/test_msgclass_domain.py",
+      "skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py",
+      "skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py",
+      "skills-sap/sap-cds-ddic/references/cds.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_yan_etkili_tekrar",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_msgclass_domain",
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_ddic_textpool"
+     ]
+    },
+    {
+     "id": "0.5.21-03",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "PDF sayfa numarası: ölçüm sayfanın stilinden etkilenmez · altbilgi kendi sayfasında ölçülür · eski PDF kaldığında uyarı",
+     "neden": "`html_to_pdf.js --sayfa-no` altbilgi yüksekliğini sayfanın kendi CSS'iyle ölçüyordu; belge stili (yazı tipi, kenar boşluğu) ölçümü değiştirip numarayı içerikle çakıştırabiliyordu. Ölçüm artık yalıtılmış bir gölge kökte, altbilgi ayrı bir A4 sayfasında yapılır. Dönüştürme yazmadan biterse (işlem durduruldu, tarayıcı başlatılamadı ya da hata) ve hedefte önceki bir PDF duruyorsa, o dosyanın bu çalıştırmada üretilmediği uyarısı basılır. Girdi dosyası bulunamadığında uyarı basılmaz.",
+     "dosyalar": [
+      "skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js",
+      "skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md",
+      "skills-sap/sap-fs-ts-docs/tests/test_node_scripts.py"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-fs-ts-docs/tests/run_tests.py -k test_node_scripts"
+     ]
+    },
+    {
+     "id": "0.5.21-04",
+     "tur": "kural",
+     "kritik": false,
+     "baslik": "Bilgi notları: `$TMP`'de hangi aracın transport istediği · CDS T7 kapsamı · SALV de released değil",
+     "neden": "① Bilinen hatalar G-1 artık araca göre yazılır: `$TMP` paketinde kabuk, domain, veri elemanı ve tablo tipi yaratma transportsuz geçer; yapı/tablo yaratma ve kilitli kaynak yazma adımları transport ister. Önceki cümle bunun tersini söylüyordu. ② CDS: T7'deki \"çalışır\" yalnız view entity'de ölçüldü; yeni T7-b — DDIC tabanlı view'da (`define view` + `sqlViewName`) `CASE WHEN` koşulunda aritmetik geçmez, fark alt katmanda düz alan olarak üretilir. ③ Kodlama kalıpları: SALV de released değildir (`CL_SALV_TABLE` / `CL_SALV_TREE` için released kaydı yok, canlı ölçüldü) ⇒ GRID → SALV geçişi clean core kazandırmaz; ALV ağacı satırı buna göre düzeltildi.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/references/known-errors-adt.md",
+      "skills-sap/sap-cds-ddic/references/cds.md",
+      "skills-sap/sap-dev/references/coding-patterns.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python skills-sap/sap-adt-foundation/tests/run_tests.py -k test_static"
+     ]
+    },
+    {
+     "id": "0.5.21-05",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "abaplint sürümü 2.120.89",
+     "neden": "Yazma kapısı ve kod inceleme betiği abaplint `2.120.64` yerine `2.120.89` sürümünü çeker (ikisi aynı sürümde kalmak zorunda; test zorlar). 13 örnek ABAP dosyasında iki sürümün çıktısı sürüm adı dışında birebir aynı. Tüketici makinede yeni sürüm ilk koşuda `npx` ile indirilir; ağ yoksa denetim SKIP verir.",
+     "dosyalar": [
+      "skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_abaplint.py",
+      "skills-sap/sap-code-review/scripts/abaplint_run.py",
+      "skills-sap/sap-code-review/references/abaplint.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python -m unittest discover -s skills-sap/sap-code-review/tests -p test_abaplint_run.py"
+     ]
+    },
+    {
+     "id": "0.5.21-06",
+     "tur": "duzeltme",
+     "kritik": false,
+     "baslik": "Yayın kataloğu, README sürüm satırı ve CI kaydı",
+     "neden": "Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.",
+     "dosyalar": [
+      "CHANGELOG.md",
+      "guncelle/yayinlar.json",
+      "guncelle/ci-durum.json",
+      "README.md"
+     ],
+     "gerektirir": [],
+     "test": [
+      "python tests/run_tests.py -k yayin_surumleri",
+      "python tests/run_tests.py -k readme"
+     ]
+    }
+   ]
   }
  ]
 }

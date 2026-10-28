@@ -15,7 +15,10 @@
  *    (ölçüm aşağıda, sabitin yanında). Alt boşluk (margin-bottom) bu kutuyu + payı kapsamıyorsa altbilgi gövdenin
  *    ÜSTÜNE basılır (ölçüldü: `@page` 6 mm + sayfa dibine dayanan satır → üst üste) — o yüzden ETKİN alt boşluk
  *    belgeden ÖLÇÜLÜR (sabit varsayılmaz) ve ALTBILGI_ALT_IC_MM + altbilgi yüksekliği + pay ile kıyaslanır; yetmiyorsa
- *    ya da ölçülemiyorsa SESSİZ değil DURDU (çıkış 2; hedefteki eski PDF'e dokunulmaz, uyarı basılır). Tuzaklar:
+ *    ya da ölçülemiyorsa SESSİZ değil DURDU (çıkış 2). Altbilgi yüksekliği AYRI boş sayfada ölçülür (belge CSS'i
+ *    dokunamaz); `@page` uzunluğu belgeden yalıtık gölge kökte. PDF yazmadan çıkılan üç yolda (DURDU · tarayıcı
+ *    başlatılamadı · hata exit 1) hedefteki eski PDF'e dokunulmaz, stderr'e uyarı basılır (oncekiPdfUyar); kullanım
+ *    hatası, girdi yok ve playwright-core yok çıkışlarında uyarı YOK (oncekiPdfUyar açıklaması). Tuzaklar:
  *    · CSS `@page { margin: … }` page.pdf'e verilen JS margin'ini SESSİZCE ezer (build_doc_pdf CSS'i `@page`
  *      margin TAŞIR ⇒ etkin boşluk CSS'inkidir).
  *    · footerTemplate zemin boyamaz (yalnız metin/kenarlık) ⇒ altbilgi yalnız metin.
@@ -89,7 +92,7 @@ function resolvePlaywrightCore() {
   return null;
 }
 
-/** Belgenin ETKİN alt boşluğunu (mm) ve altbilginin yüksekliğini (mm) ölçer.
+/** Belgenin ETKİN alt boşluğunu (mm) ölçer (altbilginin yüksekliği AYRI sayfada: `altbilgiOlc`).
  *  Kaynak: belgedeki `@page` kuralı (varsa JS margin'ini ezer) — yoksa JS margin'i.
  *  · Bu betik `emulateMedia("screen")` ile basar ⇒ `@media print { @page {…} }` UYGULANMAZ, `@media screen|all`
  *    UYGULANIR. Medya TÜRÜ `matchMedia` ile, `@supports` `CSS.supports` ile süzülür; `@layer` gibi koşulsuz gruplara
@@ -109,16 +112,27 @@ function resolvePlaywrightCore() {
  *  yetse de DURDU verir; `@page` içi `@bottom-*` kutuları ve özgüllük/!important modellenmez (düz `@page`'lerde belge
  *  sırasındaki SON değer alınır). Çare: `@page`'i sorgudan çıkar, stili `<style>` içine göm ya da bayraksız üret. */
 async function altBoslukOlc(page, jsAltMm) {
-  return await page.evaluate(([jsAlt, html, reKaynak]) => {
+  return await page.evaluate(([jsAlt, reKaynak]) => {
     const viewportRe = new RegExp(reKaynak, "i");
     const pxToMm = px => px * 25.4 / 96;
+    // ⛔ UZUNLUK ÖLÇÜMÜ BELGE CSS'İNDEN YALITILIR: ölçüm elemanı KÖKÜN (html) çocuğu olan gölge kökte;
+    // `:host` + iç div `all:initial` + `font:inherit` (`font-size:inherit` DEĞİL — yalnız boyut miras alınırsa
+    // `lh`/`ex`/`ch` başlangıç satır yüksekliği/ailesiyle yanlış ölçülür), yükseklik satır içi `!important`.
+    // Gölge-içi `!important` belge `!important`'ını yener ⇒ `div{padding:20px !important}`, `body{zoom:3}`,
+    // `body{font-size:30px}` (2em gövdeye göre çözülürdü; baskıda `@page` uzunluğu KÖKE göre) ölçüme dokunamaz.
     const uzunlukMm = deger => {
-      const d = document.createElement("div");
-      d.style.cssText = "position:absolute;visibility:hidden;height:" + deger;
-      document.body.appendChild(d);
-      const h = d.getBoundingClientRect().height;
-      d.remove();
-      return pxToMm(h);
+      const h = document.createElement("ix-uzunluk-olcum");
+      const s = h.attachShadow({ mode: "closed" });
+      s.innerHTML = "<style>:host{all:initial !important;font:inherit !important;display:block !important;" +
+        "position:absolute !important;visibility:hidden !important;left:0 !important;top:0 !important;" +
+        "width:0 !important;height:100vh !important}" +
+        "div{all:initial !important;display:block !important;font:inherit !important}</style><div></div>";
+      const d = s.querySelector("div");
+      d.style.setProperty("height", deger, "important");   // satır içi: değer metni HTML'e gömülmez
+      document.documentElement.appendChild(h);
+      const v = d.getBoundingClientRect().height;
+      h.remove();
+      return pxToMm(v);
     };
     let sorgu = 0, viewportSay = 0;
     const okunamayan = [];
@@ -175,21 +189,39 @@ async function altBoslukOlc(page, jsAltMm) {
     for (const s of sozde) {
       if (s.mm < etkin) { etkin = s.mm; kaynak = "css-" + s.iz; }
     }
+    return { etkinMm: etkin, kaynak, medya: { sorgu, viewport: viewportSay }, okunamayan, adopted: adopted.length };
+  }, [jsAltMm, VIEWPORT_OZELLIK_RE.source]);
+}
+
+/** Altbilgi şablonunun yüksekliği (mm) — verilen sayfanın gövdesinde, A4 genişliğinde (210 mm) ölçülür.
+ *  ⛔ ÇAĞIRAN AYRI, BOŞ bir sayfa verir: Chromium altbilgiyi belgeden AYRI bir bağlamda çizer — belge CSS'i ona
+ *  ulaşmaz. Belgenin içinde ölçmek (gölge kök + `:host{all:initial !important}` dahil) YETMEZ: ataların `zoom`'u
+ *  (`html{zoom:0.2}` → 0.79 mm) ve `display:none`'ı (`*{display:none !important}` → 0) gölge kökü de etkiler
+ *  (kaynak çekirdekte ölçüldü; ayrı sayfada tüm vakalarda ≈ 3.97 mm). Aynı tarayıcı ⇒ aynı fontlar. */
+async function altbilgiOlc(sayfa) {
+  return await sayfa.evaluate(html => {
     const k = document.createElement("div");
-    // Chromium şablonu belgenin CSS'ini GÖRMEYEN ayrı sayfada çizer (satır yüksekliği `normal`). Ölçüm de belgeden
-    // yalıtılır: şablon shadow root içinde (belge seçicileri içeri işlemez) ve kabuk `:host{all:initial !important}`
-    // ile sıfırlanır (önemli bildirimlerde gölge ağacının kuralı belgeninkini YENER ⇒ belgedeki `div{… !important}`
-    // kabuğa da işleyemez, miras yolu kapanır). ÖLÇÜLDÜ: yalıtımsız ölçümde `body,div{line-height:.3 !important}`
-    // yüksekliği 4.0 → 0.8 mm gösteriyordu (sahte geçiş).
-    const golge = k.attachShadow({ mode: "open" });
-    golge.innerHTML = "<style>:host{all:initial !important;display:block !important;position:absolute !important;" +
-                      "visibility:hidden !important;left:0 !important;top:0 !important;width:180mm !important}</style>" + html;
+    k.style.cssText = "position:absolute;visibility:hidden;left:0;top:0;width:210mm";
+    k.innerHTML = html;
     document.body.appendChild(k);
-    const altbilgi = pxToMm(k.getBoundingClientRect().height);
+    const h = k.getBoundingClientRect().height * 25.4 / 96;
     k.remove();
-    return { etkinMm: etkin, kaynak, altbilgiMm: altbilgi, medya: { sorgu, viewport: viewportSay }, okunamayan,
-             adopted: adopted.length };
-  }, [jsAltMm, ALTBILGI_HTML, VIEWPORT_OZELLIK_RE.source]);
+    return h;
+  }, ALTBILGI_HTML);
+}
+
+// Bu koşu PDF'i yazdı mı / hedef yol (ERR yolundaki eski PDF uyarısı modül düzeyinden okur).
+let PDF_YAZILDI = false;
+let HEDEF = null;
+
+/** Bu koşu PDF YAZMADAN çıkarken (DURDU exit 2 · tarayıcı başlatılamadı exit 2 · hata exit 1) hedefte ÖNCEKİ bir
+ *  dosya duruyorsa stderr'e uyarır. Dosya SİLİNMEZ (kullanıcının önceki çıktısıdır); ama uyarısız kalırsa "PDF
+ *  orada" görüntüsü bu koşunun çıktısı sanılır. Kapsamadığı çıkışlar (hedef henüz çözülmemiş ya da girdi/bağımlılık
+ *  denetimi): kullanım hatası, bilinmeyen bayrak, girdi yok, playwright-core yok. */
+function oncekiPdfUyar() {
+  if (HEDEF && !PDF_YAZILDI && fs.existsSync(HEDEF)) {
+    console.error("UYARI: hedefte onceki PDF duruyor, bu kosumda yazilmadi: " + HEDEF);
+  }
 }
 
 /** Üretilen PDF'teki yer imi sayısı — `Outlines` sözlüğünün `/Count`'u (ham bayttan).
@@ -269,6 +301,7 @@ async function main(argv) {
   }
   const IN = path.resolve(konum[0]);
   const OUT = path.resolve(konum[1]);
+  HEDEF = OUT;
   if (!fs.existsSync(IN)) { console.error("HATA: girdi yok: " + IN); return 2; }
   const pw = resolvePlaywrightCore();
   if (!pw) { console.error("HATA: " + INSTALL); return 2; }
@@ -280,29 +313,32 @@ async function main(argv) {
     browser = await chromium.launch({ channel: channel === "chromium" ? undefined : channel, headless: true, args: ["--no-sandbox"] });
   } catch (e) {
     console.error("HATA: tarayıcı başlatılamadı (kanal " + channel + "). Chrome kurulu olmalı ya da PDF_BROWSER_CHANNEL ile kurulu bir kanal (ör. msedge) seçilmeli.\n" + e.message);
+    oncekiPdfUyar();
     return 2;
   }
   let yerImi = null;
   try {
-    const page = await (await browser.newContext()).newPage();
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
     await page.goto(fileUrl, { waitUntil: "networkidle", timeout: 60000 });
     await page.emulateMedia({ media: "screen" });
     // ⛔ Bayraksız seçenek nesnesi eskisiyle BİREBİR (bayraksız çıktı değişmez).
     const opts = { path: OUT, format: "A4", printBackground: true, margin: JS_MARGIN };
     if (bayrak.has("--sayfa-no")) {
       const o = await altBoslukOlc(page, JS_ALT_MM);
+      const pa = await ctx.newPage();   // AYRI, boş sayfa: belge CSS'i altbilgi ölçümüne ulaşmaz
+      await pa.setContent('<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>');
+      o.altbilgiMm = await altbilgiOlc(pa);
+      await pa.close();
       // Altbilgi kutusunun üst kenarı alt kenardan ALTBILGI_ALT_IC_MM + şablon yüksekliği kadar yukarıdadır; gövde
       // alanı (margin-bottom) bunun + payın ALTINA inmemeli.
       const gerek = ALTBILGI_ALT_IC_MM + o.altbilgiMm + ALTBILGI_PAY_MM;
       const okn = o.okunamayan.length;
-      // DURDU'da PDF yazılmaz; hedefte önceki koşumdan kalan PDF SİLİNMEZ ama sessiz de kalmaz (eski çıktı yeni sanılmasın).
-      const oncekiPdf = () => {
-        if (fs.existsSync(OUT)) console.error("UYARI: hedefte onceki PDF duruyor, bu kosumda yazilmadi: " + OUT);
-      };
+      // DURDU'da PDF yazılmaz; hedefte önceki koşumdan kalan PDF SİLİNMEZ ama sessiz de kalmaz (oncekiPdfUyar).
       // KAPSAM: "(muhafazakar)" yalnız viewport sorgusu VARKEN ve okunamayan kaynak YOKKEN basılır.
       console.log("ALTBILGI: etkin alt bosluk " + o.etkinMm.toFixed(1) + "mm (" + o.kaynak + "), gereken " +
                   gerek.toFixed(1) + "mm = alt ic bosluk " + ALTBILGI_ALT_IC_MM + "mm + altbilgi " + o.altbilgiMm.toFixed(1) +
-                  "mm + pay " + ALTBILGI_PAY_MM + "mm | medya " + o.medya.sorgu + " sorgu, " +
+                  "mm (ayri sayfada) + pay " + ALTBILGI_PAY_MM + "mm | medya " + o.medya.sorgu + " sorgu, " +
                   o.medya.viewport + " viewport'a bagli" + (o.medya.viewport > 0 && okn === 0 ? " (muhafazakar)" : "") +
                   " | okunamayan stil sayfasi/import " + okn + " | adoptedStyleSheets " + o.adopted +
                   " | shadow root TARANMADI");
@@ -310,7 +346,7 @@ async function main(argv) {
         console.error("[DURDU] --sayfa-no: stil sayfasi okunamadi (" + okn + " kaynak: " + o.okunamayan.slice(0, 3).join(", ") +
                       (okn > 3 ? ", …" : "") + "), @page margin'i OLCULEMEDI (okunamayan sayfa baskida @page margin'ini " +
                       "degistirebilir, altbilgi govdenin ustune basilabilirdi). Stili <style> icine gom ya da bayraksiz uret.");
-        oncekiPdf();
+        oncekiPdfUyar();
         return 2;
       }
       if (!(o.etkinMm >= gerek)) {
@@ -320,7 +356,7 @@ async function main(argv) {
         console.error("[DURDU] --sayfa-no: etkin alt bosluk " + o.etkinMm.toFixed(2) + "mm < gereken " + gerek.toFixed(2) +
                       "mm (" + o.kaynak + ")." + vp + " Altbilgi govdenin ustune basilirdi; govdeyi daraltmamak icin margin " +
                       "degistirilmez. Belgenin @page margin-bottom degerini buyut ya da bayraksiz uret.");
-        oncekiPdf();
+        oncekiPdfUyar();
         return 2;
       }
       opts.displayHeaderFooter = true;
@@ -335,6 +371,7 @@ async function main(argv) {
       opts.tagged = true;
     }
     await page.pdf(opts);
+    PDF_YAZILDI = true;
   } finally {
     await browser.close();
   }
@@ -359,4 +396,4 @@ async function main(argv) {
   return 0;
 }
 
-main(process.argv.slice(2)).then(code => process.exit(code)).catch(e => { console.error("HATA:", e); process.exit(1); });
+main(process.argv.slice(2)).then(code => process.exit(code)).catch(e => { console.error("HATA:", e); oncekiPdfUyar(); process.exit(1); });

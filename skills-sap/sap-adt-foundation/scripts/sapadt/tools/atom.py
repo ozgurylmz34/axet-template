@@ -1237,6 +1237,9 @@ _CREATE_HATA_IMZALARI = (
 )
 
 
+_SAP_GOVDE_IMZASI = "[SAP-GOVDE]"  # = sap_client.SAP_GOVDE_IMZASI (bu katman sap_client'ı import etmez; eşitliği D7e zorlar)
+
+
 def _create_hata_sinifi(log_text: str) -> tuple[str, str]:
     """create `None` dondugunde sebebi LOG'dan sinifla -> (kod, aciklama).
 
@@ -1246,7 +1249,10 @@ def _create_hata_sinifi(log_text: str) -> tuple[str, str]:
     for imza, kod, aciklama in _CREATE_HATA_IMZALARI:
         if imza in dusuk:
             return kod, aciklama
-    kodlar = sorted(set(re.findall(r"\[(\d{3})\]", log_text or "")))
+    # Durum kodu yalnız aracın kendi satırlarından; `[SAP-GOVDE]` satırı SAP'nin gövdesidir, içindeki `[404]` gibi
+    # metin HTTP durumu DEĞİL (tur 7 bug-gate önerisi, 2026-10-28).
+    kendi = "\n".join(s for s in (log_text or "").splitlines() if not s.lstrip().startswith(_SAP_GOVDE_IMZASI))
+    kodlar = sorted(set(re.findall(r"\[(\d{3})\]", kendi)))
     if kodlar:
         return "create_failed", "SAP HTTP durum(lari): %s (ham sebep client_log'da)." % ", ".join(kodlar)
     return "create_failed", ""

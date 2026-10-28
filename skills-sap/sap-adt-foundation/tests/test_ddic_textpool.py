@@ -954,18 +954,15 @@ class DdicTextpool(unittest.TestCase):
         adt._should_retry = k._should_retry.__get__(adt)
         adt._retry_request = k._retry_request.__get__(adt)
 
-    def test_S9_yapi_5xx_retry_sonrasi_zaten_var_ayri_kod(self):
-        """Z52 (bug gate L1): ilk POST 500 (SAP kabuğu yaratmış olabilir) → kütüphane yeniden dener → 405 AlreadyExists.
-        Beklenen: `already_exists_after_retry` (aracın KENDİ önceki denemesi olabilir), yazma/aktivasyon YOK.
-        Kontrol grubu: retry'sız 405 → düz `already_exists` (S5 ile aynı)."""
-        import sap_adt_lib  # type: ignore
+    def _s9_kos(self, ilk_yanit):
+        """create_structure POST'u: ilk yanıt `ilk_yanit`, sonrakiler 405 AlreadyExists; GERÇEK retry (bekleme 0)."""
         sira = {"n": 0}
 
         def ek(c):
             if c["method"] == "POST" and c["path"] == "/sap/bc/adt/ddic/structures":
                 sira["n"] += 1
                 if sira["n"] == 1:
-                    return Yanit(500, "Internal Server Error")
+                    return ilk_yanit
                 return Yanit(405, "<exc:exception><type id=\"ExceptionResourceAlreadyExists\"/>"
                                   "<localizedMessage>AlreadyExists</localizedMessage></exc:exception>")
             return None
@@ -983,12 +980,35 @@ class DdicTextpool(unittest.TestCase):
         post = [c for c in adt.cagri if c["method"] == "POST" and c["path"] == "/sap/bc/adt/ddic/structures"]
         yazma = [c for c in adt.cagri if c["method"] == "PUT" or c["path"] in ("lock_object",)
                  or c["path"].startswith("activate")]
+        return r, post, yazma
+
+    def test_S9_yapi_5xx_retry_sonrasi_zaten_var_ayri_kod(self):
+        """Z52 (bug gate L1): ilk POST 503 (SAP kabuğu yaratmış olabilir) → kütüphane yeniden dener → 405 AlreadyExists.
+        Beklenen: `already_exists_after_retry` (aracın KENDİ önceki denemesi olabilir), yazma/aktivasyon YOK.
+        Kontrol grubu: retry'sız 405 → düz `already_exists` (S5 ile aynı).
+        Z211 (2026-10-28): vektör 500 → 503 — 500 artık TEKRAR EDİLMEZ (S9d); Z52 telafisi 502/503/504/zaman aşımı/
+        bağlantı hatasında yaşar (bağlantı kolu S9b)."""
+        r, post, yazma = self._s9_kos(Yanit(503, "Service Unavailable"))
         msg = str(r.get("message"))
         ok = (r.get("ok") is False and r.get("error") == "already_exists_after_retry" and len(post) == 2
               and yazma == [] and "adt_get" in msg and "önceki" in msg.lower())
-        self.kaydet("S9 yapı: POST 500 → retry → 405 AlreadyExists → already_exists_after_retry, yazma YOK",
+        self.kaydet("S9 yapı: POST 503 → retry → 405 AlreadyExists → already_exists_after_retry, yazma YOK",
                     "already_exists_after_retry · POST 2 · yazma 0",
                     f"ok={r.get('ok')} err={r.get('error')} post={len(post)} yazma={len(yazma)} msg={msg[:80]}", ok)
+
+    def test_S9d_yapi_500_tekrarlanmaz_govde_logda(self):
+        """Z211 (2026-10-28; kaynak çekirdek #363 + lider kararı c): 500 tekrar EDİLMEZ → 1 POST, AlreadyExists'e hiç
+        gidilmez (`already_exists_after_retry` DEĞİL), yazma YOK; SAP'nin 500 gövdesi `steps.create.log`'a `[SAP-GOVDE]`
+        satırıyla ulaşır (eskiden: 3 POST + log "Request failed after 3 retries: Unknown error", gövde YOK)."""
+        r, post, yazma = self._s9_kos(Yanit(500, "<exc:exception><message>CTS_WBO_API 019 bloke</message>"
+                                                 "</exc:exception>"))
+        log = str((r.get("steps") or {}).get("create", {}).get("log", ""))
+        ok = (r.get("ok") is False and r.get("error") not in ("already_exists_after_retry", "already_exists")
+              and len(post) == 1 and yazma == [] and "[SAP-GOVDE]" in log and "CTS_WBO_API 019 bloke" in log
+              and "Request failed after" not in log)
+        self.kaydet("S9d yapı: POST 500 → 1 POST · after_retry DEĞİL · yazma 0 · log'da SAP gövdesi",
+                    "POST 1 · yazma 0 · [SAP-GOVDE] … CTS_WBO_API 019",
+                    f"ok={r.get('ok')} err={r.get('error')} post={len(post)} yazma={len(yazma)} log={log[-140:]}", ok)
 
     def test_S9b_yapi_baglanti_hatasi_retry_sonrasi_zaten_var(self):
         """Bug gate MEDIUM (v0.5.1): ilk POST gitti ama yanıt yerine bağlantı koptu (ConnectionError) → kütüphane yeniden

@@ -1976,7 +1976,13 @@ class SAPADTClient:
         Returns:
             tuple: (should_retry: bool, reason: str)
         """
-        if attempt >= self.max_retries:
+        # ⛔ SON DENEME = TEKRAR YOK (Z211, 2026-10-28; kaynak çekirdek #363). `attempt` 0-tabanlıdır ve
+        # `_retry_request` `range(self.max_retries)` döner ⇒ son deneme `max_retries - 1`. Eski koşul
+        # `attempt >= self.max_retries` HİÇ doğru olmuyordu: son denemede de bekleyip `continue` ediliyor, döngü bitince
+        # yanıt ATILIP "Request failed after 3 retries: Unknown error" fırlatılıyordu ⇒ SAP'nin gövdesi çağırana
+        # ULAŞMIYORDU. Şimdi son yanıt (gövdesiyle) çağırana döner; beş çağıranın hepsi 2xx dışını yanıttan işler
+        # (`SAPADTError(..., response_text=response.text)` ya da AlreadyExists dalı).
+        if attempt >= self.max_retries - 1:
             return False, "Max retries exceeded"
 
         status = response.status_code
@@ -1991,8 +1997,12 @@ class SAPADTClient:
             if self.retry_on_csrf_fail:
                 return True, f"CSRF token expired (attempt {attempt + 1})"
 
-        # 5xx server errors - retry with backoff
-        if status >= 500:
+        # 5xx server errors - retry with backoff — 500 HARİÇ (Z211; kaynak çekirdek Issue #363, kullanıcı onayı
+        # 2026-10-28). Gerekçe aynı dosyada `_build_session` `status_forcelist` yorumunda (2026-08-19): SAP'nin 500'ü
+        # genelde kalıcı bir reddin gövdesidir; tekrar denemek çözmez, yalnız teşhisi geciktirir/siler. HTTP adapter'ı
+        # 500'ü zaten tekrarlamıyordu, bu uygulama katmanı kalmıştı. 502/503/504 (+408 ve CSRF dalı yukarıda) tekrar
+        # edilir; 501/505+ bilinçli dokunulmadı (kaynak çekirdekle aynı, minimal değişiklik).
+        if status >= 500 and status != 500:
             if self.retry_on_5xx:
                 return True, f"Server error {status} (attempt {attempt + 1})"
 
@@ -2028,10 +2038,13 @@ class SAPADTClient:
         # istek SAP'de işlenmiş olabilir; ardından gelen AlreadyExists aracın KENDİ kabuğu olabilir (`_zaten_var_hatasi`).
         # CSRF yeniden denemesi kaydedilmez: SAP isteği token yüzünden reddetti, işlemedi.
         # Z207 BİLİNÇLİ İSTİSNASI (2026-10-19, lider kararı): HTTP adapter'ı yan etkili POST'u artık tekrarlamaz, ama
-        # bu katman beş yaratma çağrısında (DTEL · domain · struct · tablo · CDS) POST'u 5xx'te (500 dahil —
-        # `_should_retry` `status >= 500`), 408'de ve zaman aşımında 3 kez gönderir. Neden güvenli: yaratma tekrarı ÇİFT OBJE üretemez — ikinci deneme "already exists" alır ve Z52 telafisi
-        # (`_son_yeniden_denemeler` → araçta `already_exists_after_retry` + `own_shell_possible`) tam bu yolu işler.
-        # 3 → 1 yapılırsa o telafi ölü kalır; bkz. `tests/test_yan_etkili_tekrar.py` Y8 · IMPLEMENTATION §25.4.
+        # bu katman beş yaratma çağrısında (DTEL · domain · struct · tablo · CDS) POST'u 502/503/504'te, 408'de ve zaman
+        # aşımında/bağlantı hatasında 3 kez'e kadar gönderir. 500 Z211'den (2026-10-28, kaynak çekirdek #363) beri
+        # TEKRAR EDİLMEZ: 1 POST, SAP'nin 500 gövdesi çağırana döner. Tekrarlar tükenince son yanıt (ör. 503) istisna
+        # yerine gövdesiyle çağırana döner. Neden güvenli: yaratma tekrarı ÇİFT OBJE üretemez — ikinci deneme "already
+        # exists" alır ve Z52 telafisi (`_son_yeniden_denemeler` → araçta `already_exists_after_retry` +
+        # `own_shell_possible`) tam bu yolu işler — 502/503/504/zaman aşımı/bağlantı hatasında YAŞAMAYA DEVAM EDER.
+        # 3 → 1 yapılırsa o telafi ölü kalır; bkz. `tests/test_yan_etkili_tekrar.py` Y8/Y9 · IMPLEMENTATION §25.4 · §26.
         self._son_yeniden_denemeler = []
 
         for attempt in range(self.max_retries):

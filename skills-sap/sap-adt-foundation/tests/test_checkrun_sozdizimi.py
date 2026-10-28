@@ -372,27 +372,27 @@ class GercekHttp(_Kayit):
                     (r2.get("error"), self._sayim()["toplam"]),
                     r2.get("error") == "output_exists" and self._sayim()["toplam"] == 1)
 
-    # 2026-10-19 inceleme bulgusu: sınır güvenle çıkarılamıyorsa yanlış blok değil `belirsiz`.
-    def test_C7_get_method_tek_satir_komsu_govdesini_donmez(self):
+    # Z213 (2026-10-28; kaynak çekirdek #362): sınır = ilk METHOD/ENDMETHOD DEYİMİ ⇒ tek satırlık metot artık DESTEKLENİR
+    # (2026-10-19 temkinli sürümü burada `belirsiz` diyordu; komşunun gövdesi o sürümde de dönmüyordu, şimdi de dönmez).
+    def test_C7_get_method_tek_satir_desteklenir_komsu_govdesi_donmez(self):
         kaynak = ("CLASS x IMPLEMENTATION.\n  METHOD a. ENDMETHOD.\n  METHOD b.\n    x = 1.\n  ENDMETHOD.\n"
                   "ENDCLASS.")
         self.sunucu.plan[("GET", self._GM_YOL)] = (200, kaynak)
         r = self.diag.adt_get_method(SINIF, "a")
         rb = self.diag.adt_get_method(SINIF, "b")
-        self.kaydet("C7 tek satırlık a → belirsiz (b'nin gövdesi dönmez) · b hâlâ found 3-5",
-                    "a: ok False · belirsiz · found None · source yok | b: found · 3-5",
-                    (r.get("ok"), r.get("error"), r.get("found"), "source" in r,
+        self.kaydet("C7 tek satırlık a → found 2-2, gövde YALNIZ o satır (b'nin gövdesi yok) · b found 3-5",
+                    "a: found · 2-2 · '  METHOD a. ENDMETHOD.' | b: found · 3-5",
+                    (r.get("found"), r.get("start_line"), r.get("end_line"), r.get("source"),
                      rb.get("found"), rb.get("start_line"), rb.get("end_line")),
-                    r.get("ok") is False and r.get("error") == "belirsiz" and r.get("found") is None
-                    and "source" not in r and r.get("matches") == [{"start_line": 2, "end_line": None}]
-                    and "tek satırlık" in r.get("message", "")
+                    r.get("ok") is True and r.get("found") is True and (r["start_line"], r["end_line"]) == (2, 2)
+                    and r.get("source") == "  METHOD a. ENDMETHOD."
                     and rb.get("found") is True and (rb["start_line"], rb["end_line"]) == (3, 5))
-        # Sınıfın son metodu tek satırsa ardından METHOD gelmez — yine `belirsiz` ("kapanmamis" değil).
+        # Sınıfın son metodu tek satır → yine found (kapanmamış DEĞİL).
         self.sunucu.plan[("GET", self._GM_YOL)] = (200, "CLASS x IMPLEMENTATION.\n  METHOD c. ENDMETHOD.\nENDCLASS.")
         rc = self.diag.adt_get_method(SINIF, "c")
-        self.kaydet("C7b son metot tek satır → belirsiz (kapanmamis değil)", "belirsiz · found None",
-                    (rc.get("error"), rc.get("found")),
-                    rc.get("error") == "belirsiz" and rc.get("found") is None)
+        self.kaydet("C7b son metot tek satır → found 2-2 (kapanmamis değil)", "found · 2-2",
+                    (rc.get("error"), rc.get("found"), rc.get("start_line"), rc.get("end_line")),
+                    rc.get("found") is True and (rc.get("start_line"), rc.get("end_line")) == (2, 2))
 
     def test_C8_get_method_bitissiz_yeni_metot_belirsiz(self):
         kaynak = "CLASS x IMPLEMENTATION.\n  METHOD a.\n    x = 1.\n  METHOD b.\n    y = 2.\n  ENDMETHOD.\nENDCLASS."
@@ -404,22 +404,22 @@ class GercekHttp(_Kayit):
                     r.get("ok") is False and r.get("error") == "belirsiz" and r.get("found") is None
                     and "source" not in r and "yeni METHOD" in r.get("message", ""))
 
-    def test_C9_get_method_zincirli_bitis_belirsiz(self):
+    def test_C9_get_method_satir_ortasi_bitis_desteklenir(self):
         kaynak = ("CLASS x IMPLEMENTATION.\n  METHOD a.\n    y = 2. ENDMETHOD.\n  METHOD b.\n  ENDMETHOD.\n"
                   "ENDCLASS.")
         self.sunucu.plan[("GET", self._GM_YOL)] = (200, kaynak)
         r = self.diag.adt_get_method(SINIF, "a")
-        self.kaydet("C9 satır ortasında zincirli ENDMETHOD → belirsiz",
-                    "ok False · belirsiz · found None · source yok",
-                    (r.get("ok"), r.get("error"), r.get("found"), "source" in r),
-                    r.get("ok") is False and r.get("error") == "belirsiz" and r.get("found") is None
-                    and "source" not in r and "satır ortasında" in r.get("message", ""))
-        # Zincirli bitiş sınıfın son metodundaysa ardından METHOD gelmez — yine `belirsiz` ("kapanmamis" değil).
+        self.kaydet("C9 satır ortasındaki `y = 2. ENDMETHOD.` bitiştir → found 2-3, b'nin gövdesi YOK",
+                    "found · 2-3 · 'METHOD b' yok",
+                    (r.get("ok"), r.get("found"), r.get("start_line"), r.get("end_line"), r.get("source")),
+                    r.get("ok") is True and r.get("found") is True and (r["start_line"], r["end_line"]) == (2, 3)
+                    and "y = 2. ENDMETHOD." in r["source"] and "METHOD b" not in r["source"])
+        # Satır ortası bitiş sınıfın son metodunda → yine found (kapanmamış DEĞİL).
         self.sunucu.plan[("GET", self._GM_YOL)] = (200, "CLASS x IMPLEMENTATION.\n  METHOD c.\n    z = 3. ENDMETHOD.\nENDCLASS.")
         rc = self.diag.adt_get_method(SINIF, "c")
-        self.kaydet("C9b son metotta zincirli bitiş → belirsiz (kapanmamis değil)", "belirsiz · found None",
-                    (rc.get("error"), rc.get("found")),
-                    rc.get("error") == "belirsiz" and rc.get("found") is None)
+        self.kaydet("C9b son metotta satır ortası bitiş → found 2-3", "found · 2-3",
+                    (rc.get("error"), rc.get("found"), rc.get("start_line"), rc.get("end_line")),
+                    rc.get("found") is True and (rc.get("start_line"), rc.get("end_line")) == (2, 3))
 
     def test_C10_get_method_yorumdaki_endmethod_kontrol_grubu(self):
         # Kontrol grubu: tam satır yorumundaki ENDMETHOD (sütun-1 `*`, satır başı `"`) belirsiz YAPMAZ.
@@ -433,6 +433,44 @@ class GercekHttp(_Kayit):
                     r.get("ok") is True and r.get("found") is True
                     and (r["start_line"], r["end_line"]) == (2, 6) and "x = 1." in r["source"])
 
+
+    # Z213: kaynak çekirdeğin `sinir_belirsiz`'i aXet sözleşmesinde `error:"belirsiz"` (hata kodu DEĞİŞMEDİ).
+    def test_C11_get_method_ayni_satirda_karisik_belirsiz_govde_donmez(self):
+        kaynak = "CLASS x IMPLEMENTATION.\n  METHOD a. ENDMETHOD. METHOD b. ENDMETHOD.\nENDCLASS."
+        self.sunucu.plan[("GET", self._GM_YOL)] = (200, kaynak)
+        r = self.diag.adt_get_method(SINIF, "a")
+        self.kaydet("C11 aynı satırda METHOD/ENDMETHOD karışık → belirsiz · found None · source yok · end_line None",
+                    "ok False · belirsiz · source yok",
+                    (r.get("ok"), r.get("error"), r.get("found"), "source" in r, r.get("matches")),
+                    r.get("ok") is False and r.get("error") == "belirsiz" and r.get("found") is None
+                    and "source" not in r and r.get("matches") == [{"start_line": 2, "end_line": None}]
+                    and "METHOD satırında" in r.get("message", ""))
+
+    def test_C12_get_method_literal_ve_sablon_kacisi(self):
+        bs = chr(92)
+        kaynak = ("CLASS x IMPLEMENTATION.\n  METHOD a.\n    lv = 'x. ENDMETHOD.'.\n    r = |x" + bs
+                  + "|. ENDMETHOD. |.\n    method = 'GET'.\n  ENDMETHOD.\n  METHOD b.\n  ENDMETHOD.\nENDCLASS.")
+        self.sunucu.plan[("GET", self._GM_YOL)] = (200, kaynak)
+        r = self.diag.adt_get_method(SINIF, "a")
+        self.kaydet("C12 literal/şablon kaçışı/`method =` içindeki ENDMETHOD bitiş SAYILMAZ → found 2-6",
+                    "found · 2-6", (r.get("ok"), r.get("found"), r.get("start_line"), r.get("end_line")),
+                    r.get("ok") is True and r.get("found") is True and (r["start_line"], r["end_line"]) == (2, 6))
+
+    def test_C13_get_method_amdp_okuma_yolu_doner(self):
+        kaynak = ("CLASS x IMPLEMENTATION.\n  METHOD a\n    BY DATABASE PROCEDURE FOR HDB LANGUAGE SQLSCRIPT\n"
+                  "    USING t.\n    lt = select t.method,\n      method,\n      x from t;\n  ENDMETHOD.\nENDCLASS.")
+        self.sunucu.plan[("GET", self._GM_YOL)] = (200, kaynak)
+        r = self.diag.adt_get_method(SINIF, "a")
+        self.kaydet("C13 okuma yolu AMDP'yi DÖNDÜRÜR (yazma yolu PUT etmez) → found 2-8", "found · 2-8",
+                    (r.get("ok"), r.get("found"), r.get("start_line"), r.get("end_line")),
+                    r.get("ok") is True and r.get("found") is True and (r["start_line"], r["end_line"]) == (2, 8))
+
+    def test_C14_get_method_kapsam_metni(self):
+        r = self.diag.adt_get_method("", "a")
+        kap = r.get("scope") or ""
+        self.kaydet("C14 KAPSAM metni tek satır desteği + belirsiz + çok satırlı şablon SINIRINI söyler",
+                    "üç ifade de var", kap[-200:],
+                    all(p in kap for p in ("tek satirlik", "`belirsiz`", "cok satirli string", "include")))
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 # D — sınıf kapısı: iki araç okuma kapısında; eski aktive eden yol araçtan KALDIRILDI

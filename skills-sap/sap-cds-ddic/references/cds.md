@@ -53,8 +53,9 @@ kabuğu** açar, kaynak gövdeye konmaz (§1.3 tuzağıyla uyumlu) → kaynak ay
   Boş çocuk aktif görünür, bağımlı behavior definition saatler sonra `Type <X> is unknown` ile patlar.
 
 ### 1.4 XML kaçışı ve opak hata
-- Kaynağı kabuk XML'ine kaçışsız gömmek `<>`, `<`, `&` içeren kaynakta XML'i bozar → SAP reddeder → retry sarmalayıcısı
-  gerçek hatayı "Request failed after 3 retries: Unknown error" diye gizler → obje yaratılmaz → push `[423] not locked`.
+- Kaynağı kabuk XML'ine kaçışsız gömmek `<>`, `<`, `&` içeren kaynakta XML'i bozar → SAP reddeder → obje yaratılmaz → push
+  `[423] not locked`. (Eskiden retry sarmalayıcısı gerçek hatayı "Request failed after 3 retries: Unknown error" diye
+  gizliyordu; 2026-10-28'den beri son yanıt gövdesiyle döner ve yaratma log'unda `[SAP-GOVDE]` satırı SAP'nin sebebini gösterir.)
   `<>` içermeyen view'lar bu yüzden "çalışıyordu". Kaynak ucu (`text/plain`) bu sorunu yaşamaz.
 - **Opak hatada yöntem değiştirme:** önce ham durum kodunu ve gövdeyi oku (CLI'de `client_log`, `error.message`).
   Kabuk → minimal kabuk → başka araç diye dolaşmak zaman kaybıydı; gerçek sebep gövdede yazıyordu.
@@ -251,6 +252,16 @@ aktive edilemez → iki faz (ekle+aktive → tüketiciyi çevir+aktive → ayrı
 
 **T7 · `CASE WHEN`'de sol taraftaki aritmetik parantezle sarılmaz.**
 `when ( a - b ) <= 0` → aktivasyonda `Unexpected word ')'` (`adt_syntax_check` `valid:true` dediği hâlde) · `when a - b <= 0` → çalışır.
+⚠ Kapsam: "çalışır" yalnız **view entity**'de (`define view entity`) ölçüldü. DDIC tabanlı view'da → T7-b.
+
+**T7-b · DDIC tabanlı view'da (`define view` + `@AbapCatalog.sqlViewName`) `CASE WHEN` koşulunda aritmetik hiç geçmez.**
+`case when division( <a> ) - division( <b> ) > 0 then … end` → checkrun `SDDL_PARSER_MSG/015 · Unexpected word "-"` (konum: WHEN içindeki
+ilk aritmetik operatör); obje yaratılır, kaynak yüklenir ama inaktif kalır (S/4 private 2025; yalnız `division() - division()` biçimi
+denendi). Çalışan: farkı **alt katmanda seçim listesinde** düz `abap.dec` alan olarak üret (`division( .. ) - division( .. )` ve
+`division( .. ) - coalesce( cast( .. ), cast( 0 as abap.dec( 15, 3 ) ) )` seçim listesinde aktive oldu; DDLS/349 "identical type"
+yalnız uyarı), üst katmanda WHEN'i yalnız `alan op literal` / `alan op alan` yaz. Emsal ararken view tipine bak: view entity örneği
+(T7) DDIC tabanlı view için kanıt değildir. Yan bulgu: `sum( case when … then <QUAN alan> else 0 end )` → DDLS/741 "Literal handled
+without decimal places" uyarısı; sonuç alanı QUAN 15,3 kaldı, ondalık kaybı yok. (Kaynak: kaynak çekirdek, CDS playbook T7-b.)
 
 **T8 · JOIN ON'da `cast()`/fonksiyon → ön-cast köprü view + `lpad`.**
 Sol operandda cast: `Expression type FUNCTION not allowed in expression context COMPARISON, clause type COMP_LEFT`; sağ operandda

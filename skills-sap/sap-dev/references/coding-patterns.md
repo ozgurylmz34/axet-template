@@ -223,8 +223,13 @@ manuel) ve hangi canlı teyitle: `write-api-selection.md`.
 | `VBAK` / `VBAP` | released satış belgesi CDS (okuma); yazma `write-api-selection.md` (ölçülmüş: `I_SalesOrderTP` EML) |
 | `LIKP` / `LIPS` | released teslimat CDS (okuma); yazma `write-api-selection.md` (released BO kapsamı ölçülmedi) |
 | `T001` | released organizasyon CDS |
-| `CL_GUI_ALV_GRID` | released değil (clean core uyarısı verir). Salt okunur liste → `CL_SALV_TABLE`; düzenlenebilir / özel toolbar / hücre olayı / kolon kişiselleştirme → GRID kalır, released alternatif kullanılmadığı için gerekçe kullanıcıya bildirilir (aşağıdaki son paragraf). Senaryo tablosunun tek kaynağı: `%sap-classic-abap` → `references/alv-report.md` §2. RAP'ta UI5 grid |
-| `CL_GUI_ALV_TREE` | `CL_SALV_TREE` |
+| `CL_GUI_ALV_GRID` | released değil (clean core uyarısı verir). Salt okunur liste → `CL_SALV_TABLE`; düzenlenebilir / özel toolbar / hücre olayı / kolon kişiselleştirme → GRID kalır; SALV de released olmadığı için (aşağıdaki not) clean core uyarısının gerekçesi kullanıcıya bildirilir (aşağıdaki son paragraf). Senaryo tablosunun tek kaynağı: `%sap-classic-abap` → `references/alv-report.md` §2. RAP'ta UI5 grid |
+| `CL_GUI_ALV_TREE` | salt okunur ağaç → `CL_SALV_TREE`; olay/düzenleme gerekiyorsa TREE kalır (ağaç için senaryo tablosu yok — gerekçeyi kullanıcıya bildir) |
+
+⚠ **SALV de released değil** (ARS_W_API_STATE, s4_private 2025: `CL_SALV_TABLE` / `CL_SALV_TREE` / `CL_GUI_ALV_GRID` /
+`CL_GUI_ALV_TREE` için kayıt yok; aynı sorguda `I_PRODUCT` ve `CL_ABAP_CONTEXT_INFO` RELEASED C1). GRID → SALV geçişi clean core
+kazandırmaz; yalnız salt okunur listede daha az kod demektir. Klasik GUI ALV'nin released karşılığı yoktur — released yol
+freestyle/Fiori UI'dır. Bu iki satır "Yerine" sütununun istisnasıdır.
 
 Released CDS adını tahmin etme: sistemde `adt_search_objects` ile ara, `adt_get` ile oku. Emin olunamayan
 durumda ATC "Usage of APIs" kontrolü (`%sap-adt-foundation` → `foundation-query.md`). Released alternatifi

@@ -1516,7 +1516,7 @@ kaçışsız; kaçış yapan YEDİ ayrı kopya (`_xml_escape`, domain `_att` lam
   `METHOD b.` → `a` için b'nin gövdesi `found:true` ile dönüyordu; `y = 2. ENDMETHOD.` zincirli bitiş atlanıyordu. Artık sınır güvenle
   çıkarılamazsa (METHOD satırında ENDMETHOD · satır ortasında ENDMETHOD · bitişten önce yeni `METHOD` satırı) `belirsiz` + `found:null`,
   `source` dönmez; tam satır yorumundaki (`*` sütun 1, satır başı `"`) ENDMETHOD sayılmaz. Bilinen sınır (DÜZELTİLMEDİ): çok satırlı
-  string şablonu içinde satır başına düşen `ENDMETHOD.` hâlâ bitiş sayılır.
+  string şablonu içinde satır başına düşen `ENDMETHOD.` hâlâ bitiş sayılır. **Z213 (2026-10-28, §26.1):** tek satırlık metot ve satır ortası bitiş artık desteklenir (`found:true`); `belirsiz` yalnız araya METHOD girince ya da aynı satırda karışınca.
 - **Sayılar (`--list`, çevrimdışı):** okuma 29 · yazma 15 · toplam 44.
 - **Testler:** `tests/test_checkrun_sozdizimi.py` (25 test / 38 senaryo — C7-C10 sınır belirsizliği, 5 mutasyon ADIYLA kırıldı; kaynak çekirdeğin canlı DEV yanıt gövdeleri
   `tests/fixtures/checkrun_sozdizimi/`, jenerik `ZSD001_*`) — kapanış ölçütü: gerçek `_build_session` + yerel sahte HTTP sunucusunda
@@ -1582,7 +1582,7 @@ yalnız classrun 1 (Z190 ayrı adapter'ı). İlk istek SAP'de işlenmiş olabili
   struct · tablo · CDS) 5xx/504/zaman aşımını uygulama katmanında kendisi yeniden dener. Ölçüm: önce 503 → 4 POST + `RetryError`
   (uygulama tekrarı hiç devreye girmiyordu), okuma zaman aşımı → **12 POST** (adapter 4 × uygulama 3); sonra 503 → 3 ·
   zaman aşımı → 3. "Yaratma POST'u 1 kez" bu beş çağrıda SAĞLANMAZ; `already_exists_after_retry` telafisi (Z52) bu katmana
-  dayanır ve artık 503'te de çalışır. Gerekçe: yaratma tekrarı ÇİFT OBJE üretemez (ikinci deneme "already exists" alır).
+  dayanır ve artık 503'te de çalışır. **Z211 (2026-10-28, §26.2):** 500 bu katmanda artık tekrarlanmaz; tekrarlar tükenince son yanıt istisna yerine gövdesiyle döner. Gerekçe: yaratma tekrarı ÇİFT OBJE üretemez (ikinci deneme "already exists" alır).
   Gerekçe kodda `_retry_request` yorumunda ve testin adında durur. `RetryError`'a bağımlı üretim kodu yok (grep: yalnız test).
 - **AÇIK — uygulama katmanı yaklaşım döngüleri (canlı ölçüm bekliyor; bu turda davranış DEĞİŞMEDİ):** Z207'nin kapattığı
   genel HTTP adapter katmanındaki tekrardır; uçtan uca "yan etkili istek 1 kez" SAĞLANMAZ. Üç kütüphane döngüsü 2xx dışı
@@ -1609,3 +1609,83 @@ yalnız classrun 1 (Z190 ayrı adapter'ı). İlk istek SAP'de işlenmiş olabili
   tekrarı açık, durum/okuma POST'ta kapalı · izinli liste dar ve host'a bağlı · `new_session` sonrası kural korunur ·
   Y8 bilinçli istisna `test_z207_istisnasi_yaratma_post_3_kez_z52_telafisine_dayanir` (503 → 3 · zaman aşımı → 3). `test_classrun_tek_post` kalibrasyonu okuma-POST yoluna taşındı
   (checkruns 504 → 4 · activation 504 → 1). Mutasyon 9/9 test ADIYLA kırıldı. Canlı SAP ölçümü YOK (DOĞRULANMADI).
+
+## 26. Uyum turu 7 — METHOD blok sınırı tek kaynak (Z213) · uygulama katmanı yeniden deneme + SAP gövdesi (Z211) (2026-10-28)
+
+Kaynak: kaynak çekirdek #362 (blok sınırı) ve #363 (yeniden deneme), 2026-10-27. Kod aXet'e
+UYARLANARAK taşındı; aXet sözleşmesi (araç dönüş alanları, hata kodları) korundu. aXet'te canlı SAP ölçümü YOK (DOĞRULANMADI).
+
+### 26.1 Z213 — METHOD blok sınırı TEK KAYNAK (`lib/utils/abap_metot_blok.py`)
+
+Ölçüm (düzeltme öncesi, bu turun testleri eski koda karşı): YAZMA yolu `SAPClient._push_method_includes` (metot include
+fallback'i — aktivasyon "Implementation missing for method X" deyince metot bloğunu include ucuna PUT eder) satır başına çapalı
+`(^\s*METHOD\s+<ad>\s*\..*?^\s*ENDMETHOD\s*\.)` regex'i kullanıyordu ⇒ tek satırlık `METHOD a. x = 1. ENDMETHOD.`, satır ortasındaki
+`x = 1. ENDMETHOD.` ve araya giren `METHOD b.` durumlarında SONRAKİ metodun gövdesi a'nın include'una PUT ediliyordu
+(`test_abap_metot_blok` W1/W2-W3-W5/W7 eski kodda FAIL). OKUMA yolu `adt_get_method` 2026-10-19'dan beri bu durumlarda temkinli
+`belirsiz` diyordu (yanlış gövde vermiyordu ama tek satırlık metodu okuyamıyordu).
+
+- **Modül:** kaynak çekirdeğin `scripts/utils/abap_metot_blok.py`'si; kod gövdesi birebir, başlık yolları aXet'e uyarlandı.
+  **Tek fark (bug gate F1, 2026-10-28):** bitiş satırı bloğa BÜTÜN girdiği için `ENDMETHOD. ENDCLASS.` gibi bir satırda kalan
+  deyim metot include'una PUT ediliyordu (gerçek `_push_method_includes` + sahte ADT ile ölçüldü; eski regex `ENDMETHOD.`'da
+  kesiyordu ⇒ gerileme) — `bitis_sonrasi_kod` ile böyle satır bitiş sayılmaz, `SINIR_BELIRSIZ` döner (G35/W10; mutasyonda ikisi
+  de kırılır). Kaynak çekirdekte aynı kusur var (iş listesi). `metot_bloklari(kaynak, metot)` → `[(bas, son, metin)]`; bitiş = METHOD'dan sonraki İLK
+  METHOD/ENDMETHOD **deyimi** (satır başı ya da `.` sonrası, deyim biçiminde); yorum ve tek satırlık literal (`|…|` şablonunda `\`
+  kaçışı dahil) `kod_kismi` ile ayıklanır. Araya METHOD girerse ya da aynı satırda karışırsa `SINIR_BELIRSIZ`, deyim yoksa `None`
+  (kapanmamış); ikisinde de tarama durur. `amdp_baslik_mi(blok)`: başlık deyimi (ilk `.`'ya kadar, satırlara bölünmüş olabilir)
+  `BY DATABASE` taşıyor mu.
+- **Yazma yolu (`lib/sap_client.py` `_push_method_includes`):** sınır `SINIR_BELIRSIZ` ya da kapanmamış → kilit ALINMAZ, PUT
+  YAPILMAZ, metot atlanır (log `PUT YAPILMADI, govde OLCULEMEDI`). AMDP başlıklı blok PUT EDİLMEZ (kaynak çekirdek kapsam kararı:
+  eski regex AMDP başlığını tanımadığı için orada da PUT yoktu; metot include ucunun AMDP gövdesini kabul ettiği canlıda
+  ÖLÇÜLMEDİ). Korunan eksen: çoklu eşleşmede İLK blok (W9).
+- **Okuma yolu (`tools/diag.py` `_metot_cikar` → `adt_get_method`):** ince sarmalayıcı; aXet'in 4'lü biçimi `(bas, son, metin,
+  sebep)` korundu. **Sözleşme eşlemesi:** çekirdeğin `ok:false, error:"sinir_belirsiz"`'i aXet'te `error:"belirsiz"` +
+  `matches:[{start_line, end_line:null}]` + sebep mesajı (`METHOD satırında birden çok …` / `ENDMETHOD. bulunmadan yeni METHOD
+  deyimi (satır N)` / `bitiş satırında … karışık` / `ENDMETHOD. sonrasında aynı satırda başka deyim`; sebep modülün `deyimler`'inden türetilir). Hata kodu kümesi DEĞİŞMEDİ
+  (`belirsiz` · `kapanmamis`). **Davranış değişikliği:** tek satırlık metot ve satır ortası bitiş artık `found:true` (C7/C9
+  güncellendi). `_METOT_KAPSAM` tek satır desteğini, `belirsiz`'i ve çok satırlı şablon sınırını söyler (C14).
+- **Bilinen sınırlar (ÖLÇÜLMEDİ, kaynak çekirdekle aynı):** çok satırlı string şablonunun (`|…` satırda kapanmayan) devam satırına
+  düşen `ENDMETHOD.` bitiş sanılabilir · `ENDMETHOD ##PRAGMA.` bitiş deyimi tanınmaz (sonraki METHOD başlığı pragmasızsa güvenli
+  yön: belirsiz/kapanmamış ⇒ PUT yok; başlık da pragmalıysa a+b birleşik blok — eski koddan beri) · gövdede `.method <ad>.`
+  biçimine uyan ya da satır SONUNDA biten `method <kelime>` metni (ABAP SQL `SELECT` ⏎ `method field2` ⏎ `FROM …`, SQLScript
+  `… t.method from` ⏎ `ztab`) METHOD deyimi sayılır ⇒ `belirsiz` (güvenli yön; bug gate F3 ölçtü).
+- **Testler:** `tests/test_abap_metot_blok.py` (20 test; G35/W10 = bug gate F1; kaynak çekirdek G11–G34 sınır vektörleri + yazma yolu W1–W9 = F1–F8c +
+  çoklu eşleşme; eski `sap_client`/`diag`'a karşı 5 FAIL) · `tests/test_checkrun_sozdizimi.py` C7/C9 yeni davranışa, C11–C14 yeni
+  (gerçek `_build_session` + yerel sahte HTTP; eski `diag`'a karşı C7 C9 C12 C14 FAIL).
+
+### 26.2 Z211 — uygulama katmanı `_retry_request`: son deneme tekrarsız · 500 tekrarsız · SAP gövdesi log'a
+
+Ölçüm (düzeltme öncesi, sahte istek + sahte uyku, GERÇEK `_retry_request`/`_should_retry`): `_should_retry`'ın
+`attempt >= self.max_retries` koşulu HİÇ doğru olmuyordu (attempt 0-tabanlı, döngü `range(max_retries)`) ⇒ son denemede de bekleyip
+`continue`, döngü sonunda yanıt ATILIP `SAPConnectionError("Request failed after 3 retries: Unknown error")`; `status >= 500` 500'ü
+de tekrar ediyordu (HTTP adapter 2026-08-19'dan beri 500'ü tekrarlamıyordu, bu katman kalmıştı). Gerçek araç yolunda
+(`adt_domain_create`, sahte ADT): 500 → 3 POST, log `[ERROR] Request failed after 3 retries: Unknown error`, SAP gövdesi YOK.
+
+- **① son deneme = tekrar yok:** `attempt >= self.max_retries - 1`. Son yanıt (gövdesiyle) çağırana döner, son denemeden sonra
+  uyku yok. Beş çağıran (`create_dataelement` · `create_domain` · `create_structure` · `create_table` · `create_cds_view`) 2xx dışını
+  yanıttan işler (`SAPADTError(..., response_text=...)` ya da AlreadyExists dalı) — kod okumasıyla ölçüldü.
+- **② 500 tekrar edilmez:** `status >= 500 and status != 500` (kullanıcı onayı 2026-10-28). 502/503/504, 408 (zaman aşımı dalı) ve
+  CSRF dalı aynen; 501/505+ bilinçli dokunulmadı (kaynak çekirdekle aynı, minimal; C9 çapası).
+- **Z52 telafisi CANLI (§25.4 bilinçli istisnası):** `_son_yeniden_denemeler` → `already_exists_after_retry` 502/503/504, zaman
+  aşımı ve bağlantı hatasında yaşar (Y8: 503 → 3 POST + 2 iz kaydı; S9/D7: 503 → retry → 405 → `already_exists_after_retry`;
+  S9b/D9 bağlantı kolu aynen). 500'de tekrar olmadığı için iz boş, `after_retry` üretilmez (C1, S9d, D7c).
+- **SAP gövdesi log'a (lider kararı 2026-10-28):** `SAPADTError.__str__` `response_text` taşımaz ve `SAPClient.create_*`
+  sarmalayıcıları istisnayı yutup yalnız `str(e)` basar ⇒ #363'ün "500 teşhisi silinmesin" kazancı araç yanıtında oluşmuyordu.
+  Yeni `sap_client._sap_govdesi_eki(adt, exc)`: istisna gövde taşıyorsa `[ERROR]` satırının ardına `[SAP-GOVDE] sebep: … · govde:
+  …` satırı; gövde ÖNCE `sapadt.redact` (`host_sirlari(adt.url)` + `bilinen_sirlar(adt.user, adt.password)` + `temizle_metin`
+  desenleri) ile temizlenir, SONRA `SAP_HATA_GOVDE_SINIRI` (500) karaktere kesilir ve `KESİLDİ` yazılır; boşluklar tek satıra
+  indirgenir; sebep mevcut `sap_hata_govdesi`'nden ve o da aynı sınırda kesilir (`…(KESİLDİ)`; bug gate F2 — `<message>`
+  uzunluğu serbest, D7d); redaksiyon modülü yüklenemezse gövde BASILMAZ. Kapsam (kardeş taraması,
+  `except Exception as e: print([ERROR] {str(e)})` deseni, 16/17): `create_object` · `create_dataelement` · `create_domain` ·
+  `create_structure` · `create_table` · `create_cds_view` · `create_table_type` · `create_message_class` · `create_lock_object` ·
+  `create_type_group` · `create_function_group` · `create_function_module` · `create_metadata_extension` ·
+  `create_access_control` · `create_behavior_definition` · `create_behavior_implementation`. **Kapsam dışı:** `create_transport`
+  (Kesin Yasak C yolu; dokunulmadı). Not: `create_table_type`/`create_message_class`/`create_lock_object` 2xx dışı yanıtta zaten
+  `response.text[:500]`'ü redaksiyonsuz basıyordu (mevcut davranış, değişmedi; CLI `calistir` son katmanda temizler).
+- **populate (toplu yazıcı) davranışı DEĞİŞMEDİ (ölçüldü):** domain/DTEL yaratma hatası araçta `create_failed` olarak döner (eski
+  ve yeni kodda aynı; `SAPClient.create_*` istisnayı yutar) ⇒ satır HATA, koşum sürer. `_BILINMEYEN_HTTP` değişmedi.
+- **Testler:** `tests/test_yan_etkili_tekrar.py` Y8 yeni davranışa (503 → 3 POST + son 503 yanıtı gövdesiyle + 2 iz) +
+  `UygulamaKatmaniTekrar` C1–C9 (kaynak çekirdek C1–C8 + 501 çapası; eski lib'e karşı C1 C2 C6 C7 C9 ve Y8 FAIL — C3/C4/C5/C8 FP
+  çapaları eski kodda da yeşil) · `tests/test_ddic_textpool.py` S9 (500 → 503) + S9d (500 → 1 POST + `[SAP-GOVDE]`) ·
+  `tests/test_msgclass_domain.py` D7 (500 → 503) + D7c (500 → 1 POST, gövde log'da, bağlantı host'u `***`, `KESİLDİ`; gövdesiz 500
+  kontrolünde ek satır yok). ⛔ SİLİNMEZ ÇAPALAR: C2 (son denemeden sonra uyku yok) · C3/C7/C8 (FP) · W2-W3-W5 (yazma yolunda
+  belirsiz sınır = kilit 0 + PUT 0).

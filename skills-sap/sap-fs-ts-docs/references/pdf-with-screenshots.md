@@ -127,8 +127,10 @@ paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.
      ~5.3 mm yukarıda; Chrome ve Edge'de ölçüldü). Bu yüzden gereken alt boşluk = 5.3 mm + altbilgi yüksekliği (8 pt
      metinde ~4 mm) + 2 mm pay ≈ 11.3 mm; araç bu hesabı `ALTBILGI:` satırında basar. Alt boşluk belgeden ölçülür;
      bundan azsa, ölçülemiyorsa (dış `<link>`/`@import` stil sayfası okunamaz) ya da viewport'a bağlı bir medya sorgusu
-     daha küçük bir değer verebiliyorsa PDF YAZILMAZ, çıkış 2 (`[DURDU]`). Hedefte önceki koşumdan kalan PDF silinmez;
-     stderr'e "hedefte onceki PDF duruyor, bu kosumda yazilmadi" düşer. Çare: `@page` margin-bottom'u büyüt, stili
+     daha küçük bir değer verebiliyorsa PDF YAZILMAZ, çıkış 2 (`[DURDU]`). Ölçümler belgenin CSS'inden yalıtıktır
+     (altbilgi ayrı boş sayfada, `@page` uzunluğu kök yazı tipiyle). PDF yazılmadan çıkılan üç yolda (DURDU, tarayıcı
+     başlatılamadı, hata) hedefte önceki koşumdan kalan PDF silinmez; stderr'e "hedefte onceki PDF duruyor, bu kosumda
+     yazilmadi" düşer (kullanım hatası, girdi yok ve playwright-core yok çıkışlarında bu uyarı basılmaz). Çare: `@page` margin-bottom'u büyüt, stili
      `<style>` içine göm ya da bayraksız üret.
    · `--yer-imi` — başlıklardan (h1–h6) PDF yer imleri. Araç sayıyı PDF'in kendisinden okur
      (`YER-IMI PDF: N yer imi / M baslik`); fark ya da yokluk stderr'e UYARI düşer, çıkış kodu değişmez.

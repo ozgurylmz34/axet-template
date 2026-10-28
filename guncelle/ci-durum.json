@@ -2,9 +2,9 @@
  "surum": 1,
  "aciklama": "Yayin basina CI hukmu. `%guncelle` bunu `origin/main` uzerinden okur ve YARGI VAKASI YOKKEN `olc --asama once` turunu ikame eder (scripts/guncelle.py::_ci_tabani). `hepsi_yesil` True DEGILSE tuketici normal olcer — olculemedi != yesil.",
  "yayinlar": {
-  "v0.5.20": {
-   "kaynak_commit": "bcb24a29462f536a593a18ec50a9d5b93066c1e7",
-   "olcum_zamani": "2026-10-20T08:37:05",
+  "v0.5.21": {
+   "kaynak_commit": "529e23f6ea71ad09b00bf69b8832a185b8a29cd8",
+   "olcum_zamani": "2026-10-28T12:54:26",
    "hepsi_yesil": true,
    "depo": "ozgurylmz34/axet",
    "takimlar": [
@@ -13,11 +13,7 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 2/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (foundation · Python 3.12)",
+     "ad": "Testler (kok-public 4/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -25,19 +21,11 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok-public 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
      "ad": "Testler (kok 3/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok 5/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok-public 5/5 · Python 3.12)",
+     "ad": "Testler (kok-public 3/5 · Python 3.12)",
      "sonuc": "success"
     },
     {
@@ -45,7 +33,27 @@
      "sonuc": "success"
     },
     {
-     "ad": "Testler (kok-public 3/5 · Python 3.12)",
+     "ad": "Testler (kok 5/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 2/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok 1/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (foundation · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Testler (kok-public 5/5 · Python 3.12)",
+     "sonuc": "success"
+    },
+    {
+     "ad": "Kurulum dumani (install + doctor)",
      "sonuc": "success"
     },
     {
@@ -54,14 +62,6 @@
     },
     {
      "ad": "Testler (kok 4/5 · Python 3.12)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Kurulum dumani (install + doctor)",
-     "sonuc": "success"
-    },
-    {
-     "ad": "Testler (kok 1/5 · Python 3.12)",
      "sonuc": "success"
     },
     {

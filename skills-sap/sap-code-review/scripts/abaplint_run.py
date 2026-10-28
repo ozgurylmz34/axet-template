@@ -49,7 +49,7 @@ FOUNDATION_LIB = SKILLS_SAP / 'sap-adt-foundation' / 'scripts' / 'sapadt' / 'lib
 DEFAULT_CONFIG = FOUNDATION_LIB / 'abaplint' / 'abaplint.json'
 GATE_SCRIPT = FOUNDATION_LIB / 'validators' / 'check_abaplint.py'
 
-ABAPLINT_PIN = '@abaplint/cli@2.120.64'   # yazma kapısıyla aynı olmak zorunda (test zorlar)
+ABAPLINT_PIN = '@abaplint/cli@2.120.89'   # yazma kapısıyla aynı olmak zorunda (test zorlar)
 
 # abaplint çıktı biçimi (2.120.38'de ölçüldü; Windows'ta yol ayırıcı `\`):
 #   src\zcl_x.clas.abap[8, 5]    - Unreachable code (unreachable_code) [E]

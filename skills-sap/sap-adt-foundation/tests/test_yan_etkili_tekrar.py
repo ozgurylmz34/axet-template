@@ -236,27 +236,127 @@ class YanEtkiliTekrar(unittest.TestCase):
     # yaratma tekrarı ÇİFT OBJE üretemez — ikinci deneme "already exists" alır ve Z52 telafisi
     # (`_son_yeniden_denemeler` → araçta `already_exists_after_retry` + `own_shell_possible`) tam bu
     # yolu işler. ⛔ Bu sayıyı 3 → 1 yapmaya kalkarsan Z52 telafisi ölü kalır: önce onu yeniden tasarla.
+    # Z211 (2026-10-28; kaynak çekirdek #363): tekrarlar tükenince son yanıt (503, gövdesiyle) istisna yerine ÇAĞIRANA
+    # döner — eskiden "Request failed after 3 retries: Unknown error" (SAPConnectionError) idi, gövde kayboluyordu.
+    # Zaman aşımı dalı değişmedi (son denemede SAPConnectionError). 500 bu katmanda artık tekrarlanmaz (Y9).
     def test_z207_istisnasi_yaratma_post_3_kez_z52_telafisine_dayanir(self):
         yol = "/sap/bc/adt/ddic/tables"
 
         def _kos():
             once = self.sunucu.sayac.get(("POST", yol), 0)
             try:
-                self.adt._retry_request(
+                r = self.adt._retry_request(
                     lambda: self.adt.session.post(self.sunucu.url + yol, data=b"x", timeout=ZAMAN_ASIMI_SN),
                     "create table ZT")
-                son = "yanit"
+                son = f"yanit {r.status_code} {r.text}"
             except Exception as e:  # noqa: BLE001
                 son = type(e).__name__
             time.sleep(YAVAS_SN * 4 + 0.3 if self.sunucu.yavas else 0.05)
-            return self.sunucu.sayac.get(("POST", yol), 0) - once, son
+            return self.sunucu.sayac.get(("POST", yol), 0) - once, son, len(self.adt._son_yeniden_denemeler)
 
         h503 = _kos()
         self.sunucu.yavas = True
         zaman = _kos()
-        ok = h503 == (3, "SAPConnectionError") and zaman == (3, "SAPConnectionError")
-        self.kaydet("İSTİSNA _retry_request yaratma 503 → 3 · zaman aşımı → 3 (önce 4/12) — Z52 "
-                    "already_exists_after_retry telafisine dayanır", "3 / 3", [h503, zaman], ok)
+        ok = h503 == (3, "yanit 503 gw", 2) and zaman == (3, "SAPConnectionError", 2)
+        self.kaydet("İSTİSNA _retry_request yaratma 503 → 3 POST + son 503 yanıtı GÖVDESİYLE döner · zaman aşımı → 3 "
+                    "(önce 4/12) — iki yolda da Z52 izi 2 kayıt (already_exists_after_retry telafisi CANLI)",
+                    "(3, yanit 503 gw, 2) / (3, SAPConnectionError, 2)", [h503, zaman], ok)
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+# Z211 (2026-10-28; kaynak çekirdek #363) — uygulama katmanı `_retry_request` / `_should_retry`
+# ① son deneme = tekrar YOK: son yanıt (gövdesiyle) çağırana döner, son denemeden sonra uyku YOK
+# ② 500 tekrar EDİLMEZ (kalıcı red gövdesi; adapter'daki 2026-08-19 kararıyla tutarlı); 502/503/504 · 408 · CSRF aynen
+# GERÇEK `_retry_request` + `_should_retry`; istek fonksiyonu ve `time.sleep` sahte (ağ yok, bekleme sayılır).
+# Kaynak çekirdek vektör adları (C1–C8) korunur. ⛔ SİLİNMEZ ÇAPALAR: C2b (son denemeden sonra uyku yok) ·
+# C3/C7/C8 FP çapaları (tekrarı tümden söken bir "fix" C1/C2'yi geçirir).
+# ══════════════════════════════════════════════════════════════════════════════════════════════
+class _Yanit:
+    def __init__(self, kod, govde=""):
+        self.status_code, self.text, self.headers = kod, govde, {}
+
+
+class UygulamaKatmaniTekrar(unittest.TestCase):
+
+    def setUp(self):
+        c = SAPADTClient.__new__(SAPADTClient)
+        c.url = "http://127.0.0.1:9"
+        c.max_retries, c.retry_delay = 3, 1.0
+        c.retry_on_timeout = c.retry_on_csrf_fail = c.retry_on_5xx = True
+        self.tazelenen = []
+        c.fetch_csrf_token = lambda force_refresh=False: self.tazelenen.append(force_refresh)
+        self.c = c
+        self.uykular = []
+        eski = sap_adt_lib.time.sleep
+        sap_adt_lib.time.sleep = lambda s: self.uykular.append(s)
+        self.addCleanup(setattr, sap_adt_lib.time, "sleep", eski)
+
+    def kos(self, yanitlar):
+        sira = list(yanitlar)
+        istek = []
+
+        def f():
+            istek.append(1)
+            return sira.pop(0) if len(sira) > 1 else sira[0]
+        try:
+            r = self.c._retry_request(f, "create domain ZD")
+            son = (r.status_code, r.text)
+        except Exception as e:  # noqa: BLE001
+            son = type(e).__name__
+        return len(istek), len(self.uykular), son, list(self.c._son_yeniden_denemeler)
+
+    def kaydet(self, ad, beklenen, gercek, ok):
+        H.kaydet(f"Z211 {ad}", beklenen, str(gercek)[:160], ok)
+        self.assertTrue(ok, f"{ad}: {gercek}")
+
+    def test_C1_500_tekrar_edilmez_govde_doner(self):
+        n, u, son, iz = self.kos([_Yanit(500, "<exc:exception><message>CTS_WBO_API 019</message></exc:exception>")])
+        self.kaydet("C1 500 → 1 istek · uyku 0 · 500 yanıtı GÖVDESİYLE döner · Z52 izi boş (tekrar yok)",
+                    "(1, 0, 500+gövde, [])", (n, u, son, iz),
+                    n == 1 and u == 0 and son[0] == 500 and "CTS_WBO_API 019" in son[1] and iz == [])
+
+    def test_C2_kalici_503_son_yanit_doner_son_denemeden_sonra_uyku_yok(self):
+        n, u, son, iz = self.kos([_Yanit(503, "gecici gw")])
+        self.kaydet("C2/C2b kalıcı 503 → 3 istek · 2 uyku (son denemeden sonra YOK) · son 503 gövdesiyle döner · "
+                    "Z52 izi 2", "(3, 2, (503, gecici gw), 2 kayıt)", (n, u, son, iz),
+                    n == 3 and u == 2 and son == (503, "gecici gw") and len(iz) == 2
+                    and all("Server error 503" in x for x in iz))
+
+    def test_C3_503_sonra_201_fp(self):
+        n, u, son, iz = self.kos([_Yanit(503, "gw"), _Yanit(201, "")])
+        self.kaydet("C3 FP: 503 → 201 → 2 istek · 1 uyku · başarı (tekrar KORUNDU)", "(2, 1, 201, 1 kayıt)",
+                    (n, u, son, iz), n == 2 and u == 1 and son[0] == 201 and len(iz) == 1)
+
+    def test_C4_C5_400_ve_201_tek_istek(self):
+        a = self.kos([_Yanit(400, "bad")])
+        self.uykular.clear()
+        b = self.kos([_Yanit(201, "")])
+        self.kaydet("C4/C5 400 · 201 → 1 istek, uyku 0", "(1,0,400) · (1,0,201)", (a, b),
+                    a[:2] == (1, 0) and a[2][0] == 400 and b[:2] == (1, 0) and b[2][0] == 201)
+
+    def test_C6_kalici_502_ve_504(self):
+        a = self.kos([_Yanit(502, "bgw")])
+        self.uykular.clear()
+        b = self.kos([_Yanit(504, "gto")])
+        self.kaydet("C6 kalıcı 502 / 504 → 3 istek · 2 uyku · son yanıt döner (tekrar korundu)",
+                    "(3,2,502) · (3,2,504)", (a[:3], b[:3]),
+                    a[:2] == (3, 2) and a[2] == (502, "bgw") and b[:2] == (3, 2) and b[2] == (504, "gto"))
+
+    def test_C7_kalici_csrf_iki_taze_token_yanit_doner(self):
+        n, u, son, iz = self.kos([_Yanit(403, "CSRF token validation failed")])
+        self.kaydet("C7 FP kalıcı CSRF 403 → 3 istek · 2 taze token · 403 yanıtı döner · Z52 izi BOŞ (istek işlenmedi)",
+                    "(3, 2 taze, 403, [])", (n, self.tazelenen, son, iz),
+                    n == 3 and self.tazelenen == [True, True] and son[0] == 403 and iz == [])
+
+    def test_C8_408_sonra_200_fp(self):
+        n, u, son, iz = self.kos([_Yanit(408, ""), _Yanit(200, "ok")])
+        self.kaydet("C8 FP: 408 → 200 → 2 istek · başarı", "(2, 1, 200)", (n, u, son),
+                    n == 2 and u == 1 and son == (200, "ok"))
+
+    def test_C9_501_dokunulmadi(self):
+        n, u, son, _iz = self.kos([_Yanit(501, "ni")])
+        self.kaydet("C9 501 bilinçli dokunulmadı (kaynak çekirdekle aynı, minimal) → 3 istek · son yanıt döner",
+                    "(3, 2, 501)", (n, u, son), n == 3 and u == 2 and son == (501, "ni"))
 
 
 if __name__ == "__main__":

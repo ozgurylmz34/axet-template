@@ -363,8 +363,14 @@
 
 **G-1 · "Araç bozuk" karşılaştırmalı bir iddiadır.** Yalnız sorunlu obje üzerinde 5 başarısız varyant hipotezi test etmez,
 güveni haksız büyütür. İki ölçüm gerekir: sorunlu vaka + çalıştığı bilinen vaka. Kontrol grubunu **yan etkisine bakarak** seç
-(adı "runner/test/probe" diye masum sayılmaz; gövdesini oku); yan etkisiz aday yoksa `$TMP`'de en basit hâlini yarat-koş-sil
-(yazma sınıfı → onay). Kontrol grubunun sağlam olduğunu da ölç. Kontrol edilen değişkeni ölçmeden kurulan kontrol grubu
+(adı "runner/test/probe" diye masum sayılmaz; gövdesini oku); yan etkisiz aday yoksa en basit hâlini yaratmak kesin cevap
+verir — ama bu bir SAP **yazımıdır**, kendiliğinden açılmaz: paket + transport + silme sorumluluğu kullanıcıya sorulur.
+`$TMP`'de transport kuralı araca göre değişir: kabuk/domain/DTEL/tablo tipi yaratma (`adt_post_shell`,
+`adt_domain_create`, `adt_dtel_create`, `adt_ttyp_create`) `$TMP`'de transportsuz geçer (`guardrails.py`
+`TMP_MUAF_ARACLAR`); yapı/tablo yaratma ve kilit alan push adımları (sınıf include'u, BDEF) transport ister
+(`sap-cds-ddic` → `tables-structures.md`; `$TMP`'de kilit yanıtı `CORRNR` döndürmez). Sınıf ana kaynağının `$TMP`'de
+transportsuz push'u canlıda ÖLÇÜLMEDİ. Gerçek bir Z pakette geçici obje transport'ta iz bırakır. (Kaynak çekirdeğin
+araçlarında `$TMP` muafiyeti yok, bu yolu bugün koşamıyorlar — kaynak çekirdek #364.) Kontrol grubunun sağlam olduğunu da ölç. Kontrol edilen değişkeni ölçmeden kurulan kontrol grubu
 tersini kanıtlıyor gibi görünür.
 
 **G-2 · Tanıdık semptomda önce hafızayı ara.** Bayat oturum vakası bir ay önce çözülmüş ve kayda geçmişti; kayıt

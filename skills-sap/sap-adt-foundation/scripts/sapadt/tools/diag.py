@@ -597,67 +597,58 @@ def adt_pretty_print(name: str, object_type: str = "class", output_path: str | N
 # ═══════════════════════════════════════ adt_get_method ══════════════════════════════════════════
 # Z195 ② (2026-10-19; kaynak çekirdek salt-okur `adt_get_method`): sınıfın ANA kaynağından TEK metot gövdesi.
 # SAP'ye YAZMAZ (yalnız `adt_get` ile aynı `source/main` GET'i); pull kaydı YAZILMAZ (tam kaynak değil).
-_METOT_BAS = re.compile(r"^\s*METHOD\s+([A-Za-z0-9_/~]+)(?=[\s.]|$)", re.IGNORECASE)
-_METOT_SON = re.compile(r"^\s*ENDMETHOD\s*\.", re.IGNORECASE)
-# Satır içinde (başta olmayan) ENDMETHOD sözcüğü: `METHOD a. ENDMETHOD.` tek satır ya da `y = 2. ENDMETHOD.` zinciri.
-_METOT_SON_ICERDE = re.compile(r"(?<![A-Za-z0-9_])ENDMETHOD(?![A-Za-z0-9_])", re.IGNORECASE)
-# Yorum ayıklayıcı YOK (bilinçli, kaynak çekirdekle aynı): iki desen satır başına `^\s*` ile çapalıdır ⇒ sütun-1 `*`
-# yorumu ve `"` satır-içi yorumu yapısal olarak eşleşemez.
-# Sınır güvenle çıkarılamıyorsa (bitiş METHOD satırında / satır ortasında, ya da bitişten önce yeni `METHOD` satırı)
-# blok BELİRSİZ döner — yanlış blok döndürmek yerine (2026-10-19 inceleme bulgusu: tek satırlık metot komşu metodun
-# gövdesini found:true ile döndürüyordu).
+# Z213 (2026-10-28; kaynak çekirdek #362): blok SINIRI tek kaynaktan — `lib/utils/abap_metot_blok.py`
+# (`lib/sap_client.py` `_push_method_includes` YAZMA yolu da aynı kararı kullanır). Bitiş = METHOD'dan sonraki İLK
+# METHOD/ENDMETHOD DEYİMİ (satırın neresinde olursa; yorum ve tek satırlık literal ayıklanır) ⇒ tek satırlık
+# `METHOD a. … ENDMETHOD.` ve satır ortasındaki `x = 1. ENDMETHOD.` artık DOĞRU sınırlanır (Z195'in 2026-10-19 temkinli
+# sürümü bunlarda `belirsiz` diyordu). Araya METHOD girerse, aynı satırda METHOD/ENDMETHOD karışırsa ya da
+# `ENDMETHOD.`'dan sonra aynı satırda kod kalırsa (`ENDMETHOD. ENDCLASS.`; aXet eki `bitis_sonrasi_kod`) modül
+# `SINIR_BELIRSIZ` döner ⇒ aXet sözleşmesinde `error:"belirsiz"` + `found:null`, gövde DÖNMEZ (hata kodu değişmedi).
+from utils.abap_metot_blok import SINIR_BELIRSIZ as _SINIR_BELIRSIZ  # noqa: E402  (sapadt import'u lib/'i sys.path'e ekler)
+from utils.abap_metot_blok import bitis_sonrasi_kod as _bitis_sonrasi_kod  # noqa: E402
+from utils.abap_metot_blok import deyimler as _deyimler  # noqa: E402
+from utils.abap_metot_blok import metot_bloklari as _metot_bloklari  # noqa: E402
 _METOT_KAPSAM = (
     "Sinifin ANA kaynagi (`source/main`, EN GUNCEL surum — `version` parametresiz GET: bekleyen inaktif surum varsa "
     "O okunur, aktif surum DEGIL) METINSEL taranir: `METHOD <ad>.` .. `ENDMETHOD.`. Yerel siniflar / test "
-    "include'lari (ccimp/ccau/ccdef) ve makrolar ARANMAZ ⇒ found:false 'metot yok' demek DEGILDIR.")
+    "include'lari (ccimp/ccau/ccdef) ve makrolar ARANMAZ ⇒ found:false 'metot yok' demek DEGILDIR. Bitis = METHOD'dan "
+    "sonraki ilk METHOD/ENDMETHOD deyimi (tek satirlik `METHOD a. ... ENDMETHOD.` dahil; yorum ve tek satirlik literal "
+    "ayiklanir); araya METHOD girerse, ayni satirda karisirsa ya da `ENDMETHOD.`'dan sonra ayni satirda kod kalirsa "
+    "(`ENDMETHOD. ENDCLASS.`) ok:false `belirsiz` (govde donmez). SINIR "
+    "(OLCULMEDI): cok satirli string sablonunun (`|...|`) devam satirlari KOD sayilir; orada satir basina dusen "
+    "ENDMETHOD bitis sanilabilir.")
 
 
-def _satir_ici_bitis(satir: str) -> bool:
-    """Satırda başta olmayan bir ENDMETHOD sözcüğü var mı (tam satır yorumları hariç)."""
-    if satir.startswith("*") or satir.lstrip().startswith('"'):
-        return False
-    return bool(_METOT_SON_ICERDE.search(satir))
+def _sinir_sebebi(bas: int, metin: str) -> str:
+    """`SINIR_BELIRSIZ` bloğu için insan-okur sebep (modülün `deyimler`'inden; desen YENİDEN TÜRETİLMEZ)."""
+    satirlar = metin.split("\n")
+    son_no = bas + len(satirlar) - 1
+    # Yalnız SAF durumda: bitiş satırında tek ENDMETHOD (tek satırlık blokta başlık + ENDMETHOD) ve ardından kod.
+    # Araya METHOD giren birleşik durum önceki sebebini korur (tur 7 ikinci bug-gate F1).
+    saf = ["ENDMETHOD"] if len(satirlar) > 1 else ["METHOD", "ENDMETHOD"]
+    if _deyimler(satirlar[-1]) == saf and _bitis_sonrasi_kod(satirlar[-1]):
+        return "ENDMETHOD. sonrasında aynı satırda başka deyim (ör. ENDCLASS.) (satır %d)" % son_no
+    if len(satirlar) == 1:
+        return "METHOD satırında birden çok METHOD/ENDMETHOD deyimi (satır %d)" % bas
+    if _deyimler(satirlar[-1])[:1] == ["METHOD"]:
+        return "ENDMETHOD. bulunmadan yeni METHOD deyimi (satır %d)" % son_no
+    return "bitiş satırında ENDMETHOD ile METHOD karışık (satır %d)" % son_no
 
 
 def _metot_cikar(kaynak: str, metot: str) -> list:
     """`METHOD <metot>.` .. `ENDMETHOD.` blokları → [(bas, son, metin, belirsiz_sebep)] (1-tabanlı satır).
 
-    Kapanmamış blok `son=None, sebep=None` ile döner (çağıran ÖLÇÜLEMEDİ der). Sınırı güvenle çıkarılamayan
-    blok `son=None` + `sebep` (str) ile döner (çağıran `belirsiz` der): METHOD satırında ENDMETHOD · bitiş satır
-    ortasında (zincirli) · bitişten önce yeni `METHOD` satırı. Satır bölme yalnız `\n`
-    (str.splitlines Unicode ayırıcılarda da böler)."""
-    hedef = (metot or "").strip().upper()
-    satirlar = [s[:-1] if s.endswith("\r") else s for s in (kaynak or "").split("\n")]
-    bulunan, i = [], 0
-    while i < len(satirlar):
-        m = _METOT_BAS.match(satirlar[i])
-        if m and m.group(1).upper() == hedef:
-            if _METOT_SON_ICERDE.search(satirlar[i][m.end():]):
-                bulunan.append((i + 1, None, satirlar[i], "METHOD satırında ENDMETHOD (tek satırlık metot)"))
-                i += 1
-                continue
-            j, sebep = None, None
-            for k in range(i + 1, len(satirlar)):
-                if _METOT_SON.match(satirlar[k]):
-                    j = k
-                    break
-                if _METOT_BAS.match(satirlar[k]):
-                    j, sebep = k, "ENDMETHOD. bulunmadan yeni METHOD satırı (satır %d)" % (k + 1)
-                    break
-                if _satir_ici_bitis(satirlar[k]):
-                    j, sebep = k, "ENDMETHOD satır ortasında (satır %d)" % (k + 1)
-                    break
-            if j is None:
-                bulunan.append((i + 1, None, "\n".join(satirlar[i:]), None))
-                break
-            if sebep:
-                bulunan.append((i + 1, None, "\n".join(satirlar[i:j]), sebep))
-                i = j if _METOT_BAS.match(satirlar[j]) else j + 1
-                continue
-            bulunan.append((i + 1, j + 1, "\n".join(satirlar[i:j + 1]), None))
-            i = j
-        i += 1
-    return bulunan
+    Sınır kararı `utils.abap_metot_blok.metot_bloklari`'nda (tek kaynak); bu sarmalayıcı yalnız aXet'in 4'lü biçimine
+    eşler. Kapanmamış blok `son=None, sebep=None` (çağıran `kapanmamis` der). Sınırı belirlenemeyen blok
+    (`SINIR_BELIRSIZ`) `son=None` + `sebep` (str) ile döner (çağıran `belirsiz` der). Her ikisinde de modül taramayı
+    DURDURUR (ardından gelen bloklar listelenmez)."""
+    out = []
+    for bas, son, metin in _metot_bloklari(kaynak, metot):
+        if son == _SINIR_BELIRSIZ:
+            out.append((bas, None, metin, _sinir_sebebi(bas, metin)))
+        else:
+            out.append((bas, son, metin, None))
+    return out
 
 
 @profil_tool()
@@ -679,8 +670,10 @@ def adt_get_method(name: str, method: str, output_path: str | None = None, overw
         {ok, name, method, found, start_line?, end_line?, source?, output_path, written, scope, client_log}
         `found: false` + `scope` = aranan yüzeyde YOK (yerel include'lar aranmadı).
         Birden çok eşleşme ya da kapanmamış blok ⇒ ok:false (`belirsiz` / `kapanmamis`, found:null).
-        Sınırı güvenle çıkarılamayan blok (tek satırlık `METHOD a. ENDMETHOD.` · satır ortasında zincirli
-        `ENDMETHOD.` · bitişten önce yeni `METHOD` satırı) ⇒ `belirsiz`, found:null — yanlış blok döndürülmez.
+        Tek satırlık `METHOD a. … ENDMETHOD.` ve satır ortasındaki `x = 1. ENDMETHOD.` DESTEKLENİR (Z213).
+        Bitişi belirlenemeyen blok (araya METHOD girdi · aynı satırda METHOD/ENDMETHOD karışık · `ENDMETHOD.`
+        sonrasında aynı satırda kod, ör. `ENDCLASS.`; kaynak
+        çekirdekte `sinir_belirsiz`) ⇒ `belirsiz`, found:null, `matches[].end_line` null — gövde DÖNMEZ.
     """
     if not (isinstance(name, str) and name.strip()) or not (isinstance(method, str) and method.strip()):
         return {"ok": False, "error": "invalid_argument", "scope": _METOT_KAPSAM,
