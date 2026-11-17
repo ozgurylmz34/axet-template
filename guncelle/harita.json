@@ -381,7 +381,7 @@
       "sinif": "ozel-ajan",
       "ust_sinif": "kurulum-bakim-scripti",
       "glob": ["agents/*"],
-      "yukleme": "scripts/ajan_kurulum.py kullanıcı ajan dizinine (AXET_AGENTS_DIR ya da <config tabanı>/axet-code/agents) işaretli kopya yazar: install.py --sap kurar, install.py --paketler (her %guncelle) eşitler; aXet.code ≥ 1.5.1 oturum başında okur",
+      "yukleme": "scripts/ajan_kurulum.py motorun okuduğu kullanıcı ajan dizinine (AXET_AGENTS_DIR → XDG_CONFIG_HOME/axet-code/agents → XDG yoksa Windows'ta %LOCALAPPDATA%/axet-code/agents; ölçüldü 1.5.1 — v0.5.22'nin '<config tabanı>' varsayımı yanlıştı) işaretli kopya yazar, eski konumdaki (~/.config/axet-code/agents) işaretli kopyaları kaldırır: install.py --sap kurar, install.py --paketler (her %guncelle) eşitler; aXet.code ≥ 1.5.1 oturum başında okur",
       "etkin": "yeni-oturum",
       "esler": ["scripts/ajan_kurulum.py", "scripts/install.py", "tests/test_ajan_kurulum.py"],
       "test": [{"komut": "python tests/run_tests.py -k ajan_kurulum", "cwd": ".", "on_kosul": null}],

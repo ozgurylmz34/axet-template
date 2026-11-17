@@ -1338,11 +1338,28 @@ def check_ajanlar(sap: bool) -> None:
     dizin = ak.ajan_dizini()
     cakisma = [e.hedef.name for e in plan if e.tur == "cakisma"]
     eksik = [e.hedef.name for e in plan if e.tur in ("yaz", "guncelle")]
-    emekli = [e.hedef.name for e in plan if e.tur == "sil"]
+    # Eski (motorun okumadığı) konumdaki işaretli kopya da plana "sil" olarak girer — emekli ajandan ayrı söylenir.
+    emekli = [e.hedef.name for e in plan if e.tur == "sil" and not getattr(e, "eski_konum", False)]
+    eski_kopya = [str(e.hedef) for e in plan if e.tur == "sil" and getattr(e, "eski_konum", False)]
     if not sap:
         kurulu = [e.hedef.name for e in plan if e.tur in ("ayni", "guncelle")]
         add("INFO", f"özel ajanlar: SAP paketi kapalı ({'kurulu: ' + ', '.join(kurulu) if kurulu else 'kurulu değil'})")
         return
+    try:
+        motor = ak.motor_surumu()
+        if ak.motor_eski_mi(motor):
+            # install.py eski motorda kurulumu bilerek atlar ⇒ "eksik → %guncelle" önerisi yanlış olurdu (motor
+            # güncellenmeden %guncelle de kurmaz); kurulu dosyalar varsa da motor onları kullanmaz ⇒ PASS sahte olurdu.
+            add("WARN", f"özel ajanlar: {ak.motor_eski_mesaji(motor)}")
+            return
+        olcum = (f" · aXet.code sürümü ölçülemedi (ajanlar ≥ {ak.surum_metni(ak.ASGARI_MOTOR)} ister)"
+                 if motor is None else f" · aXet.code {ak.surum_metni(motor)}")
+    except Exception as exc:  # noqa: BLE001 — bug gate F1: yarım güncellemede (eski ajan_kurulum.py) doctor çökmesin
+        olcum = f" · aXet.code sürümü ölçülemedi ({type(exc).__name__})"
+    if eski_kopya:
+        add("WARN", "özel ajanlar: motorun okumadığı eski konumda şablon kopyası kalmış: " + ", ".join(eski_kopya)
+            + f" (motorun okuduğu dizin: {dizin}) → aXet'te %guncelle yaz (ya da python scripts/install.py) — "
+            "işaretli kopyalar oradan kaldırılır, ajanlar doğru dizine kurulur")
     if cakisma:
         add("WARN", f"özel ajanlar: {dizin} içinde aynı adlı KULLANICI ajanı var, şablon sürümü kurulmadı: "
             + ", ".join(cakisma) + " (bilinçliyse sorun yok)")
@@ -1352,8 +1369,8 @@ def check_ajanlar(sap: bool) -> None:
     if emekli:
         add("WARN", f"özel ajanlar: şablonda artık olmayan (emekli) ajan kurulu: {', '.join(emekli)} → aXet'te "
             "%guncelle yaz (ya da python scripts/install.py) — işaretli kopyalar kaldırılır")
-    if not eksik and not cakisma and not emekli:
-        add("PASS", f"özel ajanlar güncel ({sum(e.tur == 'ayni' for e in plan)}): {dizin}")
+    if not eksik and not cakisma and not emekli and not eski_kopya:
+        add("PASS", f"özel ajanlar güncel ({sum(e.tur == 'ayni' for e in plan)}): {dizin}{olcum}")
 
 
 GIT_KIMLIK_KAPSAM = ("yalnız tanımsızlık ölçülür; tanımlı adresin doğruluğu ya da türetilmiş olup olmadığı "
@@ -1676,7 +1693,10 @@ def main() -> int:
               "import edilerek ölçülür — sürüm alt sınırı ve isteğe bağlı skill paketleri (python-docx/pptx, openpyxl, "
               "markdown, Pillow) denetlenmez · "
               "özel ajanlar yalnız dosya düzeyinde (kurulu kopya = şablon kaynağı) ölçülür — aXet'in onları fiilen "
-              "yüklediği (`axet-code agent list`) ve proje ajanlarının (.axet-code/agents) aynı adla ezmesi bakılmaz · "
+              "yüklediği (`axet-code agent list`) ve proje ajanlarının (.axet-code/agents) aynı adla ezmesi bakılmaz; "
+              "ajan dizini motorun ölçülen çözüm kuralından türetilir (`axet-code dirs` çağrılmaz) ve motor sürümü "
+              "(`axet-code -v`) yalnız doctor sürecinin PATH'indeki motordan okunur — kullanıcının fiilen çalıştırdığı "
+              "motor başka olabilir · "
               "skill yorumlayıcısı (`python`) yalnız doctor sürecinin PATH'iyle çözülür — aXet kabuğunun PATH'i "
               "ölçülmez · "
               "PowerShell yürütme politikası yalnız Windows PowerShell 5.1 kayıt defterinden okunur (pwsh 7 ve süreç "

@@ -311,16 +311,24 @@ def ajan_adimi(sap: bool, kaldir: bool = False, dry_run: bool = False) -> None:
         if not plan:
             return
         print(f"\nÖzel ajanlar ({ak.ajan_dizini()}):")
+        kurulum = sap and not kaldir
+        motor = ak.motor_surumu() if kurulum else None
+        if kurulum and ak.motor_eski_mi(motor):
+            # Yalnız kurma/güncelleme atlanır; kaldırma (SAP kapalı / --uninstall) motor sürümünden bağımsız sürer.
+            print(f"AJANLAR: ATLANDI — {ak.motor_eski_mesaji(motor)}")
+            return
+        olcum = (f" · aXet.code sürümü ölçülemedi (ajanlar ≥ {ak.surum_metni(ak.ASGARI_MOTOR)} ister)"
+                 if kurulum and motor is None else "")
         for e in plan:
             if e.tur != "ayni":
                 print(f"  {e.satir()}")
         if dry_run:
-            print(f"AJANLAR: {ak.ozet(plan)} (dry-run: yazılmadı)")
+            print(f"AJANLAR: {ak.ozet(plan)}{olcum} (dry-run: yazılmadı)")
             return
         hatalar = ak.uygula(plan)
         for h in hatalar:
             print(f"  HATA: {h}")
-        print(f"AJANLAR: {'EKSİK' if hatalar else 'TAMAM'} — {ak.ozet(plan)}")
+        print(f"AJANLAR: {'EKSİK' if hatalar else 'TAMAM'} — {ak.ozet(plan)}{olcum}")
     except Exception as exc:  # noqa: BLE001 — kurulumu durdurma
         print(f"AJANLAR: ÖLÇÜLEMEDİ — ajan adımı hata verdi ({type(exc).__name__}: {exc})")
 

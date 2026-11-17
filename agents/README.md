@@ -1,7 +1,10 @@
 # aXet özel ajanları (aXet.code ≥ 1.5.1)
 
 Bu klasördeki `sap-*.md` dosyaları aXet.code'un **kullanıcı ajanı** tanımlarıdır. `scripts/install.py --sap` bunları
-kullanıcı ajan dizinine (`<config tabanı>/axet-code/agents`; `AXET_AGENTS_DIR` tanımlıysa orası) yazar ve gövdedeki
+motorun kullanıcı ajan dizinine yazar — sıra: `AXET_AGENTS_DIR` → `XDG_CONFIG_HOME/axet-code/agents` → Windows'ta
+`%LOCALAPPDATA%\axet-code\agents` → (Windows dışı, XDG yoksa) `~/.config/axet-code/agents` (Windows sırası ölçüldü
+1.5.1, `axet-code dirs`; global config dosyası `~/.config/axet-code`'da kalsa da Windows'ta ajanlar oradan okunmaz;
+Windows dışı yol ölçülmedi, varsayımdır) — ve gövdedeki
 `{{AXET_KLON}}` yer tutucusunu bu klonun mutlak yoluyla değiştirir. Dosyalar yalnız rol tanımıdır; rolün ayrıntılı
 kuralları skill referanslarında durur (tek kaynak), ajan gövdesi oraya yönlendirir.
 
@@ -17,6 +20,17 @@ kuralları skill referanslarında durur (tek kaynak), ajan gövdesi oraya yönle
 olarak çekirdek kuralları, ekip hafızasını ve proje `AGENTS.md`'sini **görür**; fazlı ana ajanın fazları her kullanıcı
 mesajında baştan başlar. `sap-gelistirme` varsayılan ajan yapılmaz — kullanıcı `--agent sap-gelistirme` ile ya da
 TUI'de ajan değiştirerek seçer. SAP'ye yazma her rolde ana oturumun `%sap-adt-foundation` yazma kapısından geçer.
+
+**Eski konum (v0.5.22):** v0.5.22 Windows'ta ajanları `~/.config/axet-code/agents`'a yazıyordu; motor orayı okumadığı
+için `agent list`'te görünmüyorlardı. Kurulum ve `%guncelle` o dizindeki **işaretli** kopyaları kaldırır, ajanları doğru
+dizine yazar; doctor eski konumda kopya görürse uyarır.
+
+**Motor sürümü:** kurulum `axet-code -v` ile motoru ölçer. 1.5.1'den eski motorda ajanlar **kurulmaz** (1.3.0'da
+çalışmadıkları ölçüldü, aradaki sürümler ölçülmedi) ve `AJANLAR: ATLANDI — aXet.code <sürüm> < 1.5.1: … güncelle, sonra
+aXet'te %guncelle yaz …` satırı basılır; doctor aynı durumda tek uyarı verir. Daha önce kurulmuş kopyalar diskte kalır,
+motor onları kullanmaz. Motor güncellenince bir sonraki `%guncelle` ajanları kurar. Sürüm ölçülemezse
+(motor PATH'te yok, çıktı çözülemedi) kurulum sürer, satırda "sürümü ölçülemedi" yazar. Kaldırma
+(`--no-sap`/`--uninstall`) motor sürümüne bakmaz.
 
 **Sınırlar (bilinçli):** "dosya düzenleme araçları kapalı" = `disallowedTools: [edit, multiedit, write]`; `bash` açıktır,
 yani salt okuma araçla değil istemle sağlanır. Sahiplik işareti hangi klonun kurduğunu ayırmaz: aynı makinede

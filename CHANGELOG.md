@@ -6,6 +6,29 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.23 — 2026-11-17
+
+### 0.5.23-01 · Özel SAP ajanları aXet.code 1.5.1'den eski motorda kurulmaz; motoru güncelle uyarısı verilir (düzeltme)
+
+- **neden:** v0.5.22 SAP rollerini aXet.code kullanıcı ajanı olarak kuruyordu ama motor sürümüne bakmıyordu. Özel ajanların çalıştığı yalnız 1.5.1 ve üstünde ölçüldü (1.3.0'da çalışmıyordu). Eski motorda ajan dosyaları yine kuruluyor, doctor 'özel ajanlar güncel' diyordu ve kurallar motorun tanımadığı ajanları öneriyordu. Artık kurulum `axet-code -v` ile motoru ölçer: 1.5.1'den eskiyse ajanları kurmaz ve 'AJANLAR: ATLANDI — aXet.code <sürüm> < 1.5.1: … güncelle, sonra aXet'te %guncelle yaz …' satırını basar; doctor aynı durumda tek uyarı verir. Motor güncellenince bir sonraki %guncelle ajanları kurar. Sürüm ölçülemezse (motor PATH'te yok) kurulum eskisi gibi sürer, satırda 'sürümü ölçülemedi' yazar. Ajanları kaldırma (SAP paketini kapatma, kaldırma) motor sürümüne bakmaz.
+- **dosyalar:** `scripts/ajan_kurulum.py`, `scripts/install.py`, `scripts/doctor.py`, `tests/test_ajan_kurulum.py`, `agents/README.md`, `GUNCELLE.md`, `docs/onboarding.md`
+- **test:** `python tests/run_tests.py -k test_ajan_kurulum`, `python tests/run_tests.py -k test_install`, `python tests/run_tests.py -k test_doctor`
+- **gerektirir:** `0.5.22-01`
+
+### 0.5.23-02 · Özel SAP ajanları Windows'ta motorun okuduğu dizine kurulur; v0.5.22'nin yanlış dizindeki kopyaları kaldırılır (düzeltme)
+
+- **neden:** v0.5.22 ajanları `~/.config/axet-code/agents` dizinine yazıyordu. Ölçüldü (aXet.code 1.5.1, Windows): XDG_CONFIG_HOME tanımlı değilken motor kullanıcı ajanlarını `%LOCALAPPDATA%\axet-code\agents` dizininden okuyor (global config dosyası ise `~/.config`'te kalıyor). Sonuç: %guncelle 'AJANLAR: TAMAM' dediği hâlde beş ajan `axet-code agent list`'te görünmüyordu. Artık ajanlar motorun okuduğu dizine kurulur, eski dizindeki şablon kopyaları (yalnız şablonun işaretlediği dosyalar; kendi ajanına dokunulmaz) kaldırılır, doctor eski konumda kopya görürse uyarır. XDG_CONFIG_HOME ya da AXET_AGENTS_DIR tanımlıysa davranış değişmez.
+- **dosyalar:** `scripts/ajan_kurulum.py`, `scripts/doctor.py`, `tests/test_ajan_kurulum.py`, `agents/README.md`, `docs/onboarding.md`, `tests/test_kur.py`, `guncelle/harita.json`
+- **test:** `python tests/run_tests.py -k test_ajan_kurulum`, `python tests/run_tests.py -k test_doctor`, `python tests/run_tests.py -k GercekDamgaBekcisiTest`
+- **gerektirir:** `0.5.22-01`
+
+### 0.5.23-03 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.22 — 2026-11-17
 
 ### 0.5.22-01 · SAP rolleri aXet özel ajanı olarak kurulur: sap-arastirma · sap-backend · sap-ui5 · sap-inceleme · sap-gelistirme (yetenek)

@@ -44,11 +44,12 @@ def _goruntu(kok: Path) -> dict | None:
 def _gercek_damga() -> dict:
     """Gerçek kullanıcı config'i ve aXet yerel klasöründe kurulumun dokunabileceği dosyaların boyut+mtime damgası.
 
-    Karar: içerik okunmaz, klasör taranmaz. install.py yalnız global config'i ve yanına `.bak-*` yedeğini yazar →
-    config dosyası + yedek adları izlenir. %LOCALAPPDATA%\\axet-code'a kur.ps1 hiç yazmaz; oradan yalnız aXet'in
-    ayar/kimlik dosyaları (axet-code.json, skills_manifest.json, auth.enc) boyut+mtime ile izlenir. Klasörün tamamını
-    (93 MB ikili dahil) hash'lemek yavaştı, açık bir aXet oturumunun değiştirdiği dosyalarda sahte hata verebilirdi ve
-    auth.enc'in içeriği okunmamalı."""
+    Karar: içerik okunmaz. install.py global config'i, yanına `.bak-*` yedeğini ve (SAP açıkken, `ajan_adimi` →
+    ajan_kurulum.py) kullanıcı ajan dizinini yazar → config dosyası + yedek adları izlenir, ajan dizinleri `rglob` ile
+    taranır (aşağıda). %LOCALAPPDATA%\\axet-code kökünden yalnız aXet'in ayar/kimlik dosyaları (axet-code.json,
+    skills_manifest.json, auth.enc) boyut+mtime ile izlenir; kökün tamamı taranmaz — 93 MB ikili dahil hash'lemek
+    yavaştı, açık bir aXet oturumunun değiştirdiği dosyalarda sahte hata verebilirdi ve auth.enc'in içeriği okunmamalı.
+    Kökün altındaki `agents` dizini ise kurulumun yazma hedefidir ve taranır."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
     cfg_dizin = (Path(xdg) if xdg else Path.home() / ".config") / "axet-code"
     izlenen = [cfg_dizin / "axet-code.json"]
@@ -59,11 +60,17 @@ def _gercek_damga() -> dict:
     for f in izlenen:
         damga[str(f)] = (f.stat().st_size, f.stat().st_mtime_ns) if f.is_file() else None
     damga["yedekler"] = sorted(p.name for p in cfg_dizin.glob("axet-code.json.bak-*")) if cfg_dizin.is_dir() else None
-    # aXet tur 8 bug-gate: ajan kurulumu (scripts/ajan_kurulum.py) GERÇEK `<XDG_CONFIG_HOME|~/.config>/axet-code/agents`
-    # dizinine yazar — bekçi bu yeni yazma hedefini de izler (göreli ad + boyut + mtime; içerik okunmaz).
-    ajanlar = cfg_dizin / "agents"
-    damga["ajanlar"] = (sorted((str(p.relative_to(ajanlar)), p.stat().st_size, p.stat().st_mtime_ns)
-                               for p in ajanlar.rglob("*") if p.is_file()) if ajanlar.is_dir() else None)
+    # Ajan kurulumunun (scripts/ajan_kurulum.py) GERÇEK yazma/silme hedefleri de izlenir (göreli ad + boyut + mtime;
+    # içerik okunmaz). Ölçüldü (aXet.code 1.5.1, Windows, 2026-11-17): XDG tanımlıysa `<XDG>/axet-code/agents` GÜNCEL
+    # hedeftir. XDG yokken Windows'ta motor ajanları `%LOCALAPPDATA%/axet-code/agents`'tan okur ve v0.5.23 oraya yazar;
+    # o durumda `~/.config/axet-code/agents` (v0.5.22'nin yanlış hedefi) eski konumdur ve işaretli kopyaları SİLİNİR.
+    # İki dizin de izlenir (bug-gate R2 F4).
+    for anahtar, ajanlar in (("ajanlar", cfg_dizin / "agents"),
+                             ("ajanlar-yerel", (Path(os.environ["LOCALAPPDATA"]) / "axet-code" / "agents")
+                              if os.environ.get("LOCALAPPDATA") else None)):
+        damga[anahtar] = (sorted((str(p.relative_to(ajanlar)), p.stat().st_size, p.stat().st_mtime_ns)
+                                 for p in ajanlar.rglob("*") if p.is_file())
+                          if ajanlar is not None and ajanlar.is_dir() else None)
     # Z98 bekçisi: kur.ps1 artık kullanıcı PATH'ine yazabilir. Testler yalnız AXET_KUR_PATH_KAYDI sahte hedefine yazar;
     # GERÇEK HKCU\Environment Path ham değeri (genişletilmemiş) ve türü koşum öncesi/sonrası aynı kalmalı.
     try:
@@ -426,9 +433,11 @@ class KurTestTaban(GeciciTest):
 
 
 class GercekDamgaBekcisiTest(unittest.TestCase):
-    """`_gercek_damga` (gerçek kullanıcı bekçisi) ajan kurulumunun yazma hedefini de izler (aXet tur 8 bug-gate):
-    `<XDG_CONFIG_HOME ya da ~/.config>/axet-code/agents`. Ölçüm geçici XDG tabanında: ajan dosyası eklenince ya da
-    değişince damga DEĞİŞMELİ (eskiden yalnız axet-code.json + yedekler izleniyordu ⇒ değişiklik görünmezdi)."""
+    """`_gercek_damga` (gerçek kullanıcı bekçisi) ajan kurulumunun iki gerçek hedefini de izler: `%LOCALAPPDATA%/
+    axet-code/agents` (XDG yokken motorun okuduğu ve v0.5.23'ün yazdığı dizin — ölçüldü 1.5.1 Windows) ve
+    `<XDG_CONFIG_HOME ya da ~/.config>/axet-code/agents` (XDG tanımlıysa güncel hedef; XDG yokken Windows'ta
+    `~/.config/axet-code/agents` eski konumdur, işaretli kopyaları temizlikte silinir). Ölçüm geçici tabanlarda:
+    ajan dosyası eklenince ya da değişince damga DEĞİŞMELİ."""
 
     def test_ajan_dizini_degisikligi_damgayi_degistirir(self):
         from unittest import mock
@@ -445,6 +454,24 @@ class GercekDamgaBekcisiTest(unittest.TestCase):
                 self.assertNotEqual(ilk, _gercek_damga().get("ajanlar"))   # içerik/boyut değişti
                 self.assertEqual(ilk_tekrar := _gercek_damga().get("ajanlar"), _gercek_damga().get("ajanlar"))
                 self.assertIsNotNone(ilk_tekrar)            # kontrol grubu: değişiklik yoksa eşit, dizin görüldü
+        finally:
+            _sil(kok)
+
+    def test_localappdata_ajan_dizini_de_izlenir(self):
+        """Bug-gate R2 F4: XDG yokken gerçek yazma hedefi `%LOCALAPPDATA%/axet-code/agents` — bekçi onu da görmeli."""
+        from unittest import mock
+        kok = gecici_dizin("axet-damga-yerel-")
+        try:
+            ajanlar = kok / "axet-code" / "agents"
+            with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(kok)}):
+                bos = _gercek_damga().get("ajanlar-yerel")
+                ajanlar.mkdir(parents=True)
+                (ajanlar / "sap-ui5.md").write_text("a", encoding="utf-8")
+                ilk = _gercek_damga().get("ajanlar-yerel")
+                self.assertIsNone(bos)
+                self.assertNotEqual(bos, ilk)
+                (ajanlar / "sap-ui5.md").write_text("ab", encoding="utf-8")
+                self.assertNotEqual(ilk, _gercek_damga().get("ajanlar-yerel"))
         finally:
             _sil(kok)
 

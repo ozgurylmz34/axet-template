@@ -308,6 +308,8 @@ python $HOME\axet\scripts\doctor.py --live      # aXet'in çekirdeği fiilen yü
 | İlk satırda `proje: YOK` | Oturum proje kökünde mi açıldı; `AGENTS.md`'de `PROJECT-ID` satırı var mı |
 | İlk satırda `AXET-CORE` yok | Kurulum tamamlandı mı; `python $HOME\axet\scripts\doctor.py` çıktısındaki global config satırları |
 | `axet-code agent list`'te `sap-*` ajanları yok ya da `doctor` "özel ajanlar eksik ya da eski" dedi | aXet'te `%guncelle` yaz (SAP paketi açıkken ajanları eşitler). "Aynı adlı kendi ajanın var" uyarısında template ajanı kurulmaz: kendi ajanını yeniden adlandırırsan bir sonraki `%guncelle` kurar |
+| `AJANLAR: ATLANDI — aXet.code <sürüm> < 1.5.1: …` ya da `doctor` aynı uyarıyı verdi | Özel ajanların çalıştığı yalnız 1.5.1 ve üstünde ölçüldü; bu yüzden kurulmadı. aXet.code'u 1.5.1 ya da üstüne güncelle, sonra aXet'te `%guncelle` yaz (ajanları o kurar) |
+| `doctor` "motorun okumadığı eski konumda şablon kopyası kalmış" dedi ya da v0.5.22'den sonra `sap-*` ajanları `agent list`'te yok | v0.5.22 Windows'ta ajanları yanlış dizine (`~/.config/axet-code/agents`) yazıyordu. aXet'te `%guncelle` yaz: eski kopyaları kaldırır, ajanları motorun okuduğu dizine kurar |
 | SAP CLI yalnız `ping` açıyor | `sap-project.json` yok ya da `sap_profile` / `master_language` geçersiz |
 | Yazma reddi `tier_not_writable` | `.conn_adt` içindeki sistem tipi DEV değil ya da okunamıyor |
 | Skill listede yok | `doctor.py` (frontmatter biçimi, açıklama ≤ 1024 karakter); aXet logu `.axet-code/logs/axet-code.log` |
