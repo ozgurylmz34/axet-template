@@ -23,7 +23,7 @@ Proje yaklaşımı sabitse (freestyle) soru tekrar sorulmaz. FE ekranı bu skill
 | L1 | **Hızlı filtre** her liste sayfasında | `IconTabBar` (sayaçlı `IconTabFilter`, `iconColor` Positive/Critical/Negative) ya da `SegmentedButton`; seçimde durum filtresi + mevcut arama filtresi AND |
 | L2 | **İlk açılışta 6–8 kolon** | Sıra: tanımlayıcı → ana bilgi → durum → ana metrik (sağ) → ikincil → üçüncül; kalanı kolon göster/gizle (grid) |
 | L3 | **Ham kod gösterme** | Formatter + i18n (`"A"` → "Aktif"); kod gerekiyorsa `ObjectIdentifier title="{Kod}" text="{Ad}"` ya da tooltip |
-| L4 | **Boş durum yönlendirici** | `IllustratedMessage` (`sapIllus-EmptyList`) + eylem butonu; filtre sonucu boşsa `sapIllus-NoFilterResults` + "Filtreleri temizle" |
+| L4 | **Boş durum yönlendirici** | `IllustratedMessage` (`sapIllus-EmptyList`) + eylem butonu; filtre sonucu boşsa `sapIllus-NoFilterResults` + "Filtreleri temizle". `IllustratedMessage` `@since 1.98` — altında `VBox` { `Text` + `Button` } (ilke aynı; `app-skeleton.md` §7.1) |
 | L5 | **Satır içi düzenleme dikkatli** | Backend pessimistic kilit kullanıyorsa çok satırı düzenleme moduna açmak başka kullanıcıları kilitleyebilir → yalnız basit ana veri tablolarında ya da draft etkinse; aksi hâlde detay sayfası + Düzenle |
 | L6 | **Uzun form** | Adım adım gösterim (`Wizard`); öneri listeli `Input` (`showSuggestion`) |
 | L7 | **Yapma listesi** | aşağıda |
@@ -37,7 +37,7 @@ Proje yaklaşımı sabitse (freestyle) soru tekrar sorulmaz. FE ekranı bu skill
 6. Tutarsız yerleşim (aynı entity = aynı kolon sırası; aynı aksiyon = aynı yer; aynı durum = aynı renk).
 7. Eylemsiz boş durum.
 8. Filtresiz liste sayfası.
-9. Varsayılan tarayıcı stili — Horizon teması, özel CSS yalnız tema değişkenleriyle.
+9. Varsayılan tarayıcı stili — backend'den ölçülen tema (Horizon varsa `sap_horizon`, yoksa `sap_fiori_3`; `app-skeleton.md` §7.1), özel CSS yalnız tema değişkenleriyle.
 10. **Onaysız silme/iptal** — `MessageBox.confirm`; geri alınamaz işlemde uyarı tipi.
 
 ## 3. On ilke
@@ -79,7 +79,8 @@ Kod → state/ikon eşlemesi uygulamaya özeldir (durum kodları backend'den).
 - Sabit hex/rgb yok; `var(--sapBrandColor)`, `--sapPositiveColor`, `--sapNegativeColor`, `--sapCriticalColor`,
   `--sapInformativeColor`, `--sapTile_Background`, `--sapList_BorderColor`, `--sapContent_Shadow0..3`,
   `--sapElement_BorderCornerRadius`, `--sapFontSmallSize` gibi tema değişkenleri.
-- Morning ve Evening Horizon'da bakılır.
+- Tema backend'den ölçülür (`app-skeleton.md` §7.1); Horizon'lu backend'de Morning ve Evening Horizon'da bakılır,
+  Horizon'suzda `sap_fiori_3` ile (ilke aynı).
 - CSS sınıfları uygulama önekiyle (`.zxx001…`), kök sınıf altında.
 
 ## 7. Erişilebilirlik

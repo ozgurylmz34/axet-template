@@ -198,8 +198,11 @@ define view zsd001_ddl_order_destination as select from ...
 
 ### 3.2 `sqlViewName` ve view adı (ekibin kuralı; paket `.rules.md` farklıysa paket kazanır)
 - `sqlViewName` = `<GÖVDE>_V_<1-5 büyük harf/rakam>`, **toplam ≤ 14 karakter** (`ZSD001_V_ORDDS`). Ön ek hedef paketten
-  türer (`ZSD001_CLC` → `ZSD001_V_`); sabit değildir.
-- Classic view adı `zsd001_ddl_<ad>`; view entity adı `Z<MOD><nnn>_<I|C|R|E>_<AD>` (`%sap-dev` → `naming.md` §4.3) ve
+  türer (`ZSD001_CLC` → `ZSD001_V_`); sabit değildir. Paket kökü `<önek><MOD 2-4 harf><3 hane>`; önek Z · Y · projede
+  bildirilmiş müşteri namespace'i `/<NS>/` (ör. `/NSPC/SD001_CLC` → `/NSPC/SD001_V_`). ⚠ Namespace'li önek uzundur:
+  `/NSPC/SD001_V_` tek başına 14 karakter ⇒ o pakette classic view **sığmaz** (3 harfli namespace + 2 harfli modülde
+  `/NS/SD001_V_` 12 ⇒ 2 karakter kalır); SAP'nin namespace'li SQL view sınırı ÖLÇÜLMEDİ → view entity tercih et.
+- Classic view adı `zsd001_ddl_<ad>`; view entity adı `<önek><MOD><nnn>_<I|C|R|E>_<AD>` (önek Z · Y · bildirilmiş `/<NS>/`) (`%sap-dev` → `naming.md` §4.3) ve
   **view entity'de `@AbapCatalog.sqlViewName` yasak** (view entity SQL view taşımaz).
 - Eski kısaltma stili (`ZSD01SHTYP`, eski namespace ön eki) yasak. Pozitif kural yaz (tek doğru biçim), yasak listesi değil:
   negatif ifade edilen kural iki kez ihlal edildi.

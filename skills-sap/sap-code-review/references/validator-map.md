@@ -28,6 +28,9 @@
 | `include` | `program_push` | abaplint include'u ölçemez → SKIP = WARNING, yanıtta `unmeasured` / ÖLÇÜLEMEDİ |
 | `incl` | `program_push` | eşanlamlı |
 | `prog/i` | `program_push` | klasik include'un ADT tip kodu (eşanlamlı) |
+| `fugr/i` | `program_push` | fonksiyon grubu include'u (ADT tip kodu); `include` ile aynı karar — abaplint ÖLÇÜLEMEDİ = WARNING |
+| `fugr_include` | `program_push` | eşanlamlı |
+| `fugr-include` | `program_push` | eşanlamlı |
 | `intf` | `interface_push` | method_param_type_c (BLOCKER) · decimal_write_to · released_objects |
 | `interface` | `interface_push` | |
 | `fugr` | — | fonksiyon grubu zinciri yok; push yalnız FG ana include'unu (`FUNCTION-POOL`) yazar, FM gövdesini kapsamaz |
@@ -114,7 +117,7 @@ Kaynak: `<F>/lib/validators/run_review.py` `TASK_VALIDATORS`. Önem = zincirdeki
 `struct_post_create` ve `sap_active_check` yazma sonrası kontrollerdir; hangi aracın çağırdığı bu dosyada ölçülmedi.
 
 ## 3. İnceleme satırlarının otomasyon durumu
-Toplam 99 satır (`checklist-*.md`; 2026-10-19 dosyalardan yeniden sayıldı: 92 + BE-82…BE-88).
+Toplam 100 satır (`checklist-*.md`; 2026-10-19 dosyalardan yeniden sayıldı: 92 + BE-82…BE-88; 2026-11-17 + BE-89).
 
 **Zincirdeki validator satırı tam karşılar (6):** BE-10a · BE-04 · BE-62 · BE-11 · BE-16 · BE-03.
 Önem farkı: BE-04 ve BE-11 zincirde WARNING, incelemede BLOCKER; BE-03 politikaya bağlı.
@@ -125,13 +128,13 @@ BE-15 (push içerik geri okuması + alan kaybı) · BE-01 (kapı kaynak taramas�
 **Kısmi — okuma aracı ya da script, zincirde değil (8):** AX-SR-02 (CLI önceden çekim ister) · BE-12, BE-31, BE-85, BE-87, BE-88, AX-CC-01 (`adt_atc_check`) ·
 AX-CC-03 (`released_successors.py status`).
 
-**Otomasyon YOK — elle yürünür (79):**
+**Otomasyon YOK — elle yürünür (80):**
 - ortak: AX-SR-01 · AX-SR-03 · BE-02 · BE-18 · BE-66 · BE-64 · BE-70 · BE-65
 - ABAP: BE-10b · BE-55 · BE-57 · BE-22 · BE-23 · BE-51 · BE-29 · BE-30 · BE-35 · BE-40 · BE-41 · BE-46 · BE-44 · BE-50 · BE-52 ·
   BE-39 · BE-56 · BE-58 · BE-63 · BE-54 · BE-49 · BE-69 · BE-34 · BE-37 · BE-71 · BE-72 · BE-83 · BE-73 · BE-74 · BE-75 ·
   BE-76 · BE-77 · BE-78 · BE-79 · BE-80 · BE-81 · BE-82 · BE-84 · BE-86
 - CDS/DDIC: BE-27 · BE-32 · BE-33 · BE-38 · BE-45 · BE-59 · BE-61 · BE-05 · BE-07 · BE-13 · BE-43
-- RAP: BE-26 · BE-20 · BE-60 · BE-06 · BE-21 · BE-24 · BE-08 · BE-09 · BE-17 · BE-53 · BE-42
+- RAP: BE-26 · BE-20 · BE-60 · BE-06 · BE-21 · BE-24 · BE-08 · BE-09 · BE-17 · BE-53 · BE-42 · BE-89
 - OData: BE-14 · AX-OD-01 · AX-OD-02 · AX-OD-03 · AX-OD-04 · AX-OD-05
 - clean core: BE-68 · BE-67 · BE-25 · AX-CC-02
 

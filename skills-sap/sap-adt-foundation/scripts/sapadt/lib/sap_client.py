@@ -40,6 +40,8 @@ from sap_adt_lib import (
     validate_sap_config
 )
 from utils.xml_kacis import attr_escape  # Z194: öznitelik kaçışı tek kaynak
+from utils.ad_politikasi import url_segmenti as _adt_seg  # ADT yol parcasi tek kaynak (/NS/ -> %2Fns%2F)
+from utils.ad_politikasi import yerel_ad as _yerel_ad_dosya  # yerel dosya adı YAZMA yönü tek kaynak (/NS/X -> #ns#x)
 from object_types import (
     get_object_url,
     get_source_url,
@@ -264,6 +266,42 @@ def kaynak_kimligi_bas(kimlik: Dict[str, Any], girinti: str = '      ') -> None:
               f"  (satır sonu çevrimi CRLF->LF)")
 
 
+def _hata_ayrintisi_ekle(result: Dict[str, Any], exc: BaseException, adt: Any = None) -> None:
+    """Push hata dalında teşhis ayrıntıları (kaynak çekirdek #423 · #427 F7, aXet uyarlaması).
+
+    `put_denemeleri` = `set_object_source`'un [(biçim, kod, öz)] listesi (yoksa anahtar EKLENMEZ):
+    PUT transport-biçim döngüsü yalnız biçim reddinde (Parameter…could not be found · 409 · 412)
+    sonraki biçime geçer, içerik/sunucu reddinde DURUR — liste hangi biçimin hangi yanıtı aldığını
+    gösterir (son 409 ilk denemenin bıraktığı kendi kilidimize çarpmış olabilir; önce 409-dışı
+    yanıta bak). `error_response_text` = istisnanın taşıdığı SAP gövdesi (ilk SAP_HATA_GOVDE_SINIRI
+    karakter) · `error_t100` = istisnanın TAM gövdeden ayrıştırdığı `T100KEY-*` girdileri (409'da
+    V3 = çakışan istek, V4 = kilit sahibi). Bu sonuç araç yanıtına AYNEN girer ⇒ metin öğeleri
+    aXet'in TEK temizleyicisinden (`sapadt.redact`: bağlantı host'u + parola + desenler) geçer;
+    kod (int) aynen kalır. Redaksiyon modülü yüklenemezse ayrıntı EKLENMEZ (sızdırmak yerine yok
+    saymak). Sonuç alanları (`success`/`error`/`error_type`) DEĞİŞMEZ; istisna atmaz.
+    """
+    try:
+        from sapadt import redact as _redact
+        sirlar = sorted(set(_redact.host_sirlari(getattr(adt, 'url', None))
+                            + _redact.bilinen_sirlar(getattr(adt, 'user', None),
+                                                     getattr(adt, 'password', None))),
+                        key=len, reverse=True)
+
+        def _t(x):
+            return _redact.temizle_metin(x, sirlar) if isinstance(x, str) else x
+        den = getattr(exc, 'denemeler', None)
+        if den:
+            result['put_denemeleri'] = [[_t(x) for x in d] for d in den]
+        govde = getattr(exc, 'response_text', None)
+        if govde:
+            result['error_response_text'] = _t(str(govde))[:SAP_HATA_GOVDE_SINIRI]
+        t100 = getattr(exc, 't100_degiskenleri', None)
+        if t100:
+            result['error_t100'] = {k: _t(str(v)) for k, v in t100.items()}
+    except Exception:  # noqa: BLE001 — ayrıntı eklemek hata akışını bozamaz
+        pass
+
+
 class SAPClient:
     """High-level SAP ABAP Development Client"""
 
@@ -371,7 +409,7 @@ class SAPClient:
             target_dir = package_base / subdir
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            file_path = target_dir / f"{object_name}.abap"
+            file_path = target_dir / f"{_yerel_ad_dosya(object_name)}.abap"   # /NS/X -> #ns#x (sürücü köküne kaçmaz)
             with open(file_path, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(cleaned_source)
             if self.debug_enabled:
@@ -828,6 +866,191 @@ class SAPClient:
                     result['lock_released'] = False
             return result
 
+    def _metadata_getir(self, object_url: str):
+        """Obje metadata'sini salt-okur GET ile al -> (status_code|None, govde, hata_metni)."""
+        try:
+            r = self.adt_client.session.get(
+                f"{self.adt_client.url}{object_url}", headers={'Accept': 'application/*'},
+                verify=False, timeout=getattr(self.adt_client, 'timeout_short', 30))
+            return getattr(r, 'status_code', None), (getattr(r, 'text', '') or ''), ''
+        except Exception as exc:  # noqa: BLE001 — olculemedi, cagiran karar verir
+            return None, '', f"{type(exc).__name__}: {str(exc)[:120]}"
+
+    def fugr_include_grubunu_dogrula(self, include_name: str, group: str) -> Dict[str, Any]:
+        """FUGR/I include'u gercekten `group`'a mi ait? (salt-okur metadata GET; Q383).
+
+        Kanit = `programs/includes/<incl>` 200 + `include:contextRef` type FUGR/I, name
+        SAPL<GRUP> (`object_types.fugr_include_grup_kaniti`). Bu URL grup TASIMAZ.
+        ⛔ `functions/groups/<g>/includes/<incl>` `containerRef`'i KANIT DEGILDIR: SAP URL grubunu
+        geri yansitir, 200 doner — 2026-11-08 olculdu (dort grubun dordu, var olmayan grup dahil).
+        Ad oneki (`L<GRUP>`) de kanit degildir: `LZSD001_FGF01` hem `ZSD001_FG` hem `ZSD001` hem
+        `ZSD001_F` icin onek kuralini gecer. Uyusmazlik / olculemezlik -> ok False (fail-closed);
+        cagiran YAZMAZ, KILITLEMEZ ve AKTIVE ETMEZ (yanlis grubun iki fazli aktivasyonu baska
+        grubun inaktif objelerini toplar — bug-gate F1).
+        Returns: {ok, group, sebep, object_url (FUGR/I), kanit_url (programs/includes)}
+        """
+        from object_types import get_fugr_include_url, get_object_url, fugr_include_grup_kaniti
+        g = (group or '').strip().upper()
+        sonuc: Dict[str, Any] = {'ok': False, 'group': g, 'sebep': '', 'object_url': '',
+                                 'kanit_url': ''}
+        try:
+            sonuc['object_url'] = get_fugr_include_url(g, include_name)
+            sonuc['kanit_url'] = get_object_url((include_name or '').strip(), 'include')
+        except ValueError as e:
+            sonuc['sebep'] = str(e)
+            return sonuc
+        # KANIT KAYNAGI — programs/includes contextRef (FUGR/I containerRef DEGIL, 2026-11-08)
+        kod, govde, hata = self._metadata_getir(sonuc['kanit_url'])
+        ok, sebep = fugr_include_grup_kaniti(govde, g) if kod == 200 else (False, '')
+        if kod != 200:
+            sonuc['sebep'] = f"programs/includes metadata GET -> {kod if kod is not None else hata}"
+        else:
+            sonuc['ok'], sonuc['sebep'] = bool(ok), sebep
+        return sonuc
+
+    def push_fugr_include(self, include_name: str, group: str,
+                          transport: Optional[str] = None,
+                          source_file: Optional[str] = None) -> Dict[str, Any]:
+        """Fonksiyon grubu include'unu (FUGR/I, ör. SE54 TMG olay include'u) push et (Q383).
+
+        Akis (2026-10-30 canli elle recetesinin kodlanmis hali):
+          0. grup KANITI (`fugr_include_grubunu_dogrula`): `programs/includes/<incl>` 200 +
+             `include:contextRef` FUGR/I SAPL<GRUP>; degilse YAZMADAN dur (fail-closed — grup
+             tahmin edilmez). ⚠ onceki metin containerRef diyordu, YANLISTI: SAP URL grubunu yansitir, olcum 2026-11-08.
+          1. ETag (kilitten ONCE) → 2. `lock_object(FUGR/I URL, transport)` → 3. `set_object_source`
+          4. `unlock` → 5. `activate_object(<INCL>, FUGR/I URL)` (FUGR iki fazli yol, Q231-a)
+          6. aktif readback: `version=active` kaynak, iki taraf `rstrip` + satir sonu LF → esit
+        ⛔ Bu yol `_find_existing_transport` (E071) ve R3TR on-kaydini KOSMAZ: ikisi FUGR/I icin
+        OLCULMEDI; transport'un otoritesi kilit yanitindaki CORRNR'dir (`_verify_and_return_lock`).
+        `source_file` ZORUNLU: repoda FUGR include'u icin tek bir dosya adi konvansiyonu yok
+        (olculdu: `<FG>.fugr.<incl>.abap` ve `functions/<INCL>.prog.abap` ikisi de var).
+
+        Returns: push_object ile ayni sozlesme + `group`, `object_url`, `readback_md5`.
+        """
+        from object_types import get_fugr_include_url, fugr_include_ad_alani_hatasi
+
+        result: Dict[str, Any] = {
+            'success': False, 'error': '', 'error_type': '',
+            'source_uploaded': False, 'activated': False, 'lock_released': True,
+            'group': (group or '').strip().upper(), 'include': (include_name or '').strip().upper(),
+        }
+        try:
+            object_url = get_fugr_include_url(group, include_name)
+        except ValueError as e:
+            result['error'], result['error_type'] = str(e), 'ValueError'
+            return result
+        # ADR 0005-A (MCP guardrail'iyle ayni kural): grup Z/Y + include `L<GRUP>` onekli.
+        # Yalniz bu yol — diger tiplerin CLI davranisi DEGISMEDI.
+        ad_hatasi = fugr_include_ad_alani_hatasi(group, include_name)
+        if ad_hatasi:
+            result['error'], result['error_type'] = ad_hatasi + ". YAZILMADI.", 'GuardrailViolation'
+            print(f"\n[ERROR] {result['error']}")
+            return result
+        result['object_url'] = object_url
+        source_url = object_url + '/source/main'
+        include_name = include_name.upper()
+
+        if not source_file:
+            result['error'] = ("source_file ZORUNLU (FUGR include'u icin yerel dosya adi "
+                               "konvansiyonu yok; --source-file ver)")
+            result['error_type'] = 'ValueError'
+            return result
+        local_file = Path(source_file)
+        if not local_file.exists():
+            result['error'] = f"Local file not found: {local_file}"
+            result['error_type'] = 'FileNotFoundError'
+            result['source_path'] = str(local_file)
+            print(f"\n[ERROR] Local file not found: {local_file}")
+            return result
+        source_code = local_file.read_text(encoding='utf-8')
+        result.update(kaynak_kimligi(local_file, source_code))
+
+        print(f"\n{'=' * 70}")
+        print(f"  Pushing function group include (FUGR/I): {include_name} (grup {result['group']})")
+        print(f"{'=' * 70}")
+        print(f"\n[1/5] Reading local file...\n      {local_file}\n"
+              f"      Size: {len(source_code)} characters")
+        kaynak_kimligi_bas(result)
+
+        # 0 — grup dogrulamasi (yazmadan ONCE; salt-okur)
+        dogrulama = self.fugr_include_grubunu_dogrula(include_name, group)
+        if not dogrulama['ok']:
+            sebep = dogrulama['sebep']
+            result['error'] = (f"FUGR include grup dogrulamasi BASARISIZ ({sebep}); istenen grup "
+                               f"{result['group']}. YAZILMADI. Grubu SE80/SE37'den teyit et.")
+            result['error_type'] = 'SAPValidationError'
+            print(f"\n[ERROR] {result['error']}")
+            return result
+        print(f"      [OK] grup kaniti: {dogrulama['sebep']}")
+
+        lock_handle = None
+        try:
+            pre_lock_etag = self.adt_client.fetch_source_etag(source_url)
+            print(f"\n[2/5] Locking include (FUGR/I)...")
+            print(f"      corrNr (lock'a verilen transport): "
+                  f"{transport or '[YOK — hayalet transport riski]'}")
+            lock_handle = self.adt_client.lock_object(object_url, transport=transport)
+            effective_transport = (
+                getattr(self.adt_client, '_last_lock_effective_transport', None) or transport)
+
+            print(f"\n[3/5] Uploading source code...")
+            self.adt_client.set_object_source(source_url, source_code, lock_handle,
+                                              effective_transport, etag=pre_lock_etag)
+            result['source_uploaded'] = True
+            print(f"      [OK] Source uploaded")
+
+            if lock_handle and lock_handle != 'NO_LOCK_SUPPORT':
+                try:
+                    self._kilit_birak(object_url, lock_handle, result)   # Q359
+                    lock_handle = None
+                except Exception as unlock_err:
+                    print(f"      [WARNING] Pre-activation unlock failed: {str(unlock_err)[:100]}")
+
+            print(f"\n[4/5] Activating include {include_name}...")
+            act = self.adt_client.activate_object(include_name, object_url)
+            result['activation'] = act if isinstance(act, dict) else {'success': bool(act)}
+            result['activated'] = isinstance(act, dict) and act.get('success') is True
+            if not result['activated']:
+                result['error'] = f"Activation failed: {str(act)[:400]}"
+                result['error_type'] = 'SAPActivationError'
+                return result
+
+            print(f"\n[5/5] Active readback (rstrip)...")
+            try:
+                canli = self.adt_client.get_object_source(object_url, return_etag=False,
+                                                          version='active')
+                y = source_code.replace('\r\n', '\n').replace('\r', '\n').rstrip()
+                c = (canli or '').replace('\r\n', '\n').replace('\r', '\n').rstrip()
+                import hashlib as _h
+                result['readback_md5'] = _h.md5(c.encode('utf-8')).hexdigest()
+                result['readback_ok'] = (y == c)
+                if result['readback_ok']:
+                    print(f"      [OK] Active source verified - md5 {result['readback_md5']}")
+                else:
+                    result['readback_mismatch'] = {'uploaded_chars': len(y), 'active_chars': len(c)}
+                    print(f"      [FAIL] READBACK UYUSMAZLIGI — yuklenen {len(y)} ch · aktif {len(c)} ch")
+            except Exception as verify_err:
+                result['readback_ok'] = None
+                result['readback_reason'] = (f"post-activation readback KOSAMADI: "
+                                             f"{type(verify_err).__name__}: {str(verify_err)[:160]}")
+                print(f"      [INFO] readback_ok=None — 'yazim dogrulandi' SANMA")
+
+            result['success'] = bool(result['source_uploaded'] and result['activated']
+                                     and result.get('readback_ok') is not False)
+            return result
+        except Exception as e:
+            result['error'] = str(e)
+            result['error_type'] = type(e).__name__
+            _hata_ayrintisi_ekle(result, e, self.adt_client)   # Issue #423 · PR #427 F7
+            print(f"\n[ERROR] {result['error'][:600]}")
+            return result
+        finally:
+            if lock_handle and lock_handle not in ('NO_LOCK_SUPPORT', 'IMPLICIT_LOCK', None, ''):
+                try:
+                    self._kilit_birak(object_url, lock_handle, result)   # Q359
+                except Exception:
+                    result['lock_released'] = False
+
     def push_object(self, object_name: str, object_type: str = 'class', transport: Optional[str] = None, source_file: Optional[str] = None) -> Dict[str, Any]:
         """
         Push local object changes to SAP (complete workflow: lock -> upload -> activate -> unlock)
@@ -863,8 +1086,9 @@ class SAPClient:
         }
 
         type_desc = get_type_description(object_type)
-        object_url = get_object_url(object_name, object_type)
+        # Q402: kaynak URL'i ONCE — kaynak ucu olmayan tip (ENHS) acik "kaynak ucu YOK" reddini alir.
         source_url = get_source_url(object_name, object_type)
+        object_url = get_object_url(object_name, object_type)
 
         print(f"\n{'=' * 70}")
         print(f"  Pushing {type_desc}: {object_name}")
@@ -876,7 +1100,7 @@ class SAPClient:
         else:
             subdir = get_local_subdir(object_type)
             package_base = self.local_base.parent
-            local_file = package_base / subdir / f"{object_name}.abap"
+            local_file = package_base / subdir / f"{_yerel_ad_dosya(object_name)}.abap"   # download_object ile aynı ad
 
         if not local_file.exists():
             print(f"\n[ERROR] Local file not found: {local_file}")
@@ -904,6 +1128,41 @@ class SAPClient:
         print(f"      {local_file}")
         print(f"      Size: {len(source_code)} characters")
         kaynak_kimligi_bas(result)
+
+        # ⛔ Q383① (2026-11-07): `include` (PROG/I) tipiyle gelen bir FONKSIYON GRUBU include'u
+        # `programs/includes` yolundan kilitlenemez (SAP: 403 TK/103). Ayirt edici sinyal SAP'nin
+        # kendi metadata'sidir (`include:contextRef type=FUGR/*`) — ad deseni DEGIL. Kilitten
+        # (ve transport/R3TR adimlarindan) ONCE reddedilir; otomatik yonlendirme YOK: grup acik
+        # parametredir. GET olculemezse eski akis surer (kilit hatasi artik TK/103'u gosterir).
+        try:
+            from object_types import normalize_object_type as _nt, include_fugr_baglami
+            _kanonik = _nt(object_type)
+        except Exception:  # noqa: BLE001
+            _kanonik = None
+        if _kanonik == 'include':
+            _kod, _govde, _hata = self._metadata_getir(object_url)
+            _grup = include_fugr_baglami(_govde) if _kod == 200 else None
+            # Kapsam OLCULEN sinifa daraltildi: SAP'nin grup-uretimli `L...` include'u. Standart
+            # bir cikis grubundaki musteri include'u (CMOD `ZX...`) da contextRef FUGR tasir;
+            # onun `programs/includes` kilidi OLCULMEDI ⇒ eski akis korunur (regresyon yok).
+            if _grup and not object_name.upper().startswith('L'):
+                print(f"      [INFO] Include FUGR baglamli ({_grup}) ama 'L' onekli degil "
+                      f"(ör. CMOD ZX include'u) — PROG/I yolu korunuyor; kilit OLCULMEDI")
+                _grup = None
+            if _grup:
+                result['error'] = (
+                    f"{object_name.upper()} bir FONKSIYON GRUBU include'udur (SAP contextRef: "
+                    f"FUGR/I, grup {_grup}) — `include` (PROG/I) yolundan YAZILAMAZ (kilit 403 "
+                    f"TK/103). Kullan: push_object.py --name {object_name.upper()} --type fugr-include --group {_grup} "
+                    f"--source-file <dosya> (MCP: object_type='fugr_include', group='{_grup}'). "
+                    f"Grubu teyit et; arac kendiliginden yonlendirmez.")
+                result['error_type'] = 'FugrIncludeTypeError'
+                result['fugr_group'] = _grup
+                print(f"\n[ERROR] {result['error']}")
+                return result
+            if _kod != 200:
+                print(f"      [INFO] FUGR-include on-kontrolu OLCULEMEDI "
+                      f"(metadata GET -> {_kod if _kod is not None else _hata}); eski akisla devam")
 
         # Resolve transport BEFORE locking so corrNr is passed during lock.
         # Without corrNr, SAP CTS auto-creates a ghost transport during lock,
@@ -1345,18 +1604,27 @@ class SAPClient:
             error_str = str(e)
             result['error'] = error_str
             result['error_type'] = type(e).__name__
+            _hata_ayrintisi_ekle(result, e, self.adt_client)   # Issue #423 · PR #427 F7
             print(f"\n[ERROR] {error_str}")
 
             if isinstance(e, SAPLockError) and getattr(e, 'status_code', None) == 409:
+                # Q350: okunamayan liste "hayalet yok" ile aynı görünmez; push'un kendi
+                # hata akışı (result + aşağıdaki stale-lock ipucu) DEĞİŞMEZ.
                 try:
-                    ghosts = self.adt_client.find_ghost_transports()
+                    try:
+                        ghosts = self.adt_client.find_ghost_transports()
+                    except Exception as ghost_err:
+                        ghosts = None
+                        print(f"\n[WARNING] Ghost transport list could not be read "
+                              f"({type(ghost_err).__name__}: {str(ghost_err)[:150]})")
+                        print(f"[HINT] hayalet transport listesi okunamadı — SE10'da elle bakın")
                     if ghosts:
                         print(f"\n[WARNING] The following ghost transports were likely created by this failed push:")
                         for t in ghosts:
                             print(f"  {t} — delete in SE10")
                         print(f"[HINT] Open SE10, select each transport above and delete it")
                 except Exception:
-                    pass
+                    pass   # uyarı basımı push'un hata akışını bozamaz
 
             # ⛔ 2026-09-14 KİLİT POLİTİKASI: eski metin koşulsuz "Source was uploaded successfully"
             # diyordu — istisna kilit anında da gelebildiği için YANLIŞTI (yükleme olmadan basılıyordu).
@@ -1429,7 +1697,7 @@ class SAPClient:
         print(f"{'=' * 70}\n")
 
         # Get package path
-        package_path = f"/sap/bc/adt/packages/{package.lower()}"
+        package_path = f"/sap/bc/adt/packages/{_adt_seg(package)}"
 
         try:
             result = self.adt_client.create_object(
@@ -1444,7 +1712,7 @@ class SAPClient:
             if result.get('success'):
                 # low-level adt_client.create_object 'object_url' key'i döndürür ('url' değil) —
                 # key uyumsuzluğu success'te None döndürüp adt_post_shell'de ok:false yapıyordu.
-                object_url = result.get('object_url') or result.get('url') or f"{package_path}/{name.lower()}"
+                object_url = result.get('object_url') or result.get('url') or f"{package_path}/{_adt_seg(name)}"
                 print(f"\n[OK] Object created successfully")
                 print(f"     URL: {object_url}")
                 return object_url
@@ -1475,7 +1743,7 @@ class SAPClient:
             True if successful, False otherwise
         """
         type_desc = get_type_description(object_type)
-        object_url = get_object_url(object_name, object_type)
+        object_url = get_object_url(object_name, object_type, islem='silme')  # Q402: ENHS izinli
 
         if self.debug_enabled:
             self._debug(f"[DEBUG] delete_object - name: {object_name}, type: {object_type}, url: {object_url}")
@@ -1515,23 +1783,31 @@ class SAPClient:
             self.adt_client.delete_object(object_url, lock_handle, transport)
             print(f"\n[OK] Object deleted successfully")
 
-            # Delete local file if exists
-            from object_types import get_local_subdir
-            subdir = get_local_subdir(object_type)
-            package_base = self.local_base.parent
-            local_file = package_base / subdir / f"{object_name}.abap"
+            # Delete local file if exists — AYRI try (aXet tur 8 bug-gate): SAP silmesi bu noktada
+            # GERÇEKLEŞTİ. Yerel ad çevrilemezse (`yerel_ad` ValueError) ya da dosya silinemezse eski
+            # hâl dış `except`e düşüp `False` dönüyordu ⇒ çağıran "silinmedi" sanıp yeniden deniyordu.
+            # Yerel temizlik ikincil iştir: sorunu UYARI olarak basılır, sonuç SAP silmesini raporlar.
+            try:
+                from object_types import get_local_subdir
+                subdir = get_local_subdir(object_type)
+                package_base = self.local_base.parent
+                # Eski `f"{object_name}.abap"` namespace'li adda SÜRÜCÜ KÖKÜNDEKİ aynı adlı dosyayı `unlink`
+                # ederdi (`C:/NS/X.abap`). Ad download_object ile aynı yerden.
+                local_file = package_base / subdir / f"{_yerel_ad_dosya(object_name)}.abap"
 
-            if self.debug_enabled:
-                self._debug(f"[DEBUG] delete_object - checking for local file: {local_file}")
+                if self.debug_enabled:
+                    self._debug(f"[DEBUG] delete_object - checking for local file: {local_file}")
 
-            if local_file.exists():
-                local_file.unlink()
-                print(f"     Local file deleted: {local_file}")
-                if self.debug_enabled:
-                    self._debug(f"[DEBUG] delete_object - local file deleted")
-            else:
-                if self.debug_enabled:
-                    self._debug(f"[DEBUG] delete_object - local file not found (may not exist locally)")
+                if local_file.exists():
+                    local_file.unlink()
+                    print(f"     Local file deleted: {local_file}")
+                    if self.debug_enabled:
+                        self._debug(f"[DEBUG] delete_object - local file deleted")
+                else:
+                    if self.debug_enabled:
+                        self._debug(f"[DEBUG] delete_object - local file not found (may not exist locally)")
+            except Exception as e:  # noqa: BLE001 — SAP silmesi yapıldı; yerel temizlik sonucu DEĞİŞTİRMEZ
+                print(f"     [WARNING] Local file cleanup skipped (object deleted in SAP): {e}")
 
             return True
 
@@ -1757,7 +2033,7 @@ class SAPClient:
                             objects.append({
                                 'name': name,
                                 'type': obj_type,
-                                'uri': f'/sap/bc/adt/{obj_type.lower().replace("/", "/")}s/{name.lower()}',
+                                'uri': f'/sap/bc/adt/{obj_type.lower().replace("/", "/")}s/{_adt_seg(name)}',
                                 'description': description,
                                 'listing_source': 'nodestructure',
                                 'package_verified': True,
@@ -1938,7 +2214,7 @@ class SAPClient:
             `uyari` — SAP'de koşmuş olabilir, araç TEKRAR POST ETMEZ (Z190).
         """
         # Önek `_build_session`'daki TEKRARSIZ adapter mount'uyla aynı kaynaktan (Z190).
-        url = f"{self.adt_client._classrun_onek()}{class_name.lower()}"
+        url = f"{self.adt_client._classrun_onek()}{_adt_seg(class_name)}"
         # Standart ADT header'ları ŞART (Authorization + sap-client + stateful
         # session + X-CSRF-Token). Bare {'Accept':...} dict'i _get_headers()'ı
         # atlatır → soğuk session'da SAP sınıf bağlamını bulamayıp sahte
@@ -2089,7 +2365,7 @@ class SAPClient:
         """
         try:
             src_url = (f"{self.adt_client.url}/sap/bc/adt/oo/classes/"
-                       f"{class_name.lower()}/source/main")
+                       f"{_adt_seg(class_name)}/source/main")
             hdrs = self.adt_client._get_headers(accept_type='text/plain')
             r = self.adt_client._request_with_csrf_retry(
                 'get', src_url, headers=dict(hdrs),
@@ -2106,19 +2382,36 @@ class SAPClient:
         except Exception as e:
             return {'structurally_valid': False, 'error': str(e)}
 
-    def activate_object(self, object_name: str, object_type: str = 'class') -> bool:
+    def activate_object(self, object_name: str, object_type: str = 'class',
+                        group: Optional[str] = None) -> bool:
         """
         Activate ABAP object (retry after failed push)
 
         Args:
             object_name: Name of the object
             object_type: Type of object
+            group: Q383 — yalniz `fugr_include` (FUGR/I) icin ZORUNLU fonksiyon grubu;
+                yoksa ValueError (sessiz yanlis URI uretilmez).
 
         Returns:
             True if successful, False otherwise
         """
-        object_url = get_object_url(object_name, object_type)
-        type_desc = get_type_description(object_type)
+        from object_types import is_fugr_include_type, get_fugr_include_url
+        if is_fugr_include_type(object_type):
+            object_url = get_fugr_include_url(group, object_name)   # grup yoksa ValueError
+            type_desc = 'Function Group Include (FUGR/I)'
+            object_name = object_name.upper()
+            # Q383 bug-gate F1: grup KANITI aktivasyondan ONCE (programs/includes contextRef
+            # FUGR/I SAPL<GRUP>; ⚠ onceki metin containerRef diyordu, YANLISTI: SAP URL grubunu yansitir, olcum 2026-11-08);
+            # yanlis grubun iki fazli aktivasyonu baska grubun inaktiflerini toplar -> fail-closed.
+            dogrulama = self.fugr_include_grubunu_dogrula(object_name, group)
+            if not dogrulama['ok']:
+                print(f"\n[ERROR] FUGR include grup dogrulamasi BASARISIZ ({dogrulama['sebep']}); "
+                      f"istenen grup {dogrulama['group']}. AKTIVE EDILMEDI.")
+                return False
+        else:
+            object_url = get_object_url(object_name, object_type)
+            type_desc = get_type_description(object_type)
 
         print(f"\nActivating {type_desc}: {object_name}")
 
@@ -2215,7 +2508,7 @@ class SAPClient:
         Returns:
             XML metadata string
         """
-        object_url = get_object_url(object_name, object_type)
+        object_url = get_object_url(object_name, object_type, islem='metadata')  # Q402: ENHS izinli
 
         try:
             metadata = self.adt_client.get_object_structure(object_url)
@@ -2593,7 +2886,7 @@ class SAPClient:
                 print(f"\n[OK] Structure created successfully")
                 print(f"     URL: {result.get('object_url')}")
                 print(f"\n     NOTE: Structure must be activated before use!")
-                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/structures/{name.lower()}')")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/structures/{_adt_seg(name)}')")
                 return True
             else:
                 print(f"\n[ERROR] {result.get('message')}")
@@ -2694,7 +2987,7 @@ class SAPClient:
                 print(f"\n[OK] Table created successfully")
                 print(f"     URL: {result.get('object_url')}")
                 print(f"\n     NOTE: Table must be activated before use!")
-                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tables/{name.lower()}')")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tables/{_adt_seg(name)}')")
                 return True
             else:
                 print(f"\n[ERROR] {result.get('message')}")
@@ -2775,7 +3068,7 @@ class SAPClient:
                 print(f"\n[OK] CDS view created successfully")
                 print(f"     URL: {result.get('object_url')}")
                 print(f"\n     NOTE: CDS view must be activated before use!")
-                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/ddl/sources/{name.lower()}')")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/ddl/sources/{_adt_seg(name)}')")
                 return True
             else:
                 print(f"\n[ERROR] {result.get('message')}")
@@ -2860,7 +3153,7 @@ class SAPClient:
 
             if response.status_code in [200, 201]:
                 print(f"\n[OK] Table type created successfully")
-                print(f"     Activate with: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tabletypes/{name.lower()}')")
+                print(f"     Activate with: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/tabletypes/{_adt_seg(name)}')")
                 return True
             if response.status_code == 404:
                 print("\n[WARNING] Table type endpoint not available on this SAP system")
@@ -3052,7 +3345,10 @@ class SAPClient:
             max_rows: Maximum rows to return (default 100)
 
         Returns:
-            Dict with 'columns', 'data', 'total_rows', 'execution_time' or None on error
+            Dict with 'columns', 'data', 'total_rows', 'execution_time', 'execution_time_ms'
+            or None on error. ⚠ BİRİM MİLİSANİYE: SAP `dp:queryExecutionTime` alanı ms taşır
+            (canlı ölçüm 2026-10-29: değer 24.407 iken isteğin duvar saati 0.224 s — saniye
+            olamaz). `execution_time` geriye uyumluluk için AYNI değerle (ms) korunur.
 
         Example:
             result = client.run_sql_query("SELECT MATNR, MAKTX FROM MARA")
@@ -3072,9 +3368,12 @@ class SAPClient:
             total_rows = root.find('.//dp:totalRows', ns)
             exec_time = root.find('.//dp:queryExecutionTime', ns)
 
+            # Birim ms (docstring); eski anahtar geriye uyumluluk için, `_ms` adı birimi taşır.
+            exec_ms = float(exec_time.text) if exec_time is not None else 0
             result = {
                 'total_rows': int(total_rows.text) if total_rows is not None else 0,
-                'execution_time': float(exec_time.text) if exec_time is not None else 0,
+                'execution_time': exec_ms,
+                'execution_time_ms': exec_ms,
                 'columns': [],
                 'data': []
             }
@@ -3170,7 +3469,7 @@ constants:
                 print(f"\n[OK] Type group created successfully")
                 print(f"     URL: {result.get('object_url')}")
                 print(f"\n     NOTE: Type group must be activated before use!")
-                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/typegroups/{name.lower()}')")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/ddic/typegroups/{_adt_seg(name)}')")
                 return True
             else:
                 print(f"\n[ERROR] {result.get('message')}")
@@ -3246,7 +3545,7 @@ constants:
                 print(f"\n[OK] Function group created successfully")
                 print(f"     URL: {result.get('object_url')}")
                 print(f"\n     NOTE: Function group must be activated before use!")
-                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/functions/groups/{name.lower()}')")
+                print(f"     Run: adt_client.activate_object('{name.upper()}', '/sap/bc/adt/functions/groups/{_adt_seg(name)}')")
                 return True
             else:
                 print(f"\n[ERROR] {result.get('message')}")
@@ -3562,7 +3861,8 @@ constants:
         print(f"Variant: {variant}")
 
         try:
-            object_url = get_object_url(object_name, object_type)
+            # Q402: ENHS'te islem='atc' REDDEDILIR (ATC sonucu yokluktan ayirt edilemez — olculdu)
+            object_url = get_object_url(object_name, object_type, islem='atc')
             result = self.adt_client.run_atc_check(object_url, variant=variant)
             return result
         except Exception as e:

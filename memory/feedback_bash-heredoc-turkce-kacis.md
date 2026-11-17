@@ -23,7 +23,14 @@ uygulama motordan bağımsız olarak güvenlidir.
 - Düzeltmeyi dosyayı yeniden okuyup ölçerek doğrula ([[yesil-sinyal-kapsamini-sor]]).
 - Deneme betiği türetiyorsan önce eskisini sil, koşmadan önce gerçek yolu taşımadığını kontrol et, gerçek dosyanın hash'ini
   önce/sonra ölç.
+- **4. vaka — regex kelime sınırı dosyaya kontrol baytı olarak girdi:** heredoc'la koşan bir düzenleme betiğinde `r'\\b'`
+  hedef `.py` dosyasına `0x08` (backspace) olarak yazıldı. Regex hiç eşleşmedi, fonksiyon "0 kayıt" döndü; ekranda
+  görünmez, `edit` aracı da o satırı eşleştiremez. Kod dosyası kabuk üzerinden düzenlendiyse `tr -cd '\010' < <dosya> | wc -c`
+  0 olmalı; bağımsız incelemeye de bu bayt sayımını ekle.
+- **5. vaka — kabuk test vektörü sessizce bozuldu:** heredoc'taki Python'da tek tırnak kaçışı (`'it'\''s'`) yazıldı, komut
+  kaçışsız `'it'''s'` oldu. Sonuç iki kez yanlış okundu ("düzeltme çalışmıyor", sonra "regresyon"). Kabuk vektörü üretirken
+  ters bölüyü `chr(92)` ile kur, ölçüm tablosuna üretilen komutun kendisini de bas ve sonuca bakmadan önce vektörü doğrula.
 Önceki kayıt: yok (aranan: `memory/`, `core/` — heredoc, mojibake, kaçış, `python -c`; yakın ama farklı:
 [[powershell-bom-ve-tirnak]] PowerShell BOM ve tırnak sınıfı, çekirdek "Kabuk ortamı" maddesi çıktı kodlaması)
-Son-doğrulama: 2026-09-25 (ekip dersinden uyarlandı; aXet'in `bash` aracında ölçülmedi)
-Applies-to: tüm projeler — kabuk aracıyla dosya yazan ya da betik koşan iş, Windows
+Son-doğrulama: 2026-11-17 (ekip dersinden uyarlandı, 4. ve 5. vaka eklendi; aXet'in `bash` aracında ölçülmedi)
+Applies-to: tüm projeler — kabuk aracıyla dosya yazan ya da betik koşan iş, kabuk test vektörü üretimi, Windows

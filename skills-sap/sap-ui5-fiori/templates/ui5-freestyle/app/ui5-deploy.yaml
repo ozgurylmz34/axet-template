@@ -1,0 +1,26 @@
+# Deploy YALNIZ kanonik yoldan: python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/deploy_ui.py (references/deploy-and-local-run.md §3) — yalın `fiori deploy` YASAK.
+# Hedef URL .conn_adt'deki ADT_SAP_URL ile BİREBİR olmalı (references/app-skeleton.md §6).
+specVersion: "4.0"
+metadata:
+  name: com.example.alan.uygulama
+type: application
+builder:
+  resources:
+    excludes:
+      - /test/**
+      - /localService/**
+  customTasks:
+    - name: deploy-to-abap
+      afterTask: generateCachebusterInfo
+      configuration:
+        ignoreCertErrors: true
+        target:
+          url: https://<DEV_HOST>:<PORT>
+          client: "<CLIENT>"
+        app:
+          name: <BSP_ADI>
+          description: <UYGULAMA_ACIKLAMASI>
+          package: <SAP_PAKET>
+          transport: <TRANSPORT_NO>
+        exclude:
+          - /test/

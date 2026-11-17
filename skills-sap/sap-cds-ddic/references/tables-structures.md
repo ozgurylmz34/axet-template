@@ -172,7 +172,11 @@ define table zsd001_t_order {
 3. CURR → CUKY: `@Semantics.amount.currencyCode : '<tablo>.<alan>'` + CUKY alanında `@Semantics.currencyCode : true`.
    QUAN → UNIT: `@Semantics.quantity.unitOfMeasure : '<tablo>.<alan>'` + UNIT alanında `@Semantics.unitOfMeasure : true`.
    Referans **nitelenmiş** (`'tablo.alan'`) olmalı; yalnız `'waers'` → `annotation uncomplete`. Annotation adları büyük/küçük harf duyarlı.
-   Referans alanı aynı tabloda olmalı.
+   Referans alanı çoğunlukla aynı tablodadır (alan yoksa BLOCKER). **Başka tabloya nitelenmiş başvuru da geçerlidir** — SAP
+   kabul eder (standart KONP: `KBETR` → `RV13A-KONWA`, `PKWRT` → `T001-WAERS`); boş tablo kısmı (`'.waers'`) nitelenmiş sayılmaz.
+   Başvurulan her **yerel** alan (Z'li DTEL'li ya da yerleşik `abap.cuky`) `@Semantics.currencyCode : true` ister. Koşul kaydı
+   DTEL'leri: `konwa`/`konws` = CUKY (tutar → `unit_kind:"currency"`), `kmein`/`konms` = UNIT; referans alanı bunlardan biriyse
+   tutar alanını miktar sanma (önceki üretici `quantity` + uyarı veriyordu → yanlış annotation).
 4. Tip referansları küçük harf (`mandt`, `zsd001_e_ordno`); standart DTEL doğrudan adıyla (`vkorg`, `kunnr`, `ernam`).
 5. **Namespace'li DTEL tırnaksız küçük harf:** `hu_ident : /scwm/de_huident;`. Tek tırnaklı yazım (`'/SCWM/DE_HUIDENT'`) sessizce düşer:
    push "activated" der, "Active source differs from uploaded content" uyarısı çıkar ve **alan tabloya eklenmez** → readback şart.

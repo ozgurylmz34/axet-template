@@ -11,7 +11,7 @@
 | `"LS" was already declared with the type "%_##OSQLC_…"` / FOR değişkeni tip çakışması | sınıf/program | `classes.md` §4 |
 | "maximum possible number of places … 34 places" (`SUM` tutar) | sınıf/program | `classes.md` §4 |
 | Test include'u boş, `adt_unit_run method_count:0` | sınıf | `classes.md` §5 |
-| Aktivasyon sonrası ilk `adt_unit_run` `method_count:0`, test include'u DOLU | sınıf | `classes.md` §5 (sahte sıfır: kontrol grubu + 2. koşu) |
+| Aktivasyon sonrası ilk `adt_unit_run` `method_count:0`, test include'u DOLU | sınıf · fonksiyon grubu | `classes.md` §5 (sahte sıfır: kontrol grubu → ≥4 dk → 2. koşu → yeniden aktivasyon) |
 | `MOVE_TO_LIT_NOTALLOWED_NODATA` / `CX_SY_DYN_CALL_ILLEGAL_TYPE` "field is at least partly protected against changes" | sınıf/program | aşağıda "Sorted/hashed satır CHANGING'e bağlanmaz" |
 | `MESSAGE E005(FDT_EXCEL_CORE)` — `CL_FDT_XL_SPREADSHEET` program dışı üretilmiş xlsx'i okumuyor | sınıf/program | aşağıda "`CL_FDT_XL_SPREADSHEET` ve mutlak ilişki yolu" |
 | Uzun metin (READ_TEXT) kolonu boş — kod mu veri mi? | sınıf/program | aşağıda "Uzun metin boş mu: `STXL-CLUSTR`" |

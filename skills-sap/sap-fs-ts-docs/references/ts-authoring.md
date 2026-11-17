@@ -4,6 +4,12 @@
 > kodlayabilmelidir. **FS olmadan TS yazılmaz.** Şablon: `templates/TS-template.md` · İnceleme: `doc-checklist.md` §C + §D ·
 > Build öncesi: `live-confirmation-tour.md`.
 
+> **SIRA (yeni geliştirme — build başlamadan önce sorulur):** FS onayı → **TS** → build → bağımsız inceleme → SAP yazımı.
+> Build'i yapan adım/oturum TS'i **girdi** olarak alır (yol + sürüm); TS yoksa ya da FS'in son sürümüne hizalı değilse önce TS turu.
+> **TS'i kodlayan yazmaz** — taze bağlamla (ayrı oturum/ajan) FS + değişiklik öncesi kod + canlı sistemden yazılır; kodlayanın TS'i
+> tasarımı değil yazdığı kodu belgeler. "Doküman donmuş kod ister" kuralı yalnız build SONRASI belge turları (KD, görsel, PDF,
+> TS hizalaması) içindir; tasarım TS'ini ertelemez. *(Ekip vakası: brife "kod donduktan sonra TS hizalaması" yazıldı, build TS'siz koştu.)*
+
 ## 1. Yazım zihniyeti — geliştirici gözü (önce oku)
 TS'i **bu TS'le sen build edeceksin** gibi yaz. Satır 1'den önce geliştiricinin soracağı her soruyu şimdi cevapla.
 

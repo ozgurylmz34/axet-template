@@ -262,6 +262,41 @@ def adt_transport_list(user: str | None = None) -> dict:
 # adt_where_used  (gap-analysis #10)
 # =============================================================================
 
+# Kaynak çekirdek #434 (2026-11-15): merkezi `object_types.OBJECT_TYPES`'ta BDEF girdisi YOK ⇒
+# `get_object_url(..., 'bdef')` "Unsupported object type" verir ve where-used hiç koşmaz.
+# Kaynakta ölçüldü (salt-okur, bir müşteri sisteminde): BDEF ucu `/sap/bc/adt/bo/behaviordefinitions/<ad>`
+# usageReferences'ı DESTEKLER (projeksiyon BDEF + davranış havuzu sınıfı döner) ve varlık sondası
+# (`get_object_structure`) var=200 / yok=404 ayırır. aXet'ten canlı ÖLÇÜLMEDİ. Eşleme BİLEREK yalnız bu
+# araçta ve yalnız `bdef` için: `OBJECT_TYPES`'a girdi eklemek push/aktivasyon/pull/iskelet yollarının da
+# tip kümesini değiştirir (geniş etki, ayrı iş). `adt_impact_analysis` bu eşlemeyi KULLANMAZ.
+# ⚠ Ölçülen yanıt BDEF'in KENDİSİNİ de bir referans olarak içerir (2/2 BDEF); süzülmez — `count` bu
+# satırı da sayar.
+_WHERE_USED_DAR_UC = {"bdef": "bo/behaviordefinitions"}
+
+
+def _where_used_dar_url(name: str, object_type: str) -> str | None:
+    """`bdef` için where-used ucu; diğer her tip için None (merkezi tabloya düşer)."""
+    yol = _WHERE_USED_DAR_UC.get((object_type or "").strip().lower())
+    if yol is None:
+        return None
+    from utils.ad_politikasi import url_segmenti  # type: ignore  # /NS/ → %2Fns%2F…
+    return f"/sap/bc/adt/{yol}/{url_segmenti(name)}"
+
+
+def _dar_url_var_mi(client, url: str) -> bool:
+    """`SAPClient.object_exists` ile AYNI sözleşme (yalnız 404 = yok; 401/403/500 yükselir)."""
+    from sap_adt_lib import SAPADTError, SAPObjectNotFoundError  # type: ignore
+    try:
+        client.adt_client.get_object_structure(url)
+        return True
+    except SAPObjectNotFoundError:
+        return False
+    except SAPADTError as e:
+        if getattr(e, "status_code", None) == 404:
+            return False
+        raise
+
+
 @profil_tool()
 def adt_where_used(name: str, object_type: str = "class") -> dict:
     """Where-used: bir Z objeyi referanslayan objeleri listele (read-only).
@@ -271,7 +306,9 @@ def adt_where_used(name: str, object_type: str = "class") -> dict:
 
     Args:
         name: Obje adı (Z*/Y* veya standart — okuma serbest).
-        object_type: ADT tipi ('class', 'ddls', 'dtel', 'doma', 'tabl', 'intf', 'prog', ...).
+        object_type: ADT tipi ('class', 'ddls', 'dtel', 'doma', 'tabl', 'intf', 'prog',
+            'bdef', ...). 'bdef' yalnız bu araçta: /bo/behaviordefinitions ucu (yanıt BDEF'in
+            kendisini de bir referans olarak içerir; count onu da sayar).
 
     Returns:
         {ok, name, type, count, references: [{name, type, uri, description}], client_log}
@@ -295,7 +332,10 @@ def adt_where_used(name: str, object_type: str = "class") -> dict:
 
         with _capture() as buf:
             fm = None
-            if is_function_module_type(object_type):
+            dar_url = _where_used_dar_url(name, object_type)
+            if dar_url is not None:
+                varlik = _dar_url_var_mi(client, dar_url)
+            elif is_function_module_type(object_type):
                 fm = client.resolve_function_module(name)
                 varlik = fm.get("status") == "found"
             else:
@@ -315,7 +355,8 @@ def adt_where_used(name: str, object_type: str = "class") -> dict:
                 if fm is not None:
                     yok["probe"] = fm.get("probe")
                 return yok
-            url = fm["uri"] if fm is not None else get_object_url(name.upper(), object_type)
+            url = (dar_url if dar_url is not None
+                   else fm["uri"] if fm is not None else get_object_url(name.upper(), object_type))
             refs = client.adt_client.where_used(url)
         from sap_client import where_used_paket_ayir  # type: ignore
         objeler, paketler = where_used_paket_ayir(refs)
@@ -374,14 +415,26 @@ def adt_atc_check(name: str, object_type: str = "class",
 
     Returns:
         {ok, name, type, variant, finding_count, findings: [...], client_log}
+        ENHS (BAdI spot) → `atc_kapsam_disi` (istek GÖNDERİLMEZ): SAP spot için `FINDING_STATS 0,0,0` + boş obje
+        listesi döndürür ve bu sonuç VAR OLMAYAN objeninkiyle aynıdır (kaynak çekirdek canlı ölçümü 2026-11-11) —
+        "0 bulgu" temizlik kanıtı olamaz; ATC'yi BAdI arabirimi/sınıflarında koş.
     """
+    # Kaynak çekirdek #415 (9b38ab6): işlem-izinli tipte (ENHS) ATC kapsam dışı — ölçülemedi ≠ temiz.
+    try:
+        from object_types import islem_reddi  # type: ignore
+        _ret = islem_reddi(object_type, "atc")
+    except Exception:  # noqa: BLE001 — karar get_object_url'de yeniden verilir (fail-closed)
+        _ret = None
+    if _ret:
+        return {"ok": False, "error": "atc_kapsam_disi", "name": name, "type": object_type,
+                "finding_count": None, "message": _ret}
     client = _get_client()
     try:
         if variant is None:
             from sapadt._conn import get_atc_variant
             variant = get_atc_variant()
         from object_types import get_object_url  # type: ignore
-        url = get_object_url(name.upper(), object_type)
+        url = get_object_url(name.upper(), object_type, islem="atc")
         with _capture() as buf:
             res = client.adt_client.run_atc_check(url, variant=variant, max_verdicts=max_verdicts)
         findings = res.get("findings", []) if isinstance(res, dict) else (res or [])
@@ -872,6 +925,9 @@ def adt_sql_query(
             "total_rows": data.get("total_rows") if isinstance(data, dict) else None,
             # KESİN (sonda satırı): row_limit+1 istendi, row_limit'ten FAZLA satır geldi ⇒ kırpıldı.
             "truncated": _kirpik,
+            # SAP `dp:queryExecutionTime` — BİRİM MİLİSANİYE (kaynak çekirdek 2fd6e11, canlı ölçüm: değer 24.407 iken
+            # duvar saati 0.224 s). Sunucu tarafı sorgu süresi; ağ/istemci süresi dahil değil. Alan yoksa None.
+            "execution_time_ms": data.get("execution_time_ms") if isinstance(data, dict) else None,
             "rows": rows_labeled,
             "client_log": log,
         }
@@ -2341,7 +2397,7 @@ def adt_unit_run(name: str, object_type: str = "class",
 # =============================================================================
 
 @profil_tool()
-def adt_lock_check(name: str, object_type: str = "class") -> dict:
+def adt_lock_check(name: str, object_type: str = "class", group: str | None = None) -> dict:
     """Bir SAP objesinin kilitli olup olmadığını sorgula — salt-okuma (GET /adt/locks).
 
     ⚠ ESKİ SÜRÜM KİLİT TESPİTİ YAPAMIYORDU (2026-08-01 KAYIT-K3): strateji
@@ -2359,14 +2415,67 @@ def adt_lock_check(name: str, object_type: str = "class") -> dict:
 
     Args:
         name: Obje adı.
-        object_type: ADT tipi ('class', 'doma', 'dtel', 'tabl', 'ddls', ...).
+        object_type: ADT tipi ('class', 'doma', 'dtel', 'tabl', 'ddls', ..., 'fugr_include').
+        group: Q383 — YALNIZ object_type='fugr_include' (eşanlamlı 'fugr-include'/'fugr/i') için
+            ZORUNLU fonksiyon grubu; yoksa `group_required`, başka tipte `group_not_applicable` (ağa
+            gidilmez). ÖNCE grup kanıtı (`programs/includes` contextRef) alınır — tutmazsa
+            `fugr_group_unverified`, kilit ucu SORULMAZ; sonra sonda FUGR/I URL'iyle koşar.
 
     Returns:
         {ok, name, type, locked: bool|null, lock_owner?, exists: bool, client_log}
         `locked: null` = ÇÖZÜLEMEDİ (kanıt yok). Bu bir "hayır" değildir.
     """
     from sapadt.tools.atom import _miss_or_unreachable  # tek-kaynak sınıflandırıcı
+    from sapadt.tools.atom import _fugr_include_mi
+    fugr_inc = _fugr_include_mi(object_type)
+    if not fugr_inc and (group or "").strip():
+        return {"ok": False, "error": "group_not_applicable", "name": name, "type": object_type,
+                "locked": None, "message": "group parametresi yalnız object_type='fugr_include' "
+                                           f"ile kullanılır (verilen tip: {object_type}). SAP'ye gidilmedi."}
+    if fugr_inc and not (group or "").strip():
+        return {"ok": False, "error": "group_required", "name": name, "type": object_type,
+                "locked": None, "message": "object_type='fugr_include' için group (fonksiyon "
+                                           "grubu) ZORUNLU — grup include adından türetilmez. SAP'ye gidilmedi."}
     client = _get_client()
+
+    # ── Q383: FUGR/I — varlık + grup KANITI (salt-okur), sonda FUGR/I URL'iyle ────────────
+    # Bu araç SALT-OKURDUR: kilit ALMAZ/BIRAKMAZ; sonda aynı `is_object_locked` (GET /adt/locks).
+    if fugr_inc:
+        try:
+            with _capture() as buf:
+                dogrulama = client.fugr_include_grubunu_dogrula(name, group)
+            log = buf.getvalue().strip()
+        except Exception as exc:  # noqa: BLE001 — ölçülemedi = fail-closed
+            dogrulama, log = {"ok": False, "sebep": f"{type(exc).__name__}: {str(exc)[:120]}"}, ""
+        if not (isinstance(dogrulama, dict) and dogrulama.get("ok") is True):
+            sebep = dogrulama.get("sebep") if isinstance(dogrulama, dict) else type(dogrulama).__name__
+            return {"ok": False, "error": "fugr_group_unverified", "name": name,
+                    "type": object_type, "locked": None,
+                    "message": f"FUGR include grup doğrulaması BAŞARISIZ ({sebep}); "
+                               f"istenen grup {(group or '').strip().upper()}. Kilit ucu SORULMADI "
+                               f"— 'kilitli değil' ANLAMINA GELMEZ.",
+                    "client_log": log}
+        adt = getattr(client, "adt_client", None)
+        bilgi = None
+        try:
+            if adt is not None and hasattr(adt, "is_object_locked"):
+                with _capture() as buf2:
+                    bilgi = adt.is_object_locked(dogrulama["object_url"])
+                log = (log + "\n" + buf2.getvalue().strip()).strip()
+        except Exception as exc:  # noqa: BLE001
+            log = (log + f"\n[ERROR] kilit sondası: {exc}").strip()
+        if not isinstance(bilgi, dict):
+            sebep = getattr(adt, "_last_lock_check_reason", None)
+            return {"ok": False, "error": "kilit_belirsiz", "name": name, "type": object_type,
+                    "exists": True, "locked": None, "reason": sebep,
+                    "message": ("Kilit durumu ÇÖZÜLEMEDİ (FUGR/I URL'iyle GET /sap/bc/adt/locks"
+                                + (f"; sonda sonucu: {sebep}" if sebep else "")
+                                + "). Bu sonuç 'kilitli DEĞİL' ANLAMINA GELMEZ — SM12 ile doğrula."),
+                    "client_log": log}
+        return {"ok": True, "name": name, "type": object_type, "exists": True,
+                "locked": bool(bilgi.get("locked")), "lock_owner": bilgi.get("lock_owner"),
+                "client_log": log}
+
     try:
         from sap_adt_lib import SAPLockError, SAPObjectNotFoundError  # type: ignore
     except ImportError:
@@ -2403,7 +2512,7 @@ def adt_lock_check(name: str, object_type: str = "class") -> dict:
         from object_types import get_object_url  # type: ignore
         if adt is not None and hasattr(adt, "is_object_locked"):
             with _capture() as buf2:
-                bilgi = adt.is_object_locked(get_object_url(name, object_type))
+                bilgi = adt.is_object_locked(get_object_url(name, object_type, islem="kilit"))
             log = (log + "\n" + buf2.getvalue().strip()).strip()
     except Exception as exc:                                   # sonda kurulumu bile başarısızsa
         log = (log + f"\n[ERROR] kilit sondası: {exc}").strip()

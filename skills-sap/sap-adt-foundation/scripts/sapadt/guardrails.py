@@ -7,7 +7,7 @@ Reference: governance/decisions/0005-sap-standart-obje-koruma-ve-sistem-state-ya
 ADR:       governance/decisions/0007-sap-adt-mcp-server.md §Server-Side Guardrails
 
 Implementation status:
-- v1 (Task #4): Z/Y prefix check, transport non-empty, basic TR text presence
+- v1 (Task #4): Z/Y prefix check (2026-11-17: + bildirilmiş /<NS>/ — ad_politikasi), transport non-empty, basic TR text presence
 - v2 (Task #7): Full TR character validation, 4-label completeness, std object delete reject
 """
 from __future__ import annotations
@@ -34,39 +34,39 @@ class GuardrailViolation(Exception):
         }
 
 
-# Customer namespace: Z or Y prefix
-_CUSTOMER_PREFIX = re.compile(r"^[ZY][A-Z0-9_]*$", re.IGNORECASE)
-# Lock objeleri (ENQU) ZORUNLU E-prefix alır (E + customer namespace, örn. EZDEMO0_X) —
-# bu da MEŞRU customer-namespace'tir, standart obje DEĞİL (SAP konvansiyonu, ADR 0005-A istisnası).
-_LOCK_TYPES = {"enqu", "lock", "lockobject", "lockobjects"}
-_LOCK_PREFIX = re.compile(r"^E[ZY][A-Z0-9_]*$", re.IGNORECASE)
+# Müşteri ad alanı kararı TEK KAYNAKTADIR: `lib/utils/ad_politikasi.py` (ADR 0005 A-EK).
+# Z/Y · kilit nesnesi (ENQU) için E+Z/Y · projede `sap-project.json` `customer_namespaces` ile bildirilmiş
+# `/<NS>/`. Desenler (`\Z`) ve fail-closed yapılandırma kuralları orada; burada yeniden YAZILMAZ.
+# (`sapadt` import'u `lib/`i sys.path'e ekler — bkz. sapadt/__init__.py.)
+from utils import ad_politikasi as _ad  # noqa: E402
+
+_LOCK_TYPES = _ad.KILIT_TIPLERI
 
 
-def _is_customer_namespace(name: str, object_type: str | None = None) -> bool:
-    """Z/Y customer namespace mi? Lock objeleri (ENQU) için E+Z/Y de meşrudur."""
-    if not name:
-        return False
-    if _CUSTOMER_PREFIX.match(name):
-        return True
-    if object_type and object_type.lower() in _LOCK_TYPES and _LOCK_PREFIX.match(name):
-        return True  # lock objesi: E + Z/Y (örn. EZDEMO0_LOCK)
-    return False
+def _is_customer_namespace(name: str, object_type: str | None = None, *, root=None) -> bool:
+    """Müşteri ad alanı mı? (Z/Y · ENQU için E+Z/Y · bildirilmiş `/<NS>/`) — `ad_politikasi`."""
+    return _ad.musteri_adi_mi(name, object_type, root=root)
 
 
-def require_customer_namespace(name: str, *, what: str = "object", object_type: str | None = None) -> None:
+def require_customer_namespace(name: str, *, what: str = "object", object_type: str | None = None,
+                               root=None) -> None:
     """ADR 0005 §A: standart obje yaratma/değiştirme yasak.
 
-    Customer namespace (Z/Y prefix; lock objeleri için E+Z/Y) zorunlu.
+    Müşteri ad alanı zorunlu: Z/Y önek (lock objeleri için E+Z/Y) ya da projede `customer_namespaces` ile
+    bildirilmiş namespace (`/<NS>/…`; ADR 0005 A-EK). `root`: namespace listesinin okunacağı proje kökü
+    (bağlantı dosyasının dizininden farklıysa namespace kabulü kapalıdır — fail-closed).
     """
     if not name:
         raise GuardrailViolation(
             "ADR_0005_A",
             f"{what} adı boş olamaz",
         )
-    if not _is_customer_namespace(name, object_type):
+    if not _is_customer_namespace(name, object_type, root=root):
         raise GuardrailViolation(
             "ADR_0005_A",
-            f"Standart obje yaratma yasak — {what} '{name}' Z/Y (lock için E+Z/Y) ile başlamalı (customer namespace)",
+            f"Standart obje yaratma yasak — {what} '{name}' Z/Y (lock için E+Z/Y) ya da projede "
+            f"bildirilmiş müşteri namespace'i (/<NS>/) ile başlamalı (customer namespace)"
+            f"{_ad.red_gerekcesi(name, root=root)}",
             name=name,
         )
 
@@ -144,12 +144,13 @@ def require_label_lengths(labels: dict) -> None:
         )
 
 
-def reject_standard_delete(name: str, object_type: str | None = None) -> None:
-    """ADR 0005 §A: standart obje delete yasak. Lock objeleri (ENQU) E+Z/Y meşru."""
-    if not _is_customer_namespace(name or "", object_type):
+def reject_standard_delete(name: str, object_type: str | None = None, *, root=None) -> None:
+    """ADR 0005 §A: standart obje delete yasak. Lock objeleri (ENQU) E+Z/Y ve bildirilmiş /<NS>/ meşru."""
+    if not _is_customer_namespace(name or "", object_type, root=root):
         raise GuardrailViolation(
             "ADR_0005_A",
-            f"Standart obje sil yasak — '{name}' Z/Y (lock için E+Z/Y) ile başlamıyor",
+            f"Standart obje sil yasak — '{name}' Z/Y (lock için E+Z/Y) ya da bildirilmiş "
+            f"müşteri namespace'i ile başlamıyor{_ad.red_gerekcesi(name or '', root=root)}",
             name=name,
         )
 

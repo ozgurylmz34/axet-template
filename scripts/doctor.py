@@ -1318,6 +1318,44 @@ def check_paketler(sap: bool) -> None:
         "tıkla); olmazsa BT için elle kurulum komutu (sen çalıştırma): " + inst.elle_kurulum_komutu(specler))
 
 
+def check_ajanlar(sap: bool) -> None:
+    """Özel aXet ajanları (`agents/sap-*.md` → kullanıcı ajan dizini, aXet.code ≥ 1.5.1) kurulu ve güncel mi.
+    SALT-OKUNUR: yazmaz (kurulum install.py; her %guncelle `install.py --paketler` ile eşitler). SAP kapalıysa INFO."""
+    try:
+        import ajan_kurulum as ak
+        plan = ak.planla(sap=True)
+    except Exception as exc:  # noqa: BLE001 — teşhis
+        add("WARN" if sap else "INFO", f"özel ajanlar: ÖLÇÜLEMEDİ ({type(exc).__name__}: {exc})")
+        return
+    if sap and not ak.KAYNAK_DIZIN.is_dir():
+        # R3 bug gate F3: kısmi güncellemede şablonun `agents/` klasörü yoksa plan bilerek boştur (kurulu ajanlara
+        # dokunulmaz) — sessiz kalmak "ölçüldü, sorun yok" gibi okunur.
+        add("WARN", f"özel ajanlar: ÖLÇÜLEMEDİ — şablonda {ak.KAYNAK_DIZIN.name}/ klasörü yok (yarım güncelleme?) → "
+            "aXet'te %guncelle yaz")
+        return
+    if not plan:
+        return
+    dizin = ak.ajan_dizini()
+    cakisma = [e.hedef.name for e in plan if e.tur == "cakisma"]
+    eksik = [e.hedef.name for e in plan if e.tur in ("yaz", "guncelle")]
+    emekli = [e.hedef.name for e in plan if e.tur == "sil"]
+    if not sap:
+        kurulu = [e.hedef.name for e in plan if e.tur in ("ayni", "guncelle")]
+        add("INFO", f"özel ajanlar: SAP paketi kapalı ({'kurulu: ' + ', '.join(kurulu) if kurulu else 'kurulu değil'})")
+        return
+    if cakisma:
+        add("WARN", f"özel ajanlar: {dizin} içinde aynı adlı KULLANICI ajanı var, şablon sürümü kurulmadı: "
+            + ", ".join(cakisma) + " (bilinçliyse sorun yok)")
+    if eksik:
+        add("WARN", f"özel ajanlar eksik ya da eski: {', '.join(eksik)} → aXet'te %guncelle yaz (ya da "
+            "python scripts/install.py)")
+    if emekli:
+        add("WARN", f"özel ajanlar: şablonda artık olmayan (emekli) ajan kurulu: {', '.join(emekli)} → aXet'te "
+            "%guncelle yaz (ya da python scripts/install.py) — işaretli kopyalar kaldırılır")
+    if not eksik and not cakisma and not emekli:
+        add("PASS", f"özel ajanlar güncel ({sum(e.tur == 'ayni' for e in plan)}): {dizin}")
+
+
 GIT_KIMLIK_KAPSAM = ("yalnız tanımsızlık ölçülür; tanımlı adresin doğruluğu ya da türetilmiş olup olmadığı "
                      "yargılanmaz · remote yalnız bulunulan repoda ölçülür · GIT_AUTHOR_*/GIT_COMMITTER_* ortam "
                      "değişkenlerine bakılmaz")
@@ -1618,6 +1656,7 @@ def main() -> int:
         check_ps_politika()
         check_git_kimlik(cwd)
         check_paketler(sap or (cwd / "sap-project.json").exists())
+        check_ajanlar(sap)
         check_tarayici()
         if args.live:
             check_live(sap, cwd)
@@ -1636,6 +1675,8 @@ def main() -> int:
               "SAP Python paketleri yalnız ZORUNLU liste (install.ZORUNLU_PAKETLER) için ve yalnız bu yorumlayıcıda "
               "import edilerek ölçülür — sürüm alt sınırı ve isteğe bağlı skill paketleri (python-docx/pptx, openpyxl, "
               "markdown, Pillow) denetlenmez · "
+              "özel ajanlar yalnız dosya düzeyinde (kurulu kopya = şablon kaynağı) ölçülür — aXet'in onları fiilen "
+              "yüklediği (`axet-code agent list`) ve proje ajanlarının (.axet-code/agents) aynı adla ezmesi bakılmaz · "
               "skill yorumlayıcısı (`python`) yalnız doctor sürecinin PATH'iyle çözülür — aXet kabuğunun PATH'i "
               "ölçülmez · "
               "PowerShell yürütme politikası yalnız Windows PowerShell 5.1 kayıt defterinden okunur (pwsh 7 ve süreç "

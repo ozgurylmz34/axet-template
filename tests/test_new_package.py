@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import date
 
-from _helpers import GeciciTest
+from _helpers import AXET_HOME, SCRIPTS, GeciciTest
 
 
 class NewPackageTest(GeciciTest):
@@ -81,6 +82,112 @@ class NewPackageTest(GeciciTest):
         (d / "SOURCE_CODES" / "PAKETLER.md").write_text("# eski\n", encoding="utf-8")
         r = self.calistir("new_package.py", "--index", "--check", "--project-dir", str(d))
         self.assertEqual(r.returncode, 1, self.cikti(r))
+
+
+# --- Müşteri namespace'i (kesin yasak A'nın müşteri ad alanı tanımı) ------------------------------------------
+# Karar SAP paketindeki ad politikası modülünde; proje `sap-project.json` → `customer_namespaces` ile bildirir.
+# Modül bildirimi yalnız bağlantı dosyasının dizinindeki projeye uygular → testte proje köküne İÇERİKSİZ bir
+# `.conn_adt` konur (kimlik bilgisi yok; modül yalnız varlığına bakar) ve betik proje dizininde koşar.
+class NamespacePaketTest(GeciciTest):
+    NS_PAKET = "/NSPC/SD001_CLC"
+
+    def ns_proje(self, namespaces=("/NSPC/",), baglanti: bool = True):
+        d = self.proje(sap=True, git_init=False)
+        f = d / "sap-project.json"
+        veri = json.loads(f.read_text(encoding="utf-8"))
+        if namespaces is not None:
+            veri["customer_namespaces"] = list(namespaces)
+        f.write_text(json.dumps(veri, indent=2, ensure_ascii=False), encoding="utf-8")
+        if baglanti:
+            (d / ".conn_adt").write_text("", encoding="utf-8")
+        return d
+
+    def kur(self, d, ad=None, *ek):
+        return self.calistir("new_package.py", ad or self.NS_PAKET, "--title", "x", *ek, "--project-dir", str(d),
+                             cwd=d)
+
+    def test_bildirilmis_namespace_paketi_kurulur(self):
+        d = self.ns_proje()
+        r = self.kur(d)
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        pkg = d / "SOURCE_CODES" / "SD" / "#nspc#sd001_clc"
+        self.assertTrue(pkg.is_dir(), self.cikti(r))
+        kural = (pkg / ".rules.md").read_text(encoding="utf-8")
+        self.assertIn("`^/NSPC/SD001_T_[A-Z0-9_]+$`", kural)
+        self.assertIn("`^/NSPC/CL_SD001_[A-Z0-9_]+$`", kural)
+        self.assertIn("Lock object (**DOĞRULANMADI**", kural)
+        self.assertNotRegex(kural, r"\{[A-Z_]+\}")
+        # sürücü köküne / proje dışına klasör açılmadı
+        self.assertFalse((d / "SOURCE_CODES" / "SD" / "NSPC").exists())
+        # ad kuralı denetimi namespace'li adla paketi bulur
+        r2 = self.calistir("check_package_naming.py", "--package", self.NS_PAKET, "--project-dir", str(d))
+        self.assertEqual(r2.returncode, 0, self.cikti(r2))
+        # ikinci kez → zaten var
+        self.assertEqual(self.kur(d).returncode, 1)
+
+    def test_bildirilmemis_namespace_red(self):
+        """SAP'nin kendi namespace'i ve listede olmayan namespace standarttır → klasör YOK."""
+        d = self.ns_proje()
+        for ad in ("/SCWM/SD001", "/OTHR/SD001_CLC"):
+            r = self.kur(d, ad)
+            self.assertEqual(r.returncode, 2, f"{ad}: {self.cikti(r)}")
+            self.assertIn("müşteri ad alanında değil", self.cikti(r), ad)
+        self.assertFalse((d / "SOURCE_CODES" / "SD").exists())
+
+    def test_liste_yoksa_ya_da_baglanti_yoksa_red(self):
+        for kw in ({"namespaces": None}, {"baglanti": False}):
+            d = self.ns_proje(**kw)
+            r = self.kur(d)
+            self.assertEqual(r.returncode, 2, self.cikti(r))
+            self.assertIn("müşteri ad alanında değil", self.cikti(r))
+            self.assertFalse((d / "SOURCE_CODES" / "SD").exists())
+            shutil.rmtree(d)
+
+    def test_bozuk_namespace_adi_red(self):
+        d = self.ns_proje()
+        for ad in ("/NSPC/", "/NS/SD001", "/NSPC/SD-001", "/NSPC/SD001/X"):
+            r = self.kur(d, ad)
+            self.assertEqual(r.returncode, 2, f"{ad}: {self.cikti(r)}")
+        self.assertFalse((d / "SOURCE_CODES" / "SD").exists())
+
+    def test_msys_yola_cevrilmis_ad_ipucu_verir(self):
+        """Git Bash `/NSPC/…` argümanını `C:/Program Files/Git/NSPC/…` yapar: red metni MSYS ipucu taşır (aXet tur 8)."""
+        d = self.ns_proje()
+        for ad in ("C:/Program Files/Git/NSPC/SD001_CLC", "C:\\Program Files\\Git\\NSPC\\SD001_CLC"):
+            r = self.kur(d, ad)
+            self.assertEqual(r.returncode, 2, f"{ad}: {self.cikti(r)}")
+            self.assertIn("MSYS_NO_PATHCONV=1", self.cikti(r), ad)
+            self.assertNotIn("büyük harf olmalı", self.cikti(r), ad)
+        self.assertFalse((d / "SOURCE_CODES" / "SD").exists())
+
+    def test_project_dir_ortam_degiskenini_ezer(self):
+        """`--project-dir` verildiyse ad politikasının proje kökü O dizindir; ortamda kalmış eski
+        AXET_SAP_PROJECT_DIR (başka proje) namespace kabulünü kapatmaz (eskiden `setdefault` onu koruyordu)."""
+        d = self.ns_proje()
+        baska = self.tmp / "baska"                    # kendi .conn_adt'si olan BAŞKA proje
+        baska.mkdir()
+        (baska / ".conn_adt").write_text("", encoding="utf-8")
+        self.env["AXET_SAP_PROJECT_DIR"] = str(baska)
+        r = self.kur(d)
+        self.assertEqual(r.returncode, 0, self.cikti(r))
+        self.assertTrue((d / "SOURCE_CODES" / "SD" / "#nspc#sd001_clc").is_dir(), self.cikti(r))
+        self.assertFalse((baska / "SOURCE_CODES" / "SD").exists())
+
+    def test_modul_yoksa_yalniz_zy_kontrol_grubu(self):
+        """SAP paketi kurulu olmayan klon: ad politikası modülü yok → namespace RED, Z/Y aynen çalışır."""
+        kok = self.tmp / "_klon"
+        (kok / "scripts").mkdir(parents=True)
+        shutil.copy2(SCRIPTS / "new_package.py", kok / "scripts" / "new_package.py")
+        shutil.copytree(AXET_HOME / "templates" / "package", kok / "templates" / "package")
+        d = self.ns_proje()
+        yol = kok / "scripts" / "new_package.py"
+        r = self.calistir(yol, self.NS_PAKET, "--title", "x", "--project-dir", str(d), cwd=d)
+        self.assertEqual(r.returncode, 2, self.cikti(r))
+        self.assertIn("ad politikası modülü bulunamadı", self.cikti(r))
+        r2 = self.calistir(yol, "ZSD002", "--title", "x", "--project-dir", str(d), cwd=d)
+        self.assertEqual(r2.returncode, 0, self.cikti(r2))
+        kural = (d / "SOURCE_CODES" / "SD" / "ZSD002" / ".rules.md").read_text(encoding="utf-8")
+        self.assertIn("| Lock object | `EZSD002_*` | `^EZSD002_[A-Z0-9_]+$` |", kural)
 
 
 # --- Z146: sonradan kurulum kipi (--mevcut) -------------------------------------------------------------------

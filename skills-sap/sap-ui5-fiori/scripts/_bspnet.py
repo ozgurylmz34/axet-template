@@ -24,6 +24,7 @@ import hashlib
 import os
 import re
 import ssl
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -35,6 +36,18 @@ PRELOAD = "Component-preload.js"
 ZAMAN_ASIMI = 60
 
 _KV = re.compile(r"^([A-Za-z0-9_.\-]+)\s*:(?:\s+(.*))?$")
+FOUNDATION_SCRIPTS = Path(__file__).resolve().parents[2] / "sap-adt-foundation" / "scripts"
+
+
+def ad_politikasi():
+    """Müşteri ad alanı kararının TEK kaynağı: foundation `sapadt/lib/utils/ad_politikasi.py` (Z/Y · projede
+    `sap-project.json` → `customer_namespaces` ile bildirilmiş `/<NS>/`). Burada desen YENİDEN YAZILMAZ.
+    Yüklenemezse istisna yükselir — çağıran fail-closed davranır (adı reddeder)."""
+    if str(FOUNDATION_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(FOUNDATION_SCRIPTS))
+    import sapadt  # noqa: F401 — import anında `sapadt/lib/`i sys.path'e ekler
+    from utils import ad_politikasi as pol
+    return pol
 
 
 def env_kimlik() -> tuple[str, str] | None:
@@ -73,12 +86,14 @@ def _temiz(v: str) -> str:
     return "" if v in YAML_NULL else v
 
 
-def yaml_duzlestir(metin: str) -> tuple[dict, dict]:
+def yaml_duzlestir(metin: str, yinelenen: set | None = None) -> tuple[dict, dict]:
     """ui5*.yaml için KÜÇÜK alt küme okuyucu → ({"a.b[0].c": skaler}, {"a.b": [liste öğeleri]}).
 
     Desteklenen: girintili eşleme, `- skaler` listesi, `- anahtar: değer` eşleme-listesi, tırnak, satır sonu yorumu,
     tırnaksız null (`null`/`Null`/`NULL`/`~`) ve yalnız-yorum değer (`# ...`) → boş (skaler yazılmaz).
     Desteklenmeyen (yok sayılır): anchor/alias, akış stili `{}`/`[]`, çok satırlı blok metin içeriği.
+    Yinelenen anahtar: sonraki değer öncekini EZER (PyYAML gibi); `yinelenen` kümesi verilirse aynı skaler yolun
+    İKİNCİ yazılışı oraya eklenir — çağıran fail-closed karar verebilsin diye (`deploy_ayari`).
     """
     yigin: list[tuple[int, str]] = []
     skaler: dict[str, str] = {}
@@ -98,7 +113,10 @@ def yaml_duzlestir(metin: str) -> tuple[dict, dict]:
         if not d or d[:1] in "|>" or (d[:1] not in "\"'" and not _temiz(d)):
             yigin.append((ind, anahtar))
         else:
-            skaler[yol([anahtar])] = _temiz(deger)
+            y = yol([anahtar])
+            if yinelenen is not None and y in skaler:
+                yinelenen.add(y)
+            skaler[y] = _temiz(deger)
 
     for ham in metin.splitlines():
         satir = ham.rstrip()
@@ -135,8 +153,9 @@ def deploy_ayari(app_dir: Path) -> dict | None:
     y = Path(app_dir) / "ui5-deploy.yaml"
     if not y.is_file():
         return None
-    sk, ls = yaml_duzlestir(y.read_text(encoding="utf-8-sig", errors="replace"))
-    sonuc = {"gorev": False, "resources_excludes": ls.get("builder.resources.excludes", [])}
+    yinelenen: set = set()
+    sk, ls = yaml_duzlestir(y.read_text(encoding="utf-8-sig", errors="replace"), yinelenen)
+    sonuc = {"gorev": False, "resources_excludes": ls.get("builder.resources.excludes", []), "yinelenen": []}
     for i in range(50):
         if sk.get(f"builder.customTasks[{i}].name") == "deploy-to-abap":
             c = f"builder.customTasks[{i}].configuration"
@@ -149,6 +168,10 @@ def deploy_ayari(app_dir: Path) -> dict | None:
                 "package": sk.get(c + ".app.package", ""),
                 "transport": sk.get(c + ".app.transport", ""),
                 "exclude": ls.get(c + ".exclude", []),
+                # Görev bloğunda (ya da görev adında) yinelenen anahtar: hangi değerin geçerli olduğu belirsiz ⇒
+                # `deploy_ui` bunu İHLAL sayar (fail-closed; fiori aracının hangisini okuduğu ölçülmedi).
+                "yinelenen": sorted(k for k in yinelenen
+                                    if k.startswith(c + ".") or k == f"builder.customTasks[{i}].name"),
             })
             break
     return sonuc
@@ -163,12 +186,33 @@ def sha(b: bytes) -> str:
     return hashlib.sha256(satir_sonu_normalize(b)).hexdigest()
 
 
+def bsp_icf_yolu(bsp: str) -> str:
+    """Canlı BSP'nin ICF yolu (`/` ile biter) — canlı dosya URL'lerinin (`bsp_url`: deploy doğrulaması + statik
+    varlık doğrulaması) TEK kaynağı.
+
+    · Z/Y: `/sap/bc/ui5_ui5/sap/<bsp>/` (önceki tek yol, aynen).
+    · `/NS/APP`: `/sap/bc/ui5_ui5/<ns>/<app>/` — `sap` düğümünün KARDEŞİ olan namespace düğümü.
+      ⚠ Bu yol kaynak çekirdekte tek bir tüketici sisteminde (ilk deploy) ölçüldü; aXet'te namespace'li gerçek
+      bir BSP'ye istek ÖLÇÜLMEDİ.
+    · Eğik çizgili ama namespace biçimine (`/<3-8>/`) uymayan ad → ValueError: `sap` düğümüne düşürmek
+      `…/sap//x/app/` gibi sahte bir yol kurar ve 404 "BSP yok" diye okunur (sessiz yanlış teşhis). Fail-closed.
+    Bildirilmişliğe BAKMAZ (yol kurar; müşteri adı kararı `ad_politikasi.musteri_adi_mi`'dedir)."""
+    ad = str(bsp or "").strip()
+    if "/" not in ad:
+        return f"/sap/bc/ui5_ui5/sap/{ad.lower()}/"
+    ns = ad_politikasi().ad_namespace(ad)
+    govde = ad[len(ns):] if ns else ""
+    if not ns or not govde or "/" in govde:
+        raise ValueError(f"BSP adı ICF yoluna çevrilemez (namespace biçimi /<3-8>/<AD> değil): {bsp!r}")
+    return f"/sap/bc/ui5_ui5/{ns.strip('/').lower()}/{govde.lower()}/"
+
+
 def bsp_url(ayar: dict, rel: str) -> str:
-    """Canlı BSP dosya URL'i (cache-bust parametreli)."""
+    """Canlı BSP dosya URL'i (cache-bust parametreli). Yol `bsp_icf_yolu`'ndan (namespace dalı dahil)."""
     q = f"cb={int(time.time() * 1000)}"
     if ayar.get("client"):
         q = f"sap-client={ayar['client']}&" + q
-    return f"{ayar['url'].rstrip('/')}/sap/bc/ui5_ui5/sap/{ayar['name'].lower()}/{rel}?{q}"
+    return f"{ayar['url'].rstrip('/')}{bsp_icf_yolu(ayar['name'])}{rel}?{q}"
 
 
 def _koken(url: str) -> tuple:

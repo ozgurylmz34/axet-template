@@ -2,6 +2,8 @@
 """new_project.py — iskelet, ezmeme, pre-commit kablolaması, SAP damgası."""
 from __future__ import annotations
 
+import json
+
 from _helpers import AXET_HOME, GeciciTest  # önce: scripts/ yolunu ekler
 import sap_stamp
 
@@ -73,8 +75,11 @@ class NewProjectTest(GeciciTest):
     def test_sap_damga_ve_bozuk_damga(self):
         d = self.proje(sap=True)
         self.assertTrue((d / "sap-project.json").is_file())
+        # müşteri namespace bildirimi: anahtar boş listeyle gelir (= yalnız Z/Y; kullanıcı beyanıyla doldurulur)
+        self.assertEqual(json.loads((d / "sap-project.json").read_text(encoding="utf-8"))["customer_namespaces"], [])
         metin = (d / "AGENTS.md").read_text(encoding="utf-8")
         self.assertEqual(sap_stamp.denetle(metin)[0], "guncel")
+        self.assertIn("Müşteri ad alanı (A'nın tanımı)", metin)
         bozuk = metin + "\n" + sap_stamp.BASLA + "\nkopya\n" + sap_stamp.BITIR + "\n"
         (d / "AGENTS.md").write_text(bozuk, encoding="utf-8")
         r = self.calistir("new_project.py", str(d), "--sap")

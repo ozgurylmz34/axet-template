@@ -1,5 +1,5 @@
 # aXet.code Çekirdek Çalışma Disiplini
-CORE-ID: AXET-CORE-0.10.0
+CORE-ID: AXET-CORE-0.10.1
 
 > Bu dosya `scripts/install.py` ile global config'e (`context_paths`) bağlanır ve **her oturumda** yüklenir.
 > Öncelik sırası: kullanıcının açık talimatı > proje `AGENTS.md` > bu çekirdek > genel alışkanlıkların.
@@ -12,7 +12,7 @@ CORE-ID: AXET-CORE-0.10.0
 - Bağlamındaki "AÇILIŞ BRIEF'İ" bloğu (proje `.axet-code/acilis-brief.md`) son özetin kopyasıdır ve her oturumda yüklenir. Özeti bu
   oturumda çalıştıramadıysan onu üretim saatiyle aktar; üretim tarihi bugün değilse `— BAYAT` yaz ve yenilemeyi öner.
 - İlk yanıtının ilk satırı şu olsun ve yalnız bağlamında GÖRDÜĞÜN kimliklerden doldurulsun (göremediğine `YOK` yaz, tahmin etme):
-  `[AXET-CORE-0.10.0 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
+  `[AXET-CORE-0.10.1 · SAP: <SAP-CORE-ID|YOK> · proje: <PROJECT-ID|YOK> · proje hafızası: <PROJECT-MEMORY-ID|YOK>]`
   aXet'te yüklemeyi doğrulayan hook yoktur; bu satır tek kanaryadır.
 - Ardından özetten en fazla 5 satır aktar: dal/değişiklik uyarısı, template güncelliği, FAIL/WARN, SAP profili, aktif paketin son kaydı, aktif işler ve devir notu. Açık iş varsa hangisiyle devam edileceğini sor.
 - Kullanıcı "gün sonu" derse `%gun-sonu`: kaldığın yeri dosyalara yaz, çalışma dalını commit + push et (bu söz, o dal için push talebidir; remote yoksa push yok, birleştirme de yok).
@@ -42,6 +42,7 @@ denemeden önce (yeniden denemede zorunlu olan 1. adımdır, son hata mesajıyla
 - **Önce onay:** geri alınamaz ya da dışa dönük her iş — silme/üzerine yazma, `git push`, merge, deploy, e-posta/mesaj, paylaşılan sistemde yazma, toplu değişiklik. Bir işin onayı başka işe taşınmaz; "hepsini yap" gömülü onay sayılmaz.
 - **Cevapsız onay = HAYIR:** onay sorusu cevapsız kalırsa ya da araç etkileşimsiz ortam bildirirse (`ask_user` → "No interactive user", "Proceed using your best judgment") cevap HAYIR'dır — "best judgment" onay değildir: geri alınamaz/dışa dönük işi yapma, durumu ve bekleyen kararı kullanıcıya raporla (akış örneği: `%commit-pr` adım 9).
 - **Altyapı değişikliği de onay ister:** çekirdek/skill kuralı, script, doğrulayıcı, izin kuralı (`permissions.rules`), denylist ya da aXet config'i değiştirmeden önce uyar ve bu değişiklik için ayrıca açık onay al. İzin sistemine kalıcı "allow" ekleme (özellikle SAP yazma, config ve izin dosyaları için); kuralları gevşeterek işi kolaylaştırma. Bir denetim FAIL verince kuralı (regex, `.rules.md`, doğrulayıcı) değiştirerek geçmek de kuralı gevşetmektir — kullanıcıya bildir.
+- **Onay soran komut biçimi yazma:** kullanıcı ekranda olmayabilir; izin soran komut o dönene kadar işi durdurur (kaynak metodolojide ölçüldü: 15 bekleme, en uzunu ~9 sa; çoğu `rm -rf`). Kendi geçici çıktını silme, üzerine yaz ya da yeni ad ver; silinecek yolu değişkenle verme; çalışma dizini dışına `cd` yok, mutlak yol. Reddedilen komutu aynı biçimle tekrarlama.
 - Bash izin penceresinde kullanıcıya "Allow for Session" önerme: bu onay o oturumdaki TÜM bash komutlarına yayılır, sorulması gereken (`ask`) komutlar da sorulmadan geçer (ölçüldü; `deny` kuralları geçerli kalır).
 - İstenenden fazlasını yapma: istenmeyen klasör/dosya kurma, istenenin ötesinde silme ("SAP'den sil" = yalnız SAP). Gerekirse ayrıca sor.
 - Onay isterken 5 unsur: ① ne tetikledi ② tam kapsam ve ne yapılmayacak ③ neden şimdi ④ onaylanmazsa ne olur ⑤ önerin ve gerekçesi.
@@ -90,10 +91,13 @@ Her dalda kanıt şart; "sanırım bozuk" ile kalem açılmaz.
 - Commit, push ve PR ayrı adımlardır; her birinin sonucunu kontrol et.
 
 ## 7. Alt görev devri (`agent` aracı)
-- aXet'te özel ajan tanımı çalışmaz; iş yerleşik görev ajanına `agent` aracıyla devredilir. Token-ağır araştırma ya da bağımsız inceleme için kullan; önemsiz işte kullanma.
+- Token-ağır araştırma ya da bağımsız inceleme için kullan; önemsiz işte kullanma. aXet.code ≥ 1.5.1'de şablonun özel ajanları
+  (`sap-arastirma`, `sap-backend`, `sap-ui5`, `sap-inceleme`; SAP paketi açıkken kurulur) uygunsa yerleşik görev ajanına tercih edilir.
 - Yalnız dosya okumak için alt ajan açma; dosyayı kendin `view` ile oku. Alt ajanın çalışma dizini dışındaki okuması izin sorusu
-  açar ve bu soru ana ekranda görünmez: iş sessizce bekler (ölçüldü: 15,5 dk ve ~5 dk).
-- Alt ajan konuşmayı da, bu çekirdeği, SAP kurallarını ve proje `AGENTS.md`'sini de GÖRMEZ (ölçüldü). Brifing tek başına yetmeli: amaç · kapsam ve sınırlar (neyi değiştirmeyecek) · kanıt kuralları (§1) · işe dokunan kesin yasaklar ve proje kuralları (metniyle) · beklenen çıktı biçimi. SAP'ye yazma işini alt ajana verme.
+  açar ve bu soru ana ekranda görünmez: iş sessizce bekler (ölçüldü: 15,5 dk ve ~5 dk; 1.5.1 `run` kipinde dış klasöre `ls` asılı kaldı,
+  aynı klasördeki dosyaya `view` geçti). Alt ajana dış yol vereceksen dosyanın tam yolunu ver, klasör listeletme.
+- Yerleşik görev ajanı (`task`) konuşmayı da, bu çekirdeği, SAP kurallarını ve proje `AGENTS.md`'sini de GÖRMEZ; özel ajan (`sap-*`)
+  çekirdeği, kuralları ve `AGENTS.md`'yi görür ama konuşmayı görmez (ikisi de ölçüldü, 1.5.1). Brifing tek başına yetmeli: amaç · kapsam ve sınırlar (neyi değiştirmeyecek) · kanıt kuralları (§1) · işe dokunan kesin yasaklar ve proje kuralları (metniyle) · beklenen çıktı biçimi. SAP'ye yazma işini alt ajana verme.
 - Brifingde iş türünü yaz: **salt-okur bağımsız inceleme** ya da **yazma**. İnceleme ise önceki bulguları (senin ya da başka ajanın) verme ve incelenecek hâli sabitle (commit ya da dosya hash'i); aksi hâlde ajan bağımsız değil, senin görüşünü doğrular.
 - Hazır rol şablonları skill'lerdedir (ör. `%explore`, `%code-review`).
 - Alt ajanın "yapılamaz / yok / blocker" dönüşünü kanıtsız kabul etme; alternatif yol ara ya da kendin doğrula.

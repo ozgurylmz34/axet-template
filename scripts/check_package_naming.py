@@ -176,7 +176,7 @@ def denetle(proj: Path, files: list[str] | None = None, package: str | None = No
     sonuc = Sonuc()
     paketler = npk.paketler(root)
     if package:
-        paketler = [(m, p) for m, p in paketler if p.name == package]
+        paketler = [(m, p) for m, p in paketler if p.name in (package, npk.paket_klasor_adi(package))]
         if not paketler:
             return None, f"{package} {root.name}/ altında bulunamadı"
     if files is None:

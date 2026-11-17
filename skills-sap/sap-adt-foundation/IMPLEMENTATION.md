@@ -91,7 +91,7 @@ Statik kontrol: `tests/test_static.py::gate_atlatan_mi` — AST ile çağrı dü
 | `write_mcp_binding_state` no-op | aXet'te `.claude/`/statusline yok |
 | Proje-dizini `.claude`, `project.yaml`, `CLAUDE_PROJECT_DIR` ve kaynak çekirdeğin önekli ortam değişkeni bağımlılıkları kaldırıldı | Bağımsız template |
 
-**`ack_drop` ne yapıyor, atlatabiliyor mu?** ÖLÇÜLDÜ (`lib/validators/check_table_field_drop.py:143-153`): `table_update` zincirindeki DROP-guard, adı `--ack-drop` ile verilen alanların DROP'unu BLOCKER yerine `[ACK-WARNING]` + exit 0 (`onayli-drop-ack`) sayar. Adsız DROP ve tip/rename değişikliği yine BLOCKER; guard'lar (tier/namespace) reviewer'dan önce koştuğu için onları atlatmaz. Yani `ack_drop` **tek bir veri-kaybı BLOCKER sınıfını atlatır** → aXet yolunda kaldırıldı: boş olmayan `ack_drop` kapıda `reviewer_bypass_forbidden` ile reddedilir. Testler: `6g2` (window-function BLOCKER + ack_drop → exit 2), `6g3` (tablo push + ack_drop → exit 2). Bilinçli alan silme kullanıcının CLI dışında yaptığı ayrı bir işlemdir.
+**`ack_drop` ne yapıyor, atlatabiliyor mu?** ÖLÇÜLDÜ (`lib/validators/check_table_field_drop.py:143-153`): `table_update` zincirindeki DROP-guard, adı `--ack-drop` ile verilen alanların DROP'unu BLOCKER yerine `[ACK-WARNING]` + exit 0 (`onayli-drop-ack`) sayar. Adsız DROP yine BLOCKER; tip hükmü ack'ten bağımsızdır (#408: daralma / tür değişikliği / çözülemeyen fiziksel tip BLOCKER, genişleme WARNING, aynı fiziksel tip INFO); guard'lar (tier/namespace) reviewer'dan önce koştuğu için onları atlatmaz. Yani `ack_drop` **tek bir veri-kaybı BLOCKER sınıfını atlatır** → aXet yolunda kaldırıldı: boş olmayan `ack_drop` kapıda `reviewer_bypass_forbidden` ile reddedilir. Testler: `6g2` (window-function BLOCKER + ack_drop → exit 2), `6g3` (tablo push + ack_drop → exit 2). Bilinçli alan silme kullanıcının CLI dışında yaptığı ayrı bir işlemdir.
 
 ## 4. Taşınırken düzeltilen kaynak kusurları (bu işi etkiliyordu)
 
@@ -213,8 +213,10 @@ olduğundan meşru çağrıda bu kod hiç görülmez.
 | SQL kipi: `INSERT INTO` · `UPDATE <t> [alias] SET` · `DELETE [HISTORY] FROM` · `MERGE INTO` · `UPSERT` · `REPLACE <t> (…|VALUES|SELECT|WITH)` · `TRUNCATE TABLE` | DB; hedef = son noktalı parça, tırnaksız; `:tablo_değişkeni` DB değil |
 | `INSERT … INTO TABLE` · `INSERT … INTO <itab> INDEX` · `INSERT LINES OF` · `MODIFY TABLE` · `MODIFY <itab> … INDEX|TRANSPORTING` · `DELETE <itab> WHERE|INDEX|FROM n TO m` · `DELETE TABLE` · `DELETE ADJACENT DUPLICATES` · `DELETE DATASET` · `DELETE FROM MEMORY|SHARED MEMORY|SHARED BUFFER` · `MODIFY/READ/COMMIT ENTITIES` · `CALL FUNCTION … IN UPDATE TASK` · UPDATE'in ifade başında olmadığı her durum · yorum/literal içi | yakalanmaz |
 
-**İzinli hedef:** `Z…`/`Y…` ya da `/Z…/…`, `/Y…/…`. Başka her `/NS/` (ör. `/SCWM/`, müşterinin `/ABC/`'si) **yasaklı** —
-standart SAP namespace'i ile müşteri namespace'i koddan ayırt edilemez; `gate.check_names` ile aynı fail-closed ilke (onaylandı 2026-09-13).
+**İzinli hedef:** `Z…`/`Y…` ya da projede `sap-project.json` `customer_namespaces` ile **bildirilmiş** `/<NS>/…`
+(karar tek kaynaktan: `lib/utils/ad_politikasi.musteri_adi_mi`, ADR 0005 A-EK). Bildirilmemiş her `/NS/` (ör. `/SCWM/`; 2026-11-17'den
+beri `/Z…/`·`/Y…/` de) **yasaklı** — standart SAP namespace'i ile bildirilmemiş müşteri namespace'i koddan ayırt edilemez;
+`gate.check_names` ile aynı fail-closed ilke (ilk karar 2026-09-13; namespace bildirimi 2026-11-17).
 
 **Belirsiz biçim — bildirim kuralı (bilinçli karar):** aynı kaynakta `<ad>` için
 1. iç tablo bildirimi (`DATA|STATICS|CLASS-DATA <ad> TYPE [STANDARD|SORTED|HASHED] TABLE OF` · `LIKE TABLE OF` · `TYPE <…_t|…_tt|tt_…>` · `OCCURS` · `WITH HEADER LINE` · `BEGIN OF <ad> OCCURS` · `INTO [CORRESPONDING FIELDS OF] TABLE @DATA(<ad>)`) → iç tablo, izinli;
@@ -1244,7 +1246,7 @@ Açık kalemler (düzeltilmedi):
   `project.effective_conn_value` (`project.py:106-107`) önce env'i okur. Bu, env'i yine env ile karşılaştırmak demek. Pratik yüzey (kod okunarak DOĞRULANDI):
   aXet'te uzun yaşayan sunucu yok (`git ls-files` mcp 0, `FastMCP|mcp.server|stdio_server` eşleşmesi 0); `sap_adt_cli.py` her süreçte tek araç çağırır
   (`main` :180, `spec.fn` :277); populate/toplu koşum dosyası yok. Yüzey: tek süreçte birden çok istemci/araç çağrısı yapan yollar (ör. `tools/diag.py`) ve
-  çağrı sürerken `.conn_adt`'nin değişmesi. Aynı guard sınıfı IX tarafındaki uzun yaşayan MCP sunucusunda da olabilir — ayrı kalem, burada ölçülmedi.
+  çağrı sürerken `.conn_adt`'nin değişmesi. Aynı guard sınıfı kaynak çekirdeğin uzun yaşayan MCP sunucusunda da olabilir — ayrı kalem, burada ölçülmedi.
 - Sarmalayıcı SKIP'leri yazmayı durdurmaz (önceden var #3; lider kararı: dokunulmadı).
 
 ### 20.8 Serbest metinde satır sonu yasağı (2026-09-15, 3. dar gate WARNING → tek MEDIUM)
@@ -1689,3 +1691,76 @@ de tekrar ediyordu (HTTP adapter 2026-08-19'dan beri 500'ü tekrarlamıyordu, bu
   `tests/test_msgclass_domain.py` D7 (500 → 503) + D7c (500 → 1 POST, gövde log'da, bağlantı host'u `***`, `KESİLDİ`; gövdesiz 500
   kontrolünde ek satır yok). ⛔ SİLİNMEZ ÇAPALAR: C2 (son denemeden sonra uyku yok) · C3/C7/C8 (FP) · W2-W3-W5 (yazma yolunda
   belirsiz sınır = kilit 0 + PUT 0).
+
+## 27. Uyum turu 8 — A2 kulvarı: FUGR/I yazma · BAdI spot araçları · CSRF/custom entity · küçük lib düzeltmeleri (2026-11-17)
+
+Kaynak çekirdek aralığı dd9ba0f..c457161'in araç/kütüphane kalemleri. Karar tablosu: `maintenance/uyum-tur8/A2-karar.md`.
+Araç sayıları `sap_adt_cli.py --list` `counts`'tan: okuma 30 · yazma 16 · toplam 46 (önce 29 · 15 · 44; +`adt_badi_spot_read`, +`adt_badi_spot_write`).
+
+### 27.1 FUGR/I — fonksiyon grubu include'u yazma + aktivasyon (kaynak b0bcfac)
+- **Tip:** `fugr_include` (`FUGR/I`; eşanlamlı `fugr/i`, `fugr-include`) — `object_types` `FUGR_INCLUDE_TYPES`, `get_fugr_include_url`
+  (`/functions/groups/<g>/includes/<i>`, yol parçaları `url_segmenti`). Genel tip tablosunda değil: `normalize_object_type` `ValueError`
+  verir, yalnız `group` argümanlı özel yollar açar.
+- **Grup kanıtı** (`fugr_include_grup_kaniti`): `GET /programs/includes/<i>` `include:contextRef` — tam bir FUGR bağlamı ve
+  `contextRefCount=1`; Z grupta `FUGR/I SAPL<G>`, bildirilmiş namespace grubunda `FUGR/I /NS/SAPLFG` ya da `FUGR/F` adı = grup.
+  FUGR/I ucunun kendi bağlamı kanıt DEĞİL (SAP URL'deki grubu aynalar — kaynak çekirdek ölçümü). Kanıt tutmazsa yazma / aktivasyon /
+  kilit sorgusu YAPILMAZ (`fugr_group_unverified`).
+- **Ad kuralı** (`fugr_include_ad_alani_hatasi`): grup müşteri adı (`ad_politikasi.musteri_karari`) VE include
+  `fugr_include_oneki(grup)` ile başlar. Kapıda `gate.check_names(..., grup=)` (yalnız `tool_args["group"]`'tan) + araçta
+  `_fugr_include_guardrail` (iki katman, ikisi de ağdan önce).
+- **Yazma** `SAPClient.push_fugr_include`: kanıt → ETag → LOCK → PUT → UNLOCK → aktivasyon → readback. Kilit hata mesajı SAP gövdesinin
+  sebebini taşır (`sap_hata_sebebi`, kaynak b0bcfac lock özeti).
+- **Araçlar:** `adt_get` · `adt_push_source` · `adt_activate` · `adt_lock_check` `group` argümanı; başka tipte `group_not_applicable`,
+  eksikse `group_required`. **OTONOM KARARLAR (A2-karar.md):** push'ta transport zorunlu (sınıf include'u ve BDEF ile aynı); reviewer
+  `program_push` (kaynakta yok — aXet'in include kararıyla tutarlı); `adt_get` okuması grup kanıtı sayılmaz; aktivasyonda `also`
+  desteklenmez (`fugr_include_also_unsupported`), son push'un grubundan farklı grup → `fugr_group_mismatch`.
+- **Pull kaydı:** `pull_state.tip_anahtari` tüm eşanlamlıları `fugr_include`'a indirger → anahtar `fugr_include:<INCLUDE>`.
+- **Test:** `tests/test_fugr_include_yazim.py` 18/18 (L URL/kanıt/ad kuralı/namespace · C sahte ADT ile istemci sırası · T araçlar ·
+  G kapı). `test_cli_gate` test_05: FUGR/I standart grup CLI'da `ADR_0005_A`. Mutasyon 11/11 öldü (M1–M11).
+
+### 27.2 BAdI enhancement spot (ENHS/XSB) — okuma + yazma araçları (kaynak d85de77 + 9b38ab6)
+- **Lib:** `get/create/write/activate_enhancement_spot` + `enhs_*` yardımcıları kaynak çekirdekten (ad denetimi `musteri_karari`'na
+  bağlı). `write_enhancement_spot` standart spot'ta kilit almaz; kilit altında yeniden okur ve taban farklıysa PUT etmez.
+- **Araçlar** (`tools/badi.py`, `available_on=("s4_private",)`): `adt_badi_spot_read` (READ_TOOLS) · `adt_badi_spot_write`
+  (yazma sınıfı, `REQUIRES_TRANSPORT`). Kapı `arg_adlari`: her `definitions[].badi` ve `remove_badis` adı `(ad, "badi")` olarak
+  denetlenir; liste olmayan / adsız girdi fail-closed `ADR_0005_A`. Araç ikinci katman: aynı ad denetimi + canlı `masterSystem=SAP` reddi.
+- **PULL-BEFORE-EDIT:** okuma aracı modelin JSON metnini (`model_metni`, sürüm alanı hariç) `kaydet(spot, "enhancementspot", …)` ile yazar;
+  yazma aracı var olan spot'ta kayıt yoksa `pull_before_edit_missing`, canlı özet farklıysa `source_changed_since_pull`. Yeni spot
+  yaratımında kayıt aranmaz (ezilecek içerik yok — OTONOM KARAR).
+- **Kapsam:** `definitions` (ekle/güncelle) + `remove_badis`; ince kaldırmalar (fallback/örnek sınıf/filtre) araçta YOK (kaynak CLI
+  bayrakları; ölçülmemiş yollar) — OTONOM KARAR. Var olan spot'ta paket/açıklama değişikliği reddedilir.
+- **Genel araçlar:** `object_types` `enhancementspot` işlem-izinli (`silme` · `kilit` · `metadata`); `adt_atc_check` ENHS'te istek
+  göndermeden `atc_kapsam_disi`.
+- **Belge:** `references/enhancement-spot-badi.md` (kaynak playbook'tan uyarlandı; kaynak CLI'ye atıflar aXet araçlarına çevrildi).
+- **Test:** `tests/test_badi_spot.py` 20/20 (S lib bayt-eşit PUT · W lib kilit sırası · R okuma · Y yazma · A ATC · G kapı);
+  `test_cli_gate` test_01/test_05: sınıf/profil/transport + standart spot/BAdI adı CLI'da `ADR_0005_A`. Mutasyon 9/9 öldü (E1–E9).
+
+### 27.3 CSRF reddi tek yüklem + CDS custom entity (kaynak 0ec670c)
+- `SAPADTClient._csrf_reddi_mi`: 403 VE (gövdede `CSRF` VEYA `x-csrf-token: Required`); dört çağıran paylaşır. Davranış değişikliği:
+  403 dışı CSRF metni tekrar ETMEZ. `_validate_cds_source`: `define [root] custom entity` kabul; yorum/string ayıklayıcı
+  `lib/utils/cds_metin.py` (`cds_kod_metni`, lib yeniden dışa açar).
+- **Test:** `tests/test_csrf_custom_entity.py` 6/6; mutasyon 6/6 öldü (K1–K6).
+
+### 27.4 Küçük düzeltmeler
+- **1228623:** `find_ghost_transports` okunamayan listeyi `SAPADTError` yapar (`[]` yalnız geçerli boş yanıtta; değer `<dp:data>`
+  metninden); `push_object` 409 dalı "okunamadı — SE10'da elle bakın" basar, push sonucu değişmez. `list_revisions` tablo eşlemesi aXet'te
+  zaten `object_types` üzerinden `/ddic/tables` (VAR).
+- **2fd6e11:** ADT oturumu best-effort kapatma (`_oturumu_kapat`: ICF logoff → 404'te bağlam düşürme; SAML'de logoff yok; çerezsiz
+  oturumda ağ çağrısı yok; hata yutulur, çerez değeri basılmaz) — süreç sonu (`weakref.finalize`) ve `new_session`. SQL süresi
+  **milisaniye**: istemci `execution_time_ms`, `adt_sql_query` yanıtına `execution_time_ms` eklendi.
+- **d7f2fa0:** `set_object_source` sonraki transport biçimine YALNIZ biçim reddinde (409/412/"Parameter … could not be found") geçer;
+  içerik reddi (400 vb.) tek PUT + DURDU; son biçimdeki "Parameter" reddi sahte `True` değil; hata `DENEMELER` listesini taşır.
+- **f646f36:** FM güncelleme modülü metadata PUT + FM readback 2 boş satır + ENHO'lu exit include aktivasyonu — yalnız belge;
+  `sap-classic-abap/references/fugr-fm.md` §2.2/§2.3/§3 ve `references/foundation-ops.md` (exit include) içinde. aXet'te araç YOK
+  (kullanıcı SE37; ham REST ile yazma yasak).
+- **URL kodlama (lider kararı):** `sap_adt_lib`/`sap_client`'taki 45 kodsuz `{ad.lower()}` ADT yol parçası + `sap_adt_lib`
+  tablo kabuğu `packageRef` (`esc(…lower())`) + `tools/composite.py` 2 (yapı/tablo tipi readback; kaynak çekirdek e52ad6f ile aynı) +
+  `lib/rap_service.py` 1 (SRVB `objectReference`) `_adt_seg` (= A1'in `url_segmenti`) ile değiştirildi; araçların `quote(ad.lower(), safe="")`
+  biçimi zaten bayt-eşit olduğu için dokunulmadı; bilinçli kalan 2 satır kaynak METNİdir (`define table <ad>`, `type-pool <ad>`). Ad doğrulaması
+  (`sap_adt_lib` `validate_*`, A1) değişmedi.
+- **Test:** `tests/test_kucuk_duzeltmeler_tur8.py` 10/10 (H hayalet · B biçim döngüsü · O oturum kapatma 127.0.0.1 sahte sunucu ·
+  U `/NS/` kodlu + Z aynen + kablolama · Q ms); mutasyon D1–D7 7/7 öldü.
+
+### 27.5 DOĞRULANMADI
+Hiçbiri aXet'ten canlı SAP'de koşulmadı (bağlantı yok kuralı; testler sahte sunucu). Kaynak çekirdeğin canlı ölçümleri referans
+belgelerde sürüm etiketiyle durur.

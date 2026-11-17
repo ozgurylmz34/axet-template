@@ -442,6 +442,9 @@ def _muhur_sorunu(ad: str, veri: dict | None, plan: dict) -> str | None:
     if not isinstance(m, dict):
         return f"{ad} plan damgası TAŞIMIYOR (önceki sürümden kalmış olabilir)"
     bekl = _plan_muhru(plan)
+    if "yeni_etiket" in bekl:  # iki taraf da normalize: ham plan geçen bir çağıran da aynı turu tanır
+        bekl = dict(bekl, yeni_etiket=_ref_normal(bekl["yeni_etiket"]))
+    m = dict(m, yeni_etiket=_ref_normal(m.get("yeni_etiket"))) if "yeni_etiket" in m else m
     if m != bekl:
         return (f"{ad} BAŞKA bir güncelleme turuna ait — damga "
                 f"`{m.get('yeni_etiket')}`/{str(m.get('taban_commit'))[:10]}, "
@@ -583,14 +586,14 @@ class Baglam:
         self.harita = harita
         self.uygulanan = _oku(klon.durum_dizini / "uygulanan.json",
                               {"surum": 1, "dosyalar": {}, "kalemler": {}})
-        if not klon.var_mi("origin/main"):
+        if not klon.var_mi("refs/remotes/origin/main"):
             raise Dur("origin/main bulunamadı — önce `git fetch` gerekiyor.")
         self.yayinlar = self._yayinlar_oku()
         self.yeni_ref = self._hedef_ref()
-        self.taban_global = self.k.g("merge-base", "HEAD", "origin/main")
+        self.taban_global = self.k.g("merge-base", "HEAD", "refs/remotes/origin/main")
 
     def _yayinlar_oku(self) -> dict:
-        r = self.k.git("show", "origin/main:guncelle/yayinlar.json")
+        r = self.k.git("show", "refs/remotes/origin/main:guncelle/yayinlar.json")
         if r.returncode != 0:
             raise Dur(
                 "origin/main:guncelle/yayinlar.json okunamadı. Bu dosya yayın tarafının "
@@ -624,7 +627,7 @@ class Baglam:
         for e in reversed(etiketler):
             if self.k.var_mi(e):
                 return e
-        return "origin/main"
+        return "refs/remotes/origin/main"
 
     # --- taban -------------------------------------------------------------------------------
     def taban_ref(self, yol: str) -> str | None:
@@ -786,7 +789,7 @@ def dosya_vakasi(b: Baglam, yol: str, yeniden_ad: dict[str, str]) -> dict:
 
 def _kart_var_mi(k: Klon, kod: str) -> bool:
     """Kart YENİ sürümden okunur (`komut_kart` da öyle yapar) — yerel kopya bozuk/eski olabilir."""
-    return k.git("cat-file", "-e", f"origin/main:guncelle/kartlar/{kod}.md").returncode == 0
+    return k.git("cat-file", "-e", f"refs/remotes/origin/main:guncelle/kartlar/{kod}.md").returncode == 0
 
 
 def _kart_listesi(kayit: dict, sinif: dict | None) -> list[str]:
@@ -1204,10 +1207,19 @@ def _plan_tablosu(plan: dict) -> None:
 # =====================================================================================================
 # SEÇİM
 # =====================================================================================================
+def _ref_normal(ref):
+    """Q349 geri uyumu: eski motorun plana/mühre yazdığı kısa `origin/main` (yalnız yayın etiketi çözülemeyince
+    yazılan geri düşüş) bugünkü tam ref'e eşlenir — aksi hâlde aynı tur "hedef değişti / başka tur" sayılırdı ve
+    kısa ad aynı adlı etiketle gölgelenebilirdi. Diğer değerler (yayın etiketleri) aynen döner."""
+    return "refs/remotes/origin/main" if ref == "origin/main" else ref
+
+
 def plan_oku(k: Klon) -> dict:
     p = _oku(k.durum_dizini / "plan.json", None)
     if p is None:
         raise Dur("plan.json yok — önce `guncelle.py plan` çalıştır.")
+    if "yeni_etiket" in p:
+        p["yeni_etiket"] = _ref_normal(p["yeni_etiket"])
     return p
 
 
@@ -1910,7 +1922,7 @@ def _ci_hukmu(b: Baglam, plan: dict) -> tuple[dict | None, str]:
     etiket = plan.get("yeni_etiket")
     if not etiket:
         return None, "planda yayın etiketi yok"
-    r = b.k.git("show", "origin/main:guncelle/ci-durum.json")
+    r = b.k.git("show", "refs/remotes/origin/main:guncelle/ci-durum.json")
     if r.returncode != 0:
         return None, "yayının CI kaydı (guncelle/ci-durum.json) okunamadı"
     try:
@@ -2914,7 +2926,7 @@ def komut_durum(b: Baglam, args) -> int:
 # =====================================================================================================
 def komut_kart(b: Baglam, args) -> int:
     """§5: ajan kartı YENİ sürümden okur (yerel kopya bozulmuş/eski olabilir)."""
-    r = b.k.git("show", f"origin/main:guncelle/kartlar/{args.kod}.md")
+    r = b.k.git("show", f"refs/remotes/origin/main:guncelle/kartlar/{args.kod}.md")
     if r.returncode != 0:
         print(f"DUR: kart yok: guncelle/kartlar/{args.kod}.md (origin/main)", file=sys.stderr)
         return 2

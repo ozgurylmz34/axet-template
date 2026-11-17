@@ -167,7 +167,8 @@ class ValidatorMapTests(unittest.TestCase):
     def test_push_mapping_matches_reviewer(self):
         obj = _literal(REVIEWER, 'OBJECT_TYPE_TO_TASK')
         comp = _literal(REVIEWER, 'COMPOSITE_TOOL_TO_TASK')
-        rows = re.findall(r'^\|\s*`([a-z_/]+)`\s*\|\s*(?:`([a-z_0-9]+)`|—)', _section(self.doc, 1), re.M)
+        # `-` 2026-11-17: `fugr-include` anahtarı (tire içeren ilk anahtar) — desen tireyi tanımazsa satır sessizce düşer.
+        rows = re.findall(r'^\|\s*`([a-z_/-]+)`\s*\|\s*(?:`([a-z_0-9]+)`|—)', _section(self.doc, 1), re.M)
         self.assertGreater(len(rows), 10)
         for key, task in rows:
             table = comp if key.startswith('adt_') else obj
@@ -178,7 +179,7 @@ class ValidatorMapTests(unittest.TestCase):
         # Bug gate 2026-09-14 (B5): §1 yalnız satır→kod yönünde eşleniyordu; koddaki K1 anahtarı (`prog/i`)
         # tabloda yoksa test kırılmıyordu. K1 görevlerine giden HER anahtar tabloda olmalı.
         obj = _literal(REVIEWER, 'OBJECT_TYPE_TO_TASK')
-        rows = set(re.findall(r'^\|\s*`([a-z_/]+)`\s*\|', _section(self.doc, 1), re.M))
+        rows = set(re.findall(r'^\|\s*`([a-z_/-]+)`\s*\|', _section(self.doc, 1), re.M))
         eksik = sorted(k for k, t in obj.items() if t in ('program_push', 'interface_push') and k not in rows)
         self.assertEqual(eksik, [], f'validator-map §1: K1 anahtarları tabloda yok: {eksik}')
 

@@ -42,7 +42,11 @@ Manifest dosyası (biçim B, `--manifest`):
     aynı yazılır — bu eşliği araç ÖLÇMEZ (iki dosya birbirinden bağımsız yazılır).
 
 --sayfa-no / --yer-imi: yalnız --pdf ile; `build_doc_pdf.py` ile aynı anlam (sayfa numarası altbilgisi · başlıklardan
-PDF yer imi). Bayraksız PDF eskisiyle aynıdır.
+PDF yer imi). Bayraksız PDF'te page.pdf seçenekleri eskisiyle aynıdır; içerik yalnız taşan/kırpık öğesi olmayan belgede
+aynıdır (yerleşim düzeltmesi `html_to_pdf.js`'te).
+PDF YERLEŞİMİ: görsel/`pre`/tablo taşmasının PDF düzeltmesi `html_to_pdf.js`'tedir (yalnız-PDF CSS); buradaki CSS ekran /
+uygulama içi yardım HTML'i içindir — PDF için buraya kural EKLEME (yardım HTML'i değişir).
+Git Bash: `/` ile başlayan --title ("/NS/ZCA001 ...") yol sanılıp dönüştürülür → `MSYS_NO_PATHCONV=1`.
 
 Çıkış: 0 başarılı · 1 eşleşmeyen anahtar / eksik görsel / PDF hatası · 2 eksik bağımlılık ya da okunamayan girdi
 (--sayfa-no DURDU da 2'dir: alt boşluk altbilgiye yetmiyor ya da ölçülemiyor).

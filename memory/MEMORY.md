@@ -51,6 +51,16 @@ MEMORY-ID: AXET-TEAM-MEMORY
 - [Paralel oturum aynı çalışma ağacında](feedback_paralel-oturum-ayni-calisma-agaci.md) — commit'siz iş öteki oturumun commit'ine girip "kaybolabilir"; önce reflog + açık PR; uzun iş için worktree
 - [İş kuralı sessizce gömülmez](feedback_is-kurali-sessizce-gomulmez.md) — build sırasında koyduğun dışlama/sınırlama kuralı kaynaksızsa ayrı karar maddesi olarak sunulur
 - [Verilmiş karar yeniden sorulmaz](feedback_verilmis-karar-yeniden-sorulmaz.md) — onay listesinden önce karar kaydını tara; kararlı kalem "zaten kararlı (K-n)" diye bildirilir
+- [Engellenen silmeyi komut olarak verme](feedback_engellenen-silmeyi-komut-olarak-verme.md) — engellenen silme kullanıcıya hazır komut olmaz; `$`'lı yol çift tırnakta boşa açılır (vaka: kök dizin silindi)
+- [İş parametresini koda gömme](feedback_is-parametresini-koda-gomme.md) — kullanılan eşik/yüzde ayar tablosunda kalır; kullanılmıyorsa alan + mantık birlikte kalkar
+- [Kayıt tarihini ölç](feedback_kayit-tarihini-olc.md) — kayda tarih `date +%F` / `git log`'dan; özetten türetme; `grep -c` satır sayar, geçiş değil
+- [Kurulumdan sonra yeni parti sorulur](feedback_kurulumdan-sonra-yeni-parti-sorulur.md) — talimat bitince dur; plandaki sonraki parti öneri olarak sunulur, "evet" beklenir
+- [Python yerinde düzenleme bayt kipinde](feedback_python-yerinde-duzenleme-bayt-kipi.md) — `rb`/`wb` + `bytes.replace`; metin kipi CRLF'yi ve tek CR'yi bozar, diff tüm dosyaya yayılır
+- [Uygulama testi onayla yazılır](feedback_uygulama-testi-onayla-yazilir.md) — yeni ABAP Unit/karakterizasyon/UI testi için önce maliyet + gerekçeyle sor; mevcut testi koşmak serbest
+- [Yeniden inceleme dar kapsam](feedback_yeniden-inceleme-dar-kapsam.md) — düzeltme sonrası inceleme yalnız turun farkı + çağıranlar; yalnız yüksek bulgu yeni tur açar
+- [Aralıklı hata avına bütçe](feedback_aralikli-hata-avina-butce.md) — deneme/süre bütçesi + "son ölçüm kararı değiştirdi mi?"; değiştirmiyorsa kes, bilinen kısıt yaz
+- [İşaret önermeden önce ara](feedback_isaret-onermeden-once-prior-art.md) — kaynağa konacak yorum/pragma önerisi sınıf iddiasıdır; SAP gidiş-dönüşünde korunuyor mu, önce skill referansında ara
+- [Belge incelemesi iki tur](feedback_belge-incelemesi-iki-tur.md) — FS/TS'te kontrol listesi turu + ilk raporu görmeyen senaryo odaklı tur; "0 BLOCKER" ≠ tasarım doğru
 
 ## Referanslar (reference)
 

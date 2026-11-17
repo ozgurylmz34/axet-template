@@ -25,8 +25,9 @@ yalnız AÇIK KULLANICI ONAYIYLA deploy eder.
    `Component-preload.js`'i yerel dist ile hash-karşılaştırır ("Successful" mesajına güvenmez).
 
 Alt komutlar:
-  prepare <app_dir>... [--no-build]
-      AĞ YOK. ui5-deploy.yaml (deploy-to-abap görevi, BSP adı Z* ve ≤15 karakter, url/client/package/transport),
+  prepare <app_dir>... [--no-build] [--project-dir <proje>]
+      AĞ YOK. ui5-deploy.yaml (deploy-to-abap görevi, BSP adı müşteri ad alanında ve ≤15 karakter,
+      url/client/package/transport, görev bloğunda yinelenen anahtar YOK),
       webapp+dist'te stray/gizli dosya ve BSP'nin tanımadığı uzantı, `npm run build` (ya da --no-build ile dist
       tazeliği), dist Component-preload.js sha → deploy komutunu BASAR, KOŞMAZ.
   verify <app_dir>... [--ignore-cert]
@@ -49,6 +50,14 @@ Alt komutlar:
 
 Kimlik: env FIORI_TOOLS_USER / FIORI_TOOLS_PASSWORD (geliştirici set eder; script basmaz). Hedef: ui5-deploy.yaml.
 Proje kökü (sap-project.json + .conn_adt): --project-dir, yoksa cwd (sap_adt_cli ile aynı).
+
+BSP ADI (2026-11-17): ad = ilk `deploy-to-abap` görevinin `configuration.app.name`'i. Müşteri adı kararı TEK
+   kaynaktan: foundation `ad_politikasi.musteri_adi_mi` — Z/Y ya da projede `sap-project.json` →
+   `customer_namespaces` ile bildirilmiş `/<NS>/` (namespace kabulü proje kökünde `.conn_adt` ister; yoksa
+   KAPALI). Bildirilmemiş `/<NS>/`, SAP adı ya da politika yüklenemezse İHLAL (fail-closed). Canlı yol
+   `_bspnet.bsp_icf_yolu`: Z/Y → `/sap/bc/ui5_ui5/sap/<bsp>/` · `/NS/APP` → `/sap/bc/ui5_ui5/<ns>/<app>/`
+   (namespace'li gerçek BSP aXet'te ÖLÇÜLMEDİ). 15 karakter sınırı TAM ada uygulanır (namespace'li adda SAP'nin
+   sınırı ÖLÇÜLMEDİ — muhafazakâr).
 Çıkış: 0 hazır / doğrulandı · 1 ihlal / STALE / build-deploy hatası · 2 ölçüm yok (yol yok, env kimlik yok, canlı okunamadı)
        · 3 REDDEDİLDİ (deploy için --user-ok ya da env kimlik eksik, ya da SAP yazma kapısı reddi)
 """
@@ -205,6 +214,24 @@ def _en_yeni(kok: Path, desenler: list[str]) -> tuple[float, str]:
     return en, ad
 
 
+def bsp_adi_denetimi(ad: str) -> list[str]:
+    """BSP adı müşteri ad alanında mı? Karar foundation `ad_politikasi`'ndan (Z/Y + bildirilmiş `/<NS>/`); desen
+    burada yeniden YAZILMAZ. Politika yüklenemezse ya da ad ICF yoluna çevrilemezse İHLAL (fail-closed)."""
+    try:
+        pol = B.ad_politikasi()
+    except Exception as exc:  # noqa: BLE001 — karar verilemiyorsa ad KABUL EDİLMEZ
+        return [f"BSP adı '{ad}' denetlenemedi: müşteri ad politikası yüklenemedi ({type(exc).__name__}: {exc}) "
+                f"— {FOUNDATION_SCRIPTS} beklenen yerde değil ya da bozuk (fail-closed)"]
+    bsp = ad.strip().upper()
+    if not pol.musteri_adi_mi(bsp):
+        return [f"BSP adı '{ad}': {pol.musteri_adi_red_metni(bsp)}"]
+    try:
+        B.bsp_icf_yolu(bsp)
+    except ValueError as exc:
+        return [str(exc)]
+    return []
+
+
 def hazirla(app: Path, build: bool, env: dict) -> tuple[list, list, dict]:
     """prepare çekirdeği → (hatalar, uyarılar, bilgi)."""
     h, u, bilgi = [], [], {}
@@ -220,10 +247,13 @@ def hazirla(app: Path, build: bool, env: dict) -> tuple[list, list, dict]:
     else:
         if "<" in ad or ">" in ad:
             h.append(f"app.name yer tutucu içeriyor: {ad}")
-        if not ad.upper().startswith("Z"):
-            h.append(f"BSP adı '{ad}' Z ile başlamıyor")
+        else:
+            h += bsp_adi_denetimi(ad)
         if len(ad) > 15:
             h.append(f"BSP adı '{ad}' {len(ad)} karakter (en çok 15)")
+    if ayar.get("yinelenen"):
+        h.append("ui5-deploy.yaml deploy-to-abap görevinde YİNELENEN anahtar: " + ", ".join(ayar["yinelenen"])
+                 + " — hangi değerin geçerli olduğu belirsiz (fail-closed); anahtarı tek bırak")
     for alan in ("url", "client", "package"):
         v = ayar.get(alan, "")
         if not v.strip():  # yalnız boşluk (`package: " "`) da boştur
@@ -316,6 +346,11 @@ def _uygulamalar(yollar: list[str]) -> list[Path] | None:
 
 
 def komut_prepare(a) -> int:
+    if getattr(a, "project_dir", None):  # namespace listesi bu projenin sap-project.json'undan (deploy ile aynı)
+        try:
+            os.environ[B.ad_politikasi().PROJE_ENV] = str(Path(a.project_dir).resolve())
+        except Exception:  # noqa: BLE001 — politika yüklenemezse `hazirla` adı zaten reddeder (fail-closed)
+            pass
     appler = _uygulamalar(a.apps)
     if appler is None:
         return 2
@@ -648,6 +683,8 @@ def main() -> int:
     p1 = alt.add_parser("prepare", help="ağsız hazırlık + build + deploy komutunu bas (koşmaz)")
     p1.add_argument("apps", nargs="+", help="uygulama klasör(ler)i (ui5-deploy.yaml'ın bulunduğu)")
     p1.add_argument("--no-build", action="store_true", help="build etme; mevcut dist'in tazeliğini kontrol et")
+    p1.add_argument("--project-dir", help="proje kökü: sap-project.json (customer_namespaces) + .conn_adt "
+                                          "(varsayılan: cwd)")
     p2 = alt.add_parser("verify", help="salt-okuma: canlı preload == yerel dist mi")
     p2.add_argument("apps", nargs="+")
     p2.add_argument("--ignore-cert", action="store_true", help="TLS sertifika doğrulamasını kapat (self-signed)")

@@ -19,6 +19,9 @@
 - Önceki araç setinde yaratma sonrası SAP'nin otomatik kilit koyup handle vermediği ve SM12 temizliği
   gerektiği görüldü; bugünkü CLI'de bunun tekrarlanıp tekrarlanmadığı **DOĞRULANMADI**. `409`/`EU 510`
   görürsen retry etme; kilit adımları `known-errors-adt.md` K-05, K-07, K-09 (kilidi **kullanıcı** siler).
+- `409` (ör. `CTS_WBO_API 019`) **aynı push'un önceki denemesinin** bıraktığı durum da olabilir: kaynakta bir biçim 400 içerik reddi
+  alınca yedek biçimler kendi kilidimize çarpıp 409 aldı. Görünen hata son denemenin yanıtıdır → ÖNCE ilk denemenin yanıtına bak;
+  gövdedeki `T100KEY-V3`/`V4` bu push'un transport'u ve kullanıcısı mı, karşılaştır. SM12'de kilidi KONTROL et — silmek kullanıcı kararıdır.
 
 ## 2. `ResourceScanDuringSaveFailure` (400, satır numarası yok) — kaydetme taraması
 
@@ -32,6 +35,7 @@ SAP kaydetmeden önce kaynağı tarar; bazı tip kullanımlarını reddeder ve *
 | `RETURNING VALUE(...) TYPE netwr` (CURR tipli data element) | 400 | CURR olmayan parasal data element (ör. `wrbtr`) — `CONV`/`COND` içinde de aynı |
 | Özel `ZZ1_*` data element'i parametre tipi ya da `RANGE OF` hedefi olarak | 400 (bir projede ölçüldü) | Aynı uzunlukta yerleşik tip; range parametresi için `%sap-dev` → `references/coding-patterns.md` §1 (table type yolu) |
 | `TYPE f`, `TYPE p` gibi yerleşik tip parametrede | kaynak "data element ver" diyor | adlandırılmış data element |
+| Türetilmiş RAP tipi: `IMPORTING is_failed TYPE RESPONSE FOR FAILED <bdef>` (ya da `REPORTED`) | 400, gövdede `OO_SOURCE_BASED 011`, satır yok (global sınıf, BASIS 816 — dış bildirim) | Sınıfta isimli tip: `TYPES ty_failed TYPE RESPONSE FOR FAILED EARLY <bdef>.` → parametre `TYPE ty_failed` (ölçülen biçimde PUT 200). `MAPPED` · `TABLE FOR`/`STRUCTURE FOR` · `EXPORTING`/`CHANGING`/`RETURNING` · yerel sınıf · arayüz ÖLÇÜLMEDİ; tetiğin türetilmiş tip mi `EARLY` eksikliği mi olduğu ayrışmadı — `%sap-code-review` BE-55 |
 
 **Niteleyici:** tablo tek bir projede ve belirli sistemde ölçüldü; "hangi DTEL taramayı geçer" genel kuralı
 kanıtlanmadı. Yeni bir tipte 400 alırsan aşağıdaki bisect ile ölç, tabloya güvenip tahmin yürütme.
@@ -108,6 +112,12 @@ döndü; aynı sınıfın ikinci koşusu 22 döndü ve 1 test gerçekten kalıyo
 (test include'unun geç üretilmesi ya da oturum önbelleği olabilir). Aktivasyon sonrası `0` görürsen sonucu kabul etme:
 bilinen testli başka bir sınıfla kontrol grubu koş + aynı sınıfı ikinci kez koş. Beklenen sayıyı yerel kaynaktan
 (`FOR TESTING` metot sayısı) önceden yaz; tutmazsa DUR.
+Tekrar vakaları (2026-11, S/4 2025): 14 yeni sınıfın 3'ünde ilk koşu 0, ~4–5 dk sonra tam sonuç; bir sınıfta 0 **25 dakikadan
+uzun kalıcı** kaldı (kontrol grubu aynı pencerede 10/10) → içerik değişmeden **yeniden aktivasyon** sonrası ≥4 dk beklenip 5/5.
+Fonksiyon grubunda uzun ömürlü araç süreci ≥5 dk arayla iki kez 0 döndü; aynı istek taze bir süreçten gönderilince 3 döndü, ardından o süreç de 3.
+Taze süreç de bir sınıfta aktivasyondan hemen sonra 0 gördüğü için "yalnız oturum önbelleği" açıklaması tek başına tutmuyor.
+**Sıra (sınıf + fonksiyon grubu):** kontrol grubu → ≥4 dk bekle → ikinci koşu (aXet CLI'de her çağrı zaten taze süreçtir) → hâlâ 0 ise
+içerik değiştirmeden yeniden aktive et, ≥4 dk sonra yeniden koş → o da 0 ise "DOĞRULANMADI" raporla (FAIL değil).
 
 **aXet'te araç durumu (2026-09-13; çevrimdışı test edildi, canlı DOĞRULANMADI):** `adt_push_source` `object_type=ccau`
 (ve `ccimp`) sınıf alt-include'unu yazar — `name` = **ana sınıf**; include yoksa önce iskelet (①) sonra PUT (②), bayt readback,

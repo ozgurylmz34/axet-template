@@ -80,7 +80,7 @@ engellenebilir (araç metni: "bazı siteler otomatik istekleri engeller") — ç
 ### 6. Token-ağır araştırmayı devret
 Birden çok kaynak, uzun doküman ya da karşılaştırma gerekiyorsa `agent` aracıyla devret. Brifing:
 `skills/explore/references/brief-template.md` (tam şablon) + aşağıdaki ek. SAP işiyse ayrıca
-`skills-sap/sap-dev/references/role-briefs.md` S1-S4 blokları ve (a) SAP araştırma rolü.
+`skills-sap/sap-dev/references/role-briefs.md` S1-S5 blokları ve (a) SAP araştırma rolü.
 
 ```text
 ## ARAŞTIRMA EKİ

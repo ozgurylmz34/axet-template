@@ -14,13 +14,14 @@ Kaynak: `--list` + `%sap-adt-foundation` → `tool-catalog.md` (2026-09-13). Yen
 | İş | CLI | Durum |
 |---|---|---|
 | FUGR kabuğu | `adt_post_shell` `object_type:"fugr"` | var → sonra `adt_activate` `fugr` |
-| FM kabuğu | `adt_post_shell` `object_type:"func"` + `extra:{"function_group":"<Z/Y FUGR>"}` | var — grup kapıda Z/Y denetlenir (standart gruba FM = `ADR_0005_A`) |
-| FM kaynağı (imza + gövde) | `adt_push_source` `object_type:"func"` | var — grup canlı okumadan çözülür (Z/Y şart), sıkı kilit PUT + **ayrı aktivasyon araç içinde**; aktivasyon düşerse `push_failed` + `activation_errors` (kaynak yüklenmiştir). Gömülü inceleme yok (`SKIP`) → `%code-review` şart. Yasak B taranır |
+| FM kabuğu | `adt_post_shell` `object_type:"func"` + `extra:{"function_group":"<müşteri FUGR>"}` | var — grup kapıda müşteri adı olarak denetlenir: Z/Y ya da `sap-project.json` → `customer_namespaces` ile bildirilmiş `/<NS>/` (standart gruba FM = `ADR_0005_A`) |
+| FM kaynağı (imza + gövde) | `adt_push_source` `object_type:"func"` | var — grup canlı okumadan çözülür (müşteri adı şart: Z/Y ya da bildirilmiş `/<NS>/`), sıkı kilit PUT + **ayrı aktivasyon araç içinde**; aktivasyon düşerse `push_failed` + `activation_errors` (kaynak yüklenmiştir). Gömülü inceleme yok (`SKIP`) → `%code-review` şart. Yasak B taranır |
 | FM okuma / varlık / where-used | `adt_get` / `adt_where_used` `object_type:"func"` | var — grup arama indeksinden çözülür (`resolved_uri`, `function_group`); yeni FM indekste henüz yoksa `exists:false` dönebilir (DOĞRULANMADI) |
 | FUGR aktivasyonu | `adt_activate` `object_type:"fugr"` | var; canlı sonucu **DOĞRULANMADI** |
 | FM aktivasyonu | `adt_activate` `func` | **yok** (generic URL yok) → `adt_push_source func` içinde yapılır |
 | FM silme | `adt_delete` `func` | çalışmaz ("lock not supported") |
 | RFC-enable (Remote-Enabled) | — | **yok** → kullanıcı SE37 (§3) |
+| Güncelleme modülü (`IN UPDATE TASK`) işleme tipi | — | **yok** → kullanıcı SE37 ya da protokol §2.3 (araç değil) |
 
 - `extra` yalnız `func`'ta (`function_group`); `fugr`'da ya da tanınmayan alanla → `invalid_argument` (çıkış 3).
 - **İnceleme kapsamı:** `adt_push_source fugr` yalnız FG ana include'unu (`/functions/groups/<fg>/source/main` =
@@ -104,10 +105,28 @@ ENDFUNCTION.
 Kilit yanıtında `IS_LINK_UP='X'` = obje başka geliştiricinin transportunda → dur, kullanıcıya sor. FM kilit yanıtında
 `IS_LINK_UP`'ın gerçekten dönüp dönmediği **DOĞRULANMADI**.
 
+- 📏 **Readback kıyası (2026-11-06, s4_private, tek ölçüm):** SAP satır içi imzadan (`IMPORTING … .`) sonra **2 boş satır**
+  ekler (yerel 17 satır → canlı 19). Ham ya da `rstrip` md5 bu yüzden farklı çıkar; içerik farkı yoktur → FM readback'inde
+  boş satırları atarak kıyasla.
+
+### 2.3 Güncelleme modülü (`IN UPDATE TASK`, V1 "Start immediately") — ÇALIŞAN protokol (2026-11-06, tek ölçüm)
+`CALL FUNCTION … IN UPDATE TASK` ile çağrılan FM'in işleme tipi **güncelleme modülü** olmalıdır (değilse çalışma zamanında
+kısa döküm). Yaratma XML'inde verilemez; **yaratma sonrası metadata PUT** ile verilir. aXet CLI'de bu adımın aracı **YOK** —
+aşağıdaki protokol araç bakımı/teşhis içindir; elle REST ile yazma. Bugün yol: kullanıcı SE37'de işleme tipini seçer.
+1. Stateful oturum + taze CSRF. 2. `GET …/functions/groups/<fg>/fmodules/<fm>`, Accept `application/vnd.sap.adt.functions.fmodules.v3+xml`.
+3. Gövdede `fmodule:processingType="normal"` → `fmodule:processingType="update" fmodule:updateTaskKind="startImmediate"`
+   (değerleri sistemde zaten güncelleme modülü olan bir **emsal FM'in** metadata GET'inden al — tahmin etme).
+4. `POST …/fmodules/<fm>?_action=LOCK&accessMode=MODIFY` (header `X-sap-adt-corrNr=<K-istek>`) → `LOCK_HANDLE` + `CORRNR`.
+5. `PUT …/fmodules/<fm>?lockHandle=<h>&corrNr=<kilit yanıtındaki CORRNR>`, Content-Type **ve** Accept `…fmodules.v3+xml`,
+   gövde = değiştirilmiş **TAM** metadata → `200`, boş gövde. 6. Unlock → aktivasyon (§2.2).
+- ✅ **Kanıt = `TFDIR`, metadata değil:** aktivasyondan sonra `TFDIR-UTASK='1'` (FMODE boş) — emsal FM ile aynı.
+  ⚠ PUT sonrası / aktivasyon öncesi `UTASK` hâlâ boştur: TFDIR'i aktivasyon yazar → ölçümü aktivasyondan sonra yap.
+- Kapsam: aynı PUT'un RFC için (`processingType` remoteEnabled/rfc) çalışıp çalışmadığı **ÖLÇÜLMEDİ** (§3).
+
 ## 3. RFC-enable (Remote-Enabled Module)
 - ⛔ Yaratma XML'ine `fmodule:processingType="remoteEnabled"` → `400 ExceptionInvalidData "Unexpected Case in Branch"`.
 - ✅ Bilinen çalışan yol: kullanıcı SE37'de "Remote-Enabled Module" seçer (tek seferlik). Sonra metadata `processingType="rfc"`.
-- Yaratma sonrası metadata PUT (`…fmodules.v3+xml`) ile RFC-enable **DENENMEDİ**.
+- Yaratma sonrası metadata PUT (`…fmodules.v3+xml`) ile RFC-enable **DENENMEDİ** (güncelleme modülü için aynı yol ÇALIŞTI — §2.3; RFC için en güçlü aday).
 - RFC işaretlemeden önce `TABLES` tiplerini §2.1'e göre kontrol et (latent hata).
 
 ### 3.1 SOAP-RFC stateless'tır — `COMMIT` isteyen BAPI zinciri o kanaldan koşmaz

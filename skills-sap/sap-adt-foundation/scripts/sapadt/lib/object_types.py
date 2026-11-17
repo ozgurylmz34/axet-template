@@ -178,8 +178,60 @@ OBJECT_TYPES = {
         'description': 'ABAP Package',
         'supports_create': False,
         'file_extension': ''
-    }
+    },
+    # BAdI enhancement spot (ENHS/XSB) — kaynak cekirdek Q402/#415. URL `sap_adt_lib.enhs_spot_url`
+    # ile AYNI bicim (`/enhancements/enhsxsb/<kucuk harf, %2f kodlu>`). ⛔ ISLEM-IZINLI GIRDI:
+    # `generic_islemler` listesi DISINDAKI her cagiran (`islem` vermeyen ya da baska islem veren)
+    # `get_object_url`'den ValueError alir — yeni tip bir yolu ISTEMEDEN "destekleniyor"a
+    # cevirmesin. Olculen gerekce (2026-11-11, salt-okur, SAP_BASIS 758):
+    #   · aktivasyon: `adt_activate` tek-obje yolu worklist'i tip `ENHS/XSB` ile sorar, worklist spot'u
+    #     `ENHS/XS` olarak listeler (#413) ⇒ inaktif spot "dogrulandi" gorunurdu (sahte-yesil).
+    #     Kanonik yol: `adt_badi_spot_write` / `SAPADTClient.activate_enhancement_spot`.
+    #   · kaynak: spot'un `/source/main` ucu YOK (belge XML'dir) — yazma `adt_badi_spot_write`.
+    #   · atc: var olan bir Z spot'u, standart bir spot, VAR OLMAYAN spot ve VAR OLMAYAN sinif
+    #     dordu de AYNI sonucu verdi (`FINDING_STATS 0,0,0`, bos `objects`); kontrol grubu
+    #     bulgulu bir Z sinif `0,0,1` + 1 obje ⇒ ENHS'te "0 bulgu" yokluktan AYIRT EDILEMEZ.
+    #   · metadata: GET 200 yalniz `Accept: */*` ile (classes v2/v4, core.v1, application/xml 406);
+    #     var olmayan spot `*/*` ile 404 ⇒ varlik/yokluk okunur.
+    #   · kilit: `GET /sap/bc/adt/locks?objectRef=` bu sistemde SINIFTA DA 404 ⇒ `adt_lock_check`
+    #     spot'u tanir ama `kilit_belirsiz` doner (durust; ENHS'e ozgu degil).
+    #   · silme: kilit (nesne URL'i `_action=LOCK`) -> DELETE 200 — #413'te 816'da olculdu; core
+    #     `delete_object` yolunun ENHS'teki canli kosusu kaynak cekirdek olcum betigiyle; aXet'te OLCULMEDI.
+    'enhancementspot': {
+        'adt_type': 'ENHS/XSB',
+        'url_path': 'enhancements/enhsxsb',
+        'xml_namespace': 'enhs',
+        'description': 'BAdI Enhancement Spot',
+        'supports_create': False,  # yarat/yaz/aktive: adt_badi_spot_write
+        'file_extension': '',
+        'generic_islemler': ('silme', 'kilit', 'metadata'),
+        'generic_url_ret': (
+            "BAdI enhancement spot (ENHS/XSB) genel ADT yolunda YALNIZ silme / kilit sorgusu / "
+            "metadata okumasi icin adreslenir. Okuma: adt_badi_spot_read · yaratma, tanim yazma, "
+            "aktivasyon: adt_badi_spot_write (lib: SAPADTClient.get/create/write/"
+            "activate_enhancement_spot). Bkz. sap-adt-foundation references/enhancement-spot-badi.md."
+        ),
+        'islem_ret': {
+            'kaynak': (
+                "BAdI enhancement spot'un kaynak (/source/main) ucu YOKTUR — belge XML'dir "
+                "(application/vnd.sap.adt.enh.enhs.v2+xml). Okuma/yazma: "
+                "adt_badi_spot_read / adt_badi_spot_write. "
+                "Bkz. sap-adt-foundation references/enhancement-spot-badi.md."
+            ),
+            'atc': (
+                "ENHS icin ATC KAPSAM DISI: SAP bir spot icin 'FINDING_STATS 0,0,0' + bos obje "
+                "listesi dondurur ve bu sonuc VAR OLMAYAN bir objeninkiyle AYNIDIR (olculdu "
+                "2026-11-11) — '0 bulgu' TEMIZ anlamina gelmez, ATC istegi gonderilmedi. Spot "
+                "dogrulamasi: adt_badi_spot_write readback + aktivasyon hukmu; BAdI arabirimi ve "
+                "siniflari icin ATC'yi o objelerde (class/interface) kos."
+            ),
+        },
+    },
 }
+
+#: `get_object_url(..., islem=...)` icin bilinen islem adlari (yalniz belgeleme + yazim hatasi
+#: denetimi). Bir tip `generic_islemler` TASIMIYORSA islem YOK SAYILIR (eski davranis birebir).
+GENERIC_ISLEM_ADLARI = ('silme', 'kilit', 'metadata', 'atc', 'kaynak')
 
 # Aliases for convenience
 OBJECT_TYPE_ALIASES = {
@@ -207,7 +259,11 @@ OBJECT_TYPE_ALIASES = {
     'srvd': 'servicedefinition',
     'srv': 'servicedefinition',
     # Package alias
-    'devc': 'package'
+    'devc': 'package',
+    # BAdI enhancement spot (Q402) — #415'te kullanici `enhs` yazdi
+    'enhs': 'enhancementspot',
+    'enhsxsb': 'enhancementspot',
+    'enhs/xsb': 'enhancementspot',
 }
 
 
@@ -225,6 +281,16 @@ def normalize_object_type(object_type):
     # Check direct match
     if obj_type in OBJECT_TYPES:
         return obj_type
+
+    # Fonksiyon grubu include'u mu? (Q383) — URL'i GRUBU icerir, grup adi include adindan
+    # TURETILEMEZ ⇒ tek-parametreli get_object_url() onu uretemez (FM ile ayni gerekce).
+    if obj_type in FUGR_INCLUDE_TYPES:
+        raise ValueError(
+            f"'{object_type}' bir FONKSIYON GRUBU INCLUDE'udur (FUGR/I). get_object_url() onu "
+            f"uretemez: URL grubu icerir (/functions/groups/<FG>/includes/<INCL>) ve grup adi "
+            f"include adindan TURETILEMEZ. Kullan: get_fugr_include_url(<FG>, <INCL>) / "
+            f"SAPClient.push_fugr_include() / adt_push_source(object_type='fugr_include', group=<FG>)."
+        )
 
     # Sinif ALT-INCLUDE'u mu? (ccau/ccimp/...) — bunlar bagimsiz obje DEGILDIR, bu
     # yuzden OBJECT_TYPES'a KOYULMAZ (URL'leri ana sinifin adini gerektirir; tek
@@ -373,6 +439,202 @@ def is_class_include_url(object_url) -> bool:
     return parcalar[-1].lower() in {v['segment'] for v in CLASS_INCLUDE_TYPES.values()}
 
 
+# =============================================================================
+# FONKSIYON GRUBU INCLUDE'U (FUGR/I) — TEK KAYNAK (Q383, 2026-11-07)
+# =============================================================================
+# NEDEN AYRI: SE54 TMG olay include'u gibi `L<FG>F01` include'lari FUGR/I tipidir. `include`
+# tipi (PROG/I) daima `programs/includes` yoluna gider; o yoldan KILIT R3TR PROG ister ve SAP
+# `403 TK/103 "Nesne adi icin sozdizim olanaksiz"` dondurur. Dogru uc grubu icerir:
+#   /sap/bc/adt/functions/groups/<fg>/includes/<incl>[/source/main]
+# CANLI OLCUM 2026-11-07 (DEV, salt-GET, bir TMG olay include'u):
+#   functions/groups/<fg>/includes/<incl>              -> 200 `adtcore:type="FUGR/I"`,
+#        `adtcore:containerRef type="FUGR/F" name=<FG>`, ETag var
+#   .../source/main                                     -> 200 text/plain
+#   programs/includes/<incl>                            -> 200 `PROG/I`, ama
+#        `include:contextRef type="FUGR/I" uri=/sap/bc/adt/functions/groups/<fg>/source/main`
+#   ⇒ OKUMA iki yoldan da calisir; YAZMA (kilit) yalniz FUGR/I yolundan. contextRef, `include`
+#     tipiyle gelen bir FUGR include'unu kilitten ONCE ayirt etmenin DETERMINISTIK sinyalidir.
+# ⛔ CANLI OLCUM 2026-11-08 (DEV, salt-GET negatif kontrol, adt-gateway): SAP URL GRUBUNU GERI
+#   YANSITIR, 200 DONER — `functions/groups/<g>/includes/<incl>` dort grubun dordunde 200 verdi
+#   (baska var olan Z grup · var olmayan grup · onek kuralini gecen var olmayan kisaltma · dogru
+#   grup) ve `containerRef` adi/uri'si HER SEFERINDE URL'deki grubun aynisiydi. Tek fark
+#   `packageName` (var olmayan grupta alan yok). ⇒ FUGR/I `containerRef`'i GRUP KANITI DEGILDIR.
+#   Grup kaniti = `programs/includes/<incl>` `include:contextRef` (type FUGR/I, name SAPL<GRUP>):
+#   bu URL grup TASIMAZ, SAP yansitacak bir sey bulamaz (`fugr_include_grup_kaniti`).
+# Grup adi include adindan TURETILMEZ (L<FG>F01 desenine guvenmek tahmindir): acik parametre.
+FUGR_INCLUDE_TYPES = {'fugr_include', 'fugr-include', 'fugr/i'}
+FUGR_INCLUDE_ADT_TYPE = 'FUGR/I'
+
+
+def is_fugr_include_type(object_type) -> bool:
+    """Tip bir fonksiyon grubu include'u mu (`fugr_include`/`fugr-include`/`fugr/i`)?"""
+    return (str(object_type or '').lower().strip()) in FUGR_INCLUDE_TYPES
+
+
+def get_fugr_include_url(group, include_name) -> str:
+    """FUGR/I objesinin ADT URL'i. Grup ZORUNLU (bos -> ValueError; tahmin yok).
+    Yol parcasi kodlamasi tek kaynak `utils.ad_politikasi.url_segmenti` (`/NS/FG` -> `%2Fns%2Ffg`)."""
+    from utils.ad_politikasi import url_segmenti
+    g = (group or '').strip()
+    i = (include_name or '').strip()
+    if not g:
+        raise ValueError("Fonksiyon grubu include'u icin grup adi ZORUNLU (--group / group=). "
+                         "Grup include adindan turetilmez.")
+    if not i:
+        raise ValueError("Include adi bos olamaz")
+    return (f"/sap/bc/adt/functions/groups/{url_segmenti(g)}"
+            f"/includes/{url_segmenti(i)}")
+
+
+def _adtcore_ref(xml_text, etiket):
+    """Metadata XML'inde `<*:etiket adtcore:uri/type/name>` ilk dugumu -> dict | None."""
+    import xml.etree.ElementTree as ET
+    try:
+        kok = ET.fromstring(xml_text or '')
+    except Exception:  # noqa: BLE001 — okunamayan govde: sinyal YOK
+        return None
+    ns = '{http://www.sap.com/adt/core}'
+    for el in kok.iter():
+        if el.tag.split('}')[-1] == etiket:
+            return {'uri': el.get(ns + 'uri') or '', 'type': (el.get(ns + 'type') or '').upper(),
+                    'name': el.get(ns + 'name') or ''}
+    return None
+
+
+def include_fugr_baglami(metadata_xml):
+    """`programs/includes/<incl>` metadata'si bir FUGR include'una mi ait? -> grup adi | None.
+
+    Sinyal SAP'nin kendi `include:contextRef`'idir (type FUGR/*, uri .../functions/groups/<fg>/...);
+    ad deseni KULLANILMAZ. Govde okunamazsa / contextRef yoksa / FUGR degilse None.
+    """
+    ref = _adtcore_ref(metadata_xml, 'contextRef')
+    if not ref or not ref['type'].startswith('FUGR'):
+        return None
+    parcalar = [p for p in ref['uri'].split('?')[0].split('/') if p]
+    for i, p in enumerate(parcalar[:-1]):
+        if p.lower() == 'groups' and i > 0 and parcalar[i - 1].lower() == 'functions':
+            from utils.ad_politikasi import url_parcasindan_ad  # lazy (Q393 P2a)
+            return url_parcasindan_ad(parcalar[i + 1])  # `%2fns%2ffg` -> `/NS/FG`
+    return None
+
+
+def _adtcore_reflar(xml_text, etiket):
+    """`<*:etiket>` dugumlerinin HEPSI -> list | None (govde okunamazsa None)."""
+    import xml.etree.ElementTree as ET
+    try:
+        kok = ET.fromstring(xml_text or '')
+    except Exception:  # noqa: BLE001 — okunamayan govde: sinyal YOK
+        return None
+    ns = '{http://www.sap.com/adt/core}'
+    return [{'uri': el.get(ns + 'uri') or '', 'type': (el.get(ns + 'type') or '').upper(),
+             'name': (el.get(ns + 'name') or '').upper()}
+            for el in kok.iter() if el.tag.split('}')[-1] == etiket]
+
+
+def _kok_oznitelik(xml_text, yerel_ad):
+    """Kok dugumun `*:yerel_ad` ozniteligi (ad alanindan bagimsiz) -> str | None."""
+    import xml.etree.ElementTree as ET
+    try:
+        kok = ET.fromstring(xml_text or '')
+    except Exception:  # noqa: BLE001
+        return None
+    for anahtar, deger in kok.attrib.items():
+        if anahtar.split('}')[-1] == yerel_ad:
+            return deger
+    return None
+
+
+def fugr_include_grup_kaniti(progs_metadata_xml, group, *, root=None):
+    """`programs/includes/<incl>` metadata'si include'un `group`'a ait oldugunu KANITLIYOR mu?
+
+    -> (ok: bool, sebep: str). Kanit (Q393 — ad kurali tek kaynak `utils.ad_politikasi`):
+    TAM OLARAK TEK bir `FUGR/*` `include:contextRef` VE o referans:
+      · namespace'siz grup (`ZFG`): type `FUGR/I`, name == ana program `SAPL<GRUP>`
+      · musteri namespace'i olarak bildirilmis grup (`/NS/FG`): type `FUGR/I` name ==
+        `/NS/SAPLFG` YA DA type `FUGR/F` name == grubun kendisi (canli bicim, asagida)
+    Govde okunamazsa / contextRef yoksa / tip ya da ad farkliysa / `include:contextRefCount` > 1
+    ya da birden cok FARKLI `FUGR/*` contextRef varsa (FUGR/I+FUGR/F karisik dahil — bug-gate F3)
+    -> False (fail-closed; coklu baglamda "hangisi" sorusu tahmin olur). `root`: namespace
+    listesinin okunacagi proje koku (verilmezse baglanti dosyasinin dizini — ad_politikasi).
+    CANLI OLCUM 2026-11-08 (DEV salt-GET, bir TMG olay include'u): `contextRefCount="1"`, tek
+    contextRef FUGR/I SAPL<GRUP>; dogru grup + bosluklu/kucuk harfli dogru grup -> True; baska
+    var olan Z grup, var olmayan grup, onek kuralini gecen var olmayan grup -> False. ⛔ FUGR/I ucunun `containerRef`'i KANIT DEGILDIR: SAP URL
+    grubunu geri yansitir (2026-11-08 canli olculdu — yukaridaki blok).
+    """
+    g = (group or '').strip().upper()
+    if not g:
+        return False, "grup bos"
+    reflar = _adtcore_reflar(progs_metadata_xml, 'contextRef')
+    if reflar is None:
+        return False, "programs/includes metadatasi okunamadi"
+    if not reflar:
+        return False, "include:contextRef yok (FUGR include'u degil ya da govde eksik)"
+    sayac = _kok_oznitelik(progs_metadata_xml, 'contextRefCount')
+    if sayac is not None and sayac.strip() != '1':
+        return False, f"include:contextRefCount={sayac} (tekil baglam degil — fail-closed)"
+    # TAM OLARAK TEK `FUGR/*` baglam (bug-gate F3, 2026-11-08): yalniz FUGR/I saymak iki FUGR/F'yi
+    # ya da FUGR/I + FUGR/F karisimini gecirir ⇒ iki grup birden "kanitlanirdi".
+    fugr_baglamlari = sorted({(r['type'], r['name']) for r in reflar if r['type'].startswith('FUGR')})
+    if len(fugr_baglamlari) > 1:
+        return False, (f"birden cok FUGR contextRef {fugr_baglamlari} "
+                       f"(tekil baglam degil — fail-closed)")
+    from utils import ad_politikasi as _ap  # lazy: object_types deseni
+    beklenen = _ap.fugr_ana_program(g)
+    for ref in reflar:
+        if ref['type'] == 'FUGR/I' and ref['name'] == beklenen:
+            return True, f"contextRef FUGR/I {beklenen}"
+    # NAMESPACE'LI GRUP (Q393, canli olcum 2026-11-08 DEV salt-GET): `/NS/FG` include'larinda
+    # contextRef type `FUGR/F`, name = GRUBUN KENDISI (3 namespace grubunun 3'unde, TOP/U01/UXX;
+    # namespace'siz 2 grubun 2'sinde FUGR/I SAPL<GRUP>). Bu URL grup TASIMAZ (yansima yok).
+    # Yalniz namespace'li VE musteri namespace'i olarak bildirilmis grupta kabul; Z grupta
+    # FUGR/F kanit DEGILDIR (eski kural birebir).
+    if _ap.ad_namespace(g) and _ap.musteri_adi_mi(g, root=root):
+        for ref in reflar:
+            if ref['type'] == 'FUGR/F' and ref['name'] == g:
+                return True, f"contextRef FUGR/F {g} (namespace'li grup)"
+    gorulen = ', '.join(f"{r['type'] or '?'} {r['name'] or '?'}" for r in reflar)
+    return False, f"contextRef {gorulen} != FUGR/I {beklenen}"
+
+
+def fugr_include_konteyneri(metadata_xml):
+    """FUGR/I metadata'sindaki `adtcore:containerRef` (FUGR/F) grup adi | None.
+
+    ⛔ GRUP KANITI OLARAK KULLANMA: SAP bu alani istek URL'indeki gruptan doldurur (2026-11-08
+    canli olculdu). Kanit `fugr_include_grup_kaniti`'dir; bu yalniz bilgi/teshis icindir.
+    """
+    ref = _adtcore_ref(metadata_xml, 'containerRef')
+    if not ref or ref['type'] != 'FUGR/F':
+        return None
+    return ref['name'].upper() or None
+
+
+def fugr_include_ad_alani_hatasi(group, include_name, *, root=None):
+    """ADR 0005-A, FUGR/I: grup musteri adi olmali VE include grubun onekini tasimali -> hata | None.
+
+    Musteri adi + onek kurali tek kaynak `utils.ad_politikasi` (Q393): `ZFG` -> `LZFG...`,
+    bildirilmis namespace'li `/NS/FG` -> `/NS/LFG...`.
+
+    Arac `_fugr_include_guardrail` ve yazma kapisi (`sapadt/gate.py`) ile AYNI kural.
+    Grup include adindan TURETILMEZ; yalniz verilen grupla tutarlilik olculur. Grup/include
+    eslesmesinin KANITI bu degil, `fugr_include_grup_kaniti`'dir (`programs/includes` contextRef
+    FUGR/I SAPL<GRUP>, namespace'li grupta FUGR/F <GRUP>); bu yalniz ad alani on-elemesi. ⚠ onceki metin containerRef diyordu, YANLISTI: SAP URL grubunu yansitir, olcum 2026-11-08.
+    """
+    g = (group or '').strip().upper()
+    i = (include_name or '').strip().upper()
+    if not g:
+        return "fonksiyon grubu adi bos olamaz"
+    from utils import ad_politikasi as _ap  # lazy: object_types deseni (tek kaynak, Q393)
+    if not _ap.musteri_adi_mi(g, root=root):
+        return (f"Standart obje degistirme yasak (ADR 0005-A) — fonksiyon grubu '{g}' Z/Y ya da "
+                f"bildirilmis musteri namespace'i ile baslamali (customer namespace)"
+                f"{_ap.red_gerekcesi(g, root=root)}")
+    onek = _ap.fugr_include_oneki(g)
+    if not i.startswith(onek):
+        return (f"FUGR include '{i}' verilen grubun include oneki '{onek}' ile baslamiyor — "
+                f"grup/include eslesmesi dogrulanamadi (ADR 0005-A)")
+    return None
+
+
 def ensure_source_url(object_url) -> str:
     """Kaynak ucunu garanti et: gerekiyorsa sonuna `/source/main` EKLE.
 
@@ -468,17 +730,50 @@ def ddic_read_mode(object_type):
     return (None, None)
 
 
-def get_object_url(object_name, object_type='class'):
+def islem_reddi(object_type, islem=None):
+    """Tip bu `islem` icin genel ADT yolunda REDDEDILIYOR mu? -> ret mesaji | None.
+
+    Yalniz `generic_islemler` TASIYAN tiplerde (bugun: `enhancementspot`) karar verir; diger
+    her tipte None (islem yok sayilir — eski davranis). Cozulemeyen tip adinda da None doner:
+    ret karari o durumda `normalize_object_type`'ta kalir (cagiran oraya zaten carpar).
+    Tip cozumunde ValueError FIRLATMAZ; yalniz bilinmeyen `islem` adinda firlatir (U8) —
+    cagiran istek gondermeden ONCE sorabilsin diye var (Q402).
+    """
+    if islem is not None and islem not in GENERIC_ISLEM_ADLARI:
+        raise ValueError(f"Bilinmeyen islem adi: {islem!r} (gecerli: {', '.join(GENERIC_ISLEM_ADLARI)})")
+    try:
+        obj_type = normalize_object_type(object_type)
+    except ValueError:
+        return None
+    info = OBJECT_TYPES[obj_type]
+    izinli = info.get('generic_islemler')
+    if izinli is None or islem in izinli:
+        return None
+    ozel = (info.get('islem_ret') or {}).get(islem)
+    return (f"'{object_type}' ({info['adt_type']}) icin "
+            f"{('islem=' + repr(islem)) if islem else 'islem belirtilmeyen cagri'} genel "
+            f"ADT yolunda REDDEDILDI (izinli: {', '.join(izinli)}). "
+            + (ozel or info.get('generic_url_ret') or ''))
+
+
+def get_object_url(object_name, object_type='class', islem=None):
     """Generate SAP ADT object URL for any object type
 
     Her tipin tek-parametreli generic bir ucu YOKTUR. `url_path` bos olan tip
     FAIL-CLOSED reddedilir (ValueError + kanonik yolu SOYLEYEN mesaj): yanlis bir adres
     uretmek 404 dogurur ve 404 "obje YOK" diye okunur -- sessiz yanlis teshis. Bugun bu
     durumda olan tek tip `function` (FM); gerekce tablodaki yorumda.
+
+    `islem` (Q402): `generic_islemler` tasiyan tipte (ENHS) URL YALNIZ listedeki islem icin
+    uretilir; `islem` vermeyen ya da baska islem veren cagiran ValueError alir (fail-closed
+    varsayilan — gelecekteki cagiranlar da kapali kalir). Diger tiplerde yok sayilir.
     """
     from urllib.parse import quote
     obj_type = normalize_object_type(object_type)
     type_info = OBJECT_TYPES[obj_type]
+    ret = islem_reddi(object_type, islem)
+    if ret:
+        raise ValueError(ret)
     if not type_info.get('url_path'):
         raise ValueError(
             f"'{object_type}' icin generic ADT URL'i URETILEMEZ "
@@ -508,8 +803,12 @@ def is_function_module_type(object_type):
 
 
 def get_source_url(object_name, object_type='class'):
-    """Generate source URL with /source/main suffix"""
-    base_url = get_object_url(object_name, object_type)
+    """Generate source URL with /source/main suffix
+
+    Q402: kaynak ucu olmayan tip (ENHS) `islem='kaynak'` ile REDDEDILIR — mesaj kanonik araci
+    soyler (`push_object` / `download_object` / pretty-print bu kapiya carpar).
+    """
+    base_url = get_object_url(object_name, object_type, islem='kaynak')
     return f'{base_url}/source/main'
 
 
@@ -531,14 +830,15 @@ def supports_creation(object_type):
     return OBJECT_TYPES[obj_type]['supports_create']
 
 
-def supports_generic_url(object_type):
+def supports_generic_url(object_type, islem=None):
     """Tip tek-parametreli `get_object_url()` ile adreslenebilir mi?
 
-    TEK GERCEKTEN turer (`url_path`); ikinci bir bayrak TUTULMAZ -- iki alan ayrisirsa
-    biri bayatlar. Cagiran `get_object_url`u cagirmadan ONCE sorabilsin diye var.
+    TEK GERCEKTEN turer (`url_path` + Q402 `islem_reddi`); ikinci bir bayrak TUTULMAZ -- iki
+    alan ayrisirsa biri bayatlar. Cagiran `get_object_url`u cagirmadan ONCE sorabilsin diye var.
+    ENHS: `islem` verilmezse False (get_object_url da reddeder), izinli islemle True.
     """
     obj_type = normalize_object_type(object_type)
-    return bool(OBJECT_TYPES[obj_type].get('url_path'))
+    return bool(OBJECT_TYPES[obj_type].get('url_path')) and not islem_reddi(obj_type, islem)
 
 
 def list_supported_types():
@@ -592,6 +892,7 @@ _TYPE_TO_SUBDIR = {
     'accesscontrol': 'cds', 'dcls': 'cds', 'dcl': 'cds',
     'servicedefinition': 'cds', 'srvd': 'cds', 'srv': 'cds',
     'package': 'packages', 'devc': 'packages',
+    'enhancementspot': 'enhs', 'enhs': 'enhs', 'enhsxsb': 'enhs', 'enhs/xsb': 'enhs',
 }
 
 

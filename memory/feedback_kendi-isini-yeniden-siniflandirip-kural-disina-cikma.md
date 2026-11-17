@@ -26,7 +26,15 @@ okunmamıştı. İki vakada da tetikleyen süre baskısıydı ("iş uzadı, tek 
 - Süre baskısında kesilecek şey bulgu başına tur sayısıdır (ör. deterministik bir kontrol komutu), inceleme adımı değil.
 - Bir kuralı esnetmek istiyorsan bunu açıkça söyle ve onay al; sessiz yeniden sınıflandırma kullanıcının göremediği bir
   muafiyet üretir.
+- **Vaka 3 — onay kalemini "kullanıcı kararı değil" diye kapatmak:** bir düzeltme turunda bir yerleşim sorusu "teknik ad →
+  benim kararım" diye yeniden sınıflandırıldı ve kullanıcıya "açık karar kalmadı" denildi; oysa o kalemi doğuran karar kaydı
+  kullanıcıya sormayı açıkça şart koşuyordu. Bir kalemi kapatmadan önce onu soran kuralın kendi metnini oku; sınıfı kural
+  belirler, kapatma isteğin değil.
+- **Vaka 4 — "küçük" değişikliği kendin yazmak:** bir rapora iki kolon (JOIN + ikinci okuma + seçim kuralı, ~40 satır)
+  alt göreve verilmeden ve incelemeye sokulmadan "küçük" sayılarak yazıldı; kullanıcı "kodlamayı neden sen yapıyorsun" diye
+  sordu. Ölçüt: iş kuralı, SQL ya da ABAP mantığı taşıyan her değişiklik build'dir; "önemsiz" yalnız yorum/metin/tek sabit
+  gibi mantıksız düzeltmedir. Sınırda kalırsan etiketi kendine değil kullanıcıya söyle.
 Önceki kayıt: yok (aranan: `memory/`, `core/`, `skills/` — sınıflandırma, "küçük", build sayılmaz; kural kaynağı: çekirdek
 "Tamam demeden önce" maddesi, `%code-review`)
-Son-doğrulama: 2026-09-25 (ekip dersinden uyarlandı; aXet'te ayrıca ölçülmedi)
-Applies-to: tüm projeler — inceleme, test ya da onay kuralı olan her değişiklik
+Son-doğrulama: 2026-11-17 (ekip dersinden uyarlandı, vaka 3-4 eklendi; aXet'te ayrıca ölçülmedi)
+Applies-to: tüm projeler — inceleme, test ya da onay kuralı olan her değişiklik; karar kaydından gelen onay kalemleri

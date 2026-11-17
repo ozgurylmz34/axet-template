@@ -47,9 +47,15 @@ def _stem(path):
     return os.path.splitext(path)[0]
 
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from doc_ad_metin import AD_ADAYI, ad_coz, cds_kod_metni, yerel_ad  # noqa: E402 — yalnız stdlib, bağlantı katmanı yok
+
+
 def _strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"//[^\n]*", "", text)
+    # 2026-11-17: eski regex yalnız `/* */` + `//` atıyordu ⇒ `--` satır yorumundaki `define view entity <ESKI>` başlık
+    # sanılıyor, `-- yorum`lu alan satırı alan listesini boşaltıyordu; string'e de kördü (etiketteki `//` metni kesiyordu).
+    # Ayıklayıcı string'e duyarlıdır; etiket metni gerektiği için string içeriği KORUNUR.
+    return cds_kod_metni(text, string_icerigini_koru=True)
 
 
 def _body(text):
@@ -57,11 +63,14 @@ def _body(text):
 
     Gövde `{` araması define ifadesinden SONRA başlar; yoksa başlık annotation'larındaki `{` gövde sanılır.
     """
-    m = re.search(r"define\s+(?:root\s+)?(?:view\s+entity|view|abstract\s+entity|custom\s+entity)\s+(\w+)", text, re.I)
-    name = m.group(1) if m else "?"
+    # Ad `(\w+)` ile yakalanmaz: `\w` `/` eşlemez ⇒ `/NS/X` adlı entity '?' + projeksiyon yok + gövde olarak BAŞLIK
+    # annotation bloğu (sessiz yanlış alan tablosu). Gevşek yakala (`AD_ADAYI`), katı çöz (`ad_coz`); çözülemeyen ad '?'.
+    m = re.search(r"define\s+(?:root\s+)?(?:view\s+entity|view|abstract\s+entity|custom\s+entity)\s+(" + AD_ADAYI + r")",
+                  text, re.I)
+    name = (ad_coz(m.group(1))[0] or "?") if m else "?"
     start = m.end() if m else 0
-    pm = re.search(r"as\s+projection\s+on\s+(\w+)", text[start:], re.I)
-    proj = pm.group(1) if pm else None
+    pm = re.search(r"as\s+projection\s+on\s+(" + AD_ADAYI + r")", text[start:], re.I)
+    proj = (ad_coz(pm.group(1))[0] or None) if pm else None
     if pm:
         start += pm.end()
     bi = text.find("{", start)
@@ -94,10 +103,28 @@ def _read(path):
         raise FileNotFoundError("%s: %s" % (path, exc))
 
 
+# Alan satırı: `[key] <yol> [as <takma ad>]`, yol `.` ile ayrılmış ad parçaları. Parçalar gevşek yakalanır (`AD_ADAYI`
+# — namespace'li `/nspc/fld`, `/nspc/tab.vbeln`, `_tab./nspc/fld` dahil), katı çözülür (`ad_coz`). Eski desen
+# `[A-Za-z_][\w.]*` `/` ile başlayan kaynağı hiç eşlemiyordu ⇒ namespace'li alan tablodan SESSİZCE düşüyordu
+# (aXet tur 8 bug-gate). Şekle uyup gramere uymayan satır düşürülmez, "çözülemedi" diye raporlanır.
+_ALAN_SATIRI = re.compile(r"^(key\s+)?(" + AD_ADAYI + r"(?:\s*\.\s*" + AD_ADAYI + r")*)(?:\s+as\s+(" + AD_ADAYI
+                          + r"))?\s*$", re.I)
+
+
 def parse_cds(path):
-    """Döner: (entity_adı, projeksiyon_kaynağı, [alan sözlüğü]). Association/redirect satırları atlanır."""
+    """Döner: (entity_adı, projeksiyon_kaynağı, [alan sözlüğü]). Association/redirect satırları atlanır.
+
+    Ad grameri çözülemeyen alan satırlarını da görmek için `parse_cds_ayrintili`."""
+    return parse_cds_ayrintili(path)[:3]
+
+
+def parse_cds_ayrintili(path):
+    """Döner: (entity_adı, projeksiyon_kaynağı, [alan sözlüğü], [çözülemeyen alan satırı]).
+
+    Çözülemeyen = alan konumunda (`[key] yol [as ad]` şekli) olup bir ad parçası katı gramere uymayan satır
+    (ör. `/ab/x as Y` — namespace gövdesi 3-8 karakter değil). Bu satırlar tabloya ALINMAZ ama sayılır."""
     name, proj, body = _body(_strip_comments(_read(path)))
-    fields, annots = [], []
+    fields, annots, cozulemeyen = [], [], []
     for raw in body.split("\n"):
         line = raw.strip().rstrip(",").strip()
         if not line:
@@ -111,11 +138,16 @@ def parse_cds(path):
         if re.match(r"^_\w+\s*:", line) or "redirected to" in line or " composition " in line:
             annots = []
             continue
-        m = re.match(r"^(key\s+)?([A-Za-z_][\w.]*)(?:\s+as\s+(\w+))?\s*$", line, re.I)
+        m = _ALAN_SATIRI.match(line)
         if not m:
             annots = []
             continue
-        elem = m.group(3) or m.group(2).split(".")[-1]
+        parcalar = [s.strip() for s in m.group(2).split(".")]
+        if not all(ad_coz(s)[0] for s in parcalar + ([m.group(3)] if m.group(3) else [])):
+            cozulemeyen.append(line)
+            annots = []
+            continue
+        elem = m.group(3) or parcalar[-1]
         if elem.startswith("_"):
             annots = []
             continue
@@ -130,7 +162,7 @@ def parse_cds(path):
             "vh": vh.group(1) if vh else None,
         })
         annots = []
-    return name, proj, fields
+    return name, proj, fields, cozulemeyen
 
 
 def parse_bdef_readonly(stem):
@@ -165,6 +197,8 @@ def load_csv_labels(csv_path):
 
 
 def _sibling_cds(folder, entity):
+    # `/NS/X` dosya adında `#ns#x` olur; `os.path.join(folder, "/NS/X.cds")` klasörü ATAR (mutlak ikinci parça).
+    entity = yerel_ad(entity)
     for ext in CDS_EXTS:
         for cand in (entity + ext, entity.lower() + ext):
             p = os.path.join(folder, cand)
@@ -174,7 +208,7 @@ def _sibling_cds(folder, entity):
 
 
 def build_table(path, ref_csv=None):
-    name, proj, fields = parse_cds(path)
+    name, proj, fields, cozulemeyen = parse_cds_ayrintili(path)
     folder = os.path.dirname(os.path.abspath(path))
     iface_labels = {}
     ro = parse_bdef_readonly(_stem(path))
@@ -207,6 +241,11 @@ def build_table(path, ref_csv=None):
     md.append("_%d alan; %d salt okunur._%s" % (
         len(fields), len(ro & {f["name"] for f in fields}),
         (" Etiketsiz: " + ", ".join(unresolved)) if unresolved else ""))
+    if cozulemeyen:
+        # Sessiz düşme YOK: alan konumunda olup adı çözülemeyen satır tabloya girmedi — okuyucu bilsin.
+        md.append("")
+        md.append("_%d alan satırı çözülemedi (ad grameri: namespace `/<3-8 karakter>/`), tabloya ALINMADI: %s_" % (
+            len(cozulemeyen), "; ".join("`%s`" % s for s in cozulemeyen)))
     return "\n".join(md), unresolved
 
 

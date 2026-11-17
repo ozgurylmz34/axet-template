@@ -18,6 +18,8 @@ description: Use when the user asks for a review of a change, diff, file or pull
 GÖREV (SALT-OKUMA İNCELEME): Aşağıdaki değişikliği incele. Hiçbir dosyayı değiştirme.
 AMAÇ: <değişiklik ne yapmalı>
 KAPSAM: <dosyalar / diff özeti>  ·  ETKİ ALANI: <kullanıldığı yerler>
+OKUMA: değişen dosyaları tam oku; ≳1000 satırlık dosyada değişen bölgeleri ve dokundukları fonksiyonları ad çapasıyla
+(`rg -n`) bul ve o aralığı oku — satır numarası tek başına çapa değildir.
 KONTROL LİSTESİ:
 - Doğruluk: mantık hatası, sınır durumları, boş/null, hata yönetimi, eşzamanlılık
 - Güvenlik: kimlik bilgisi, enjeksiyon, yetki, hassas veri loglama
@@ -36,7 +38,7 @@ dair iddia yalnız dokümanda duruyorsa bulgu BLOCKER olamaz: en fazla WARNING +
 ÇIKTI:
 1. Bulgular önem sırasıyla: B<n> [BLOCKER | WARNING | NOTE · canlı | kaynak | doküman] dosya:satır — sorun — senaryo — öneri
 2. KAPSAMA TABLOSU: yukarıdaki kontrol listesinin her maddesi bir satır — UYGUN | İHLAL→B<n> | UYGULANMAZ (gerekçe) |
-   DOĞRULANAMADI (neden) — kanıt. Kanıtsız UYGUN yazma.
+   DOĞRULANAMADI (neden) — kanıt. Kanıtsız UYGUN yazma. Madde başına tek satır; birden çok maddeyi tek satırda toplama.
 3. SİSTEMDE KALAN DOĞRULAMALAR (yoksa "yok"): burada kanıtlanamayan, çalıştırarak ya da hedef sistemde doğrulanması
    gereken her kontrol — madde · neden kanıtlanamadı · kim doğrular.
 4. Tek karar: PASS / WARNING / BLOCKER. PASS = "baktığım yüzeyde bulgu yok"; 3. liste boş değilse "kanıtlandı" deme.

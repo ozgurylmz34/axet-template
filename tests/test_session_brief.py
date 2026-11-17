@@ -302,3 +302,28 @@ class DurumCapasiGitTest(GeciciTest):
         out = sb.durum_capasi(d)
         self.assertFalse(any("temiz" in s for s in out), out)
         self.assertTrue(any("ÖLÇÜLEMEDİ" in s and s.startswith("değişiklik:") for s in out), out)
+
+
+class YayinlarRefTest(GeciciTest):
+    """Q349 eşleniği: `origin/main` kısa adını aynı adlı bir ETİKET gölgeler (git ref çözümünde `refs/tags/`
+    `refs/remotes/`'tan önce gelir) ⇒ kalem listesi yanlış kaynaktan okunur. Sabit tam ref kullanır."""
+
+    def test_ayni_adli_etiket_uzak_dali_golgelemez(self):
+        import session_brief as sb
+        kaynak = self.tmp / "kaynak"
+        kaynak.mkdir()
+        self.git(kaynak, "init", "-q", "-b", "main")
+        self.yaz(kaynak / "guncelle" / "yayinlar.json", '{"kaynak": "dal"}')
+        self.git(kaynak, "add", ".")
+        self.git(kaynak, "commit", "-q", "-m", "dal")
+        klon = self.tmp / "klon"
+        self.git(self.tmp, "clone", "-q", str(kaynak), str(klon))
+        self.git(klon, "checkout", "-q", "-b", "yan")
+        self.yaz(klon / "guncelle" / "yayinlar.json", '{"kaynak": "etiket"}')
+        self.git(klon, "commit", "-q", "-am", "etiket")
+        self.git(klon, "tag", "origin/main")
+        kisa = self.git(klon, "show", "origin/main:guncelle/yayinlar.json", kontrol=False)
+        self.assertIn("etiket", kisa.stdout, "kontrol grubu: gölgeleme kurulamadı — test hiçbir şey ölçmez")
+        rc, ham = sb._git(klon, "show", sb.YAYINLAR_REF, timeout=8)
+        self.assertEqual(rc, 0, ham)
+        self.assertIn('"dal"', ham)

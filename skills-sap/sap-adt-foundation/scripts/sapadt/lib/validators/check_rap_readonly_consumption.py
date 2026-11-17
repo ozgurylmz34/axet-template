@@ -28,7 +28,16 @@ Kullanım:
 
 Exit kodu:
     0 — Temiz (Rule B ölçülemediyse stderr'de not)
+    0 + `AXET-GATE-STATUS … measured=false reason=ad-cozulemedi` — `define view entity` VAR ama entity ya da
+        base/join adı katı ad gramerine uymadı (ör. `/AB/X`) ⇒ ÖLÇÜLEMEDİ, "kapsam dışı" DEĞİL.
+    0 + `… reason=namespace-kayitsiz` — katman adı (`/<NS>/<MOD><nnn>_C_*`) ama `/<NS>/` projede
+        `customer_namespaces` ile bildirilmemiş: müşterinin mi SAP'nin mi bilinemez.
     1 — İhlal (BLOCKER)
+
+AD (2026-11-17, kaynak çekirdek #402): yakalama + müşteri kararı `utils/ad_politikasi` (AD_ADAYI · ad_coz ·
+musteri_karari); katman sözdizimi `<ad-alanı><MOD><nnn>_C_*`, ad-alanı = Z/Y ya da bildirilmiş namespace.
+Eski yerel desen (`Z` + 2-4 harf + 3 rakam + `_C_`) yalnız Z'yi görüyordu. ⚠ SIKILAŞTIRMA: Y'li ad da artık denetlenir.
+BDEF araması: düz `*.bdef` + abapGit `*.bdef.asbdef`.
 """
 import argparse
 import os
@@ -36,19 +45,48 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _gate_status import gate_status  # noqa: E402  — AXET-GATE-STATUS üretici ucu
+from utils.ad_politikasi import (  # noqa: E402  — TEK ad grameri + müşteri kararı
+    AD_ADAYI, ad_coz, ad_gecis_deseni, ad_namespace, musteri_karari)
+
 if sys.platform == 'win32':
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+# Ad yakalama `ad_politikasi.AD_ADAYI` + `ad_coz` — validator kendi ad desenini YAZMAZ.
 ENTITY_RE = re.compile(
-    r'\bdefine\s+(?:root\s+)?view\s+entity\s+(\w+)', re.IGNORECASE)
+    r'\bdefine\s+(?:root\s+)?view\s+entity\s+(' + AD_ADAYI + r')', re.IGNORECASE)
+# Tür anahtar sözcüğü (adsız): ENTITY_RE eşleşmeyip bu eşleşirse ad ÇÖZÜLEMEMİŞTİR.
+ENTITY_KW_RE = re.compile(r'\bdefine\s+(?:root\s+)?view\s+entity\b', re.IGNORECASE)
+_GATE = Path(__file__).stem
 PROJECTION_RE = re.compile(r'\bas\s+projection\s+on\b', re.IGNORECASE)
 SELECT_FROM_RE = re.compile(r'\bas\s+select\s+from\b', re.IGNORECASE)
-# Modül-bağımsız adlandırma kuralı: Z<MOD><nnn>_C_* (MOD 2-4 harf)
-C_ENTITY_NAME_RE = re.compile(r'^Z[A-Z]{2,4}\d{3}_C_\w+$', re.IGNORECASE)
-JOIN_OR_BASE_RE = re.compile(
-    r'\b(?:join|from)\s+(Z[A-Z]{2,4}\d{3}_C_\w+)', re.IGNORECASE)
+# KATMAN ADI (adın ad-alanından SONRAKİ gövdesi): <MOD><nnn>_C_* (MOD 2-4 harf). Ad-alanı kararı (Z/Y ya da
+# bildirilmiş `/<NS>/`) `ad_politikasi.musteri_karari`'dadır.
+_KATMAN_C_GOVDE = re.compile(r'[A-Z]{2,4}\d{3}_C_[A-Z0-9_]+', re.IGNORECASE | re.ASCII)
+JOIN_OR_BASE_RE = re.compile(r'\b(?:join|from)\s+(' + AD_ADAYI + r')', re.IGNORECASE)
+_BDEF_UZANTILARI = ('.bdef', '.asbdef')
+
+
+def _katman_govdesi(ad: str) -> str:
+    """Ad-alanı önekini (namespace ya da Z/Y harfi) at: `/NSPC/SD001_C_X` → `SD001_C_X`."""
+    ns = ad_namespace(ad)
+    return ad[len(ns):] if ns else ad[1:]
+
+
+def c_katmani(ad: str) -> str:
+    """'evet' · 'hayir' · 'namespace-kayitsiz' (katman adı ama ad-alanı bildirilmemiş) · 'ad-cozulemedi'."""
+    karar = musteri_karari(ad)
+    if karar == 'ad-cozulemedi':
+        return karar
+    if not _KATMAN_C_GOVDE.fullmatch(_katman_govdesi(ad)):
+        return 'hayir'
+    if karar == 'musteri':
+        return 'evet'
+    return 'namespace-kayitsiz' if karar == 'namespace-kayitsiz' else 'hayir'
 
 # aXet: proje taraması sınırı (reviewer alt süreci 30 sn bütçelidir).
 _ATLA = {'.git', '.axet-code', 'node_modules', '__pycache__', '.venv', 'venv'}
@@ -81,7 +119,7 @@ def _bdef_dosyalari(kok: Path):
             sayac += 1
             if sayac > _TARAMA_SINIRI:
                 return bulunan, True
-            if f.lower().endswith('.bdef'):
+            if f.lower().endswith(_BDEF_UZANTILARI):   # abapGit: `X.bdef.asbdef`
                 bulunan.append(Path(dirpath) / f)
     return bulunan, False
 
@@ -92,7 +130,8 @@ def _referans_var_mi(dosyalar, entity: str) -> bool:
             btxt = bdef.read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
-        if re.search(rf'\b{re.escape(entity)}\b', btxt, re.IGNORECASE):
+        # `\b` namespace'li adda `/` önünde tutmaz ⇒ sınır `ad_gecis_deseni`'nden
+        if re.search(ad_gecis_deseni(entity), btxt, re.IGNORECASE):
             return True
     return False
 
@@ -114,27 +153,43 @@ def main() -> int:
     text = _strip_comments(raw)
 
     em = ENTITY_RE.search(text)
-    if not em:
+    entity, _neden = ad_coz(em.group(1)) if em else ('', None)
+    if not entity:
+        if ENTITY_KW_RE.search(text):
+            # `define view entity` VAR ama ad çözülemedi ⇒ ÖLÇÜLEMEDİ (eski hâl "kapsam dışı" + rc 0 idi).
+            print(f'ÖLÇÜLEMEDİ — {path.name} `define view entity` içeriyor ama entity adı '
+                  f'çözülemedi → Rule A/B KOŞMADI; "temiz" anlamına GELMEZ.')
+            gate_status(_GATE, 'SKIPPED', False, 'ad-cozulemedi')
+            return 0
         print(f'OK — {path.name} view entity değil, kapsam dışı')
         return 0
-    entity = em.group(1)
     is_projection = bool(PROJECTION_RE.search(text))
     is_select = bool(SELECT_FROM_RE.search(text))
 
     violations = []
     notlar = []
+    # Kural koşamayan ad: katı gramere uymayan base/join adı ya da bildirilmemiş namespace'te katman adı.
+    olculemeyen: list[tuple[str, str]] = []
 
     # Rule A — düz view entity, base/join'de C_ projection
     if is_select and not is_projection:
         for m in JOIN_OR_BASE_RE.finditer(text):
-            violations.append(
-                ('A', m.group(1),
-                 f"'{m.group(1)}' bir consumption projection (Z<MOD><nnn>_C_); "
-                 f"düz 'define view entity' base/join kaynağı OLAMAZ. "
-                 f"Interface (Z<MOD><nnn>_I_*) view'a geç."))
+            kaynak = m.group(1)
+            durum = c_katmani(kaynak)
+            if durum == 'evet':
+                violations.append(
+                    ('A', kaynak,
+                     f"'{kaynak}' bir consumption projection (<ad-alanı><MOD><nnn>_C_); "
+                     f"düz 'define view entity' base/join kaynağı OLAMAZ. "
+                     f"Interface (<ad-alanı><MOD><nnn>_I_*) view'a geç."))
+            elif durum != 'hayir':
+                olculemeyen.append((kaynak, durum))
 
     # Rule B — C_ adlı + 'as projection on' ama referanslayan .bdef yok
-    if is_projection and C_ENTITY_NAME_RE.match(entity):
+    entity_katman = c_katmani(entity) if is_projection else 'hayir'
+    if entity_katman == 'namespace-kayitsiz':
+        olculemeyen.append((entity, entity_katman))
+    if is_projection and entity_katman == 'evet':
         kok = _rules_kok(path)
         if kok is not None:
             dosyalar, _asildi = _bdef_dosyalari(kok)
@@ -161,6 +216,15 @@ def main() -> int:
 
     for n in notlar:
         print(n, file=sys.stderr)
+
+    if not violations and olculemeyen:
+        # İhlal bulunmadı ama en az bir ad DENETLENEMEDİ ⇒ "temiz" yazılmaz.
+        print(f'ÖLÇÜLEMEDİ — {path.name}: '
+              + ', '.join(f"'{a}' ({d})" for a, d in olculemeyen)
+              + ' → katman kuralı bu adlar için KOŞMADI; "temiz" anlamına GELMEZ. '
+                'namespace-kayitsiz: ad-alanı müşterinin ise sap-project.json customer_namespaces.')
+        gate_status(_GATE, 'SKIPPED', False, olculemeyen[0][1])
+        return 0
 
     if not violations:
         print(f'OK — {path.name} RAP read-only consumption/interface: Rule A temiz'

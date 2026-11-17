@@ -1,7 +1,7 @@
 # sinif-kurulum-bakim-scripti — kurulum ve bakım script'leri (`scripts/*.py`)
 
 ## Tetik
-Plandaki dosya `scripts/install.py`, `scripts/doctor.py`, `scripts/new_project.py` ya da başka bir kök script.
+Plandaki dosya `scripts/install.py`, `scripts/doctor.py`, `scripts/new_project.py` ya da başka bir kök script. `agents/sap-*.md` (SAP özel ajanları) da bu sınıftadır.
 
 ## Kapsam (harita.json)
 | Alt sınıf | `etkin` | Özel adım | Ne demek |
@@ -9,6 +9,7 @@ Plandaki dosya `scripts/install.py`, `scripts/doctor.py`, `scripts/new_project.p
 | `kurulum-script-install` | `install-sonra-yeni-oturum` | komut | python scripts/install.py --dry-run, sonra python scripts/install.py |
 | `kurulum-araci-script` | `aninda` | yok | anında geçerli |
 | `bakim-script-kok` | `aninda` | yok | anında geçerli |
+| `ozel-ajan` | `yeni-oturum` | yok | aXet'i kapat-aç (ajanları `%guncelle`'nin `install.py --paketler` adımı kullanıcı ajan dizinine eşitler) |
 
 ## Zorunlu ek adımlar
 1. Dosyayı al/birleştir.

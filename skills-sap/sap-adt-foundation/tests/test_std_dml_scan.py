@@ -2,12 +2,19 @@
 """Kesin Yasak B tarayıcısı (`sapadt/std_dml_scan.py`) — saf fonksiyon, ağ yok.
 
 Pozitifler: standart tabloya doğrudan DB yazımı → bulgu (satır + hedef doğru).
-Negatifler: yorum/literal, iç tablo işlemleri, EML, update task, Z/Y ve /Z…/ namespace → bulgu YOK.
+Negatifler: yorum/literal, iç tablo işlemleri, EML, update task, Z/Y → bulgu YOK.
+Namespace (ADR 0005 A-EK): yalnız sap-project.json `customer_namespaces` ile bildirilmiş /<NS>/ izinli;
+bildirilmemiş /Z…/·/Y…/ dahil her /NS/ bulgu verir (StdDmlNamespace).
 """
 from __future__ import annotations
 
+import json
+import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import _helpers as H
 
@@ -56,7 +63,6 @@ NEGATIF = [
     ("N9 CALL FUNCTION 'X' IN UPDATE TASK", "CALL FUNCTION 'Z_UPD' IN UPDATE TASK EXPORTING iv = lv."),
     ("N10 DELETE ADJACENT DUPLICATES FROM lt", "DELETE ADJACENT DUPLICATES FROM lt COMPARING matnr."),
     ("N11 DELETE DATASET lv_file", "DELETE DATASET lv_file."),
-    ("N12 /zns/ müşteri namespace", "UPDATE /zns/tab SET a = 1.\nDELETE FROM /yabc/log WHERE x = 1."),
     ("N13 MODIFY TABLE lt FROM ls", "MODIFY TABLE lt FROM ls."),
     ("N14 DELETE TABLE lt FROM ls", "DELETE TABLE lt FROM ls."),
     ("N15 INSERT … INTO lt INDEX", "INSERT ls INTO lt_items INDEX 1."),
@@ -119,6 +125,53 @@ class StdDmlTarama(unittest.TestCase):
         self.assertIn("write-api-selection.md", m)
         H.kaydet("B mesaj: ilk 5 bulgu + satır no + yönlendirme", "5 satır + '+2' + released API→BAPI→RFC→BDC + karar ağacı",
                  "uyuşuyor", True)
+
+
+class StdDmlNamespace(unittest.TestCase):
+    """Bildirilmiş namespace izinli · bildirilmemiş (eski `/Z…/` kabulü dahil) yasaklı · liste bağlantının projesinden."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="axet_dml_ns_")
+        self.kok = Path(self._tmp.name)
+        (self.kok / ".conn_adt").write_text("ADT_SAP_URL=http://127.0.0.1:9\n", encoding="utf-8")
+        self._yamalar = [mock.patch.dict(os.environ, {"AXET_SAP_PROJECT_DIR": str(self.kok)}),
+                         mock.patch.dict(sys.modules)]
+        for y in self._yamalar:
+            y.start()
+        sys.modules.pop("sap_adt_lib", None)   # bağlantı yolu env kuralından çözülsün (süreçteki eski yükleyici değil)
+
+    def tearDown(self):
+        for y in reversed(self._yamalar):
+            y.stop()
+        self._tmp.cleanup()
+
+    def _liste(self, ns):
+        (self.kok / "sap-project.json").write_text(json.dumps({**H.SAP_PROJECT_OK, "customer_namespaces": ns}),
+                                                   encoding="utf-8")
+
+    def test_bildirimsiz_zns_bulgu(self):
+        self._liste([])
+        b = tara("UPDATE /zns/tab SET a = 1.\nDELETE FROM /yabc/log WHERE x = 1.", "class")
+        ok = {x.hedef for x in b} == {"/ZNS/TAB", "/YABC/LOG"}
+        H.kaydet("B namespace bildirilmemiş /zns/ /yabc/ (eski kabul)", "2 bulgu", str([x.hedef for x in b]), ok)
+        self.assertTrue(ok, b)
+
+    def test_bildirilmis_izinli_digeri_bulgu(self):
+        self._liste(["/ZNS/"])
+        b = tara("UPDATE /zns/tab SET a = 1.\nDELETE FROM /yabc/log WHERE x = 1.\nUPDATE /scwm/ordim_o SET x = 1.",
+                 "class")
+        ok = {x.hedef for x in b} == {"/YABC/LOG", "/SCWM/ORDIM_O"}
+        H.kaydet("B namespace /ZNS/ bildirilmiş → /zns/ izinli, /yabc/ + /scwm/ bulgu", "2 bulgu",
+                 str([x.hedef for x in b]), ok)
+        self.assertTrue(ok, b)
+
+    def test_baglanti_yoksa_kapali(self):
+        self._liste(["/ZNS/"])
+        (self.kok / ".conn_adt").unlink()
+        b = tara("UPDATE /zns/tab SET a = 1.", "class")
+        ok = [x.hedef for x in b] == ["/ZNS/TAB"]
+        H.kaydet("B namespace bildirilmiş ama .conn_adt yok → kapalı (bulgu)", "1 bulgu", str([x.hedef for x in b]), ok)
+        self.assertTrue(ok, b)
 
 
 if __name__ == "__main__":

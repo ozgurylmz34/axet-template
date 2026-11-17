@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import re
 
+from utils.ad_politikasi import url_segmenti as _adt_seg  # noqa: E402 — ADT yol parcasi tek kaynak
+
 from sap_adt_lib import (SAPADTError, aktivasyon_govde_hukmu, aktivasyon_hedefleri_govdeden,
                          aktivasyon_worklist_sondasi)
 
@@ -54,7 +56,7 @@ def publish_xml(binding):
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">\n'
-        f'  <adtcore:objectReference adtcore:uri="{SRVB_BASE}/{binding.lower()}"\n'
+        f'  <adtcore:objectReference adtcore:uri="{SRVB_BASE}/{_adt_seg(binding)}"\n'
         f'      adtcore:name="{binding.upper()}"/>\n'
         '</adtcore:objectReferences>'
     )
@@ -209,7 +211,7 @@ def publish_hukmu(status_code, body: str) -> dict:
         out.update(ok=False, published=None, publish_probe="severity_yok")
         out["publish_notice"] = (
             "PUBLISH ÖLÇÜLEMEDİ — HTTP %s ama gövde SEVERITY taşımıyor (okuma yolu: %s). "
-            "Bu 'publish edildi' DEĞİLDİR: `GET /sap/opu/odata/sap/<SRVB>/$metadata` ile teyit et."
+            "Bu 'publish edildi' DEĞİLDİR: `GET <metadata_path>` ile teyit et (Z/Y: `/sap/opu/odata/sap/<SRVB>/$metadata`)."
             % (status_code, yol))
         return out
     out.update(ok=False, published=None, publish_probe="severity_taninmadi")

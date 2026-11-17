@@ -300,10 +300,10 @@
     {
       "sinif": "kurulum-script-install",
       "ust_sinif": "kurulum-bakim-scripti",
-      "glob": ["scripts/install.py"],
-      "yukleme": "kullanıcı terminalden çalıştırır; global config'i (context_paths, skills_paths, permissions) yazar",
+      "glob": ["scripts/install.py", "scripts/ajan_kurulum.py"],
+      "yukleme": "kullanıcı terminalden çalıştırır; global config'i (context_paths, skills_paths, permissions) yazar; ajan_kurulum.py'yi install.py içe aktarır (özel ajan kurulumu)",
       "etkin": "install-sonra-yeni-oturum",
-      "esler": ["config/permissions.json", "core/00-temel.md", "memory/MEMORY.md", "tests/test_install.py"],
+      "esler": ["config/permissions.json", "core/00-temel.md", "memory/MEMORY.md", "tests/test_install.py", "tests/test_ajan_kurulum.py"],
       "test": [{"komut": "python tests/run_tests.py -k install", "cwd": ".", "on_kosul": null}],
       "risk": "yuksek",
       "ozel_adim": "python scripts/install.py --dry-run, sonra python scripts/install.py",
@@ -376,6 +376,19 @@
       "ozel_adim": null,
       "kritik_yol": false,
       "not": "behavior_manifest.py generate KULLANICI TERMİNALİNDE koşar; aXet oturumu koşamaz (config/permissions.json bash deny). merge_pr.py bu ailede: CI'yi kendi doğrulayan bir merge yardımcısıdır ama GATE DEĞİLDİR (kullanmamak serbest) — yine de yanlış çalışırsa kırmızı CI'yi geçirebileceği için risk ailesiyle aynı tutuldu."
+    },
+    {
+      "sinif": "ozel-ajan",
+      "ust_sinif": "kurulum-bakim-scripti",
+      "glob": ["agents/*"],
+      "yukleme": "scripts/ajan_kurulum.py kullanıcı ajan dizinine (AXET_AGENTS_DIR ya da <config tabanı>/axet-code/agents) işaretli kopya yazar: install.py --sap kurar, install.py --paketler (her %guncelle) eşitler; aXet.code ≥ 1.5.1 oturum başında okur",
+      "etkin": "yeni-oturum",
+      "esler": ["scripts/ajan_kurulum.py", "scripts/install.py", "tests/test_ajan_kurulum.py"],
+      "test": [{"komut": "python tests/run_tests.py -k ajan_kurulum", "cwd": ".", "on_kosul": null}],
+      "risk": "orta",
+      "ozel_adim": null,
+      "kritik_yol": false,
+      "not": "Kaynak değişince kurulu kopya %guncelle'nin install.py --paketler adımında eşitlenir (yalnız SAP açıkken); değişiklik bir SONRAKİ oturumda etkinleşir. Kullanıcının aynı adlı (işaretsiz) ajanına dokunulmaz."
     },
     {
       "sinif": "test-kok",

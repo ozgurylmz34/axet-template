@@ -7,7 +7,7 @@ PROJECT-ID: <PROJE_ADI>
 ## Proje kimliği
 - Amaç: <kısa açıklama>
 - Teknoloji: <ör. SAP S/4HANA ABAP · Python · UI5>
-- SAP (varsa): sistem profili <…> · master_language: <TR|EN> · aktif paket: <…> (tüm paketler: `<source_root>/PAKETLER.md`) · transport: kullanıcı verir
+- SAP (varsa): sistem profili <…> · master_language: <TR|EN> · aktif paket: <…> (tüm paketler: `<source_root>/PAKETLER.md`) · müşteri namespace'i: <yok ya da /NS/> (bildirim: `sap-project.json` → `customer_namespaces`) · transport: kullanıcı verir
 - Depo: <remote adresi ya da "yerel">
 - İş bağlamı (müşteri, peyzaj, arayüz, belge dili, numaralandırma): `proje-recetesi.md` — yoksa `proje-recetesi.ornek.md`'yi kopyalayıp doldur. Dosyada `[BİLİNMİYOR]` yazan alanı ajan TAHMİN ETMEZ, kullanıcıya sorar.
 

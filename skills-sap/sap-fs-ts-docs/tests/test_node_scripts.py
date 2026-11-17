@@ -231,22 +231,31 @@ class SayfaNoYerImiTest(unittest.TestCase):
 _SAHTE_PLAYWRIGHT = r"""
 // Sahte playwright-core: tarayıcı açmaz; page.pdf seçeneklerini, evaluate sayısını ve sayfa başına çağrıları JSON'a
 // yazar. SAHTE_HATA: "pdf" -> page.pdf dosya YAZMADAN atar · "close" -> PDF yazıldıktan SONRA browser.close atar ·
-// "launch" -> tarayıcı başlatılamaz.
+// "launch" -> tarayıcı başlatılamaz. Yerleşim: SAHTE_DIZIN=1 -> açılan sayfa dizin listesi · SAHTE_YERLESIM (JSON) ->
+// düzeltme SONRASI ölçüm (varsayılan temiz). evaluate türü işlev kaynağından ayrılır ("dizin" · "yerlesim").
 const fs = require("fs");
 const kayit = process.env.SAHTE_KAYIT;
 const hata = process.env.SAHTE_HATA || "";
 const olcum = JSON.parse(process.env.SAHTE_OLCUM || "null");
-const durum = { pdf: null, evaluate: 0, sayfalar: [] };
+const TEMIZ = { genislikMm: 186, yanKaynak: "js-margin", birimsiz: 0, okunamaz: 0, isGorsel: 0, isPre: 0, kademe1: 0,
+                kademe2: 0, kademe3: 0, tasanN: 0, tasan: "", kirpikN: 0, kirpik: "" };
+const yerlesim = Object.assign({}, TEMIZ, JSON.parse(process.env.SAHTE_YERLESIM || "{}"));
+const durum = { pdf: null, evaluate: 0, sayfalar: [], css: [], goto: [] };
 const yaz = () => fs.writeFileSync(kayit, JSON.stringify(durum));
 const yeniSayfa = () => {
   const iz = { goto: 0, setContent: 0, evaluate: [], close: 0 };
   durum.sayfalar.push(iz);
   return {
-    goto: async () => { iz.goto++; }, emulateMedia: async () => {},
+    goto: async (u) => { iz.goto++; durum.goto.push(u); yaz(); }, emulateMedia: async () => {},
+    addStyleTag: async (o) => { durum.css.push(o.content); yaz(); },
     setContent: async () => { iz.setContent++; yaz(); }, close: async () => { iz.close++; yaz(); },
     evaluate: async (fn, arg) => { durum.evaluate++;
-      const tur = arg === undefined ? "baslik" : typeof arg === "string" ? "altbilgi" : "alt-bosluk";
+      const src = String(fn);
+      const tur = src.includes("parentDirLinkBox") ? "dizin" : src.includes("data-ix-pdf-sar") ? "yerlesim" :
+                  arg === undefined ? "baslik" : typeof arg === "string" ? "altbilgi" : "alt-bosluk";
       iz.evaluate.push(tur); yaz();
+      if (tur === "dizin") return { liste: process.env.SAHTE_DIZIN === "1", baslik: "Index of C:/" };
+      if (tur === "yerlesim") return arg[3] ? yerlesim : TEMIZ;
       if (tur === "baslik") return { toplam: 0, uygulanan: 0, geri: 0 };
       if (tur === "altbilgi") return olcum.altbilgiMm;
       const o = Object.assign({}, olcum); delete o.altbilgiMm; return o; },
@@ -288,12 +297,12 @@ class SahteTarayiciTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _kos(self, *bayrak, olcum=None, hata=""):
+    def _kos(self, *bayrak, olcum=None, hata="", dizin=False, yerlesim=None, girdi=None):
         if os.path.exists(self.kayit):
             os.remove(self.kayit)
         env = dict(os.environ, PLAYWRIGHT_CORE_PATH=self.pw, SAHTE_KAYIT=self.kayit, SAHTE_OLCUM=json.dumps(olcum),
-                   SAHTE_HATA=hata)
-        r = subprocess.run([node_path(), os.path.join(SCRIPTS, "html_to_pdf.js"), self.html, self.pdf, *bayrak],
+                   SAHTE_HATA=hata, SAHTE_DIZIN="1" if dizin else "0", SAHTE_YERLESIM=json.dumps(yerlesim or {}))
+        r = subprocess.run([node_path(), os.path.join(SCRIPTS, "html_to_pdf.js"), girdi or self.html, self.pdf, *bayrak],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=60)
         kayit = None
         if os.path.exists(self.kayit):
@@ -312,7 +321,77 @@ class SahteTarayiciTest(unittest.TestCase):
         secenek = dict(kayit["pdf"])
         self.assertEqual(os.path.abspath(self.pdf), os.path.abspath(secenek.pop("path")))
         self.assertEqual(self.TABAN_SECENEK, secenek)
-        self.assertEqual(0, kayit["evaluate"], "bayraksız yolda belge ölçülmemeli/değiştirilmemeli")
+        # Bayraksız yolda belgede yalnız dizin-listesi + yerleşim ölçümü koşar (yerleşim düzeltmesi bayraktan bağımsız).
+        self.assertEqual(["dizin", "yerlesim", "yerlesim"], kayit["sayfalar"][0]["evaluate"])
+        self.assertEqual(1, len(kayit["css"]))
+        self.assertIn("YERLESIM: baski genisligi 186.0mm", r.stdout)
+        self.assertIn("PDF OK: ", r.stdout)
+        self.assertNotIn("UYARI YERLESIM", r.stderr)
+
+    # --- Yerleşim düzeltmesi (kaynak çekirdek pdf_yerlesim sözleşmesinin tarayıcısız kısmı) ---
+    def test_yerlesim_css_yalniz_isaretliye_baglidir(self):
+        """S2: PDF_CSS'te `body` dışındaki her kural `data-ix-pdf-sar` işaretine bağlı (global img/pre/tablo kuralı
+        sığan tablonun sütunlarını değiştirir — kaynak ekipte ölçüldü)."""
+        _, kayit = self._kos()
+        css = kayit["css"][0]
+        kurallar = [k for k in re.findall(r"([^{}]+)\{[^{}]*\}", css)]
+        self.assertTrue(kurallar)
+        for secici_grubu in kurallar:
+            for secici in re.split(r",(?![^()]*\))", secici_grubu):
+                secici = secici.strip()
+                if secici == "body":
+                    continue
+                self.assertIn("data-ix-pdf-sar", secici, css)
+        self.assertIn("height:auto", css)                       # görselde en-boy oranı korunur
+
+    def test_yerlesim_kalan_tasma_pdf_uyarili(self):
+        """Düzeltilemeyen taşma/kırpık: PDF yine yazılır (rc 0) ama `PDF OK` YOK, `PDF UYARILI` + stderr uyarısı."""
+        r, kayit = self._kos(yerlesim={"tasanN": 1, "tasan": "div 1", "kirpikN": 1, "kirpik": "pre 1"})
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIsNotNone(kayit["pdf"])
+        self.assertIn("PDF UYARILI (2 yerlesim uyarisi, stderr): ", r.stdout)
+        self.assertNotIn("PDF OK", r.stdout)
+        self.assertIn("⚠ UYARI YERLESIM: 1 oge", r.stderr)
+        self.assertIn("kalan tasan 1 (div 1), kirpik 1 (pre 1)", r.stdout)
+
+    def test_dizin_listesi_durdu_pdf_yazilmaz(self):
+        """Açılan sayfa dizin listesiyse PDF yazılmaz, çıkış 2 (eskiden `PDF OK` ile listeyi basıyordu)."""
+        r, kayit = self._kos(dizin=True)
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("[DURDU] PDF FAIL", r.stderr)
+        self.assertIn("DIZIN LISTESI", r.stderr)
+        self.assertIsNone(kayit["pdf"])
+        self.assertFalse(os.path.exists(self.pdf))
+        self.assertEqual([], kayit["css"], "dizin listesinde yerleşim uygulanmaz")
+
+    def test_diyez_klasorde_url_kodlanir(self):
+        """Klasör adındaki `#` URL parçası sayılmaz: goto URL'inde `%23` olarak kodlanır, yol kesilmez."""
+        d = os.path.join(self.tmp.name, "#NS#ZCA001 ç")
+        os.makedirs(d)
+        h = os.path.join(d, "b.html")
+        with open(h, "w", encoding="utf-8") as fh:
+            fh.write("<html></html>")
+        r, kayit = self._kos(girdi=h)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        u = kayit["goto"][0]
+        self.assertTrue(u.startswith("file:///"), u)
+        self.assertIn("%23NS%23ZCA001", u)
+        self.assertNotIn("#", u)
+        self.assertTrue(u.endswith("/b.html"), u)
+
+    def test_localhost_unc_127_0_0_1(self):
+        """`\\\\localhost\\…` UNC: `pathToFileURL` host'u siler ⇒ yalnız bu host `127.0.0.1`'e çevrilir; başka host değişmez."""
+        kod = ("const m=require(process.argv[1]);" +
+               "console.log(JSON.stringify([m.dosyaUrl(String.raw`\\\\localhost\\C$\\a#b.html`)," +
+               "m.dosyaUrl(String.raw`\\\\srv\\pay\\a.html`)]))")
+        r = subprocess.run([node_path(), "-e", kod, os.path.join(SCRIPTS, "html_to_pdf.js")],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        self.assertEqual(0, r.returncode, r.stderr)
+        sonuc = json.loads(r.stdout.strip().splitlines()[-1])
+        if os.name != "nt":
+            self.skipTest("UNC yolu yalnız Windows'ta anlamlı")
+        self.assertEqual("file://127.0.0.1/C$/a%23b.html", sonuc[0])
+        self.assertEqual("file://srv/pay/a.html", sonuc[1])
 
     def test_sayfa_no_esik_alt_ic_bosluk_dahil(self):
         """Eşik = alt iç boşluk + altbilgi + pay. 'altbilgi + pay' (eski hesap, 6 mm) yetmez: 9 mm'de DURDU."""
@@ -360,11 +439,12 @@ class SahteTarayiciTest(unittest.TestCase):
 
     def test_altbilgi_ayri_bos_sayfada_olculur(self):
         """Altbilgi yüksekliği belgenin sayfasında DEĞİL, setContent ile açılan ayrı boş sayfada ölçülür (belge CSS'i
-        — ata zoom/display:none dahil — ona ulaşamaz). Belge sayfasında yalnız alt boşluk ölçümü koşar."""
+        — ata zoom/display:none dahil — ona ulaşamaz). Belge sayfasında dizin/yerleşim ölçümünden SONRA (son yerleşim)
+        alt boşluk ölçümü koşar."""
         r, kayit = self._kos("--sayfa-no", olcum=self._olcum(30.0))
         self.assertEqual(0, r.returncode, r.stdout + r.stderr)
         belge, *diger = kayit["sayfalar"]
-        self.assertEqual((1, ["alt-bosluk"]), (belge["goto"], belge["evaluate"]))
+        self.assertEqual((1, ["dizin", "yerlesim", "yerlesim", "alt-bosluk"]), (belge["goto"], belge["evaluate"]))
         self.assertEqual(1, len(diger), kayit["sayfalar"])
         self.assertEqual({"goto": 0, "setContent": 1, "evaluate": ["altbilgi"], "close": 1}, diger[0])
         self.assertIn("altbilgi 4.0mm (ayri sayfada)", r.stdout)

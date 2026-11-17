@@ -11,6 +11,9 @@
 *.bat  text eol=crlf
 # git hook şablonları: CRLF'li `#!/bin/sh` satırı hook'u çalıştırmaz
 templates/project/.githooks/* text eol=lf
+# Kanonik UI5 şablonu her platformda LF (kopyalandığı projede ve şablon testinde bayt-eş; Windows checkout CRLF'e
+# çeviriyordu — CI 2026-11-17 `şablon: tüm dosyalar LF` kırmızısı)
+skills-sap/sap-ui5-fiori/templates/ui5-freestyle/** text eol=lf
 # git yamaları BAYT-BAYT korunur: `* text=auto` bunları Windows'ta CRLF'e çevirir, `git am`
 # de her satıra bir CR sızdırır (sessiz içerik bozulması). ÖLÇÜLDÜ 2026-09-16:
 # maintenance/core-cherry-squash-kurali.patch eklenirken git "LF will be replaced by CRLF" uyardı.

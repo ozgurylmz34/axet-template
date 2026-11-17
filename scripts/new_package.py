@@ -22,6 +22,15 @@ canlıda boş ölçüldü). Owner canlıda yoksa VARSAYILAN YAZILMAZ: betik duru
 sorar); `--owner` canlıdakiyle çelişirse durur; canlı okunamazsa klasör yazılmaz (fail-closed). Canlıdan
 doğrulanmayan şablon iddiaları (paket tipi, bilinen istisnalar) `DOĞRULANMADI` etiketiyle yazılır.
 `AXET_SAP_ADT_CLI` yalnız testin enjeksiyon noktasıdır: gerçek CLI yerine sahte betik koşar, canlıya çıkılmaz.
+
+Müşteri namespace'i (2026-11-17, kesin yasak A'nın müşteri ad alanı tanımı): paket adı Z/Y ile ya da projede
+`sap-project.json` → `"customer_namespaces": ["/<NS>/"]` ile bildirilmiş namespace ile başlayabilir; kurumsal biçim
+üçünde AYNI gövdedir (`ZSD001_CLC` · `YSD001_CLC` · `/NSPC/SD001_CLC`). Karar SAP paketindeki ad politikası
+modülündedir (`skills-sap/sap-adt-foundation/.../utils/ad_politikasi.py`), burada yeniden yazılmaz. Modül yoksa (SAP
+paketi kurulu değil) ya da yüklenemezse yalnız Z/Y kabul edilir (fail-closed); bildirim bozuksa ya da bağlantı
+dosyası proje kökünde yoksa da namespace kabulü kapalıdır. Klasör adı abapGit biçimidir: `/NSPC/SD001_CLC` →
+`#nspc#sd001_clc` (`/` yol parçası olamaz: sürücü köküne klasör açardı). Namespace'li pakette sınıf öneki
+`/NSPC/CL_SD001_*`; kilit nesnesi satırı DOĞRULANMADI etiketiyle yazılır.
 """
 from __future__ import annotations
 
@@ -47,8 +56,77 @@ CLI_ZAMAN_ASIMI = 180  # sn — tek salt-okur sorgu; aşılırsa ÖLÇÜLEMEDİ
 
 AD = re.compile(r"^[ZY][A-Z0-9_]{1,29}$")                 # SAP paket adı en fazla 30 karakter
 STANDART = re.compile(r"^[ZY]([A-Z]{2,3})\d{3}(_CLC)?$")  # kurumsal biçim: Z<MODÜL><NNN>[_CLC]
+GOVDE = re.compile(r"^([A-Z]{2,3})\d{3}(_CLC)?$")         # aynı biçimin önek sonrası gövdesi (namespace'li ad)
+NS_AD = re.compile(r"^/[A-Z0-9_]{3,8}/[A-Z0-9_]+$")       # sorguya/klasöre girmeden önce karakter kümesi
 MODUL = re.compile(r"^[A-Z]{2,4}$")
 YER_TUTUCU = re.compile(r"\{([A-Z_]+)\}")
+AD_POLITIKASI = (AXET_HOME / "skills-sap" / "sap-adt-foundation" / "scripts" / "sapadt" / "lib" / "utils"
+                 / "ad_politikasi.py")
+_AD_POLITIKASI_ENV = "AXET_SAP_PROJECT_DIR"  # modülün proje kökü kuralı (env → cwd); --project-dir ile eşitlenir
+
+
+def ad_politikasi():
+    """SAP paketinin ad politikası modülü; yoksa ya da yüklenemezse None (çağıran yalnız Z/Y kabul eder)."""
+    if not AD_POLITIKASI.is_file():
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("_axet_ad_politikasi", AD_POLITIKASI)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        return mod
+    except Exception:  # noqa: BLE001 — yüklenemeyen modül = namespace desteği yok (fail-closed)
+        return None
+
+
+def namespace_coz(proj: Path, name: str) -> tuple[str, str] | str:
+    """Namespace'li paket adı → (namespace, gövde) ya da red metni. Yalnız `/` ile başlayan ad için çağrılır."""
+    if not NS_AD.match(name) or len(name) > 30:
+        return (f"paket adı geçersiz ({name!r}): namespace'li ad `/<NS>/<AD>` biçiminde, yalnız A-Z 0-9 _ ve en "
+                "fazla 30 karakter olmalı")
+    mod = ad_politikasi()
+    if mod is None:
+        return ("namespace'li paket adı için SAP ad politikası modülü bulunamadı (SAP paketi kurulu değil: "
+                "`install.py --sap`) — yalnız Z/Y kabul edilir")
+    os.environ.setdefault(_AD_POLITIKASI_ENV, str(proj))
+    try:
+        govde = mod.musteri_govdesi(name, root=proj)
+        neden = "" if govde else mod.red_gerekcesi(name, root=proj)
+    except Exception as exc:  # noqa: BLE001
+        return f"ad politikası değerlendirilemedi ({type(exc).__name__}) — yalnız Z/Y kabul edilir"
+    if not govde:
+        ek = f" — {neden.strip()}" if neden and neden.strip() else ""
+        return (f"{name} müşteri ad alanında değil: namespace projede `sap-project.json` → `customer_namespaces` "
+                f"ile bildirilmemiş ya da bildirim kullanılamıyor{ek}. Listeye namespace eklemek kullanıcının "
+                "beyanıdır; SAP'nin kendi namespace'i listeye yazılmaz (kesin yasak A).")
+    return govde[0], govde[1]
+
+
+_SURUCU_YOLU = re.compile(r"^[A-Za-z]:[/\\]")   # MSYS yol çevirisinin izi (ad politikasındaki desenle aynı)
+_MSYS_IPUCU = ("ad bir Windows yoluna dönüşmüş görünüyor: Git Bash `/` ile başlayan argümanı yol sanıp çevirir — "
+               "komutun önüne MSYS_NO_PATHCONV=1 koy")
+
+
+def msys_red_metni(name: str, proj: Path) -> str:
+    """MSYS'in yola çevirdiği ad için red metni: ad politikası modülünün ortak metni (ipucu dahil); modül yoksa ya da
+    değerlendirilemezse yerel ipucu (fail-closed — ad yine reddedilir)."""
+    mod = ad_politikasi()
+    if mod is not None and hasattr(mod, "musteri_adi_red_metni"):
+        try:
+            metin = mod.musteri_adi_red_metni(name, root=proj)
+            if "MSYS_NO_PATHCONV" in metin:
+                return metin
+        except Exception:  # noqa: BLE001
+            pass
+    return f"yalnız müşteri ad alanı (Z/Y ya da bildirilmiş /<NS>/). Verilen: {name} · {_MSYS_IPUCU}"
+
+
+def paket_klasor_adi(name: str) -> str:
+    """Paketin yerel klasör adı: Z/Y adı aynen · `/NS/AD` → `#ns#ad` (abapGit; ad politikası modülüyle aynı kural)."""
+    if not name.startswith("/") or name.count("/") < 2:
+        return name
+    ns, govde = name[1:].split("/", 1)
+    return f"#{ns}#{govde}".lower()
 
 
 def source_root(proj: Path) -> tuple[Path | None, str | None]:
@@ -177,8 +255,8 @@ def _tarih(ham: str) -> str | None:
 
 def mevcut_paket_bilgisi(proj: Path, ad: str) -> dict:
     """Var olan SAP paketinin canlı bilgisi. Paket canlıda yoksa {"bulunamadi": True}; okuma yapılamazsa
-    CanliOkunamadi. Ad sorguya gömüldüğü için `AD` regex'inden (yalnız A-Z 0-9 _) geçmiş olmalı."""
-    if not AD.match(ad):
+    CanliOkunamadi. Ad sorguya gömüldüğü için `AD` ya da `NS_AD` regex'inden (yalnız A-Z 0-9 _ ve namespace `/`'ı) geçmiş olmalı."""
+    if not (AD.match(ad) or NS_AD.match(ad)):
         raise ValueError(f"geçersiz paket adı: {ad!r}")
     tadir = canli_sorgu(proj, "SELECT author, created_on FROM tadir "
                               f"WHERE pgmid = 'R3TR' AND object = 'DEVC' AND obj_name = '{ad}'")
@@ -243,7 +321,7 @@ def main() -> int:
     ap.add_argument("--owner", help="sorumlu (varsayılan: <OWNER> yer tutucusu; --mevcut'ta canlı TADIR.AUTHOR)")
     ap.add_argument("--mevcut", action="store_true",
                     help="SAP'de zaten var olan paketin klasörü: Owner/başlangıç/üst paket canlıdan salt-okur okunur")
-    ap.add_argument("--project-dir", default=".", help="proje kökü (varsayılan: bulunulan dizin)")
+    ap.add_argument("--project-dir", default=None, help="proje kökü (varsayılan: bulunulan dizin)")
     ap.add_argument("--index", action="store_true", help="yalnız PAKETLER.md dosyasını üret")
     ap.add_argument("--check", action="store_true", help="--index ile: yazma, liste bayat mı bak")
     ap.add_argument("--dry-run", action="store_true", help="yazmadan ne yapılacağını göster")
@@ -255,7 +333,11 @@ def main() -> int:
     if not args.index and (not args.package or not args.title):
         ap.error("paket adı ve --title gerekli (ya da --index)")
 
-    proj = Path(args.project_dir).resolve()
+    proj = Path(args.project_dir or ".").resolve()
+    if args.project_dir:
+        # Ad politikasının proje kökü (env → cwd) bu dizin olur — deploy_ui / check_ui_odata_refs ile aynı. Eski
+        # `setdefault` ortamda kalmış BAŞKA projenin yolunu koruyordu ⇒ "kök bağlantı dizininden farklı" ile red.
+        os.environ[_AD_POLITIKASI_ENV] = str(proj)
     if proj == AXET_HOME or AXET_HOME in proj.parents:
         print(f"HATA: proje dizini template reposunun içinde ({AXET_HOME}).")
         return 2
@@ -285,28 +367,45 @@ def main() -> int:
     if not args.package or not args.title:
         ap.error("paket adı ve --title gerekli (ya da --index)")
     name = args.package.strip()
+    if _SURUCU_YOLU.match(name):
+        # Git Bash (MSYS) `/` ile başlayan argümanı yol sanıp çevirir: `/NSPC/X` → `C:/Program Files/Git/NSPC/X`.
+        # Eski hâl "büyük harf olmalı" / "Z ya da Y ile başlamalı" diyordu — asıl neden görünmüyordu.
+        print(f"HATA: paket adı {msys_red_metni(name, proj)}")
+        return 2
     if name != name.upper():
         print(f"HATA: paket adı büyük harf olmalı ({name!r} → {name.upper()!r}).")
         return 2
-    if not AD.match(name):
+    ns = ""
+    if name.startswith("/"):
+        sonuc = namespace_coz(proj, name)
+        if isinstance(sonuc, str):
+            print(f"HATA: {sonuc}. Standart ad alanında paket açılmaz.")
+            return 2
+        ns, govde = sonuc
+        m = GOVDE.match(govde)
+    elif not AD.match(name):
         print(f"HATA: paket adı Z ya da Y ile başlamalı, yalnız A-Z 0-9 _ içermeli ve en fazla 30 karakter olmalı ({name!r}). "
-              "Standart ad alanında paket açılmaz.")
+              "Standart ad alanında paket açılmaz. (Projede bildirilmiş müşteri namespace'i `/<NS>/` ile de "
+              "başlayabilir — `sap-project.json` → `customer_namespaces`.)")
         return 2
-    m = STANDART.match(name)
+    else:
+        m = STANDART.match(name)
     if not m:
-        print(f"UYARI: {name} kurumsal biçimde değil (Z<MODÜL><NNN> ya da Z<MODÜL><NNN>_CLC, ör. ZSD001_CLC). "
-              "Ad önekleri .rules.md'de bu ada göre üretilecek; gerekirse elle düzelt.")
+        print(f"UYARI: {name} kurumsal biçimde değil (Z<MODÜL><NNN> ya da Z<MODÜL><NNN>_CLC, ör. ZSD001_CLC; Y ya da "
+              "bildirilmiş /<NS>/ önekiyle aynı gövde). Ad önekleri .rules.md'de bu ada göre üretilecek; gerekirse "
+              "elle düzelt.")
     module = (args.module or (m.group(1) if m else "")).upper()
     if not MODUL.match(module):
         print("HATA: modül çıkarılamadı ya da geçersiz → --module SD gibi 2-4 harf ver.")
         return 2
     if m and args.module and module != m.group(1):
         print(f"UYARI: --module {module} paket adındaki modülle ({m.group(1)}) aynı değil.")
+    klasor = paket_klasor_adi(name)
     for mod, pkg_dir in paketler(root):
-        if pkg_dir.name == name:
+        if pkg_dir.name in (name, klasor):
             print(f"HATA: {name} zaten var: {pkg_dir} — dokunulmadı.")
             return 1
-    hedef = root / module / name
+    hedef = root / module / klasor
     if hedef.exists():
         print(f"HATA: {hedef} zaten var — dokunulmadı.")
         return 1
@@ -315,7 +414,14 @@ def main() -> int:
     pkg = name[: -len("_CLC")] if klasik else name
     bugun = date.today().isoformat()
     owner = (args.owner or "").strip()
-    mapping = {"PKG": pkg, "P": pkg[0], "PKG_BODY": pkg[1:], "PKG_FULL": name, "TITLE": args.title.strip(),
+    onek = ns or pkg[0]
+    kilit, kilit_notu = f"E{pkg}", ""
+    if ns:
+        kilit = f"{ns}E{pkg[len(ns):]}"
+        kilit_notu = (" (**DOĞRULANMADI** — namespace'li kilit nesnesi biçimi canlıda ölçülmedi; ad politikası "
+                      "`E/<NS>/…` biçimini tanımaz)")
+    mapping = {"PKG": pkg, "P": onek, "PKG_BODY": pkg[len(onek):], "LOCK": kilit, "LOCK_NOTE": kilit_notu,
+               "PKG_FULL": name, "TITLE": args.title.strip(),
                "MODULE": module, "DATE": bugun, "START": bugun, "OWNER": owner or "<OWNER>",
                "PKG_TYPE_NOTE": tur_notu(pkg, klasik), "PARENT": "<varsa>", "OPENING_TITLE": "paket açıldı",
                "EXCEPTIONS": ("<Yukarıdaki desene uymayan mevcut objeler ve gerekçesi. Ör. eski sistemden gelen ad, "

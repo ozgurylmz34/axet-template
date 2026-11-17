@@ -76,7 +76,7 @@ builder:
           url: https://<SAP_HOST>:<PORT>   # kanonik host (ADT bağlantısıyla aynı)
           client: '<CLIENT>'
         app:
-          name: ZXX001_ORDER               # Z…, ≤ 15
+          name: ZXX001_ORDER               # Z…/Y… ya da bildirilmiş /<NS>/…, ≤ 15
           description: <Açıklama>
           package: <SAP_PAKET>             # kullanıcı verir
           transport: <TRANSPORT_NO>        # kullanıcı verir
@@ -93,12 +93,19 @@ builder:
   konmaz — §7.2.
 - Validation'daki **"application name must be prefixed with [ZZ1_]"** kaynak sistemde **yumuşak uyarıydı**: `Z…` adlı
   uygulamalar deploy oldu. Başka sistemde davranış DOĞRULANMADI.
+- **BSP adı = müşteri ad alanı:** `Z…`/`Y…` ya da projede bildirilmiş `/<NS>/…` (`sap-project.json` → `customer_namespaces`;
+  bildirim yalnız proje kökünde `.conn_adt` varken geçerlidir, yoksa namespace'li ad **reddedilir**). Karar tek yerde:
+  `sap-adt-foundation` müşteri ad politikası — `prepare` ve SAP yazma kapısı aynı kararı kullanır. Ad büyük harfe çevrilip
+  denetlenir; 15 karakter sınırı ad'ın TAMAMINA uygulanır (namespace dahil). Namespace'li BSP'nin ICF yolu
+  `/sap/bc/ui5_ui5/<ns>/<app>/` (küçük harf; Z/Y'de `/sap/bc/ui5_ui5/sap/<bsp>/`). ⚠ Namespace'li BSP'de 15 karakter
+  sınırının namespace'i kapsayıp kapsamadığı ve ICF yolu canlı sistemde ÖLÇÜLMEDİ — ilk namespace'li deploy'da `verify`
+  çıktısını kontrol et.
 
 ## 3. `scripts/deploy_ui.py` — üç alt komut
 
 ```bash
 S=<TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/deploy_ui.py
-python $S prepare <app> [<app2> …] [--no-build]      # ağ YOK: yaml + dosya kontrolü + build + dist parmak izi
+python $S prepare <app> [<app2> …] [--no-build] [--project-dir <proje_kökü>]   # ağ YOK: yaml + dosya kontrolü + build + dist parmak izi
 python $S verify  <app> [<app2> …] [--ignore-cert]   # salt okuma: canlı Component-preload.js ↔ dist
 python $S deploy  <app> --user-ok "<kullanıcının sohbetteki onay cümlesi>" \
          --sap-write --scope S1 --reason "<tek satır gerekçe>" --project-dir <proje_kökü> [--ignore-cert]   # SAP YAZMA KAPISI (§3.2a)
@@ -106,8 +113,8 @@ python $S deploy  <app> --user-ok "<kullanıcının sohbetteki onay cümlesi>" \
 
 | Alt komut | Ne yapar | Ne yapmaz |
 |---|---|---|
-| `prepare` | `ui5-deploy.yaml` `deploy-to-abap` görevi, BSP adı (`Z`, ≤ 15), yer tutucu kalmış mı, URL/client/paket (yalnız boşluk da boş); `$TMP` dışı pakette boş transport **WARN** ("deploy reddeder"); `webapp/` ve `dist/`'te gizli/stray dosya, `.svg`/`.woff` **ERROR**, `.woff2/.ttf/.otf/.eot` **WARN** (exclude desenleri düşülür); `npm run build` (`--no-build` ile atlanır ve `dist` bayat mı bakılır); dist `Component-preload.js` sha256; koşulmamış deploy komutunu basar | Ağa çıkmaz, deploy etmez, transport'un açık/sahibi olduğunu doğrulamaz |
-| `verify` | Env kimliğiyle canlı `…/sap/bc/ui5_ui5/sap/<bsp>/Component-preload.js?sap-client=…&cb=<ts>` çeker, modül bazında dist ile karşılaştırır: `OK` · `OK~` (yalnız kaçışlı `\r\n` farkı) · `STALE` · `ÖLÇÜLEMEDİ`. `--tam` ile canlının tüm dosya listesini de kıyaslar (§7.4) | `--tam`'sız statik dosyaları (`webapp/help/**`) kanıtlamaz → §5 |
+| `prepare` | `ui5-deploy.yaml` `deploy-to-abap` görevi (aynı görevde **yinelenen anahtar** = ihlal — YAML son değeri sessizce alır), BSP adı (müşteri ad alanı — `--project-dir` ile proje bildirimi okunur, ≤ 15; §2), yer tutucu kalmış mı, URL/client/paket (yalnız boşluk da boş); `$TMP` dışı pakette boş transport **WARN** ("deploy reddeder"); `webapp/` ve `dist/`'te gizli/stray dosya, `.svg`/`.woff` **ERROR**, `.woff2/.ttf/.otf/.eot` **WARN** (exclude desenleri düşülür); `npm run build` (`--no-build` ile atlanır ve `dist` bayat mı bakılır); dist `Component-preload.js` sha256; koşulmamış deploy komutunu basar | Ağa çıkmaz, deploy etmez, transport'un açık/sahibi olduğunu doğrulamaz |
+| `verify` | Env kimliğiyle canlı `…/sap/bc/ui5_ui5/sap/<bsp>/Component-preload.js?sap-client=…&cb=<ts>` (namespace'li BSP'de `…/ui5_ui5/<ns>/<app>/…`) çeker, modül bazında dist ile karşılaştırır: `OK` · `OK~` (yalnız kaçışlı `\r\n` farkı) · `STALE` · `ÖLÇÜLEMEDİ`. `--tam` ile canlının tüm dosya listesini de kıyaslar (§7.4) | `--tam`'sız statik dosyaları (`webapp/help/**`) kanıtlamaz → §5 |
 | `deploy` | `--user-ok` metni yoksa ya da yer tutucuysa **çıkış 3 (REDDEDİLDİ)**; env kimliği yoksa çıkış 3; **SAP yazma kapısı** reddederse çıkış 3 (§3.2a — build dahil hiçbir şey koşmaz); sonra build + `npx --no-install fiori deploy --config ui5-deploy.yaml --yes` (çıktıda parola maskelenir) + "Deployment Successful" araması + **katı** canlı kıyas + canlı tam liste kıyası; `.canli/` varsa build'den önce **drift** (§7.4) | `--user-ok` bir **beyandır**, onayın kanıtı değildir — kodla zorlanan koruma §3.2a'daki yazma kapısıdır |
 
 Çıkış kodları: `0` tamam · `1` ihlal / fark · `2` ölçüm yok (kimlik, ağ, 404) · `3` deploy reddedildi (onay, kimlik ya da SAP yazma kapısı).
@@ -133,7 +140,7 @@ değildir; red kodları ve anlamları `sap-adt-foundation` SKILL'deki red tablos
 - `config/sap-write.local` yok → `write_not_optin_global` (anahtarı kullanıcı `install.py --sap-write` ile açar) · `--sap-write`
   yok → `write_flag_missing` · proje kökünde (`--project-dir`, yoksa cwd) `sap-project.json` yok/bozuk → `sap_project_*`.
 - `.conn_adt` `ADT_SAP_TIER` DEV değil (QA/PRD, satır yok, çakışık) → `tier_not_writable` · ortam `.conn_adt`'yi eziyor →
-  `conn_env_mismatch` · kapsam beyanı (`--scope S0|S1 --reason` ya da `S2 --intake`) · BSP adı Z/Y (`ADR_0005_A`) · bağlantı
+  `conn_env_mismatch` · kapsam beyanı (`--scope S0|S1 --reason` ya da `S2 --intake`) · BSP adı müşteri ad alanında (`ADR_0005_A`) · bağlantı
   dili ≠ `master_language` → `language_mismatch`.
 - Ardından `gate.check_target_system`: `ui5-deploy.yaml` `target.url`/`target.client` ≠ `.conn_adt` `ADT_SAP_URL`/`ADT_SAP_CLIENT`
   (ya da boş) → `write_target_mismatch`. Gerekçe: deploy hedefi `.conn_adt`'den değil `ui5-deploy.yaml`'dan gelir; eşlik
@@ -201,6 +208,7 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/deploy_ui.py verify <app_mutl
 | "Deployment Successful" ama canlıda eski | `dist` bayat | `deploy_ui.py` akışı; `verify` → `STALE` |
 | 401 | CLI argümanıyla kimlik / `\r` / kilitli kullanıcı | §3.3 / §1.1 (b) — tekrar tekrar deneme yapma |
 | Canlı değişmedi ama `verify` OK | Tarayıcı/ICF önbelleği | `cb=` parametreli adres; kullanıcıya hard refresh |
+| Deploy yarıda durduruldu (iptal / zaman aşımı) | SAP tarafında BSP (`R3TR WAPA <BSP>`) + ICF düğümleri yaratılmış ve nesne transport görevine yazılmış olabilir — preload canlıda olmasa bile (ekip ölçümü) | "Deploy olmadı" varsayma: ① nesne katalogu + transport görevi kaydını **salt okuyarak** ölç (`%sap-adt-foundation` okuma araçları) ② BSP adı değişmeyecekse aynı komutla baştan deploy ③ `verify` (+ statik varlık varsa §5). BSP adı değişecekse eski BSP artık nesne olur — silme kararı kullanıcınındır |
 
 ## 5. Statik varlıklar — `scripts/verify_ui_static_assets.py`
 
@@ -395,3 +403,6 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui_local_proxy.py <paket>/ui/
 - 2026-09-25 eşitleme (ekip dersi): §5'e "kıyas tabanını build kirletmesin" eklendi; kaynak ders `--verify-only`'nin build
   koştuğunu ölçmüştü — aXet'te `verify` build koşmaz, aynı risk `prepare`/`deploy` için yazıldı. Dersin 1. ve 2. maddesi
   (preload dışı dosyalar, enjekte meta) §5'te zaten vardı.
+- 2026-11-17 (uyum turu 8): BSP adı kuralı "`Z`" yerine müşteri ad alanına (Z/Y + bildirilmiş namespace) bağlandı; karar
+  `sap-adt-foundation` ad politikasından gelir (kendi deseni yok). `prepare` aynı görevde yinelenen anahtarı ihlal sayar.
+  Kaynağın çok-uygulamalı `--all` seçeneği alınmadı (uygulama listesi açıkça verilir).

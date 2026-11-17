@@ -299,6 +299,32 @@ def check_env() -> list[tuple[str, str, bool | None]]:
     return results
 
 
+def ajan_adimi(sap: bool, kaldir: bool = False, dry_run: bool = False) -> None:
+    """Özel aXet ajanları (`agents/sap-*.md`, aXet.code ≥ 1.5.1): SAP paketi açıkken kullanıcı ajan dizinine kurulur/
+    güncellenir; SAP kapanınca ya da `--uninstall`'da şablonun kurduğu (işaretli) ajanlar kaldırılır. Kullanıcının aynı
+    adlı ajanına dokunulmaz. Kurulumu DURDURMAZ, çıkış kodunu değiştirmez; durumu `AJANLAR:` satırı söyler."""
+    if not (Path(__file__).resolve().parent / "ajan_kurulum.py").exists():
+        return  # ajan desteği olmayan eski/kısmi klon
+    try:
+        import ajan_kurulum as ak
+        plan = ak.planla(sap=sap, kaldir=kaldir)
+        if not plan:
+            return
+        print(f"\nÖzel ajanlar ({ak.ajan_dizini()}):")
+        for e in plan:
+            if e.tur != "ayni":
+                print(f"  {e.satir()}")
+        if dry_run:
+            print(f"AJANLAR: {ak.ozet(plan)} (dry-run: yazılmadı)")
+            return
+        hatalar = ak.uygula(plan)
+        for h in hatalar:
+            print(f"  HATA: {h}")
+        print(f"AJANLAR: {'EKSİK' if hatalar else 'TAMAM'} — {ak.ozet(plan)}")
+    except Exception as exc:  # noqa: BLE001 — kurulumu durdurma
+        print(f"AJANLAR: ÖLÇÜLEMEDİ — ajan adımı hata verdi ({type(exc).__name__}: {exc})")
+
+
 def tarayici_adimi() -> None:
     """Tarayıcı testini hazırlar (kullanıcı ayrı komut çalıştırmaz — Z60). Ayrı süreçte koşar: çökmesi, zaman aşımı
     ya da ATLANDI/EKSİK sonucu kurulumu DURDURMAZ ve çıkış kodunu değiştirmez; durumu betiğin ilk satırı söyler."""
@@ -491,6 +517,10 @@ def paketler_kipi(dry_run: bool) -> int:
         paket_adimi(sap_enabled(cfg), dry_run=dry_run)
     except Exception as exc:  # noqa: BLE001 — güncellemeyi durdurma
         print(f"PAKETLER: ÖLÇÜLEMEDİ — paket adımı beklenmeyen hata verdi ({type(exc).__name__}: {exc})")
+    # Güncellemeyle değişen ajan tanımları her %guncelle'de eşitlenir (kullanıcı ayrı komut çalıştırmaz). Yalnız SAP
+    # açıkken kurar/günceller; SAP kapalıysa dokunmaz (kaldırma kararı install.py'nin tam kipindedir).
+    if sap_enabled(cfg):
+        ajan_adimi(True, dry_run=dry_run)
     return 0
 
 
@@ -574,6 +604,7 @@ def main() -> int:
         print("\n--- yazılacak içerik ---\n" + new_text + "(dry-run: hiçbir şey yazılmadı)")
         if not args.uninstall:
             paket_adimi(sap, dry_run=True)
+        ajan_adimi(sap, kaldir=args.uninstall, dry_run=True)
         return 0
     if write_new != was_write:
         if write_new:
@@ -590,6 +621,7 @@ def main() -> int:
             print(f"\nSAP'ye yazma izni KAPATILDI ({SAP_WRITE_FLAG} silindi).")
     if new_text == original:
         print("\nDeğişiklik yok; config zaten güncel.")
+        ajan_adimi(sap, kaldir=args.uninstall)
         if not args.uninstall:
             paket_adimi(sap)
             tarayici_adimi()
@@ -606,6 +638,7 @@ def main() -> int:
         print("HATA: yazılan config geri okunduğunda farklı çıktı.")
         return 1
     print(f"Yazıldı ve geri okunarak doğrulandı: {cfg_file}")
+    ajan_adimi(sap, kaldir=args.uninstall)
     if not args.uninstall:
         paket_adimi(sap)
         tarayici_adimi()

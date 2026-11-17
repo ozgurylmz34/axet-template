@@ -91,7 +91,48 @@ _TYPE_KEY_CANON = {
     "servicedefinition": "srvd", "srvd": "srvd",
     "clas": "class", "class": "class", "intf": "interface", "interface": "interface",
     "prog": "program", "program": "program",
+    # Q383 (kaynak cekirdek b0bcfac): fonksiyon grubu include'u (FUGR/I) esanlamlilari tek anahtarda.
+    "fugr_include": "fugr_include", "fugr-include": "fugr_include", "fugr/i": "fugr_include",
 }
+
+
+def _fugr_include_mi(t) -> bool:
+    """Q383: tip fonksiyon grubu include'u (FUGR/I) mu? (tek kaynak: object_types)."""
+    try:
+        from object_types import is_fugr_include_type  # type: ignore
+        return is_fugr_include_type(t)
+    except Exception:  # noqa: BLE001
+        return (str(t or "")).lower().strip() in {"fugr_include", "fugr-include", "fugr/i"}
+
+
+def _fugr_include_guardrail(name: str, object_type: str, group: str | None) -> None:
+    """Q383: `group` yalnız FUGR/I'da anlamlıdır; FUGR/I'da ZORUNLUDUR.
+
+    ADR 0005-A bu tipte GRUP üzerinden uygulanır (include adı `L` ile başlar, Z/Y değil): grup müşteri adı
+    olmalı (Z/Y ya da bildirilmiş `/<NS>/`) VE include adı grubun include önekini taşımalı (`ZFG` → `LZFG…`,
+    `/NS/FG` → `/NS/LFG…`). Kural tek kaynak: `object_types.fugr_include_ad_alani_hatasi` → `ad_politikasi`
+    (yazma kapısı `sapadt/gate.py` de aynısını kullanır). Grup include adından TÜRETİLMEZ; ad öneki grup
+    KANITI değildir — kanıt yazma/aktivasyon öncesi `programs/includes` contextRef'idir.
+    Eksik/yersiz grup → ValueError (çağıran `group_required`/`group_not_applicable` döner).
+    """
+    if not _fugr_include_mi(object_type):
+        if (group or "").strip():
+            raise ValueError("group parametresi yalnız object_type='fugr_include' ile kullanılır "
+                             f"(verilen tip: {object_type}).")
+        return
+    if not (group or "").strip():
+        raise ValueError("object_type='fugr_include' için group (fonksiyon grubu) ZORUNLU — grup "
+                         "include adından türetilmez.")
+    from object_types import fugr_include_ad_alani_hatasi  # type: ignore
+    hata = fugr_include_ad_alani_hatasi(group, name)
+    if hata:
+        raise GuardrailViolation("ADR_0005_A", hata + " (yazma yapılmadı).", name=name)
+
+
+def _group_hatasi(object_type: str, ve: Exception) -> dict:
+    """`_fugr_include_guardrail` ValueError'ı → yapılandırılmış red (SAP'ye gidilmedi)."""
+    return {"ok": False, "error": "group_required" if _fugr_include_mi(object_type) else "group_not_applicable",
+            "type": object_type, "message": f"{ve} SAP'ye gidilmedi."}
 
 
 def _type_key(t: str) -> str:
@@ -123,7 +164,8 @@ def _binding_imzasi(client) -> str:
         return ""
 
 
-def _baseline_yaz(client, name: str, object_type: str, source: str, *, aktive: bool) -> None:
+def _baseline_yaz(client, name: str, object_type: str, source: str, *, aktive: bool,
+                  grup: str | None = None) -> None:
     """Q271: readback baseline'ını YAZ — tetikleyici UPLOAD'dır, aktivasyon başarısı DEĞİL.
 
     Aktif sürümü belirleyen şey yüklenen kaynaktır; aktivasyon ayrı bir adımdır ve
@@ -140,6 +182,8 @@ def _baseline_yaz(client, name: str, object_type: str, source: str, *, aktive: b
         "aktive": bool(aktive),
         "belirsiz": None,
         "dogrulandi_ts": None,
+        # Q383: FUGR/I kaynak URL'i grubu içerir; readback grubu kayıttan da alabilsin.
+        "grup": (grup or "").strip().upper() or None,
     }
 
 
@@ -175,7 +219,7 @@ def _kunye_metni(k: dict) -> str:
                (" · BELİRSİZ=%s" % k["belirsiz"]) if k.get("belirsiz") else ""))
 
 
-def _content_readback(client, name: str, object_type: str) -> dict:
+def _content_readback(client, name: str, object_type: str, group: str | None = None) -> dict:
     """Activate sonrası: AKTİF source'u çek + bu seansta YÜKLENEN kaynakla normalize-compare.
 
     Yalnız source-based tip + bu süreçte upload kaydı varsa çalışır (salt re-activate'te
@@ -197,7 +241,8 @@ def _content_readback(client, name: str, object_type: str) -> dict:
               content_baseline[, content_diff, content_stale_baseline: True]}
     """
     t = (object_type or "").lower().strip()
-    if t not in _SOURCE_BASED_TYPES:
+    fugr_inc = _fugr_include_mi(t)   # Q383: FUGR/I de source-based'dir (URL grubu içerir)
+    if t not in _SOURCE_BASED_TYPES and not fugr_inc:
         return {}
     rec = _LAST_PUSHED.get((name.upper(), _type_key(object_type)))
     if not rec:
@@ -222,7 +267,14 @@ def _content_readback(client, name: str, object_type: str) -> dict:
         import sap_adt_lib as L  # type: ignore
         from source_normalize import normalize_source  # type: ignore
         adt = getattr(client, "adt_client", None) or client
-        url = L._resolve_source_url(name, t)
+        if fugr_inc:
+            from object_types import get_fugr_include_url  # type: ignore
+            try:
+                url = get_fugr_include_url(group or rec.get("grup"), name) + "/source/main"
+            except ValueError:
+                url = None
+        else:
+            url = L._resolve_source_url(name, t)
         if not url:
             return {"content_verified": None, "content_probe": "url_cozulemedi",
                     "content_baseline": kunye,
@@ -739,6 +791,48 @@ def _read_class_include(name: str, object_type: str) -> dict:
         return _err_from_exc(exc)
 
 
+def _read_fugr_include(name: str, object_type: str, group: str | None, include_source: bool) -> dict:
+    """Fonksiyon grubu include'unu (FUGR/I) oku — READ-ONLY. (tool DEĞİL)
+
+    Uç: `GET /sap/bc/adt/functions/groups/<fg>/includes/<incl>/source/main` (Accept text/plain);
+    `include_source=false` → yalnız metadata GET (aynı uç, `/source/main`siz). Grup ZORUNLU (include adından
+    türetilmez) → yoksa `group_required` (ağa gidilmez).
+    ⚠ OKUMA GRUP KANITI DEĞİLDİR: SAP bu uçta URL'deki grubu yansıtır (kaynak çekirdek canlı ölçümü
+    2026-11-08) — yanlış grupla da aynı include okunur. Grup kanıtı yazma/aktivasyon öncesi
+    `SAPClient.fugr_include_grubunu_dogrula` (`programs/includes` contextRef) ile kurulur.
+    404 → `_miss_or_unreachable`; başka kod → `http_<kod>` (yok DEĞİL). Log'a host YAZILMAZ.
+    """
+    from object_types import get_fugr_include_url  # type: ignore
+    try:
+        path = get_fugr_include_url(group, name)
+    except ValueError as exc:
+        return {"ok": False, "error": "group_required", "name": (name or "").upper(), "type": object_type,
+                "message": f"{exc} SAP'ye gidilmedi."}
+    uc = path + "/source/main" if include_source else path
+    client = _get_client()
+    try:
+        adt = getattr(client, "adt_client", None) or client
+        with _capture_stdout():
+            r = adt.session.get(adt.url + uc,
+                                headers={"Accept": "text/plain" if include_source else "application/*"},
+                                verify=adt.session.verify, timeout=60)
+        durum = int(getattr(r, "status_code", 0) or 0)
+        if durum == 404:
+            return _miss_or_unreachable(name, object_type, "[404] GET " + uc)
+        if durum != 200:
+            return {"ok": False, "name": name.upper(), "type": object_type, "error": "http_%d" % durum,
+                    "message": (getattr(r, "text", "") or "")[:500]}
+        out = {"ok": True, "name": name.upper(), "type": object_type, "exists": True,
+               "group": (group or "").strip().upper(), "resolved_uri": path}
+        if include_source:
+            out["source"] = getattr(r, "text", "") or ""
+        else:
+            out["metadata"] = (getattr(r, "text", "") or "")[:4000]
+        return out
+    except Exception as exc:
+        return _err_from_exc(exc)
+
+
 def _read_function_module(name: str, object_type: str, include_source: bool) -> dict:
     """FM oku (Q261) — grubu `SAPClient.read_function_module` çözer. READ-ONLY. (tool DEĞİL)
 
@@ -770,7 +864,7 @@ def _read_function_module(name: str, object_type: str, include_source: bool) -> 
 
 @profil_tool()
 def adt_get(name: str, object_type: str = "class", include_source: bool = True,
-            output_path: str | None = None, overwrite: bool = False) -> dict:
+            output_path: str | None = None, overwrite: bool = False, group: str | None = None) -> dict:
     """Get an SAP ADT object: existence, metadata, and (optionally) source (enqu: yalnız varlık, include_source=false).
 
     Kilit objesi (`enqu`, aXet 2026-09-14): generic ADT URL'i yok; yalnız salt-GET varlık sondası
@@ -788,10 +882,17 @@ def adt_get(name: str, object_type: str = "class", include_source: bool = True,
     (`sapadt.project.yerel_kaynak_yolu`): proje kökü içi · kaynak uzantısı (`KAYNAK_UZANTILARI`) · `.axet-code/`
     dışı · `.axetcode-denylist` yolları dışı; var olan dosya `overwrite=true` olmadan EZİLMEZ (`output_exists`).
     Yol geçersizse SAP'ye gidilmez.
+    `group` (Q383): YALNIZ object_type='fugr_include' (eşanlamlı 'fugr-include'/'fugr/i'; fonksiyon grubu
+    include'u, ör. SE54 TMG olay include'u) için ZORUNLU fonksiyon grubu; diğer tiplerde verilirse
+    `group_not_applicable`. Okuma grup KANITI değildir (SAP URL grubunu yansıtır) — kanıt push/aktivasyonda.
     `include_source=false` ya da metin taşımayan tip (msag, enqu) → `invalid_argument`. Pull kaydı aynen yazılır:
     dosyadan düzenleyip `adt_push_source(source_path=…)` ile geri yazma yolunun ilk adımıdır.
     """
     tip_k = (object_type or "").lower().strip()
+    if (group or "").strip() and not _fugr_include_mi(tip_k):
+        return {"ok": False, "error": "group_not_applicable", "type": object_type,
+                "message": ("group parametresi yalnız object_type='fugr_include' ile kullanılır "
+                            f"(verilen tip: {object_type}). SAP'ye gidilmedi.")}
     yol = None
     if output_path is not None:
         from sapadt import project as _project
@@ -811,7 +912,8 @@ def adt_get(name: str, object_type: str = "class", include_source: bool = True,
                                "SAP'ye gidilmedi."}
     if include_source and tip_k in ("msag", "messageclass"):
         return adt_msgclass_read(name)   # aXet: mesaj listesi pull kaydı (adt_msgclass_write için)
-    r = _adt_get_pull_kaydi(_adt_get_oku(name, object_type, include_source), name, object_type, include_source)
+    r = _adt_get_pull_kaydi(_adt_get_oku(name, object_type, include_source, group=group), name, object_type,
+                            include_source)
     if yol is not None and isinstance(r, dict):
         r = _adt_get_dosyaya(r, yol)
     return r
@@ -855,7 +957,8 @@ def _adt_get_pull_kaydi(r, name: str, object_type: str, include_source: bool):
     return r
 
 
-def _adt_get_oku(name: str, object_type: str = "class", include_source: bool = True) -> dict:
+def _adt_get_oku(name: str, object_type: str = "class", include_source: bool = True,
+                 group: str | None = None) -> dict:
     """adt_get'in okuma gövdesi — pull-state YAZMAZ (iç çağrılar ve push tazelik kontrolü için).
 
     Args:
@@ -889,6 +992,9 @@ def _adt_get_oku(name: str, object_type: str = "class", include_source: bool = T
     from object_types import is_class_include as _sinif_include_mi  # type: ignore
     if _sinif_include_mi(object_type):
         return _read_class_include(name, object_type)
+    # Q383: fonksiyon grubu include'u (FUGR/I) — URL grubu içerir, grup ZORUNLU (`_read_fugr_include`).
+    if _fugr_include_mi(object_type):
+        return _read_fugr_include(name, object_type, group, include_source)
     # MSAG (mesaj sınıfı): adt_get msag tipini DESTEKLEMEZ → özel messageclass endpoint'i.
     if (object_type or "").lower().strip() in ("msag", "messageclass"):
         return _msgclass_disari(_msgclass_oku(name))   # iç okuma: pull kaydı YAZMAZ
@@ -1811,6 +1917,7 @@ def adt_push_source(
     skip_reviewer: bool = False,
     ack_drop: str = "",
     source_path: str | None = None,
+    group: str | None = None,
 ) -> dict:
     """Push source text to an existing SAP object.
 
@@ -1827,7 +1934,8 @@ def adt_push_source(
         object_type: 'class', 'ddls', 'prog', 'tabl', ... · aXet: 'bdef' (LOCK→PUT→UNLOCK, aktive
             ETMEZ; transport zorunlu) · 'ccimp'/'ccau'/'ccdef'/'ccmac' (sınıf alt-include'u — `name` = ANA SINIF;
             transport zorunlu; ana sınıf aktive edilir) · 'func' (FM kaynağı; fonksiyon grubu canlıdan
-            çözülür ve Z/Y olmalı; aktive edilir). 'srvb'/'msag'/'enqu' → unsupported_type.
+            çözülür ve Z/Y olmalı; aktive edilir) · 'fugr_include' (fonksiyon grubu include'u, FUGR/I; `group`
+            zorunlu; transport zorunlu; aktive edilir). 'srvb'/'msag'/'enqu' → unsupported_type.
         source: Source body text (full content; partial diffs not supported). `source_path` ile BİRLİKTE verilmez.
         source_path (Z142ⓒ): kaynağın okunacağı YEREL dosya — `adt_get(output_path=…)` ile indirilip düzenlenen paket
             klasörü dosyası. Yol kuralı `adt_get`/`adt_pretty_print` ile aynı (proje kökü içi · kaynak uzantısı ·
@@ -1839,9 +1947,19 @@ def adt_push_source(
         ack_drop: Comma-separated table field names whose DROP is explicitly
             approved (user+lead, ADR 0005-B). Forwarded to the embedded reviewer's
             --ack-drop → ONLY these named drops become ACK-WARNING; any un-named
-            drop or any TYPE/RENAME change still BLOCKER. This is the targeted,
+            drop is still BLOCKER. It has NO effect on the type verdict (#408):
+            narrowing / kind change / unresolvable physical type is always
+            BLOCKER (widening = WARNING, same physical type = INFO). This is the targeted,
             auditable alternative to skip_reviewer for intentional table DROPs —
             the rest of the drop-guard (and all other checks) stay active.
+        group: Q383 — YALNIZ object_type='fugr_include' (eşanlamlı 'fugr-include'/'fugr/i'; ör. SE54 TMG olay
+            include'u `L<FG>F01`) için ZORUNLU fonksiyon grubu adı; grup include adından TÜRETİLMEZ. Diğer
+            tiplerde verilirse `group_not_applicable`, FUGR/I'da yoksa `group_required` (ağa gidilmez).
+            Ad kuralı (ADR 0005-A): grup müşteri adı (Z/Y ya da bildirilmiş `/<NS>/`) VE include grubun
+            önekini taşır (`ZFG` → `LZFG…`, `/NS/FG` → `/NS/LFG…`). Yazmadan ÖNCE grup KANITI:
+            `programs/includes/<incl>` `include:contextRef` (FUGR/I `SAPL<GRUP>`; namespace'li grupta FUGR/F
+            `<GRUP>`) — uyuşmazlık/ölçülemezlik → kilit/PUT YOK (`SAPClient.push_fugr_include`). PULL-BEFORE-EDIT
+            kaydı `adt_get(object_type='fugr_include', group=…)` ile alınır.
 
     PULL-BEFORE-EDIT (iyimser eşzamanlılık): `adt_get` ile çekilmiş kayıt yoksa
     `pull_before_edit_missing`; yazmadan hemen önce canlı kaynak yeniden okunur ve özeti kayıttan
@@ -1853,11 +1971,16 @@ def adt_push_source(
     Returns:
         {ok, name, type, result, client_log, reviewer?, pull_state?, removed_lines_warning?, warning?, source_path?}
     """
+    fugr_inc = _fugr_include_mi(object_type)
     try:
         require_writable_tier(get_active_tier(), what=f"{object_type} push")
-        require_customer_namespace(name, what=object_type, object_type=object_type)
+        _fugr_include_guardrail(name, object_type, group)   # Q383: FUGR/I'da ad kuralı GRUP üzerinden
+        if not fugr_inc:
+            require_customer_namespace(name, what=object_type, object_type=object_type)
     except GuardrailViolation as gv:
         return gv.as_dict()
+    except ValueError as ve:
+        return {**_group_hatasi(object_type, ve), "name": name}
     # Z142ⓒ: kaynak metni ya da yerel dosya — TAM OLARAK biri. Aşağıdaki Yasak A/B taramaları okunan metni tarar.
     kaynak_yolu = None
     if source_path is not None:
@@ -1887,7 +2010,7 @@ def adt_push_source(
     if tip in _PUSH_DESTEKSIZ:
         return {"ok": False, "error": "unsupported_type", "name": name, "type": object_type,
                 "message": f"adt_push_source '{object_type}' desteklenmiyor: {_PUSH_DESTEKSIZ[tip]}"}
-    if sinif_include or bdef_mi:
+    if sinif_include or bdef_mi or fugr_inc:
         try:   # bu reçetelerde kilit corrNr ile alınır; kütüphane transportsuz kilidi reddeder
             require_transport(transport, what=f"{object_type} push")
         except GuardrailViolation as gv:
@@ -1925,7 +2048,8 @@ def adt_push_source(
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
-            suffix=f".{object_type}.txt",
+            # Q383: `fugr/i` eşanlamlısı `/` taşır — dosya adına giremez (yol ayıracı).
+            suffix=".%s.txt" % re.sub(r"[^A-Za-z0-9_-]", "_", object_type or "src"),
             delete=False,
         ) as f:
             f.write(source)
@@ -1963,7 +2087,7 @@ def adt_push_source(
                                 "kaynağın üzerine yap, sonra push et. Yeni yaratılan kabukta da önce adt_get."),
                     "reviewer": reviewer_warn}
         try:
-            canli = _adt_get_oku(name, object_type, True)
+            canli = _adt_get_oku(name, object_type, True, group=group)
         except Exception as exc:  # noqa: BLE001 — okuma istisnası da "okunamadı"dır, geçiş değil
             canli = _err_from_exc(exc)
         # Sınıf alt-include'u: 404 ile KANITLI yok. Kayıt da "yoktu" diyorsa ilk yaratım (POST-if-absent)
@@ -2017,6 +2141,10 @@ def adt_push_source(
                 result = _push_bdef_kaynak(client, name, source, transport)
             elif fm_mi:
                 result = _push_fm_kaynak(client, name, fm_grubu, source, transport)
+            elif fugr_inc:
+                # Q383: FUGR/I yolu — grup kanıtı → kilit → PUT → aktivasyon → aktif readback, include'un KENDİ ucundan.
+                result = client.push_fugr_include(include_name=name, group=group, transport=transport,
+                                                  source_file=str(tmp_file))
             else:
                 result = client.push_object(
                     object_name=name,
@@ -2038,19 +2166,24 @@ def adt_push_source(
             resp["source_path"] = kaynak_yolu
         if silme_uyarisi:
             resp.update(silme_uyarisi)
-        if (sinif_include or bdef_mi or fm_mi) and isinstance(result, dict):
+        if (sinif_include or bdef_mi or fm_mi or fugr_inc) and isinstance(result, dict):
             resp["activated"] = result.get("activated")
             for alan in ("activation_note", "activation_errors", "activation_error", "unlock_warning"):
                 if result.get(alan):
                     resp[alan] = result[alan]
             if fm_mi:
                 resp["function_group"] = fm_grubu
+            if fugr_inc:
+                resp["group"] = (group or "").strip().upper()
             if sinif_include:
                 resp["include"] = include_kind
                 resp["write_path_measured"] = include_kind not in _YAZMA_OLCULMEDI_INCLUDE
             if not resp["ok"] and result.get("error"):
                 resp["error"] = "push_failed"
                 resp["message"] = str(result.get("error"))[:800]
+                # Q383: grup kanıtı tutmadı → kilit/PUT YAPILMADI (yazmadan önce durdu); ayrı kod.
+                if fugr_inc and result.get("error_type") == "SAPValidationError" and not result.get("source_uploaded"):
+                    resp["error"] = "fugr_group_unverified"
 
         # ── READBACK GÖRÜNÜRLÜĞÜ (2026-08-01 bug-avı, "doğrulama koşamadı = doğrulandı") ──
         # `push_object` aktivasyon sonrası AKTİF kaynağı yüklenenle kıyaslar. Bu kıyas
@@ -2104,6 +2237,9 @@ def adt_push_source(
                 hedef = _akt_hedefi(name, "class")            # include ana sınıfla aktive edilir
             elif fm_mi:
                 hedef = {"name": name, "uri": str(canli.get("resolved_uri") or ""), "type": "FUGR/FF"}
+            elif fugr_inc:
+                from object_types import FUGR_INCLUDE_ADT_TYPE, get_fugr_include_url  # type: ignore
+                hedef = {"name": name.upper(), "uri": get_fugr_include_url(group, name), "type": FUGR_INCLUDE_ADT_TYPE}
             else:
                 hedef = _akt_hedefi(name, object_type)
             _inaktif_hukmu(resp, client, [hedef], aktivasyon_iddiasi=result.get("activated") is True)
@@ -2122,9 +2258,9 @@ def adt_push_source(
         if isinstance(result, dict):
             if result.get("source_uploaded"):
                 _baseline_yaz(client, name, object_type, source,
-                              aktive=bool(result.get("activated")))
+                              aktive=bool(result.get("activated")), grup=group)
         elif ok:
-            _baseline_yaz(client, name, object_type, source, aktive=True)
+            _baseline_yaz(client, name, object_type, source, aktive=True, grup=group)
         else:
             # Beklenmedik dönüş şekli (dict değil + ok değil) → upload olup olmadığı BİLİNMİYOR.
             _baseline_belirsiz(name, object_type,
@@ -2139,7 +2275,7 @@ def adt_push_source(
             yuklendi, belirsiz = bool(ok), not ok
         if yuklendi:
             try:
-                sonra = _adt_get_oku(name, object_type, True)
+                sonra = _adt_get_oku(name, object_type, True, group=group)
             except Exception as exc:  # noqa: BLE001
                 sonra = _err_from_exc(exc)
             if (isinstance(sonra, dict) and sonra.get("ok") is True and sonra.get("exists") is True
@@ -2408,13 +2544,15 @@ def _aktivasyon_readback(client, adlar: list) -> tuple[Optional[bool], str, list
         return None, "unavailable:%s" % type(exc).__name__, []
 
 
-def _akt_hedefi(name: str, object_type: str) -> dict:
+def _akt_hedefi(name: str, object_type: str, group: str | None = None) -> dict:
     """Worklist sondası hedefi {name, uri, type} — adt_activate klasik yol ve adt_push_source (Z147) ORTAK.
-    Tip çözülemezse "" (eşleşme URI sınırıyla yapılır; `sap_adt_lib.aktivasyon_worklist_kalan`)."""
-    hedef = {"name": name, "uri": _activation_uri(name, object_type) or ""}
+    Tip çözülemezse "" (eşleşme URI sınırıyla yapılır; `sap_adt_lib.aktivasyon_worklist_kalan`).
+    Q383: FUGR/I'da tip `FUGR/I`, URI grubu içerir (`group`)."""
+    hedef = {"name": name, "uri": _activation_uri(name, object_type, group) or ""}
     try:
-        from object_types import get_adt_type  # type: ignore
-        hedef["type"] = get_adt_type(object_type) or ""
+        from object_types import FUGR_INCLUDE_ADT_TYPE, get_adt_type  # type: ignore
+        hedef["type"] = (FUGR_INCLUDE_ADT_TYPE if _fugr_include_mi(object_type)
+                         else get_adt_type(object_type)) or ""
     except Exception:  # noqa: BLE001 — tip yoksa URI/ad eslemesi yeter
         hedef["type"] = ""
     return hedef
@@ -2510,8 +2648,15 @@ def _kilit_objesi_aktive_et(client, name: str, object_type: str) -> dict:
         return _err_from_exc(exc)
 
 
-def _activation_uri(name: str, object_type: str):
+def _activation_uri(name: str, object_type: str, group: str | None = None):
     from urllib.parse import quote
+    # Q383: FUGR/I tek-segmentli değildir (URL grubu içerir) ⇒ sözlükte DEĞİL, burada çözülür.
+    # Grup yoksa None (çağıran `group_required`/`unsupported_type` döner; sessiz yanlış URI YOK).
+    if _fugr_include_mi(object_type):
+        if not (group or "").strip():
+            return None
+        from object_types import get_fugr_include_url  # type: ignore
+        return get_fugr_include_url(group, name)
     seg = _ACTIVATION_URI_SEG.get((object_type or "").lower().strip())
     if not seg:
         return None
@@ -2519,7 +2664,8 @@ def _activation_uri(name: str, object_type: str):
 
 
 @profil_tool()
-def adt_activate(name: str, object_type: str = "class", also: list | None = None) -> dict:
+def adt_activate(name: str, object_type: str = "class", also: list | None = None,
+                 group: str | None = None) -> dict:
     """Activate an SAP object — single, OR multiple objects ATOMICALLY (one /activation POST).
 
     Atomik çoklu-obje aktivasyon (RAP zincirleri): birbirine bağımlı objeler (ör. interface
@@ -2531,7 +2677,15 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
         name: Birincil obje adı (Z*/Y*).
         object_type: 'class', 'ddls', 'bdef', 'srvd', 'tabl', ...
         also: Atomik co-activate ek objeler: [{"name": "...", "object_type": "..."}, ...].
-              None/boş → tek-obje aktivasyon (klasik yol).
+              None/boş → tek-obje aktivasyon (klasik yol). FUGR/I `also` içinde DESTEKLENMEZ
+              (`fugr_include_also_unsupported`; atomik yol bu tip için ölçülmedi) — include'u tekil çağır.
+        group: Q383 — YALNIZ object_type='fugr_include' (FUGR/I) için ZORUNLU fonksiyon grubu; yoksa
+              `group_required`, başka tipte `group_not_applicable` (ağa gidilmez). Aktivasyondan ÖNCE grup
+              KANITI: `programs/includes/<incl>` `include:contextRef` (FUGR/I `SAPL<GRUP>`; bildirilmiş
+              namespace'li grupta FUGR/F `<GRUP>`). Uyuşmazlık/ölçülemezlik → `fugr_group_unverified`; bu
+              oturumdaki push kaydının grubu farklıysa `fugr_group_mismatch` — ikisinde de SAP'ye aktivasyon
+              isteği YOK. Aktivasyon include'un kendi ucundan (FUGR iki fazlı yol); worklist sondası tip
+              `FUGR/I` ile, içerik readback'i `adt_push_source(group=…)` kaydı varsa bu tipte de koşar.
 
     Returns:
         {ok, name, type, activated, errors?, warnings?, refs?, client_log}
@@ -2564,13 +2718,53 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
     """
     try:
         require_writable_tier(get_active_tier(), what=f"{object_type} activate")
-        require_customer_namespace(name, what=object_type, object_type=object_type)
+        _fugr_include_guardrail(name, object_type, group)
+        if not _fugr_include_mi(object_type):
+            require_customer_namespace(name, what=object_type, object_type=object_type)
         for o in (also or []):
-            require_customer_namespace(o.get("name", ""), what=o.get("object_type", "object"))
+            _fugr_include_guardrail(o.get("name", ""), o.get("object_type", ""), o.get("group"))
+            if not _fugr_include_mi(o.get("object_type", "")):
+                require_customer_namespace(o.get("name", ""), what=o.get("object_type", "object"))
     except GuardrailViolation as gv:
         return gv.as_dict()
+    except ValueError as ve:
+        return {"ok": False, "error": "group_required" if "ZORUNLU" in str(ve) else "group_not_applicable",
+                "name": name, "type": object_type, "message": f"{ve} SAP'ye gidilmedi."}
+
+    # Q383 (kaynak çekirdek bug-gate F1): `also` + fugr_include atomik yolu ÖLÇÜLMEDİ (objectReference tipsiz
+    # gider; grup kanıtı o yolda yok) ⇒ ölçülene kadar FAIL-CLOSED.
+    if also and any(_fugr_include_mi(t) for t in
+                    [object_type] + [o.get("object_type", "") for o in also]):
+        return {"ok": False, "error": "fugr_include_also_unsupported", "name": name, "type": object_type,
+                "message": "object_type='fugr_include' çoklu (also=) aktivasyonda desteklenmiyor "
+                           "(atomik yol FUGR/I için ölçülmedi). Include'u TEKİL çağır: "
+                           "adt_activate(name=<INCL>, object_type='fugr_include', group=<FG>); "
+                           "diğer objeleri ayrı çağrıda aktive et. SAP'ye istek atılmadı."}
 
     client = _get_client()
+
+    # Q383 (bug-gate F1): FUGR/I tekil yolda grup KANITI aktivasyondan ÖNCE (ad öneki kanıt değil —
+    # `LZSD001_FGF01` group='ZSD001' ile de öneki geçer; yanlış grubun iki fazlı aktivasyonu BAŞKA grubun
+    # inaktiflerini toplar). Uyuşmazlık/ölçülemezlik → SAP'ye aktivasyon isteği YOK.
+    if _fugr_include_mi(object_type):
+        g_norm = (group or "").strip().upper()
+        rec = _LAST_PUSHED.get((name.upper(), _type_key(object_type))) or {}
+        if rec.get("grup") and str(rec["grup"]).strip().upper() != g_norm:
+            return {"ok": False, "error": "fugr_group_mismatch", "activated": False, "name": name,
+                    "type": object_type,
+                    "message": f"Bu oturumda {name.upper()} grup {str(rec['grup']).upper()} ile push "
+                               f"edildi; aktivasyon grubu {g_norm}. Aktive EDİLMEDİ."}
+        try:
+            with _capture_stdout():
+                dogrulama = client.fugr_include_grubunu_dogrula(name, g_norm)
+        except Exception as exc:  # noqa: BLE001 — ölçülemedi = fail-closed
+            dogrulama = {"ok": False, "sebep": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        if not (isinstance(dogrulama, dict) and dogrulama.get("ok") is True):
+            sebep = dogrulama.get("sebep") if isinstance(dogrulama, dict) else type(dogrulama).__name__
+            return {"ok": False, "error": "fugr_group_unverified", "activated": False, "name": name,
+                    "type": object_type,
+                    "message": f"FUGR include grup doğrulaması BAŞARISIZ ({sebep}); istenen grup {g_norm}. "
+                               "Aktive EDİLMEDİ (SAP'ye aktivasyon isteği yok)."}
 
     # --- ATOMİK ÇOKLU-OBJE AKTİVASYON (also verildiyse) ---
     if also:
@@ -2640,7 +2834,10 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
 
     try:
         with _capture_stdout() as out:
-            activated = client.activate_object(name, object_type=object_type)
+            if _fugr_include_mi(object_type):
+                activated = client.activate_object(name, object_type=object_type, group=group)
+            else:
+                activated = client.activate_object(name, object_type=object_type)
         log_text = out.getvalue()
 
         # Parse a few signals from client log (best-effort; structured result is already in 'activated')
@@ -2661,7 +2858,7 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
         # False döndürüyor (ör. bağlantı kurulamadı) ama bu dal `ok: true` + `activated: false`
         # dönüyordu ⇒ CLI başarısız bir yazmayı exit 0 ile raporlardı. Artık `activated` False ise
         # `ok` False'tur; sebep log'dan sınıflanır (ulaşılamadı ≠ aktivasyon reddedildi).
-        akt_hedef = _akt_hedefi(name, object_type)
+        akt_hedef = _akt_hedefi(name, object_type, group)
         if not activated:
             resp["ok"] = False
             if _bos_sonuc_sinifi(log_text) == "ulasilamadi":
@@ -2687,7 +2884,7 @@ def adt_activate(name: str, object_type: str = "class", also: list | None = None
 
         # Readback-gate: aktive edilen source-based obje için AKTİF source'u push edilenle
         # karşılaştır. Fark → yazım tam oturmadı → BLOCKER (ok=False). XML-DDIC/kayıtsız → no-op.
-        rb = _content_readback(client, name, object_type)
+        rb = _content_readback(client, name, object_type, group)
         if rb:
             resp.update(rb)
             if rb.get("content_verified") is False:
@@ -2755,7 +2952,9 @@ def adt_publish_service(name: str, version: str = "0001") -> dict:
     SRVD expose / underlying CDS değişince, yayınlanmış OData metadata'sının (entity set +
     property) yeni hâli yansıtması için SRVB republish gerekir. Bu, raw `/businessservices/
     odatav2/publishjobs` POST'unun TYPED, guardrailed muadili (raw-Bash classifier bloğunu
-    önler). Sonuç doğrulaması = `GET /sap/opu/odata/sap/<NAME>/$metadata` (çağıran yapar).
+    önler). Sonuç doğrulaması = yanıttaki `metadata_path` ile `GET` (çağıran yapar): Z/Y servis
+    `/sap/opu/odata/sap/<NAME>/$metadata`, namespace'li `/NS/X` servis `/sap/opu/odata/ns/X/$metadata`
+    (Gateway ICF ağacında namespace düğümü `sap` düğümünün kardeşidir; namespace'li yol canlı ÖLÇÜLMEDİ).
 
     Args:
         name: Service binding (SRVB) adı, ör. ZDEMO1_UI_BOOKING_O2.
@@ -2767,7 +2966,7 @@ def adt_publish_service(name: str, version: str = "0001") -> dict:
 
     Returns:
         {ok, name, status_code, published, severity, sap_message, publish_probe,
-         [publish_notice], body, client_log}
+         [publish_notice], metadata_path, body, client_log}
     """
     try:
         require_writable_tier(get_active_tier(), what="service publish")
@@ -2778,6 +2977,7 @@ def adt_publish_service(name: str, version: str = "0001") -> dict:
     client = _get_client()
     try:
         from rap_service import csrf, publish_xml, PUBLISH_V2  # type: ignore
+        from utils.ad_politikasi import odata_servis_yolu as _odata_servis_yolu  # type: ignore
         adt = getattr(client, "adt_client", None) or client
         with _capture_stdout() as out:
             tok = csrf(adt)
@@ -2803,6 +3003,8 @@ def adt_publish_service(name: str, version: str = "0001") -> dict:
             "severity": hukum["severity"],
             "sap_message": hukum["sap_message"],
             "publish_probe": hukum["publish_probe"],
+            # Servis kökü tek kaynaktan (ad_politikasi.odata_servis_yolu): /NS/X → /sap/opu/odata/ns/X
+            "metadata_path": _odata_servis_yolu(name) + "/$metadata",
             "body": govde[:900],
             "client_log": out.getvalue().strip(),
         }

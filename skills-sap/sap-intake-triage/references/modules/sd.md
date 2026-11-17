@@ -44,6 +44,7 @@
 - **FORMÜL DERSİ (kritik):** `Kullanılabilir = Stok − (SE tahsisi − mal çıkışı yapılmış teslimat)`. Naif `Stok − Sevk edilen`
   mal çıkışı sonrası stoğu OLDUĞUNDAN AZ gösterir (hata) → teslimatı geri ekleyen 3. terim ŞART.
 - **TUZAK:** BE-44 — set tabanlı SUM'da örtük DISTINCT eksik sayım · BE-45 — kalem view'ında ilişki türevli join anahtarı → SDDL 515/061.
+- ⚠ **Embedded EWM:** ERP ambar no ≠ EWM ambar no — çevirmeden sorgu sessizce 0 satır (`sd-dersler.md` **SD-D1**); müşteri konsinyesinde depo yeri boyutu yok (**SD-D9**).
 - **SORU:** özel stok E (SDDocument≠'') dahil mi hariç mi? Plant mı Plant+depo yeri mi? (havuz semantiği çift sayım riski).
 
 ### T-SD-2 · "tutar / fiyat / döviz / bakiye" → FİYATLANDIRMA + PARA BİRİMİ
@@ -58,6 +59,7 @@
   AND ExchangeRate <> 0` satırının **varlığını** denetle (değeri değil); yoksa "kur yok" say. Eşdeğerlik ön koşulu: `TCURV-BWAER`
   boş ya da yerel PB, `TCURF-ABWCT` boş, `TCURV-GKUZU/BKUZU` boş. (Ekip dersi; davranış kaynak okumasıyla — LSCUNF01 /
   LSCUNU03 — kuruldu, koşuyla ölçülmedi; aXet'te ölçülmedi.)
+- **Fiyat onayı / koşul kaydı yazma:** standart onay `KFRST`'siz koşul tablosunda çalışmaz; released yazma API'si; hata dalında sessiz yanlış fiyat görünür eksikten ağırdır; canlı test ölçütü standart koşul tablosu farkıdır (`sd-dersler.md` **SD-D10**).
 - **SORU:** hangi kur tipi? Bazı belge tiplerinde (parça siparişi / ihracat) FİYAT YOK → sipariş fiyatını kullanma; bakiye = sipariş miktarı − Σ sevk.
 
 ### T-SD-3 · "teslimat / mal çıkışı (GI) / sevkiyat" → TESLİMAT
@@ -68,6 +70,7 @@
   doğrulanmış genişletme ÇALIŞMAZ** (API yolu `VORLAGE_KOPIEREN`'e uğramaz; ikiz nokta + bölünme kararı: `referans/sd/enhancements.md`
   "Teslimat yaratma yolları") — iki yolu ayrı ölç · exit'te **yeni** satıra `UPDKZ = 'U'` → VY 701, SM13'te V1 hatası, ST22 boş
   (`referans/sd/enhancements.md`).
+- ⚠ **Embedded EWM:** "dağıtıldı" ≠ EWM kabul etti, qRFC iki yönde de SMQ2'de (`sd-dersler.md` **SD-D2**) · e-irsaliye eklentisi teslimat silmede popup → BAPI ile silme kırılır (**SD-D3**).
 - **UYUYAN KONTROL uyarısı:** canlıda SE bağlı teslimat yoksa teslim miktarı=0 → kontrol uyur; spekülatif engelleyici YAPMA, veri gelince devreye girer.
 
 ### T-SD-4 · "ambalajlama / kasa / paketleme adedi" → AMBALAJ (LE-PAC)
@@ -85,6 +88,7 @@
   reuse; motor tip parametreli olmalı (sabit kodlama ETME).
 - **TUZAK:** fazla teslimat toleransı → üst sınır = termin × (1 + UEBTO%) · BE-29 — açık miktar COLLECT hedefinde anahtar olmayan CHAR →
   aktivasyon reddi · 30 gün mükerrer parti elemesi tipe özgü (genel varsayma).
+- ⚠ **Teslimat planı (SA):** VBEP açık miktar için güvenilmez, havuz `S073 − VBLB-ABEFZ` (`sd-dersler.md` **SD-D7**) · çağrı geçmişi okuma tuzakları (**SD-D8**).
 
 ### T-SD-6 · "konteyner / kapasite / brüt ağırlık" → KAPASİTE
 - **ARAŞTIR:** konteyner tipi standart VTADD02'de → kapasite oraya KONAMAZ (Yasak A) → Z tabloya eşle.
@@ -145,4 +149,6 @@ Yukarıdaki tetiklere gömülü tuzaklar + kod inceleme checklist'inin SD domain
 SD ekranlarında görülen yeni çekirdek maddeleri: FE-50 (MultiInput yazılı metin token olmuyor), FE-51 (`sap.ui.table` Ctrl+A),
 FE-52 (boş `Edm.Decimal` "0.000" gelir), BE-84 (sorted/hashed satır CHANGING'e bağlanmaz) — aXet kontrol listelerine aynı
 numarayla girer; filtre ekranı reçetesi `%sap-ui5-fiori` → `references/list-grid-alv.md` §6.1.
+Standart SAP davranışı olan derin dersler (EWM, e-irsaliye BAdI'si, GOS, VF04, VA22 maliyet ağacı, teslimat planı, konsinye, fiyat
+onayı, VDA 4905): **`sd-dersler.md` SD-D1…SD-D11** (kimlikler kaynak çekirdekle aynı; tek DEV sisteminde ölçüldü — başka sistemde hipotez).
 Yeni SD dersi öğrenilince buraya satır ekle. Standart belge yazımı daima released API → BAPI → RFC FM → BDC → manuel (`%sap-dev` → `references/write-api-selection.md`); RAP handler'da commit'li BAPI ayrı LUW (BE-26).

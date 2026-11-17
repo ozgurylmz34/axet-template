@@ -3,8 +3,9 @@
 > Kapsam: yeni bir freestyle UI5 uygulamasının (OData V2) **kod yazmadan önceki** iskeleti. Save/binding/value-help
 > mekaniği `freestyle-odata-v2.md`, liste ekranı `list-grid-alv.md`, çalıştırma ve deploy `deploy-and-local-run.md`.
 > Örneklerdeki adlar demodur: servis `ZXX001_UI_ORDER_O2`, app ID `com.example.<alan>.<uygulama>`, sistem
-> `<SAP_HOST>:<PORT>`, client `<CLIENT>`, UI5 sürümü `<UI5_VERSION>` (= backend'in UI5 sürümü; kaynak projede `1.120.x`
-> hattıydı).
+> `<SAP_HOST>:<PORT>`, client `<CLIENT>`, UI5 sürümü `<UI5_VERSION>` (= backend'in UI5 sürümü, **ölçülür** — §7.1).
+> **Yeni uygulama şablondan başlar:** `templates/ui5-freestyle/` (ortak gövde + 1.71 / 1.120 sürüm parçası; README
+> §1 kopyalama sırası). Bu dosya şablonun dayandığı kuralları anlatır.
 
 ---
 
@@ -13,7 +14,7 @@
 | Öğe | Kural |
 |---|---|
 | App ID | `com.example.<alan>.<uygulama>` biçimi (proje kendi kök alanını kullanır) |
-| BSP (ABAP repository) adı | `Z` ile başlar, **en çok 15 karakter** (`ZXX001_ORDER` ✅, `ZXX001_ORDER_APPLICATION` ❌) |
+| BSP (ABAP repository) adı | müşteri ad alanında: `Z`/`Y` ya da projede bildirilmiş `/<NS>/` (`sap-project.json` → `customer_namespaces`); **en çok 15 karakter** (`ZXX001_ORDER` ✅, `ZXX001_ORDER_APPLICATION` ❌). `deploy_ui.py prepare` denetler (`deploy-and-local-run.md` §2) |
 | CSS sınıf öneki | uygulama/paket koduna göre (`zxx001FieldDesc` gibi) |
 
 App ID değişirse aynı değer şu yerlerde birlikte değişir: `manifest.json` `sap.app.id`, `index.html`
@@ -174,10 +175,10 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 | YASAK: `src="https://ui5.sap.com/<sürüm>/resources/…"` ve göreli `src="resources/sap-ui-core.js"` | CDN: patch'ler takvimle silinir (yukarıda ②). Göreli: deploy edilmiş BSP altında çözülmez |
 | `data-sap-ui-language="tr"` | TR uygulama; i18n iki dosya kuralı (`freestyle-odata-v2.md` §9) buna bağlı |
 | `data-sap-ui-libs` **yok** | Kütüphaneler manifest'te |
-| `data-sap-ui-on-init` camelCase | `data-sap-ui-oninit` değil |
+| Öznitelik adı biçimi **sürüme bağlı** | ≥ 1.120: kebab (`data-sap-ui-on-init`, `-resource-roots`, `-compat-version`, `-frame-options`). < 1.120: **tek kelime küçük harf** (`data-sap-ui-oninit`, `-resourceroots`, `-compatversion`, `-frameoptions`, `-flexibilityservices`) — 1.71.85–1.114.10'da kebab ad sessizce yok sayılır, beyaz ekran (§7.1 tablo) |
 | `sapUiSizeCompact` body'de | Controller'da `addStyleClass` yapılmaz |
 | `data-handle-validation="true"` | Validation framework |
-| `data-sap-ui-flexibility-services="[]"` | Lokal çalıştırmada `lrep`/flex çağrısını kapatır (401 popup döngüsünün bir kaynağı). Canlı FLP'de key-user adaptation isteniyorsa bu satırın kaldırılması **proje kararıdır** — DOĞRULANMADI: canlı FLP'deki etkisi kaynakta ölçülmedi |
+| `data-sap-ui-flexibility-services="[]"` (< 1.120: `data-sap-ui-flexibilityservices`) | Lokal çalıştırmada `lrep`/flex çağrısını kapatır (401 popup döngüsünün bir kaynağı). Canlı FLP'de key-user adaptation isteniyorsa bu satırın kaldırılması **proje kararıdır** — DOĞRULANMADI: canlı FLP'deki etkisi kaynakta ölçülmedi |
 
 > Not: iskelet üreticinin yazdığı göreli `src="resources/sap-ui-core.js"` biçimi `/sap/public/bc/ui5_ui5/…` ile
 > değiştirilir.
@@ -190,10 +191,60 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 >   ve sayfa boş kalır, varsa mock SAP'ye bağlanır (ölçüldü). `ui5-mock.yaml`'da `backend` bloğu silinir ve bootstrap
 >   yolu CDN'e eşlenir — biçim ve ölçüm: `%sap-ui5-user-guide` → `references/mock-ortam.md` §2. `index.html` iki modda
 >   da AYNI kalır.
-> - **Doğrulama (runtime):** konsolda `sap.ui.version` = backend sürümü · ağda `…/resources/sap/ui/core/cldr/tr.json`
->   **200** · bir tarih alanında ay adı Türkçe (ör. "23 Eyl 2026").
+> - **Doğrulama (runtime):** konsolda `sap.ui.version` = backend kopyasının core sürümü (CDN değil) · ağda
+>   `…/resources/sap/ui/core/cldr/tr.json` **200** · bir tarih alanında ay adı Türkçe (ör. "23 Eyl 2026").
+>   ⚠ `sap.ui.version` (core kütüphanesi) ile dağıtımın `sap-ui-version.json` → `version` değeri aynı sayı
+>   olmayabilir (kaynak ekip ölçümü, ui5.sap.com 1.120.52: dağıtım `1.120.52`, `sap.ui.core` `1.120.50`).
+>   `minUI5Version`'ın kaynağı `sap-ui-version.json`'dur (§7.1); `sap.ui.version` yalnız "UI5 backend'den mi geliyor"u
+>   cevaplar.
 > - ⚠ `ui5.yaml` `ui5:` proxy ayarını değiştirmek CDN bootstrap'ını düzeltmez: mutlak CDN adresi proxy'ye hiç uğramaz
 >   ("proxy doğru dosyayı veriyor" ≠ "uygulama proxy'den yüklüyor").
+
+### 7.1 UI5 sürümü + tema backend'den ÖLÇÜLÜR · sürüme bağlı kontroller (ZORUNLU)
+
+1. `manifest.json` → `minUI5Version` = `GET <backend>/sap/public/bc/ui5_ui5/resources/sap-ui-version.json` →
+   `version`. Bu skill'deki `1.120.23` gibi numaralar **örnektir**, kural değildir.
+2. Tema: `…/resources/sap/ui/core/themes/sap_horizon/library.css` **200 VE md5'i `…/themes/base/library.css`'ten
+   FARKLI** ise `sap_horizon`; değilse `sap_fiori_3`. ⛔ Yalnız 200'e bakma: 1.71.85'te olmayan tema `base`'e düşüp
+   **200** döner (kaynak ekip ölçümü 2026-11-02, CDN; UI5 1.71.5 backend ICF'de aynı — tüketici ölçümü). Ölçülen
+   tema adı geçtiği her yere aynı yazılır: `index.html` `data-sap-ui-theme` · tüm `ui5*.yaml` `flp.theme` ·
+   test/sandbox sayfaları. Horizon'suz backend'de Horizon maddeleri `sap_fiori_3` ile uygulanır (ilke aynı).
+3. Aşağıdaki tablodaki kontrol yalnız backend sürümü **≥ `@since`** ise kullanılır; altındaysa "eski sürümde"
+   sütunu. **"1.71 hattı"** = backend < 1.120 (şablonun `surum/1.71/` parçası) · **"1.120 hattı"** = ≥ 1.120.
+   "ölçüldü: … ✗ · … ✓" yazan satırda eşik tam bilinmez ⇒ 1.120 altındaki her backend'de "eski sürümde" sütunu.
+
+```bash
+B="https://<SAP_HOST>:<PORT>/sap/public/bc/ui5_ui5/resources"
+curl -s "$B/sap-ui-version.json"                                  # → "version": "<X.Y.Z>" ⇒ minUI5Version
+curl -s -o /dev/null -w "%{http_code}\n" "$B/sap/ui/core/themes/sap_horizon/library.css"
+curl -s "$B/sap/ui/core/themes/sap_horizon/library.css" | md5sum
+curl -s "$B/sap/ui/core/themes/base/library.css"        | md5sum
+# 200 VE iki md5 FARKLI ⇒ sap_horizon · aksi hâlde ⇒ sap_fiori_3
+```
+
+| Kontrol / API | `@since` | Backend `< @since` ise | Şablondaki yeri |
+|---|---|---|---|
+| `sap.m.IllustratedMessage` (boş durum) | 1.98 | **Grid:** `noData` içinde `VBox` { `Text` + CTA `Button` } (`noData` tek kontrol alır). **`sap.m.Table`/`List` < 1.101:** `noData` aggregation'ı yok ⇒ tablonun yanında görünürlüğü "satır yok"a bağlı `VBox` { `Text` + `Button` } (1.98–1.100: o dış kontrol `IllustratedMessage`). CTA'lı boş durum ilkesi aynen geçerli | `SurumParca.bosDurum` |
+| `sap.m.ListBase` `noData` aggregation'ı | 1.101 | `noDataText` + yukarıdaki dış `VBox` | — |
+| `sap.ui.table.rowmodes.Auto` (`rowMode`) | 1.119 | `visibleRowCountMode="Auto"` + `minAutoRowCount` (≥ 1.119'da deprecated ⇒ orada KULLANILMAZ) | `SurumParca.satirModu` |
+| `sap.m.Avatar` | 1.73 | `sap.f.Avatar` ya da başlıkta ikon | — |
+| `sap.ui.core.IAsyncContentCreation` | 1.89 | arayüz bildirilmez; manifest `rootView.async` + `routing.config.async` (eşdeğerlik ÖLÇÜLMEDİ) | `SurumParca.bilesenArayuzleri` |
+| `sap.m.VariantManagement` | 1.103 | kullanılmaz — varyant `TablePersonalizer`'ın servis-tabanlı varyantı | — |
+| Bootstrap öznitelik adı (kebab) | ölçüldü: 1.71.85 · 1.84.62 · 1.96.51 · 1.108.57 · 1.114.10 ✗ · 1.120.52 ✓ | tek kelime küçük harf (`oninit`, `resourceroots`, `compatversion`, `frameoptions`, `flexibilityservices`) | `surum/<v>/webapp/index.html` |
+| `sap.app.i18n` **nesne** biçimi (`bundleUrl`, `supportedLocales`, `fallbackLocale`) | ölçüldü: 1.71.85 ✗ · 1.84.62+ ✓ | **dizgi** `"i18n": "i18n/i18n.properties"`. ⚠ `supportedLocales`/`fallbackLocale` 1.71.85'te hiçbir yerde okunmaz (`models.i18n.settings`'e taşımak da etkisiz) | ortak gövde dizgi kullanır |
+| `sap.ui.table.Table` `rowsUpdated` olayı | 1.86 | yok (yalnız iç `_rowsUpdated`) ⇒ satır binding'inin `dataReceived` olayı (`bindRows({events})`) | `List.controller.js` |
+| `Column` `sortOrder` = `None` | 1.120 | 1.71'de varsayılan `Ascending`, `None` yok ⇒ "sıralı mı" = `getSorted()`; `Table#getSortedColumns()` tek başına yetmez (XML'de verilen sıralamayı yansıtmaz) | `SurumParca.siraliMi` |
+| `ValueHelpDialog` · `sap.ui.export.Spreadsheet` | 1.24 · 1.50 | iki hedef sürümde de var | ortak |
+| Spreadsheet `dataSource` = `ListBinding` | ölçüldü: 1.71.85 ✗ · 1.120.52 ✓ | `{ type: "odata", dataUrl: binding.getDownloadUrl(...), serviceUrl, count, useBatch: false, headers }` (iki sürümde geçerli) | `List.controller.js` `_doExport` |
+
+Kaynak: `@since` değerleri UI5 1.120.52 `-dbg.js` başlıklarından; "ölçüldü" satırları ui5.sap.com CDN'de
+(2026-11-02, kaynak ekip). Tabloda olmayan bir kontrolü eklerken `@since`'ını API referansından doğrula.
+Manifest `_version` ayrı eksendir (descriptor şema sürümü): 1.71 hattında şablonun `surum/1.71/README.md` değeri
+(`1.12.0`), 1.120 altı başka backend'de ÖLÇÜLMEDİ. ⚠ 1.71 sütunundaki boş durum `VBox` ve `visibleRowCountMode`
+1.71 çalışma zamanında ÖLÇÜLMEDİ (yalnız API metadata'sı) — şablon README §0 adım 3.
+
+**Neden:** hiçbir kontrol `minUI5Version`'ı denetlemez ⇒ örnekteki sabit sürüm sessizce kopyalanır; `@since`'ı
+backend'den büyük bir kontrolün modülü o backend'de yoktur (açılmaz).
 
 ## 8. `manifest.json` — şablon
 
@@ -203,7 +254,7 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
   "sap.app": {
     "id": "com.example.<alan>.<uygulama>",
     "type": "application",
-    "i18n": { "bundleUrl": "i18n/i18n.properties", "supportedLocales": ["", "tr"], "fallbackLocale": "" },
+    "i18n": "i18n/i18n.properties",
     "applicationVersion": { "version": "0.0.1" },
     "title": "{{appTitle}}",
     "description": "{{appDescription}}",
@@ -249,8 +300,8 @@ turda (bir deploy, bir lokal çalıştırma) yaşandı.
 | `_version` ≥ `1.60.0` | 1.59 ve altı kullanılmaz |
 | `resources: "resources.json"` | BSP deploy için |
 | `flexEnabled: true` | UI adaptation; lokal 401 popup'ını tek başına **durdurmaz** (bkz. `deploy-and-local-run.md` §1) |
-| `minUI5Version` = backend UI5 sürümü (`index.html` onu yükler) | §7 |
-| `supportedLocales ["", "tr"]` + `fallbackLocale ""` | Boş string = varsayılan `i18n.properties`. `fallbackLocale` başka bir değer olunca dil yüklemesi bozuldu |
+| `minUI5Version` = backend UI5 sürümü (`index.html` onu yükler) | ölçülür, örnekten alınmaz — §7.1 |
+| `sap.app.i18n` **dizgi** (iki hatta da çalışır) | Nesne biçimi (`{ "bundleUrl": …, "supportedLocales": ["", "tr"], "fallbackLocale": "" }`) yalnız 1.120 hattında (1.71.85 nesneyi desteklemez — §7.1). Nesne biçim kullanılıyorsa: boş string = varsayılan `i18n.properties`; `fallbackLocale` başka bir değer olunca dil yüklemesi bozuldu. 1.71.85'te `supportedLocales`/`fallbackLocale` okunmaz |
 | `useBatch: false` | Kaynak ekibin V2 servislerinde üretim standardı; `$batch` yalnız bilinçli istisna (`freestyle-odata-v2.md` §10) |
 | `controlId: "app"` | `App.view.xml` `<App id="app"/>` ile aynı (`appContainer` değil) |
 | `routing.config.type: "View"` + `path` + `viewPath` | ikisi de yazılır; her target'ta ayrıca `"id"` |
@@ -291,7 +342,8 @@ sap.ui.define([
     });
 });
 ```
-- `sap.ui.core.IAsyncContentCreation` zorunlu.
+- `sap.ui.core.IAsyncContentCreation` zorunlu — **backend ≥ 1.89** (`@since 1.89`); altında arayüz bildirilmez, async
+  içerik manifest `rootView.async` + `routing.config.async` ile (§7.1; şablonda `SurumParca.bilesenArayuzleri`).
 - ODataModel Component'te kurulmaz, manifest yönetir.
 - Kullanılan her sınıf (`JSONModel` vb.) `sap.ui.define` bağımlılığıdır; global `sap.ui.model.json.JSONModel`
   kullanımı async/strict'te fırlatır.
@@ -362,11 +414,12 @@ webapp/localService/mainService/<ANNO_MDL>.xml    ← yalnız annotation kullan�
 - [ ] `sapuxLayer: CUSTOMER_BASE`, standart scripts, `fiori-tools-proxy`
 - [ ] Tüm `ui5*.yaml` aynı kanonik host
 - [ ] `ui5-deploy.yaml` `deploy-to-abap` görevi + BSP adı/paket/transport (`deploy-and-local-run.md` §2) — `python scripts/deploy_ui.py prepare <app> --no-build`
+- [ ] Backend UI5 sürümü + tema ölçüldü (`sap-ui-version.json` + iki md5; §7.1) → `minUI5Version`, `data-sap-ui-theme`, `flp.theme` aynı; kullanılan her kontrolün `@since`'ı ≤ backend
 - [ ] `index.html` bootstrap backend UI5'i (`/sap/public/bc/ui5_ui5/resources/…`; CDN/göreli değil) + `language=tr` + `sapUiSizeCompact` + `data-sap-ui-libs` yok + `data-handle-validation`
-- [ ] `manifest.json`: `_version ≥ 1.60.0`, `resources.json`, `flexEnabled`, `minUI5Version` = backend UI5 sürümü, i18n locales, `useBatch:false`, `controlId:"app"`, routing `type:"View"` + target `id`
+- [ ] `manifest.json`: `_version ≥ 1.60.0`, `resources.json`, `flexEnabled`, `minUI5Version` = ölçülen backend sürümü, `sap.app.i18n` dizgi, `useBatch:false`, `controlId:"app"`, routing `type:"View"` + target `id`
 - [ ] İsimli JSONModel'de `settings.data` çift sarmalama yok
 - [ ] Annotation dataSource ya yok ya katalog servisi üzerinden ve 200 ölçülmüş
-- [ ] `Component.js` `IAsyncContentCreation`; tüm sınıflar define bağımlılığı
+- [ ] `Component.js` `IAsyncContentCreation` (backend ≥ 1.89); tüm sınıflar define bağımlılığı
 - [ ] `<App id="app"/>`; `localService/mainService/metadata.xml`
 - [ ] i18n iki dosya (`python scripts/check_i18n_keys.py <app>`)
 - [ ] Liste ekranı varsa grid (`python scripts/check_list_view_grid.py <app>`)
@@ -390,4 +443,8 @@ webapp/localService/mainService/<ANNO_MDL>.xml    ← yalnız annotation kullan�
   uygulamanın kendi bağımlılıklarından çözdüğü için bu biçimde sunucu açılmadı → adlar eklendi (§2). Kaynak da sonradan
   aynı ölçümle (UI5 CLI 4.0.57 ve 4.0.69) bu kurala hizalandı; önceki "8 uygulamalı workspace'te çalıştı" kaydının
   neden farklı olduğu (UI5 CLI sürümü mü, uygulamaların gerçekte ad taşıması mı) DOĞRULANMADI.
+- 2026-11-17 (uyum turu 8): kaynak standarda eklenen "sürüm + tema backend'den ölçülür, sürüme bağlı kontroller" kuralı
+  §7.1 olarak alındı; manifest `sap.app.i18n` dizgi biçimine çevrildi (nesne biçim 1.71.85'te desteklenmiyor), bootstrap
+  öznitelik biçimi sürüme bağlandı, BSP adı müşteri namespace'ini kabul eder. Kaynağın kanonik uygulama kopyası
+  `templates/ui5-freestyle/` olarak geldi.
 - Uygulama klasöründe `npm install`'ı engelleyen otomatik kapı aXet'te yok; kural metin olarak kaldı.

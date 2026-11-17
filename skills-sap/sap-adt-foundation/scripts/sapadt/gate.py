@@ -23,7 +23,8 @@ KAPI SIRASI (her red ayrı kod; ilk red döner):
      conn_env_mismatch                             — ortam değişkeni .conn_adt'deki URL/client'ı eziyor
   4. scope_missing | scope_invalid | reason_missing | intake_missing | intake_invalid
   5. araç guard'ları (ağdan ÖNCE):
-       ADR_0005_A (Z/Y namespace; silmede standart obje reddi) ·
+       ADR_0005_A (müşteri ad alanı: Z/Y ya da sap-project.json `customer_namespaces` ile bildirilmiş /<NS>/ —
+                   tek kaynak lib/utils/ad_politikasi.py; silmede standart obje reddi) ·
        ADR_0005_B (kaynakta standart tabloya doğrudan DML; `check_std_dml`, kaynak `tool_args`'tan —
                    kaynak yok/taranamadı → std_dml_scan_unavailable) ·
        ADR_0005_A (Z104: kaynak STANDART objeyi genişletiyor — `extend type|view [entity]|custom|abstract <std>`,
@@ -87,6 +88,8 @@ READ_TOOLS = frozenset({
     # `POST /sap/bc/adt/checkruns` (kilit/PUT/aktivasyon YOK; eski aktive eden yol araçtan kaldırıldı) ·
     # `adt_get_method` yalnız `source/main` GET'i
     "adt_syntax_check", "adt_get_method",
+    # Tur 8 (lider onayı; kaynak çekirdek #413): BAdI enhancement spot belgesini okur — yalnız GET (tools/badi.py)
+    "adt_badi_spot_read",
 })
 # Okuma kapısını (`check_read`) ve profil kontrolünü CLI'de ATLAYAN araçlar. `ping` SAP'ye gitmez;
 # `sap_doctor` sap-project.json/.conn_adt eksikliğini TEŞHİS etmek için var — aynı ön koşulları
@@ -101,7 +104,8 @@ CONDITIONAL_WRITE = {
 }
 REQUIRES_TRANSPORT = frozenset({"adt_post_shell", "adt_domain_create", "adt_dtel_create",
                                 "adt_struct_create", "adt_msgclass_write", "adt_set_description",
-                                "adt_table_create", "adt_ttyp_create", "adt_textpool_write"})
+                                "adt_table_create", "adt_ttyp_create", "adt_textpool_write",
+                                "adt_badi_spot_write"})
 DELETE_TOOLS = frozenset({"adt_delete"})
 SCOPES = ("S0", "S1", "S2")
 REASON_MIN_LEN = 15
@@ -308,6 +312,17 @@ def arg_adlari(tool: str, tool_args: dict | None, object_type=None) -> list[tupl
     if tool == "adt_post_shell" and str(object_type or "").strip().lower() in _FM_TIPLERI:
         ek = a.get("extra") if isinstance(a.get("extra"), dict) else {}
         out.append((ek.get("function_group"), "functiongroup"))   # standart FUGR içine FM = Yasak A
+    if tool == "adt_badi_spot_write":
+        # Tur 8: spot adı `name` (birincil); yazılan/kaldırılan HER BAdI tanımı da müşteri adı olmalı.
+        # FAIL-CLOSED: liste değilse ya da öğede `badi` yoksa ad boş sayılır → ADR_0005_A.
+        tanimlar = a.get("definitions")
+        if tanimlar is not None:
+            for d in (tanimlar if isinstance(tanimlar, list) else [None]):
+                out.append(((d or {}).get("badi") if isinstance(d, dict) else None, "badi"))
+        kaldir = a.get("remove_badis")
+        if kaldir is not None:
+            for x in (kaldir if isinstance(kaldir, list) else [None]):
+                out.append((x if isinstance(x, str) else None, "badi"))
     return out
 
 
@@ -336,7 +351,12 @@ def transport_gerekli(tool: str, tool_args: dict | None) -> bool:
 
 
 def check_names(tool: str, obje_adi, object_type=None, ek_obje_adlari=(),
-                adli_ekler=()) -> tuple[str, str] | None:
+                adli_ekler=(), *, root=None, grup=None) -> tuple[str, str] | None:
+    # `grup` (Q383): fonksiyon grubu include'u (FUGR/I) yazımında aracın `group` argümanı. Include adı `L…`
+    # ile başlar (Z/Y değil) ⇒ ad kuralı GRUP üzerinden: grup müşteri adı + include grubun önekini taşır
+    # (`object_types.fugr_include_ad_alani_hatasi`, araçla AYNI kural). Grup verilmezse RED (fail-closed).
+    # `root`: kapının proje kökü. Namespace listesi (`customer_namespaces`) YALNIZ bağlantı dosyasının
+    # dizinindeki sap-project.json'dan okunur; `root` ondan ayrışırsa namespace kabulü kapalıdır (Z/Y etkilenmez).
     # Kesin Yasak C: paket yaratma/değiştirme/silme yok. Ölçüldü (2026-09-13): guardrails obje tipine
     # bakmadığı için `adt_post_shell` object_type=package ile Z'li bir paket adı kapıdan geçiyordu.
     if isinstance(object_type, str) and object_type.strip().lower() in PACKAGE_TYPES:
@@ -345,17 +365,33 @@ def check_names(tool: str, obje_adi, object_type=None, ek_obje_adlari=(),
     try:
         if obje_adi is not None:
             if tool in DELETE_TOOLS:
-                reject_standard_delete(str(obje_adi), object_type)
+                reject_standard_delete(str(obje_adi), object_type, root=root)
+            elif _fugr_include_tipi_mi(object_type):
+                from object_types import fugr_include_ad_alani_hatasi  # type: ignore
+                hata = fugr_include_ad_alani_hatasi(grup if isinstance(grup, str) else "", str(obje_adi),
+                                                    root=root)
+                if hata:
+                    return "ADR_0005_A", hata
             else:
                 require_customer_namespace(str(obje_adi), what=object_type or "object",
-                                           object_type=object_type)
+                                           object_type=object_type, root=root)
         for ek in ek_obje_adlari or ():
-            require_customer_namespace(str(ek or ""), what="also[]")
+            require_customer_namespace(str(ek or ""), what="also[]", root=root)
         for ad, tip in adli_ekler or ():
-            require_customer_namespace(ad.strip() if isinstance(ad, str) else "", what=tip, object_type=tip)
+            require_customer_namespace(ad.strip() if isinstance(ad, str) else "", what=tip, object_type=tip,
+                                       root=root)
     except GuardrailViolation as gv:
         return gv.code, str(gv)
     return None
+
+
+def _fugr_include_tipi_mi(object_type) -> bool:
+    """Q383: tip fonksiyon grubu include'u (FUGR/I) mu? Tek kaynak `object_types.is_fugr_include_type`."""
+    try:
+        from object_types import is_fugr_include_type  # type: ignore
+        return is_fugr_include_type(object_type)
+    except Exception:  # noqa: BLE001
+        return str(object_type or "").strip().lower() in {"fugr_include", "fugr-include", "fugr/i"}
 
 
 # Kaynak METNİ taşıyan yazma araçları → kaynağın geldiği argüman. Ölçüldü (tools/*.py imzaları,
@@ -550,7 +586,8 @@ def check_write(tool: str, proj, *, obje_adi=None, object_type=None, ek_obje_adl
     if kapsam:
         return red(*kapsam)
     isim = check_names(tool, obje_adi, object_type, ek_obje_adlari,
-                       arg_adlari(tool, tool_args, object_type))
+                       arg_adlari(tool, tool_args, object_type), root=kok,
+                       grup=(tool_args or {}).get("group") if isinstance(tool_args, dict) else None)
     if isim:
         return red(*isim)
     dml = check_std_dml(tool, tool_args, object_type, res.details)

@@ -227,6 +227,10 @@ OBJECT_TYPE_TO_TASK = {
     "domain": None, "dataelement": None,      # doma/dtel eşanlamlıları
     "include": "program_push", "prog/i": "program_push",       # klasik include (K1; abaplint ÖLÇÜLEMEDİ=W)
     "incl": "program_push", "report": "program_push",          # object_types eşanlamlıları (K1)
+    # Q383 (kaynak çekirdek b0bcfac): fonksiyon grubu include'u (FUGR/I) — aXet'te `include` ile AYNI karar
+    # (K1: klasik include → program_push; abaplint ÖLÇÜLEMEDİ=W). Kaynak çekirdek burada None yazar (oradaki
+    # `include` de None); aXet `include`'u bağladığı için FUGR/I da bağlanır — sessiz SKIP sınıfı açılmasın.
+    "fugr_include": "program_push", "fugr-include": "program_push", "fugr/i": "program_push",
     "srvb": None, "servicebinding": None,     # publish yolu ayrı
     "tabletype": None,
     # 2026-08-29 (kayıt #70): `fugr`/`functiongroup` `_ACTIVATION_URI_SEG`'e eklendi
@@ -354,8 +358,10 @@ def run_reviewer(task: Optional[str], artifact_path: Optional[str],
         ack_drop: comma-separated field names whose table DROP is explicitly
                   approved (user+lead, ADR 0005-B). Forwarded to run_review's
                   --ack-drop → ONLY these named drops become ACK-WARNING; any
-                  un-named drop or any TYPE/RENAME change still BLOCKER. Empty
-                  → no acknowledgement (default; full drop-guard).
+                  un-named drop is still BLOCKER. NO effect on the type verdict
+                  (#408): narrowing / kind change / unresolvable physical type is
+                  always BLOCKER (widening = WARNING, same physical type = INFO).
+                  Empty → no acknowledgement (default; full drop-guard).
 
     Returns:
         ReviewerResult — coordinator-friendly verdict + details.
@@ -390,8 +396,9 @@ def run_reviewer(task: Optional[str], artifact_path: Optional[str],
     ]
     if ack_drop:
         # Hedefli onaylı-DROP ack — yalnız drop-guard'a iletilir (run_review içinde
-        # check_table_field_drop'a geçer). Blanket bypass DEĞİL: isimsiz drop/tip
-        # değişikliği yine BLOCKER. ADR 0005-B kullanıcı+lider bilinçli onayı.
+        # check_table_field_drop'a geçer). Blanket bypass DEĞİL: isimsiz drop yine
+        # BLOCKER; tip hükmüne etkisi YOK (#408: daralma/tür/çözülemeyen tip her zaman
+        # BLOCKER, genişleme WARNING, aynı fiziksel tip INFO). ADR 0005-B kullanıcı+lider onayı.
         cmd += ["--ack-drop", ack_drop]
     env = os.environ.copy()
     env[PROJECT_ENV] = str(project_dir())

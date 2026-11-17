@@ -11,16 +11,22 @@
 **2026-09-26 eki (Z39 kalanı):** okuma +1 (`adt_textpool_read`) → okuma 26 · yazma 16 · toplam 42 (`--list`, çevrimdışı ölçüldü).
 **2026-10-19 eki (Z195):** önceki ölçüm okuma 27 · yazma 16 · toplam 43 (Z166 `adt_dump_read` dahil) → `adt_syntax_check` salt-okur
 checkrun'a geçip okumaya taşındı + yeni `adt_get_method` → okuma 29 · yazma 15 · toplam 44 (`--list`, çevrimdışı ölçüldü).
+**2026-11-17 eki (uyum turu 8):** önceki ölçüm okuma 29 · yazma 15 · toplam 44 → okuma +1 (`adt_badi_spot_read`) · yazma +1
+(`adt_badi_spot_write`) → okuma 30 · yazma 16 · toplam 46 (`--list` `counts`, çevrimdışı ölçüldü 2026-11-17).
+**Müşteri adı (ADR 0005 A-EK, 2026-11-17):** bu katalogda ad kuralı olarak geçen "Z/Y" = **Z/Y ya da projede `customer_namespaces`
+ile bildirilmiş `/NS/`** (`sap-project.json`; karar tek kaynaktan `lib/utils/ad_politikasi.py`). Yazma kapısı (`gate.check_names`) ve lib
+`validate_*` ad denetimleri bu kararı kullanır; bildirilmemiş `/NS/` standart sayılır (`ADR_0005_A`). Namespace'li ad ADT yolunda kodlanır
+(`/NS/X` → `%2Fns%2Fx`, `url_segmenti`). Araç araç namespace'li yazım canlıda **ÖLÇÜLMEDİ**.
 Profil etiketlerinin tamamı ve yetenek matrisi: `references/profiles.md` (rehber; etiket tablosu kodla test edilir).
 `adt_set_description` yalnız `s4_private`'ta açıktır ve transport ister.
 `adt_unit_run` `allow_risky_tests=true` verilirse yazma sınıfına geçer (`--list`: `write_when`).
 `adt_transport_list` yalnız `ecc`, `s4_private`, `s4_public` profillerinde açıktır (`available_on`); `btp_abap`'ta yoktur.
-`adt_screen_generate` yalnız `ecc`, `s4_private` profillerinde açıktır. `adt_msgclass_write`, `adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`, `adt_textpool_read` yalnız `s4_private`'ta açıktır
+`adt_screen_generate` yalnız `ecc`, `s4_private` profillerinde açıktır. `adt_msgclass_write`, `adt_table_create`, `adt_ttyp_create`, `adt_textpool_write`, `adt_textpool_read`, `adt_badi_spot_read`, `adt_badi_spot_write` yalnız `s4_private`'ta açıktır
 (kaynak reçetenin kanıtı yalnız bu profil; diğer profilde `tool_not_available_for_profile`, çıkış 2).
 `adt_post_shell` / `adt_push_source` içinde `fugr` ve `func` tipleri yalnız `ecc`, `s4_private`'ta (`--list`: `object_type_available_on`;
 diğer profilde `type_not_available_for_profile`, çıkış 2).
 Transport zorunlu araçlar (`requires_transport`): `adt_post_shell`, `adt_domain_create`, `adt_dtel_create`, `adt_struct_create`,
-`adt_msgclass_write`, `adt_set_description`, `adt_table_create`, `adt_ttyp_create` (`$TMP` paketinde muaf), `adt_textpool_write`, `adt_screen_generate` (`requires_transport_when`: mode WRITE/DELETE). `adt_push_source` `bdef`/`ccimp`/`ccau`/`ccdef`/`ccmac` tiplerinde de transport ister (araç katmanı).
+`adt_msgclass_write`, `adt_set_description`, `adt_table_create`, `adt_ttyp_create` (`$TMP` paketinde muaf), `adt_textpool_write`, `adt_badi_spot_write`, `adt_screen_generate` (`requires_transport_when`: mode WRITE/DELETE). `adt_push_source` `bdef`/`ccimp`/`ccau`/`ccdef`/`ccmac`/`fugr_include` tiplerinde de transport ister (araç katmanı).
 Argümanları dosyadan vermek için `--args-json` yerine `--args-file <json dosyası>`.
 
 **Ortak dönüş okuma kuralları**
@@ -40,7 +46,11 @@ Tip değerleri — CLI tip tablosu (`lib/object_types.py`, kod okuması): `class
 `accesscontrol`, `servicedefinition`, `package`; eşanlamlılar (`ddls`, `doma`, `dtel`, `tabl`, `fugr`, `srvd` …) aynı tipe çözülür.
 **Tabloda yok ama araçlarda özel yolu olan tipler (2026-09-13):** `bdef` (`adt_get` okur · `adt_post_shell` kabuk · `adt_push_source`
 yazar · `adt_activate` aktive eder), `msag` (`adt_get`→`adt_msgclass_read` · `adt_post_shell` kabuk · `adt_msgclass_write` mesaj yazar), `enqu` (`adt_get` yalnız varlık — `include_source:false` · `adt_post_shell` kabuk ·
-`adt_activate` aktive eder; kaynak okuma/yazma yok), `srvb` (`adt_activate` + `adt_publish_service`; yaratma/kaynak yok). Sınıf alt-include'ları
+`adt_activate` aktive eder; kaynak okuma/yazma yok), `srvb` (`adt_activate` + `adt_publish_service`; yaratma/kaynak yok),
+`fugr_include` (`FUGR/I`, eşanlamlı `fugr/i`, `fugr-include`; 2026-11-17): fonksiyon grubu include'u — `adt_get` · `adt_push_source` · `adt_activate` ·
+`adt_lock_check` **`group` argümanıyla** (aşağıda §FUGR/I), `enhs` (`enhancementspot`, BAdI enhancement spot; 2026-11-17): içerik
+`adt_badi_spot_read` / `adt_badi_spot_write` ile; genel yollardan yalnız silme · kilit · metadata URL'i açıktır, ATC ve kaynak yolu kapalı
+(`atc_kapsam_disi`). Ayrıntı: `references/enhancement-spot-badi.md`. Sınıf alt-include'ları
 `ccimp`/`ccau`/`ccdef`/`ccmac` (`name` = ANA SINIF): `adt_get` dördünü okur, `adt_push_source` dördünü yazar (dördünün yazma yolu canlı ölçüldü — `ccdef`/`ccmac` 2026-09-21, DEV; yanıtta `write_path_measured:true`).
 Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde (class/interface/program/include) True'dur.
 
@@ -54,8 +64,11 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 
 ### `adt_get`
 - **Amaç:** obje var mı, metadata, (isteğe bağlı) kaynak.
-- **Argümanlar:** `name` (zorunlu) · `object_type="class"` · `include_source=true` · `output_path=null` · `overwrite=false`.
+- **Argümanlar:** `name` (zorunlu) · `object_type="class"` · `include_source=true` · `output_path=null` · `overwrite=false` ·
+  `group=null` (yalnız `fugr_include`'da ve orada zorunlu; başka tipte verilirse `group_not_applicable`, SAP'ye gidilmez).
 - **Dönüş:** `{ok, name, type, exists, source?, metadata?, client_log}`; yoksa `{ok:true, exists:false}`.
+  `fugr_include` okuması `GET /functions/groups/<grup>/includes/<include>/source/main`; okuma grup **kanıtı değildir** (SAP URL'deki
+  grubu aynalar) — kanıt push/aktivasyon/kilit adımında ayrıca alınır. Pull kaydı anahtarı `fugr_include:<INCLUDE>`.
   `output_path` verilince (Z142ⓐ, 2026-09-26) kaynak YEREL dosyaya yazılır (UTF-8, satır sonu çevrilmez) ve `source` yanıttan düşer:
   `{…, output_path (proje-göreli), written, line_count}`. Yol kuralı `adt_pretty_print` ile tek kaynaktan (`sapadt/project.py`):
   proje kökü içi · kaynak uzantısı (`.abap .asddls .asddlxs .asdcls .asbdef .bdef .cds .ddl .srvd .srvdsrv .xml`) · `.axet-code/` dışı · `.axetcode-denylist` yolları dışı (varsa; ör. `conn/`, `secrets` altı okunmaz/yazılmaz);
@@ -123,6 +136,10 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 - **Uyarılar:** FM (`func`) için üç ayrık sonuç: yok → `OBJECT_NOT_FOUND`+`probe` · var ama çağıransız → `count:0, existence_verified:true` ·
   uç hatası → `ok:false`. usageReferences bir ağaçtır: `DEVC/K` düğümleri çağıranların paket atalarıdır, `count`'a girmez (`package_count`
   ayrı). FM çağıranında kanonik ölçüm `CROSS` (`foundation-query.md` §3.3).
+  **`bdef` (2026-11-17):** genel tip tablosunda BDEF girdisi olmadığı için eskiden `Unsupported object type` dönüyordu; artık yalnız bu
+  araçta BDEF ucu (`/sap/bc/adt/bo/behaviordefinitions/<ad>`) kullanılır, varlık aynı uçtan sorulur (yalnız 404 = yok). Yanıt BDEF'in
+  **kendisini** de bir referans olarak içerir ve `count` onu da sayar. Kaynak çekirdekte canlı ölçüldü; aXet'ten canlı ÖLÇÜLMEDİ.
+  `adt_impact_analysis` bu eşlemeyi kullanmaz.
 
 ### `adt_impact_analysis`
 - **Amaç:** özyinelemeli where-used (kim dolaylı etkilenir).
@@ -152,6 +169,7 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 - **Amaç:** ATC statik kontrol (Clean ABAP, performans, güvenlik).
 - **Argümanlar:** `name` · `object_type="class"` · `variant` (yoksa bağlantıdaki ATC varyantı, o da yoksa `DEFAULT`) · `max_verdicts=100`.
 - **Dönüş:** `{ok, variant, finding_count, findings:[…]}`. Sayının doğrulanamadığı durum için ayrı alan olabilir (`finding_count_unverified`).
+  ATC'nin ölçülmediği tip (`enhs`, 2026-11-17) → `ok:false, error:"atc_kapsam_disi"`, SAP'ye gidilmez ("0 bulgu" DEĞİL).
 
 ### `adt_table_read`
 - **Amaç:** tablo verisi (data preview; WHERE yok).
@@ -164,7 +182,8 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 ### `adt_sql_query`
 - **Amaç:** OpenSQL SELECT (WHERE/JOIN/GROUP BY/COUNT).
 - **Argümanlar:** `query` · `row_limit=100` · `acknowledge_risk=false` · `approval_text`.
-- **Dönüş:** `{ok, row_count, row_limit, total_rows, truncated, truncated_notice?, columns, rows:[{KOLON:değer}]}`;
+- **Dönüş:** `{ok, row_count, row_limit, total_rows, truncated, truncated_notice?, execution_time_ms, columns, rows:[{KOLON:değer}]}`;
+  `execution_time_ms` = SAP `dp:queryExecutionTime`, **birim milisaniye** (2026-11-17; sunucu tarafı süre, ağ dahil değil; yoksa `null`);
   koşmadıysa `{ok:false, error:"sorgu_kosmadi", message, sap_error?}` (`sap_error` = `{status_code, message, body_excerpt}`, SAP'nin kendi gövdesi).
 - **Uyarılar:** yalnız SELECT/WITH; `INTO`/`UP TO` yazma · ⚠ KVKK (table_read ile aynı; FROM/JOIN tabloları, alan listesi, released CDS normalize edilir) ·
   `truncated` kesindir (`row_limit + 1` sonda satırı); `total_rows` SAP `totalRows`'tur ve aggregate'de alttaki satır sayısıdır → kırpma ondan
@@ -228,8 +247,9 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 
 ### `adt_lock_check`
 - **Amaç:** obje kilitli mi.
-- **Argümanlar:** `name` · `object_type="class"`.
+- **Argümanlar:** `name` · `object_type="class"` · `group=null` (yalnız `fugr_include`'da, orada zorunlu).
 - **Dönüş:** `{ok, locked: true|false|null, lock_owner?, exists}`.
+  `fugr_include`: önce grup kanıtı (aşağıda §FUGR/I); kanıt tutmazsa `fugr_group_unverified` ve kilit sorgusu YAPILMAZ.
 - **Uyarı:** kilit ucu 404 verebilir (ölçüldü) → `locked:null` = ÇÖZÜLEMEDİ, "kilitli değil" değil (`known-errors-adt.md` K-08).
 
 ### `adt_unit_run` (varsayılan: okuma)
@@ -339,6 +359,18 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
   var olan dosya `overwrite=false` iken `output_exists`; yol denetimi SAP'ye gitmeden). Pull kaydı (`sap-pull-state.json`) YAZMAZ —
   metodu düzenleyip geri yazmak için tam kaynak `adt_get` ile çekilir. aXet'te canlı **ÖLÇÜLMEDİ**.
 
+### `adt_badi_spot_read` (BAdI enhancement spot — OKUMA, 2026-11-17)
+- **Amaç:** bir BAdI enhancement spot'unu (ENHS/XSB) ve BAdI tanımlarını model olarak okumak; yazmadan önce zorunlu adım. Profil: yalnız `s4_private`.
+- **Argüman:** `name` (spot adı, ≤ 30; standart spot da okunur).
+- **Çağrı:** `GET /sap/bc/adt/enhancements/enhsxsb/<spot>` (tam belge).
+- **Dönüş:** `{ok, name, exists, spot{name, description, package, masterSystem, version, …}, definitions[…], standard, writable,
+  unmodelled[], server_extras[], pull_state}`; yoksa `{ok:true, exists:false}` (+ "yok" pull kaydı). Okunamazsa `read_failed` /
+  `parse_failed` — "yok" anlamına GELMEZ.
+- **Uyarılar:** `standard:true` (`masterSystem=SAP`) → `writable:false` (Yasak A) · `unmodelled` dolu → `writable:false` (TAM-belge PUT o alanı
+  silerdi) · `spot.version` aktiflik kanıtı DEĞİLDİR (inaktif spot da "active" döner — kaynak çekirdekte ölçüldü) · pull kaydı
+  `.axet-code/sap-pull-state.json`'a modelin özetiyle yazılır; `adt_badi_spot_write` bu kayıt olmadan var olan spot'a yazmaz.
+  Ayrıntı: `references/enhancement-spot-badi.md`. aXet'te canlı **ÖLÇÜLMEDİ** (sahte sunucu fikstürleri kaynak çekirdeğin canlı ölçümü).
+
 ## Yazma sınıfı
 Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--sap-write` · kapsam beyanı. Guard'lar ağdan önce.
 
@@ -373,7 +405,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 
 ### `adt_push_source`
 - **Amaç:** mevcut objeye tam kaynak gönderme.
-- **Argümanlar:** `name` (Z/Y) · `object_type` · `source` (tam içerik) **ya da** `source_path` (yerel dosya, Z142ⓐ/ⓒ 2026-09-26) — tam olarak
+- **Argümanlar:** `name` (Z/Y) · `object_type` · `group` (yalnız `fugr_include`, orada zorunlu — §FUGR/I) · `source` (tam içerik) **ya da** `source_path` (yerel dosya, Z142ⓐ/ⓒ 2026-09-26) — tam olarak
   biri · `transport` (obje zaten atanmışsa isteğe bağlı) ·
   `skip_reviewer=false` · `ack_drop=""` (ikisi de aXet yazma kapısında **yasak**: verilirse `reviewer_bypass_forbidden`, çıkış 2).
   `source_path`: `adt_get(output_path)` ile aynı yol kuralı; UTF-8 (BOM atılır), boş dosya ve UTF-8 olmayan dosya reddedilir. Yazma kapısı
@@ -405,6 +437,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   - `ccimp` / `ccau`: `name` = **ana sınıf** (`{"name":"ZBP_X","object_type":"ccimp",…}`); include yoksa önce iskelet (POST) sonra PUT; bayt readback; ana sınıf aktive edilir — RAP behavior pool'da BDEF inaktifse aktivasyon düşer (`push_failed` + `activation_note`) → `also` ile birlikte aktive et. Transport zorunlu. Yasak B taranır. Reviewer `class_push`. `ccdef` / `ccmac` (2026-09-21, Z41): aynı yol (`push_class_include` → `definitions` / `macros` segmenti); segment adları GET ile ölçüldü; **yazma yolu canlı ÖLÇÜLDÜ (2026-09-21, DEV)**: PUT `/includes/definitions` ve `/includes/macros` → sınıf aktivasyonu → aktif readback eşit (kontrol grubu aynı turda ccimp) → yanıtta `write_path_measured:true` (dördünde de); bayt readback her yazımda koşar.
   - `func`: fonksiyon grubu canlı okumadan çözülür (`function_group` yanıtta) ve **Z/Y olmalı** (değilse `ADR_0005_A`, yazma yok); sıkı kilit PUT + ayrı aktivasyon (v0.5.1: UNLOCK sonucu yanıtta — `unlock_ok` + gerekirse `unlock_warning`; PUT hatasında da istisnaya taşınır; önceden UNLOCK hatası `except: pass` ile yutuluyordu); aktivasyon düşerse `push_failed` + `activation_errors` (kaynak yüklendi, kayıt güncellendi). İmza satır-içi ABAP (`*"` blok 400 verir, K-15). Yasak B taranır. Reviewer yok (SKIP görünür).
   - `ddls`: kaynak `define [root] view entity` / `as projection on` içeriyorsa reviewer `rap_cds_creation` (RAP read-only consumption BLOCKER + reuse WARNING dahil), yoksa `cds_update`.
+    **CDS kaynak kapısı (2026-11-17):** `define [root] custom entity <ad> [with parameters …] { … }` kabul edilir (gövde kuralı abstract entity
+    ile aynı; veri sorgu sınıfından gelir); table function ve gövdesiz tanım reddi sürer. Başlık aranmadan önce yorum ve string literalleri
+    ayıklanır — tek kaynak `lib/utils/cds_metin.py` (`cds_kod_metni`; `sap_adt_lib.cds_kod_metni` aynı nesneyi yeniden dışa açar).
   - `prog` / `program` / `include` (2026-09-14): reviewer `program_push` — abaplint, released_objects, decimal_write_to (üçü WARNING). abaplint
     include'u ve `PROGRAM` satırlı modül havuzunu ölçemez → SKIP = WARNING + ÖLÇÜLEMEDİ; engellemez. Önceden reviewer yoktu (SKIP).
   - `intf` / `interface` (2026-09-14): reviewer `interface_push` — `TYPE c LENGTH n` metot parametresi BLOCKER (`reviewer_blocker`),
@@ -413,7 +448,7 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 
 ### `adt_activate`
 - **Amaç:** tek obje ya da `also` ile atomik çoklu aktivasyon.
-- **Argümanlar:** `name` · `object_type="class"` · `also=[{"name":"…","object_type":"…"}]`.
+- **Argümanlar:** `name` · `object_type="class"` · `also=[{"name":"…","object_type":"…"}]` · `group` (yalnız `fugr_include` — §FUGR/I).
 - **Dönüş:** `{ok, activated, errors?, warnings?, refs?, activation_verified?, still_inactive?, inactive_count?, inactive_probe?, inactive_warning?}`.
 - **Uyarılar:** tek-obje yolunda `activation_verified` (`false` = sahte-OK, `ok:false`, `error:"activation_not_executed"`; `null` = kanıtlanmadı) ·
   `inactive_count` (Z147, 2026-09-26) dört yolda da (tek obje · `also` · `srvb` · `enqu`) sonda koştuğunda gelir: hedef obje(ler)in worklist'te kalan kayıt sayısı;
@@ -439,8 +474,9 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
 ### `adt_publish_service`
 - **Amaç:** OData V2 service binding'i (SRVB) yeniden yayınlayıp `$metadata`'yı tazelemek.
 - **Argümanlar:** `name` (SRVB) · `version="0001"`.
-- **Dönüş:** `{ok, status_code, published: true|false|null, severity, sap_message, …}` — hüküm HTTP kodundan değil gövdedeki `SEVERITY`'den.
-- **Uyarı:** doğrulama `$metadata` okumaktır (tip-kapsamlı, `foundation-query.md` §5.1).
+- **Dönüş:** `{ok, status_code, published: true|false|null, severity, sap_message, metadata_path, …}` — hüküm HTTP kodundan değil gövdedeki `SEVERITY`'den.
+- **Uyarı:** doğrulama `$metadata` okumaktır (tip-kapsamlı, `foundation-query.md` §5.1). Okunacak yol `metadata_path`'tedir (2026-11-17):
+  Z/Y servis `/sap/opu/odata/sap/<AD>/$metadata`, namespace'li `/NS/X` servis `/sap/opu/odata/ns/X/$metadata` (namespace'li yol canlı ÖLÇÜLMEDİ).
 
 ### `adt_classrun`
 - **Amaç:** `IF_OO_ADT_CLASSRUN` sınıfını çalıştırmak (F9 muadili). Kod çalıştırır, yazma yapabilir.
@@ -675,6 +711,41 @@ Hepsi: `install.py --sap-write` (kullanıcı çalıştırır) · tier DEV · `--
   ile oku · yazma sonrası çekme kaydı silinir (kaynağı push etmeden önce `adt_get`) · canlı davranış DDLS dışında **DOĞRULANMADI**.
 
 ---
+
+### `adt_badi_spot_write` (BAdI enhancement spot — YAZMA, 2026-11-17)
+- **Amaç:** müşteri BAdI enhancement spot'u yaratmak ve/veya BAdI tanımı eklemek / güncellemek / kaldırmak. Profil: yalnız `s4_private`. Transport zorunlu.
+- **Sıra:** `adt_badi_spot_read` (canlı model + pull kaydı) → istenen değişikliği kullanıcıya göster → `adt_badi_spot_write(dry_run=true)` (isteğe bağlı) → `adt_badi_spot_write`.
+- **Argümanlar:** `name` (Z/Y, ≤ 30) · `transport` · `definitions=[{"badi":"<Z/Y>", "interface", "shorttext", "coklu_kullanim":"evet|hayir",
+  "fallback", "ornek":[…], "filtreler":[{"ad","tip":"C|I","kisa","dtel"}]}]` · `remove_badis=["<Z/Y>"]` · `package` + `description`
+  (yalnız spot yoksa, ikisi birlikte) · `activate=true` · `dry_run=false`.
+- **Semantik:** belge her yazımda TAZE GET'ten kurulur (TAM-belge PUT); verilmeyen alan ve listede olmayan tanım **korunur**; kaldırma yalnız
+  `remove_badis` ile. ⚠ `coklu_kullanim: evet` ⇒ `singleUse="false"` (TERS eşleme). Kilit altında belge yeniden okunur; okunandan farklıysa
+  PUT YAPILMAZ (`write_failed` + `taban_degisti`). Sıra GET (standart spot ise kilit alınmaz) → LOCK → GET → PUT → UNLOCK (PUT hatasında da)
+  → aktivasyon → readback.
+- **Kapı (ağdan önce):** yazma sınıfı + transport zorunlu · spot adı ve her `definitions[].badi` / `remove_badis` adı müşteri adı olmalı
+  (`ADR_0005_A`, çıkış 2; adsız tanım ya da liste olmayan argüman da reddedilir — fail-closed) · tier DEV.
+- **Dönüş:** `{ok, name, created, changes[], activated, activation{…}, still_inactive?, readback_verified, readback_diff?, definition_count,
+  pull_state, lock_released, lock_notice?, document? (dry_run)}`.
+- **Hata kodları:** `pull_before_edit_missing` · `source_changed_since_pull` · `pull_state_unreadable` · `spot_not_found` (yaratım için
+  `package`+`description` yok) · `unmodelled_fields` · `invalid_argument` · `create_rejected` / `create_failed` · `write_failed` ·
+  `activation_failed` / `activation_unverified` (aktif SAYILMAZ) · `readback_mismatch` / `readback_failed` (`ok:false`) · standart spot
+  (`masterSystem=SAP`) canlıda görülürse `ADR_0005_A`, yazma yok.
+- **Uyarılar:** var olan spot'ta paket/açıklama değişikliği yapılmaz (ölçülmedi; farklı değer → `invalid_argument`) · BAdI **implementasyonu**
+  (ENHO) bu araçla yazılmaz · aXet'te canlı **ÖLÇÜLMEDİ**. Ayrıntı: `references/enhancement-spot-badi.md`.
+
+### FUGR/I — fonksiyon grubu include'u (`group` argümanı, 2026-11-17)
+- **Araçlar:** `adt_get` · `adt_push_source` · `adt_activate` · `adt_lock_check`; `object_type="fugr_include"` (eşanlamlı `fugr/i`, `fugr-include`)
+  ve **`group` zorunlu** (yoksa `group_required`; başka tipte `group_not_applicable` — ikisi de SAP'ye gitmeden).
+- **Ad kuralı (kapı + araç):** grup müşteri adı olmalı ve include grubun include önekiyle başlamalı (`ZFG` → `LZFG…`; bildirilmiş
+  namespace grubu `/NS/FG` → `/NS/LFG…`); değilse `ADR_0005_A` (çıkış 2).
+- **Grup kanıtı:** yazma, aktivasyon ve kilit sorgusundan önce `GET /programs/includes/<include>` `include:contextRef` okunur: tam bir FUGR
+  bağlamı + `contextRefCount=1` ve bağlam = verilen grubun ana programı (`SAPL<G>`; namespace grubunda `/NS/SAPLFG` ya da grup `FUGR/F`).
+  Tutmazsa `fugr_group_unverified` ve yazma / aktivasyon / kilit sorgusu YAPILMAZ. `FUGR/I` ucunun kendi bağlamı kanıt değildir (URL'deki
+  grubu aynalar).
+- **`adt_push_source`:** transport zorunlu · PULL-BEFORE-EDIT anahtarı `fugr_include:<INCLUDE>` · sıra kanıt → ETag → LOCK → PUT → UNLOCK →
+  aktivasyon → readback · reviewer `program_push`.
+- **`adt_activate`:** `also` ile birlikte verilemez (`fugr_include_also_unsupported`) · son push'taki grupla farklı grup → `fugr_group_mismatch`.
+- aXet'te canlı **ÖLÇÜLMEDİ** (sahte sunucu testleri: `tests/test_fugr_include_yazim.py`).
 
 ## Olmayan araçlar (bilinçli)
 Transport yaratma/release, paket yaratma, enqueue kilidi silme **araç listesinde yoktur** (Yasak C). Standart obje yaratma/değiştirme/silme

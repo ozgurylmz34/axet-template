@@ -33,6 +33,8 @@ if str(_scripts_dir) not in sys.path:
 
 # Z194: XML öznitelik/eleman kaçışı + sorumlu çözümü TEK KAYNAK (utils/xml_kacis.py).
 from utils.xml_kacis import attr_escape, text_escape, sorumlu_coz, SORUMLU_YOK_MESAJI  # noqa: E402
+from utils.ad_politikasi import url_segmenti as _adt_seg  # noqa: E402 — ADT yol parcasi tek kaynak (/NS/ -> %2fns%2f)
+from utils.cds_metin import cds_kod_metni  # noqa: E402,F401 — CDS yorum/string ayiklayici tek kaynak (yeniden disa acim)
 
 # Import auth providers for BTP cloud support
 try:
@@ -66,17 +68,40 @@ if os.getenv('ADT_SAP_SSL_VERIFY', 'false').lower() not in ('true', '1', 'yes'):
 class SAPADTError(Exception):
     """Base exception for all SAP ADT errors"""
 
-    def __init__(self, message, status_code=None, response_text=None, endpoint=None, **kwargs):
+    def __init__(self, message, status_code=None, response_text=None, endpoint=None,
+                 t100_degiskenleri=None, **kwargs):
         self.message = message
         self.status_code = status_code
         self.response_text = response_text
         self.endpoint = endpoint
+        # PR #427 F1: T100KEY-* değerleri. Çağıran KESİLMİŞ gövde veriyorsa TAM gövdeden
+        # ayrıştırıp burada verir (409 CTS_WBO_API 019'da V3/V4 ~600. karakterden sonradır);
+        # verilmezse elindeki gövdeden ayrıştırılır. Ağ yok, istisna atmaz.
+        self.t100_degiskenleri = (t100_degiskenleri if t100_degiskenleri is not None
+                                  else t100_degiskenleri_oku(response_text))
         super().__init__(self.message)
 
     def __str__(self):
         if self.status_code:
             return f"[{self.status_code}] {self.message}"
         return self.message
+
+
+_T100_GIRDI_RE = re.compile(r"<entry\s+key=[\"'](T100KEY-[A-Z0-9]+)[\"']\s*>\s*([^<]*?)\s*</entry>")
+
+
+def t100_degiskenleri_oku(govde):
+    """SAP hata gövdesindeki `T100KEY-*` girdileri → {'T100KEY-V3': ..., ...}. Yoksa {}.
+
+    PR #427 F1: istisna gövdesi `[:500]` kesilince 409 `CTS_WBO_API 019`'un V3/V4'ü kayboluyordu
+    (gerçekçi gövde ~719 kr, V3 ~618.). Değerler istisna ANINDA tam gövdeden okunur. Ağ yok,
+    istisna atmaz; gövde XML değilse de düz desenle çalışır (bozuk gövde = boş sözlük)."""
+    if not govde:
+        return {}
+    try:
+        return {k: v for k, v in _T100_GIRDI_RE.findall(str(govde))}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 class SAPConnectionError(SAPADTError):
@@ -352,6 +377,235 @@ class SAPTransportError(SAPADTError):
 # Bilinmeyen/boş/eksik değer de aynı şekilde nötrdür (fail-safe).
 LOCK_MODIFICATION_SUPPORT_FIELD = 'MODIFICATION_SUPPORT'
 LOCK_NO_MODIFICATION = 'nomodification'   # casefold edilmiş karşılaştırma değeri
+
+
+OTURUM_IZI_ONEKI = '[ADT-OTURUM]'   # stderr satir oneki (oturum kapatma uyarisi)
+
+
+# T-ADT-OTURUM-LOGOFF (2026-10-29) — SAHİPSİZ OTURUM KAPATMA (best-effort).
+# Sorun: istemci stateful ADT oturumu (`x-sap-adt-sessiontype: stateful`) açar ama hiçbir yerde
+# kapatmaz; süreç bitince ya da `new_session()` eski kavanozu atınca SAP tarafında oturum
+# zaman aşımına kadar yaşar (uzun ömürlü MCP sürecinin oturumu süreç başından beri açık kalır).
+# ⛔ DARALTMA: bu, sahipsiz oturum BİRİKİMİNİ keser; bir DEV'de görülen "400 Session not found"
+#    vakasının kök nedeni DOĞRULANMADI — kapatmanın o vakayı çözdüğü İDDİA EDİLMEZ.
+# YÖNTEM (canlı ölçüldü 2026-10-29, on-prem S/4 DEV, salt-okur GET; ölçüt = eski çerezlerle jar
+# DIŞINDAN yeniden oynatılan istek eski bağlamı buluyor mu):
+#   · kontrol (kapatma yok)                  → yeniden oynatma 200, yeni `sap-contextid` SET YOK
+#   · `GET /sap/public/bc/icf/logoff`         → 200, `SAP_SESSIONID_*` silinir; oynatma 400 "Session Timed Out"
+#   · aynı çerezle `x-sap-adt-sessiontype: stateless` → `sap-contextid` silinir; oynatma 400
+#   · `?sap-sessioncmd=close`                 → ETKİSİZ (oynatma 200) — KULLANILMAZ
+# ⇒ Basic/JWT: ICF logoff (güvenlik oturumu + bağlamı birlikte biter); başarısızsa bağlam düşürme.
+# ⇒ SAML: güvenlik oturumu çerez DOSYASINDAN gelir ve süreçler arasında PAYLAŞILIR — ICF logoff
+#    öbür süreçlerin oturumunu da öldürür ⇒ YALNIZ bu sürecin stateful bağlamı düşürülür.
+# Ağ adımı TEK deneme (`max_retries=0`, kısa zaman aşımı): süreç çıkışını bekletmez. Hata
+# yutulur, stderr'e tek satır; çerez/parola/token değeri ASLA basılmaz.
+ICF_LOGOFF_YOLU = '/sap/public/bc/icf/logoff'
+OTURUM_BAGLAM_DUSURME_YOLU = '/sap/bc/adt/compatibility/graph'
+OTURUM_KAPATMA_ZAMAN_ASIMI = (3, 5)
+_KAPATMA_GEREKEN_CEREZ_RE = re.compile(r'^(SAP_SESSIONID|sap-contextid)', re.IGNORECASE)
+
+
+def _oturumu_kapat(sess, url, saml, neden):
+    """`sess`'in SAP oturumunu kapat (best-effort). Dönüş: kısa durum etiketi (test/iz için).
+
+    Etiketler: `oturum-yok` (kavanozda oturum çerezi yok → AĞ ÇAĞRISI YAPILMAZ) ·
+    `icf-logoff` · `baglam-dusuruldu` · `basarisiz:<sebep>`. İstisna FIRLATMAZ.
+    """
+    try:
+        if sess is None or not url:
+            return 'oturum-yok'
+        try:
+            adlar = {c.name for c in sess.cookies}
+        except Exception:   # çerez kavanozu olmayan (sahte/yerine konmuş) oturum: kapatılacak şey yok
+            return 'oturum-yok'
+        if not any(_KAPATMA_GEREKEN_CEREZ_RE.match(a) for a in adlar):
+            return 'oturum-yok'
+        baglam_var = any(a.lower().startswith('sap-contextid') for a in adlar)
+        from requests.adapters import HTTPAdapter
+        from requests.hooks import dispatch_hook
+        adapter = HTTPAdapter(max_retries=0)
+
+        def _gonder(yol, ek_baslik):
+            istek = sess.prepare_request(requests.Request('GET', url.rstrip('/') + yol,
+                                                          headers=ek_baslik))
+            yanit = adapter.send(istek, timeout=OTURUM_KAPATMA_ZAMAN_ASIMI, verify=sess.verify)
+            try:
+                dispatch_hook('response', sess.hooks, yanit)   # ADT_SESSION_TRACE açıksa iz düşer
+            except Exception:
+                pass
+            return yanit
+
+        sonuc = None
+        try:
+            if not saml:
+                y = _gonder(ICF_LOGOFF_YOLU, {'Accept': '*/*'})
+                if 200 <= y.status_code < 400:
+                    sonuc = 'icf-logoff'
+                else:
+                    sonuc = 'basarisiz:icf-logoff-%d' % y.status_code
+            if sonuc != 'icf-logoff' and baglam_var:
+                y = _gonder(OTURUM_BAGLAM_DUSURME_YOLU, {'Accept': 'application/xml',
+                                                         'x-sap-adt-sessiontype': 'stateless'})
+                if 200 <= y.status_code < 400:
+                    sonuc = 'baglam-dusuruldu'
+                else:
+                    sonuc = 'basarisiz:baglam-%d' % y.status_code
+            elif sonuc is None:
+                sonuc = 'oturum-yok'
+        finally:
+            try:
+                adapter.close()
+            except Exception:
+                pass
+    except Exception as hata:   # ağ hatası / zaman aşımı / kapanmış yorumlayıcı
+        sonuc = 'basarisiz:%s' % type(hata).__name__
+    if sonuc.startswith('basarisiz'):
+        try:
+            print('%s oturum kapatilamadi (%s): %s — SAP tarafinda zaman asimina kadar yasar'
+                  % (OTURUM_IZI_ONEKI, neden, sonuc.split(':', 1)[1]), file=sys.stderr)
+        except Exception:
+            pass
+    return sonuc
+
+
+def _sonlandirici_kapat(kutu):
+    """`weakref.finalize` geri çağrısı — istemci toplanınca YA DA yorumlayıcı çıkarken bir kez koşar."""
+    sess = kutu.get('sess')
+    kutu['sess'] = None
+    if sess is None:
+        return
+    kutu['son'] = _oturumu_kapat(sess, kutu.get('url'), kutu.get('saml'), 'surec-sonu')
+    try:
+        sess.close()
+    except Exception:
+        pass
+
+
+
+
+# SAP ADT hata govdesinden kisa sebep (kaynak cekirdekteki yardimci; kilit ozeti + PUT deneme ozu kullanir).
+SAP_SEBEP_SINIRI = 300
+
+
+def sap_hata_sebebi(govde):
+    """SAP ADT hata gövdesinden KISA sebep: {'metin', 't100', 'tip'} | None. Ağ yok, istisna atmaz.
+
+    Okunan biçim: `exc:exception` XML — `localizedMessage` (yoksa `message`) + `T100KEY-ID/NO`
+    + `type id`. Gövde YOK / XML değil / bozuk / sebep düğümü yok ⇒ None (çağıran eski metni
+    AYNEN kullanır — tahminle sebep uydurulmaz). Metin `SAP_SEBEP_SINIRI` karaktere kısaltılır.
+    """
+    if not govde:
+        return None
+    try:
+        kok = ET.fromstring(str(govde))
+    except Exception:  # noqa: BLE001 — bozuk/HTML gövde: sebep YOK
+        return None
+    yerel = mesaj = tip = None
+    girdiler = {}
+    for el in kok.iter():
+        ad = el.tag.split('}')[-1]
+        if ad == 'localizedMessage' and (el.text or '').strip() and yerel is None:
+            yerel = el.text.strip()
+        elif ad == 'message' and (el.text or '').strip() and mesaj is None:
+            mesaj = el.text.strip()
+        elif ad == 'type' and el.get('id') and tip is None:
+            tip = el.get('id')
+        elif ad == 'entry' and el.get('key'):
+            girdiler[el.get('key')] = (el.text or '').strip()
+    metin = yerel or mesaj
+    if not metin:
+        return None
+    metin = ' '.join(metin.split())
+    if len(metin) > SAP_SEBEP_SINIRI:
+        metin = metin[:SAP_SEBEP_SINIRI - 1] + '…'
+    t100 = None
+    if girdiler.get('T100KEY-ID'):
+        t100 = '%s/%s' % (girdiler.get('T100KEY-ID'), girdiler.get('T100KEY-NO') or '?')
+    return {'metin': metin, 't100': t100, 'tip': tip}
+
+
+# ── Q383② (2026-11-07): KİLİT HATA ÖZETİ SAP SEBEBİNİ TAŞIR ────────────────────────────
+# `lock_object` tüm stratejileri düşünce özet eskiden `strateji -> 403` idi; gövdedeki T100
+# mesajı ATILIYOR, çare olarak koşulsuz "yetki (S_DEVELOP)" öneriliyordu. Ölçülen vaka: FUGR
+# include'u `programs/includes` (R3TR PROG) yolundan kilitlemek → `403 TK/103 "Nesne adı için
+# sözdizim olanaksız"` — yetkiden söz etmiyor, yanlış obje tipi/URL. Yetki önerisi artık yalnız SAP
+# metni gerçekten yetkiden söz ediyorsa basılır; sebep okunamadıysa ÖLÇÜLEMEDİ yazılır.
+_KILIT_YETKI_RE = re.compile(r'yetki|authori[sz]|berechtig|autoris|no authority|not authorized',
+                             re.IGNORECASE)
+
+
+def kilit_deneme_ozeti(sebepler):
+    """[(strateji, statü, sap_hata_sebebi|None)] -> `strateji -> 403 [TK/103: metin]; ...`."""
+    parcalar = []
+    for ad, statu, sebep in sebepler or []:
+        satir = f"{ad} -> {statu}"
+        if sebep:
+            etiket = sebep.get('t100') or sebep.get('tip') or 'SAP'
+            satir += f" [{etiket}: {sebep.get('metin')}]"
+        parcalar.append(satir)
+    return "; ".join(parcalar)
+
+
+def kilit_403_onerisi(sebepler):
+    """403 denemelerinin SAP sebebine göre öneri satırı (yetki yalnız metin yetki diyorsa)."""
+    y403 = [(ad, sb) for ad, st, sb in (sebepler or []) if st == 403]
+    if not y403:
+        return "Yanıt 403 değil: yukarıdaki SAP mesajlarını oku."
+    metinler = [sb for _, sb in y403 if sb]
+    if any(_KILIT_YETKI_RE.search(sb.get('metin') or '') for sb in metinler):
+        return ("SAP 403 mesajı YETKİDEN söz ediyor: yetki (S_DEVELOP) ve transport "
+                "sahipliğini kontrol et")
+    if metinler:
+        satir = ("SAP 403 mesajı yetkiden söz etmiyor (yetki deseni eşleşmedi: " + "; ".join(
+            f"{sb.get('t100') or sb.get('tip') or 'SAP'}: {sb.get('metin')}" for sb in metinler[:2])
+            + ") — mesajın kendisini izle; yetki ne doğrulandı ne dışlandı, varsayma")
+        if any((sb.get('t100') or '').upper() == 'TK/103' for sb in metinler):
+            satir += ("\n     TK/103 = obje adı bu tip/URL için geçersiz: ör. fonksiyon grubu "
+                      "include'u (FUGR/I) `programs/includes` yolundan kilitlenemez — "
+                      "adt_push_source(name=<INCL>, object_type='fugr_include', group=<FG>, ...)")
+        return satir
+    return ("403 gövdesi okunabilir bir SAP mesajı taşımıyordu — sebep ÖLÇÜLEMEDİ; yetki "
+            "VARSAYMA, ham yanıtı ADT_SAP_DEBUG=1 ile al")
+
+
+
+# ── kaynak çekirdek #423 (2026-11-12): PUT TRANSPORT-BİÇİM DÖNGÜSÜ YALNIZ BİÇİM REDDİNDE SÜRER ──
+# `set_object_source` dört transport biçimini sırayla dener. Eskiden 2xx ve 423-NO_LOCK dışındaki
+# HER yanıt bir sonraki biçime düşüyor, yalnız SONUNCUNUN yanıtı raporlanıyordu. Ölçülen vaka
+# (tüketici, on-prem, global sınıf): biçim 1-2 → 400 `OO_SOURCE_BASED 011` (kayıt-anı tarama
+# reddi = KAYNAK İÇERİĞİ), biçim 3-4 → kendi kilidimize çarpan 409 `CTS_WBO_API 019`; araç yalnız
+# 409'u bastı, teşhis üç tur kilit yönünde yürüdü. İçerik reddini biçim değiştirmek çözmez.
+# Sonraki biçime GEÇİLEN sinyaller (gerekçesi yazılı olanlar, başka hiçbiri):
+#   · "Parameter … could not be found" — sistem `corrNr`'ı tanımıyor (orijinal yedek sebebi)
+#   · 409 — known-errors §12.7c eki 2026-10-12: yalnız header → 409, aynı handle'la `corrNr` →
+#     200 ölçüldü ⇒ 409 biçime bağlı olabilir (fixture `transport_yaklasim_sirasi` T3 sözleşmesi)
+#   · 412 — inaktif-ETag dalı yeni ETag'i "sonraki denemeler için" günceller; dal DEĞİŞMEDİ
+# Geri kalan her yanıt (400 · 403 · 404 · 423 · 5xx …) döngüyü DURDURUR ve O yanıt raporlanır.
+PUT_DENEME_OZU_SINIRI = 160
+
+
+def transport_bicim_reddi_mi(status_code, govde):
+    """PUT yanıtı transport BİÇİMİNİN reddi mi (sonraki biçim denenmeli mi)? Ağ yok, istisna atmaz."""
+    t = govde or ''
+    if 'Parameter' in t and 'could not be found' in t:
+        return True
+    return status_code in (409, 412)
+
+
+def put_deneme_ozu(govde):
+    """PUT denemesi yanıtından tek satırlık öz: `T100: metin` | gövdenin ilk N karakteri | (gövde yok)."""
+    sebep = sap_hata_sebebi(govde)
+    if sebep:
+        return f"{sebep['t100']}: {sebep['metin']}" if sebep.get('t100') else sebep['metin']
+    duz = ' '.join(str(govde or '').split())
+    if not duz:
+        return '(gövde yok)'
+    return duz if len(duz) <= PUT_DENEME_OZU_SINIRI else duz[:PUT_DENEME_OZU_SINIRI - 1] + '…'
+
+
+def put_denemeleri_metni(denemeler):
+    """[(biçim, kod, öz)] → `  1. biçim -> kod -> öz` satırları (hata metni + push_object ipucu)."""
+    return '\n'.join(f"  {i}. {d} -> {k} -> {o}" for i, (d, k, o) in enumerate(denemeler or [], 1))
 
 
 # ── Z195 ① (2026-10-19): SALT-OKUR sözdizimi denetimi — ADT checkrun ─────────────────────
@@ -664,6 +918,27 @@ def validate_object_name(name, object_type='class'):
     if len(name) > 30:
         raise SAPValidationError(f"Object name '{name}' exceeds 30 characters")
 
+    # Müşteri ad alanı kararı TEK KAYNAK: `utils.ad_politikasi` (ADR 0005 A-EK) — Z/Y ya da projede
+    # `customer_namespaces` ile bildirilmiş `/<NS>/`. Namespace'li adda sınıf kuralı namespace'ten SONRAKİ
+    # parçaya uygulanır (`/NS/CL_X` ↔ `ZCL_X`); Z/Y yolu aşağıda AYNEN.
+    from utils import ad_politikasi as _ap  # lazy
+    ns = _ap.ad_namespace(name_upper)
+    if ns is not None or name_upper.startswith('/'):
+        if not _ap.musteri_adi_mi(name_upper, root=_explicit_working_dir):
+            raise SAPValidationError(
+                f"Object name '{name}' must start with Z or Y or a declared customer namespace "
+                f"/<NS>/ (customer namespace){_ap.red_gerekcesi(name_upper, root=_explicit_working_dir)}"
+            )
+        govde = name_upper[len(ns):]
+        if object_type and object_type.lower() == 'class':
+            if govde.startswith('CL_') or '_CL_' in govde:
+                return True
+            if govde.startswith('CL') or '_CL' in govde:
+                raise SAPValidationError(
+                    f"Class name '{name}' must use {ns}CL_ or {ns}*_CL_ prefix"
+                )
+        return True
+
     # Check for valid characters (alphanumeric and underscore)
 
     if not re.match(r'^[A-Z][A-Z0-9_]*$', name_upper):
@@ -710,6 +985,16 @@ def validate_package_name(package):
             f"Package name '{package}' must be uppercase"
         )
 
+    # Namespace'li paket (`/NS/SD001`): yalnız projede bildirilmiş müşteri namespace'i (ADR 0005 A-EK).
+    if package_upper.startswith('/'):
+        from utils import ad_politikasi as _ap  # lazy
+        if not _ap.musteri_adi_mi(package_upper, root=_explicit_working_dir):
+            raise SAPValidationError(
+                f"Package name '{package}' contains invalid characters"
+                f"{_ap.red_gerekcesi(package_upper, root=_explicit_working_dir)}"
+            )
+        return True
+
     # Check for valid characters
 
     if not re.match(r'^[A-Z$][A-Z0-9_$]*$', package_upper):
@@ -727,6 +1012,11 @@ def validate_package_name(package):
 # Module-level variable to store explicit working directory (set via --cwd)
 # This is checked BEFORE searching for .conn_adt
 _explicit_working_dir = None
+
+
+# `cds_kod_metni` (CDS yorum/string ayıklayıcı) `utils/cds_metin.py`'ye taşındı (#412 düzeltme 4):
+# bağımlılıksız tüketici (`gen_field_table`) bu modülü açmadan kullanabilsin diye. Yukarıda
+# yeniden dışa açılır; `sap_adt_lib.cds_kod_metni` aynen çalışır.
 
 
 def set_explicit_working_dir(path: str) -> None:
@@ -1478,6 +1768,18 @@ class SAPADTClient:
         if self._auth_provider and self._auth_provider.auth_type == 'saml':
             self._apply_saml_cookies()
 
+        # T-ADT-OTURUM-LOGOFF: istemci toplanınca ya da süreç çıkarken (weakref.finalize →
+        # atexit=True) GÜNCEL oturum best-effort kapatılır. Kutu `self`e değil oturuma bakar
+        # (sonlandırıcı istemciyi canlı tutmamalı); `new_session()` kutudaki oturumu değiştirir.
+        # ⚠ Süreç zorla öldürülürse (TerminateProcess / SIGKILL) hiçbir Python kodu koşmaz.
+        import weakref
+        self._oturum_kutusu = {
+            'sess': self.session, 'url': self.url,
+            'saml': bool(self._auth_provider
+                         and getattr(self._auth_provider, 'auth_type', '') == 'saml'),
+        }
+        self._oturum_sonlandirici = weakref.finalize(self, _sonlandirici_kapat, self._oturum_kutusu)
+
         # Configurable timeouts (seconds) - override via environment variables
         self.timeout_short = int(os.getenv('ADT_TIMEOUT_SHORT', '30'))
         self.timeout_default = int(os.getenv('ADT_TIMEOUT_DEFAULT', '60'))
@@ -1652,6 +1954,9 @@ class SAPADTClient:
         self.session = self._build_session()
         if self._auth_provider and getattr(self._auth_provider, 'auth_type', '') == 'saml':
             self._apply_saml_cookies()
+        kutu = getattr(self, '_oturum_kutusu', None)
+        if kutu is not None:
+            kutu['sess'] = self.session
         # CSRF token oturuma bağlıdır → yeni oturumda geçersiz. Disk cache'i de
         # düşür, yoksa bayat token'la 403 alıp gereksiz retry turu döneriz.
         self.csrf_token = None
@@ -1660,6 +1965,13 @@ class SAPADTClient:
         except Exception:
             pass
         if old is not None:
+            # T-ADT-OTURUM-LOGOFF: atılan kavanozun SAP oturumu kapatılır (best-effort; hata
+            # yutulur). Eskiden yalnız yerel bağlantı havuzu kapanıyor, SAP oturumu zaman
+            # aşımına kadar sahipsiz kalıyordu. Kilit o bağlamdaysa onu da bırakır — bağlam
+            # zaten bu satırdan sonra kullanılamaz (B74 RİSK ②: kilit→PUT arasına reset sokulmaz).
+            saml = bool(kutu.get('saml')) if kutu is not None else bool(
+                self._auth_provider and getattr(self._auth_provider, 'auth_type', '') == 'saml')
+            _oturumu_kapat(old, self.url, saml, 'new_session')
             try:
                 old.close()
             except Exception:
@@ -1992,8 +2304,11 @@ class SAPADTClient:
             if self.retry_on_timeout:
                 return True, f"Timeout (attempt {attempt + 1})"
 
-        # CSRF token validation failed - retry with fresh token
-        if 'CSRF token validation failed' in response.text:
+        # CSRF reddi - taze token ile tekrar. #411 (2026-11-08): eskiden YALNIZ İngilizce
+        # 'CSRF token validation failed' gövdesine bakıyordu; kardeş yol
+        # (`_request_with_csrf_retry`) dilden bağımsızdı. Tanıma artık TEK yüklemde
+        # (`_csrf_reddi_mi`): 403 + (gövdede 'CSRF' VEYA `x-csrf-token: Required` başlığı).
+        if self._csrf_reddi_mi(response):
             if self.retry_on_csrf_fail:
                 return True, f"CSRF token expired (attempt {attempt + 1})"
 
@@ -2238,6 +2553,32 @@ class SAPADTClient:
                 url=self.url
             )
 
+    @staticmethod
+    def _csrf_reddi_mi(response):
+        """Yanıt bir CSRF reddi mi? TEK yüklem (#411, 2026-11-08) — dört çağıran paylaşır:
+        `_should_retry` · `_request_with_csrf_retry` · `lock_object` · `create_object`.
+
+        Ölçüt (kaynağı `_request_with_csrf_retry`'nin 2026-07 yüklemi, değiştirilmeden taşındı):
+        HTTP 403 VE (gövdede 'CSRF' geçer VEYA `x-csrf-token` başlığı 'Required').
+        Canlı ölçüm (2026-11-08, salt-okur uç, geçersiz token): sap-language TR/EN/DE üçünde
+        de 403 + `x-csrf-token: Required`, gövde hep İngilizce. Almanca gövdeli sunucu
+        ÖLÇÜLMEDİ — başlık dalı gövde dilinden bağımsız tanır. 403 OLMAYAN yanıt CSRF reddi
+        SAYILMAZ (CSRF dışı 403 — ör. yetki hatası, başlıksız — retry ETMEZ).
+        Başlık adı büyük/küçük harften bağımsız aranır (`requests` zaten öyle; sahte
+        yanıtlardaki düz dict için de aynı sonuç).
+        """
+        if getattr(response, 'status_code', None) != 403:
+            return False
+        if 'CSRF' in (getattr(response, 'text', '') or ''):
+            return True
+        basliklar = getattr(response, 'headers', None) or {}
+        try:
+            ogeler = basliklar.items()
+        except AttributeError:
+            return False
+        return any(str(k).lower() == 'x-csrf-token' and str(v).lower() == 'required'
+                   for k, v in ogeler)
+
     def _request_with_csrf_retry(self, method, url, headers=None, timeout=None, **kwargs):
         """Execute HTTP request with CSRF token management and automatic retry.
 
@@ -2284,10 +2625,7 @@ class SAPADTClient:
         # Retry once on CSRF token expiry — self-healing: zehirli on-disk cache'i
         # temizle + SAP'den force-refresh (elle .csrf_token.json silmek gerekmesin).
         # 'CSRF token validation failed' (403) ya da X-CSRF-Token: Required başlığı.
-        csrf_rejected = response.status_code == 403 and (
-            'CSRF' in response.text
-            or response.headers.get('x-csrf-token', '').lower() == 'required'
-        )
+        csrf_rejected = self._csrf_reddi_mi(response)
         if csrf_rejected:
             if self.debug_enabled:
                 self._debug(f"[DEBUG] CSRF token rejected on {method.upper()} {url}, force-refresh + retry")
@@ -2730,7 +3068,9 @@ class SAPADTClient:
             (False, False, 'no transport (object may not need it)'),
         ]
 
-        # Try each transport approach
+        # Try each transport approach — Issue #423: yalnız `transport_bicim_reddi_mi` doğruysa
+        # sonraki biçime geçilir; her deneme (biçim, kod, öz) olarak kaydedilir ve hata metnine girer.
+        denemeler = []
         for attempt_num, (use_header, use_param, desc) in enumerate(transport_approaches, 1):
             if self.debug_enabled:
                 self._debug(f"[DEBUG] set_object_source - approach {attempt_num}: {desc}")
@@ -2793,6 +3133,8 @@ class SAPADTClient:
                     self._debug(f"[DEBUG] set_object_source - SUCCESS with approach {attempt_num}")
                 return True
 
+            denemeler.append((desc, response.status_code, put_deneme_ozu(response.text)))
+
             # Handle 412 Precondition Failed (ETag mismatch) - retry with inactive ETag
             if response.status_code == 412:
                 if self.debug_enabled:
@@ -2821,43 +3163,68 @@ class SAPADTClient:
                                 if self.debug_enabled:
                                     self._debug("[DEBUG] set_object_source - SUCCESS with inactive ETag retry")
                                 return True
+                            denemeler.append((f"{desc} [412 sonrasi inaktif ETag tekrari]",
+                                              retry_resp.status_code, put_deneme_ozu(retry_resp.text)))
+                            # PR #427 F3: durma kararı ve rapor TEKRARIN yanıtına bakar. Eskiden
+                            # ilk 412'ye bakılıyordu ⇒ "412 → tekrar 400" (içerik reddi) yine
+                            # sonraki biçime düşüyordu. Tekrar da biçim reddiyse (412/409/
+                            # Parameter) aşağıdaki karar sonraki biçime geçmeyi sürdürür (L4b).
+                            response = retry_resp
                 except Exception as e_retry:
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] set_object_source - 412 retry failed: {str(e_retry)[:100]}")
 
-            # If this approach failed with specific parameter error, try next approach
-            if 'Parameter' in response.text and 'could not be found' in response.text:
+            # Issue #423: sonraki biçime YALNIZ transport-biçimi reddinde geçilir (yukarıdaki
+            # `transport_bicim_reddi_mi` gerekçesi). Son biçimde de reddedilirse aşağıda raporlanır —
+            # eskiden son biçimdeki "Parameter … could not be found" döngüyü bitirip `True`
+            # döndürüyordu (yazılmamış kaynak için sahte başarı).
+            _son = attempt_num == len(transport_approaches)
+            if transport_bicim_reddi_mi(response.status_code, response.text) and not _son:
                 if self.debug_enabled:
-                    self._debug(f"[DEBUG] set_object_source - parameter error with approach {attempt_num}, trying next")
+                    self._debug(f"[DEBUG] set_object_source - transport-format rejection "
+                                f"({response.status_code}) with approach {attempt_num}, trying next")
                 continue  # Try next approach
 
-            # For other errors, check if we should try next approach or fail
-            if attempt_num == len(transport_approaches):
-                # Last attempt failed
-                if self.debug_enabled:
-                    self._debug(f"[DEBUG] set_object_source - All {len(transport_approaches)} transport approaches failed")
-                # ADT hata yanıtı ÇOK-MESAJLI XML olabilir (headline + satır-numaralı asıl
-                # hata). Eskiden response.text[:300] ile kesiliyordu → gerçek (line-no) hata
-                # gizleniyordu (ZDEMO1 C4 patinajı: "unknown comments" headline'dı, asıl hata
-                # truncate'liydi). Artık TAM yanıt yakalanır. (Fix 2026-06-15, kullanıcı içgörüsü.)
-                _full = response.text or ''
-                print(f"[set_object_source] FULL ERROR RESPONSE ({response.status_code}), "
-                      f"{len(_full)} chars:\n{_full}")
+            # DUR: bu yanıt (içerik/sunucu reddi ya da son biçim) çağırana raporlanır.
+            if self.debug_enabled:
+                self._debug(f"[DEBUG] set_object_source - stopping at approach {attempt_num} "
+                            f"({response.status_code})")
+            # ADT hata yanıtı ÇOK-MESAJLI XML olabilir (headline + satır-numaralı asıl
+            # hata). Eskiden response.text[:300] ile kesiliyordu → gerçek (line-no) hata
+            # gizleniyordu (ZDEMO1 C4 patinajı: "unknown comments" headline'dı, asıl hata
+            # truncate'liydi). Artık TAM yanıt yakalanır. (Fix 2026-06-15, kullanıcı içgörüsü.)
+            _full = response.text or ''
+            _liste = put_denemeleri_metni(denemeler)
+            print(f"[set_object_source] DENEMELER ({len(denemeler)}):\n{_liste}")
+            print(f"[set_object_source] FULL ERROR RESPONSE ({response.status_code}), "
+                  f"{len(_full)} chars:\n{_full}")
 
-                # ── 423 = §12.7'nin SEMPTOMU: teşhis TAM BURADA basılır ────────────────
-                _tani = ''
-                if response.status_code == 423:
-                    _tani = self.put_423_diagnosis(object_url, transport)
-                    print(_tani)
+            # ── 423 = §12.7'nin SEMPTOMU: teşhis TAM BURADA basılır ────────────────
+            _tani = ''
+            if response.status_code == 423:
+                _tani = self.put_423_diagnosis(object_url, transport)
+                print(_tani)
 
-                raise SAPADTError(
-                    f"Failed to set source after {len(transport_approaches)} attempts. "
-                    f"Response ({response.status_code}), FULL:\n{_full}{_tani}",
-                    status_code=response.status_code,
-                    response_text=_full
-                )
+            if _son:
+                _bas = f"Failed to set source after {attempt_num} attempts."
+            else:
+                _bas = (f"Failed to set source: transport-bicim denemesi {attempt_num}/"
+                        f"{len(transport_approaches)}'de DURDU — HTTP {response.status_code} "
+                        f"transport-bicimi reddi degil (icerik/sunucu yaniti); sonraki "
+                        f"bicimler DENENMEDI.")
+            _hata = SAPADTError(
+                f"{_bas}\nDENEMELER ({len(denemeler)}):\n{_liste}\n"
+                f"Response ({response.status_code}), FULL:\n{_full}{_tani}",
+                status_code=response.status_code,
+                response_text=_full
+            )
+            _hata.denemeler = list(denemeler)
+            raise _hata
 
-        return True
+        # Döngü ya başarıyla döner ya da son biçimde raporlayıp fırlatır; buraya düşmek bir
+        # kod kusurudur ⇒ sahte başarı (`True`) yerine fail-closed.
+        raise SAPADTError("set_object_source: transport-bicim dongusu sonuc uretmedi "
+                          f"(denemeler={len(denemeler)})")
 
     def set_include_source(self, include_url, source_code, lock_handle, transport=None, etag=None):
         """PUT source code directly to a method-level include URL.
@@ -3367,6 +3734,18 @@ class SAPADTClient:
         # Öğe biçimi: (strateji_adı, sonuç) — sonuç int HTTP statüsü ya da 'exc:<Ad>'.
         self._last_lock_attempts = []
         deneme_sonuclari = self._last_lock_attempts
+        # Q383② (2026-11-07): her non-404 denemenin SAP SEBEBİ (T100 + metin) de toplanır.
+        # Eskiden yalnız statü tutuluyordu ⇒ sondaki özet `strateji -> 403` diyor, gövdedeki
+        # T100 mesajını (ölçülen vaka: FUGR include'u `programs/includes` yolundan kilitlemek
+        # → `TK/103 "Nesne adı için sözdizim olanaksız"`) ATIYOR ve koşulsuz "yetki (S_DEVELOP)"
+        # öneriyordu — teşhis yanlış yöne gidiyordu. Öğe: (strateji, statü, sap_hata_sebebi|None).
+        # `deneme_sonuclari` 2'li biçimini KORUR (404-ayrımı ona dayanır).
+        self._last_lock_sebepler = []
+        kilit_sebepleri = self._last_lock_sebepler
+
+        def _deneme_kaydet(ad, statu, govde=None):
+            deneme_sonuclari.append((ad, statu))
+            kilit_sebepleri.append((ad, statu, sap_hata_sebebi(govde) if govde else None))
 
         # Try each lock strategy
         for attempt_num, (endpoint, use_query_param, description) in enumerate(lock_strategies, 1):
@@ -3429,13 +3808,13 @@ class SAPADTClient:
 
                 # 404 - This endpoint doesn't exist, try next strategy
                 elif response.status_code == 404:
-                    deneme_sonuclari.append((description, 404))
+                    _deneme_kaydet(description, 404)
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] lock_object attempt {attempt_num} - endpoint not found (404), trying next strategy")
                     continue
 
                 # 403 - CSRF token might be expired, refresh and retry this strategy once
-                elif response.status_code == 403 and 'CSRF' in response.text:
+                elif self._csrf_reddi_mi(response):
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] lock_object attempt {attempt_num} - CSRF error, refreshing token and retrying")
                     try:
@@ -3483,14 +3862,14 @@ class SAPADTClient:
 
                             return self._verify_and_return_lock(response, object_url, transport, label=f'strategy {attempt_num} after CSRF refresh', access_mode=access_mode)
                         else:
-                            deneme_sonuclari.append(
-                                (f"{description} (CSRF yenileme sonrası)", response.status_code))
+                            _deneme_kaydet(f"{description} (CSRF yenileme sonrası)",
+                                           response.status_code, response.text or '')
                             if self.debug_enabled:
                                 self._debug(f"[DEBUG] lock_object attempt {attempt_num} - retry after CSRF refresh failed with status {response.status_code}")
                             continue
                     except Exception as retry_ex:
-                        deneme_sonuclari.append(
-                            (f"{description} (CSRF yenileme sonrası)", f"exc:{type(retry_ex).__name__}"))
+                        _deneme_kaydet(f"{description} (CSRF yenileme sonrası)",
+                                       f"exc:{type(retry_ex).__name__}")
                         if self.debug_enabled:
                             self._debug(f"[DEBUG] lock_object attempt {attempt_num} - CSRF refresh retry failed: {str(retry_ex)[:50]}")
                         continue
@@ -3551,8 +3930,9 @@ class SAPADTClient:
                             response_text=response_text[:500]
                         )
 
-                    # Other 403 - authorization issue, try next strategy
-                    deneme_sonuclari.append((description, 403))
+                    # Other 403 — sebep GÖVDEDEDİR (yetki olmayabilir: TK/103 vakası, Q383②);
+                    # bir sonraki stratejiyi dene.
+                    _deneme_kaydet(description, 403, response_text)
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] lock_object attempt {attempt_num} - 403 authorization issue, trying next strategy")
                     continue
@@ -3577,11 +3957,14 @@ class SAPADTClient:
                         f"  2. Go to SE01/SE09 -> find transport {conflict_transport or conflict_transport} -> move object to {transport or 'your target transport'}\n"
                         f"  3. Retry the push"
                     )
-                    raise SAPLockError(msg, status_code=409, response_text=response_text[:500])
+                    # PR #427 F1: gövde [:500] kesilir AMA T100KEY-V3/V4 (çakışan istek + kullanıcı)
+                    # gerçek gövdede ~600. karakterden sonradır ⇒ TAM gövdeden ayrıştırılıp taşınır.
+                    raise SAPLockError(msg, status_code=409, response_text=response_text[:500],
+                                       t100_degiskenleri=t100_degiskenleri_oku(response_text))
 
                 # Other errors - try next strategy
                 else:
-                    deneme_sonuclari.append((description, response.status_code))
+                    _deneme_kaydet(description, response.status_code, response.text or '')
                     if self.debug_enabled:
                         self._debug(f"[DEBUG] lock_object attempt {attempt_num} - failed with status {response.status_code}")
                     # Try next strategy
@@ -3590,7 +3973,7 @@ class SAPADTClient:
             except SAPLockError:
                 raise
             except Exception as e:
-                deneme_sonuclari.append((description, f"exc:{type(e).__name__}"))
+                _deneme_kaydet(description, f"exc:{type(e).__name__}")
                 if self.debug_enabled:
                     self._debug(f"[DEBUG] lock_object attempt {attempt_num} - exception: {str(e)[:100]}")
                 # Check if this is our custom lock conflict exception
@@ -3619,7 +4002,7 @@ class SAPADTClient:
             self._debug("[DEBUG] lock_object - All REST lock strategies failed")
 
         yalniz_404 = bool(deneme_sonuclari) and all(s == 404 for _, s in deneme_sonuclari)
-        ozet = "; ".join(f"{ad} -> {s}" for ad, s in deneme_sonuclari) or "(hiç deneme kaydedilmedi)"
+        ozet = kilit_deneme_ozeti(kilit_sebepleri) or "(hiç deneme kaydedilmedi)"
 
         if yalniz_404:
             self._last_lock_no_support_reason = 'ENDPOINT_ABSENT_404'
@@ -3636,7 +4019,7 @@ class SAPADTClient:
             "Kilitsiz PUT denemek objeyi yanlış transport'a yazabilir ya da 423 ile döner.\n\n"
             "Yapılacak:\n"
             "  1. SM12 -> objede bekleyen enqueue kilidi var mı bak\n"
-            "  2. Yanıt 403 ise: yetki (S_DEVELOP) ve transport sahipliğini kontrol et\n"
+            f"  2. {kilit_403_onerisi(kilit_sebepleri)}\n"
             "  3. Yanıt 500 ise: uç geçici arızalı olabilir, tekrar dene; sürerse operatöre bildir\n\n"
             "[ACTION REQUIRED] Otomatik tekrar deneme YAPMA. Durumu kullanıcıya raporla.",
             response_text=ozet[:500]
@@ -4248,7 +4631,14 @@ class SAPADTClient:
             lookback_seconds: How far back in seconds to look (default: 60)
 
         Returns:
-            list of transport numbers (strings), empty list if none found or query fails
+            list of transport numbers (strings). Empty list ONLY for a valid
+            datapreview response with no matching rows.
+
+        Raises:
+            SAPADTError: the list could NOT be read (non-200, network error,
+                body that is not XML, no column metadata, no TRKORR column).
+                "Could not read" is never reported as "no ghosts" (Q350; same
+                contract as get_object_revisions, Issue #302).
         """
         from datetime import datetime, timedelta
 
@@ -4267,6 +4657,8 @@ class SAPADTClient:
             f"AND AS4TIME >= '{time_str}'"
         )
 
+        endpoint = '/sap/bc/adt/datapreview/freestyle'
+        okunamadi = "Ghost transport list could not be read (E070 query)"
         try:
             if not self.csrf_token:
                 self.fetch_csrf_token()
@@ -4275,43 +4667,63 @@ class SAPADTClient:
             headers['Content-Type'] = 'text/plain'
 
             response = self.session.post(
-                f"{self.url}/sap/bc/adt/datapreview/freestyle",
+                f"{self.url}{endpoint}",
                 headers=headers,
                 params={'rowNumber': 50},
                 data=sql_satirlarini_kir(query).encode('utf-8'),   # 255 satır sınırı
                 timeout=self.timeout_default
             )
+        except SAPADTError:
+            raise
+        except requests.exceptions.RequestException as e:
+            raise SAPADTError(f"{okunamadi}: {type(e).__name__}: {e}", endpoint=endpoint)
 
-            if response.status_code != 200:
-                return []
+        if response.status_code != 200:
+            raise SAPADTError(okunamadi, status_code=response.status_code,
+                              response_text=(response.text or '')[:500], endpoint=endpoint)
 
+        try:
             root = ET.fromstring(response.text)
-            ns = {'dp': 'http://www.sap.com/adt/dataPreview'}
-            columns = root.findall('.//dp:columns', ns)
-            if not columns:
+        except ET.ParseError as e:
+            raise SAPADTError(f"{okunamadi}: response is not XML ({e})",
+                              status_code=response.status_code,
+                              response_text=(response.text or '')[:500], endpoint=endpoint)
+        ns = {'dp': 'http://www.sap.com/adt/dataPreview'}
+        columns = root.findall('.//dp:columns', ns)
+        if not columns:
+            # 0 satırlı yanıtın kolonsuz gelip gelmediği canlıda ÖLÇÜLMEDİ ⇒ açıkça
+            # `totalRows` = 0 diyen gövde meşru boştur; kolonsuz VE sayısız gövde
+            # "boş sonuç" değil, tanınmayan yanıttır.
+            toplam = root.find('.//dp:totalRows', ns)
+            if toplam is not None and (toplam.text or '').strip() == '0':
                 return []
+            raise SAPADTError(f"{okunamadi}: no column metadata in response",
+                              status_code=response.status_code,
+                              response_text=(response.text or '')[:500], endpoint=endpoint)
 
-            col_map = {}
-            for col in columns:
-                meta = col.find('dp:metadata', ns)
-                if meta is not None:
-                    name = meta.get('{http://www.sap.com/adt/dataPreview}name', '')
-                    col_map[name] = col
+        col_map = {}
+        for col in columns:
+            meta = col.find('dp:metadata', ns)
+            if meta is not None:
+                name = meta.get('{http://www.sap.com/adt/dataPreview}name', '')
+                col_map[name] = col
 
-            trkorr_col = col_map.get('TRKORR')
-            if trkorr_col is None:
-                return []
+        trkorr_col = col_map.get('TRKORR')
+        if trkorr_col is None:
+            raise SAPADTError(f"{okunamadi}: TRKORR column missing in response",
+                              status_code=response.status_code,
+                              response_text=(response.text or '')[:500], endpoint=endpoint)
 
-            ghosts = []
-            for cell in trkorr_col.findall('dp:data', ns):
-                val = cell.get('{http://www.sap.com/adt/dataPreview}value', '').strip()
-                if val:
-                    ghosts.append(val)
+        # Değer `<dataSet><data>X</data></dataSet>` ELEMAN METNİNDEDİR — kardeş
+        # ayrıştırıcılarla aynı biçim (sap_client `_find_existing_transport`). Eski kod
+        # doğrudan-çocuk `data` + `value` özniteliği okuyup dolu yanıtta da [] dönüyordu.
+        ghosts = []
+        for cell in trkorr_col.findall('.//dp:data', ns):
+            val = (cell.text or '').strip()
+            if val:
+                ghosts.append(val)
 
-            return ghosts
-
-        except Exception:
-            return []
+        return ghosts
 
     def _parse_activation_response(self, response, object_name):
         """Parse a chkl: or ioc: activation response and return a result dict.
@@ -4399,8 +4811,12 @@ class SAPADTClient:
 
         return result
 
-    def activate_object(self, object_name, object_url):
+    def activate_object(self, object_name, object_url, object_type=None):
         """Activate an ABAP object — two-phase flow + TEK KANONIK hukum.
+
+        `object_type` (istege bagli; BAdI spot yazimi): istek govdesindeki `adtcore:type`. Verilmezse
+        URL'den `_extract_object_type` cozer (eski davranis BIREBIR). Kayit defterinde
+        (`object_types`) olmayan bir tipi yazan arac kendi tipini buradan gecirir.
 
         Iki faz `_activate_object_iki_faz`'dadir (pre-audit + toplu). Donen sonucun
         `aktivasyon_hukmu`'u `None` ise (govde hukum tasimiyor — ör. yalniz generation),
@@ -4413,7 +4829,7 @@ class SAPADTClient:
             dict with 'success' (bool), 'errors' (list), 'warnings' (list), 'response' (str),
             'aktivasyon_hukmu' (True|False|None), 'aktivasyon_dogrulama' (varsa)
         """
-        sonuc = self._activate_object_iki_faz(object_name, object_url)
+        sonuc = self._activate_object_iki_faz(object_name, object_url, object_type=object_type)
         return self._aktivasyon_hukmunu_kesinlestir(sonuc, object_name, object_url)
 
     def _aktivasyon_hukmunu_kesinlestir(self, p, object_name, object_url):
@@ -4517,7 +4933,7 @@ class SAPADTClient:
             refs = [{'uri': object_url, 'type': object_type, 'name': object_name}]
         return refs, bilgi
 
-    def _activate_object_iki_faz(self, object_name, object_url):
+    def _activate_object_iki_faz(self, object_name, object_url, object_type=None):
         """Activate an ABAP object using two-phase pre-audit + batch activation.
 
         Phase 1 (pre-audit): POST with preauditRequested=true on the seed object.
@@ -4537,7 +4953,7 @@ class SAPADTClient:
         Returns:
             dict with 'success' (bool), 'errors' (list), 'warnings' (list), 'response' (str)
         """
-        object_type = self._extract_object_type(object_url)
+        object_type = object_type or self._extract_object_type(object_url)
         parent_uri = self._extract_parent_uri(object_url)
 
         ADT_CORE_NS = 'http://www.sap.com/adt/core'
@@ -5057,7 +5473,7 @@ class SAPADTClient:
             # 403 CSRF: the cached token can be stale server-side. Force-refresh
             # and retry this attempt ONCE with a new token before falling through
             # to the media-type/namespace retry queue.
-            if response.status_code == 403 and 'CSRF' in response.text:
+            if self._csrf_reddi_mi(response):
                 self.fetch_csrf_token(force_refresh=True)
                 headers = self._get_headers(media_type, media_type)
                 response = self.session.post(
@@ -5070,7 +5486,7 @@ class SAPADTClient:
 
             if response.status_code in [200, 201]:
                 # Success
-                object_url = response.headers.get('Location', f'/sap/bc/adt/{object_path}/{name.lower()}')
+                object_url = response.headers.get('Location', f'/sap/bc/adt/{object_path}/{_adt_seg(name)}')
                 return {
                     'success': True,
                     'object_url': object_url,
@@ -5701,7 +6117,7 @@ class SAPADTClient:
         import re
         if not self.csrf_token:
             self.fetch_csrf_token()
-        uc = f"/sap/bc/adt/ddic/domains/{domain_name.lower()}"
+        uc = f"/sap/bc/adt/ddic/domains/{_adt_seg(domain_name)}"
         try:
             headers = self._get_headers()
             headers['Accept'] = 'application/vnd.sap.adt.domains.v2+xml, application/*'
@@ -5816,7 +6232,7 @@ class SAPADTClient:
             adtcore:language="{self.language}"
             xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"
             xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
@@ -5870,7 +6286,7 @@ class SAPADTClient:
         response = self._retry_request(do_request, f'Create data element {name}')
 
         if response.status_code in [200, 201]:
-            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/dataelements/{name.lower()}')
+            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/dataelements/{_adt_seg(name)}')
             return {
                 'success': True,
                 'object_url': object_url,
@@ -5887,12 +6303,14 @@ class SAPADTClient:
         )
 
     # Validation Helpers
-    def _validate_object_name(self, name, object_type='Object'):
+    def _validate_object_name(self, name, object_type='Object', referans=False):
         """Validate object name follows SAP naming conventions
 
         Args:
             name: Object name to validate
             object_type: Type description for error message
+            referans: True = ad YARATILAN nesnenin değil BAŞVURULAN nesnenin adı (ör. `include` edilen
+                yapı) — yalnız biçim denetlenir; namespace'li başvuru adı da (standart dahil) geçerlidir
 
         Raises:
             SAPValidationError: If name is invalid
@@ -5914,6 +6332,21 @@ class SAPADTClient:
         if len(name) > 30:
             raise SAPValidationError(
                 f"{object_type} name too long (max 30 characters): {len(name)}",
+                field='name',
+                value=name
+            )
+
+        # Namespace'li ad (ADR 0005 A-EK): yalnız projede bildirilmiş müşteri namespace'i (büyük harf).
+        if name.startswith('/'):
+            from utils import ad_politikasi as _ap  # lazy
+            if referans and name == name.upper() and _ap.ad_gecerli_mi(name):
+                return   # başvuru — yalnız biçim (namespace dahil tam gramer), müşteri kararı YOK
+            if name == name.upper() and _ap.musteri_adi_mi(name, root=_explicit_working_dir):
+                return
+            raise SAPValidationError(
+                f"{object_type} name must start with letter and contain only A-Z, 0-9, underscore "
+                f"(or a declared customer namespace /<NS>/): {name}"
+                f"{_ap.red_gerekcesi(name.upper(), root=_explicit_working_dir)}",
                 field='name',
                 value=name
             )
@@ -6080,7 +6513,7 @@ class SAPADTClient:
              adtcore:masterLanguage="{self.language}"
              xmlns:doma="http://www.sap.com/dictionary/domain"
              xmlns:adtcore="http://www.sap.com/adt/core">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
   <doma:content>
@@ -6128,7 +6561,7 @@ class SAPADTClient:
         response = self._retry_request(do_request, f'Create domain {name}')
 
         if response.status_code in [200, 201]:
-            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/domains/{name.lower()}')
+            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/domains/{_adt_seg(name)}')
             return {
                 'success': True,
                 'object_url': object_url,
@@ -6251,7 +6684,7 @@ class SAPADTClient:
                   adtcore:name="{name.upper()}"
                   adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
   <blue:source>{text_escape(ddl_source)}</blue:source>
@@ -6279,7 +6712,7 @@ class SAPADTClient:
 
         response = self._retry_request(do_request, f'Create structure {name}')
 
-        object_url = f'/sap/bc/adt/ddic/structures/{name.lower()}'
+        object_url = f'/sap/bc/adt/ddic/structures/{_adt_seg(name)}'
         if response.status_code in [200, 201]:
             object_url = response.headers.get('Location', object_url)
         elif self._zaten_var_mi(response):
@@ -6298,7 +6731,7 @@ class SAPADTClient:
             )
 
         # DETERMİNİSTİK source yazımı — create-POST shell bırakmış olsa da düzeltir.
-        src_url = f'/sap/bc/adt/ddic/structures/{name.lower()}'
+        src_url = f'/sap/bc/adt/ddic/structures/{_adt_seg(name)}'
         lock_handle = self.lock_object(src_url, transport=transport)
         try:
             put_params = {'lockHandle': lock_handle}
@@ -6462,7 +6895,7 @@ class SAPADTClient:
 
         if ref_structure:
             # Validate structure name format
-            self._validate_object_name(ref_structure, 'Referenced Structure')
+            self._validate_object_name(ref_structure, 'Referenced Structure', referans=True)
             # Reference mode: use include structure syntax
             fields_source = f'  include {ref_structure.upper()};'
         else:
@@ -6513,22 +6946,25 @@ define table {name.lower()} {{
                   adtcore:type="TABL/DT"
                   adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
   <blue:source>{text_escape(ddl_source)}</blue:source>
 </blue:blueSource>'''
-
-        headers = self._get_headers(
-            'application/vnd.sap.adt.tables.v2+xml',
-            'application/vnd.sap.adt.tables.v2+xml'
-        )
 
         params = {}
         if transport:
             params['corrNr'] = transport
 
         def make_request():
+            # #411 (2026-11-08): header'lar closure İÇİNDE kurulur. Eskiden dışarıda bir
+            # kez kuruluyordu ⇒ `_retry_request` CSRF reddinde token'ı tazelese de tekrar
+            # isteği ESKİ token'la gidiyordu (kardeş DTEL/domain/yapı/CDS yolları zaten
+            # closure içinde kuruyordu; tablo tek istisnaydı).
+            headers = self._get_headers(
+                'application/vnd.sap.adt.tables.v2+xml',
+                'application/vnd.sap.adt.tables.v2+xml'
+            )
             return self.session.post(
                 f"{self.url}/sap/bc/adt/ddic/tables",
                 headers=headers,
@@ -6540,7 +6976,7 @@ define table {name.lower()} {{
         response = self._retry_request(make_request, operation=f'create table {name}')
 
         if response.status_code in [200, 201]:
-            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/tables/{name.lower()}')
+            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/tables/{_adt_seg(name)}')
             return {
                 'success': True,
                 'object_url': object_url,
@@ -6587,7 +7023,7 @@ define table {name.lower()} {{
             exc.stage = 'validate'
             raise
         ml = (master_language or self.language or '').upper()
-        tablo_url = f'/sap/bc/adt/ddic/tables/{name.lower()}'
+        tablo_url = f'/sap/bc/adt/ddic/tables/{_adt_seg(name)}'
         esc = attr_escape  # Z194: ortak öznitelik kaçışı (eski yerel lambda TAB/LF/CR ve `>` kaçışlamıyordu)
         kabuk = f'''<?xml version="1.0" encoding="UTF-8"?>
 <blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue"
@@ -6596,7 +7032,7 @@ define table {name.lower()} {{
                  adtcore:type="TABL/DT"
                  adtcore:description="{esc(description)}"
                  adtcore:masterLanguage="{esc(ml)}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{esc(package_name.lower())}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{esc(_adt_seg(package_name))}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{esc(package_name.upper())}"/>
 </blue:blueSource>'''
@@ -6750,46 +7186,61 @@ define table {name.lower()} {{
         # ediyordu (`VIEW ENTITY` + `PROJECTION ON` alt-dizeleri) ⇒ KORUNUR; reddetmek
         # geçerli bir biçimde yeni bir yanlış-red üretirdi (fixture B9 çapası).
         # BİLİNÇLİ RED (doğru mesajla, "düzelt" demeden): table function (AMDP sınıfı ister,
-        # bu araçla yaratılması ölçülmedi — lider kararı 2026-09-13) · custom entity ve
-        # diğer tanım türleri (korpusta örnek yok).
+        # bu araçla yaratılması ölçülmedi — lider kararı 2026-09-13) · diğer tanım türleri.
+        # ── #410 (2026-11-08, ⚠GEVŞETME, kullanıcı onaylı): `define [root] custom entity`
+        # [`with parameters <liste>`] `{ ... }` KABUL. Eski ret dalının gerekçesi ("korpusta
+        # örnek yok") tüketici korpusu içindi; bir S/4HANA geliştirme sisteminde ölçüldü:
+        # DDDDLSRC SOURCE_TYPE='Q' 1.137 aktif custom entity (177 root, 72 with parameters).
+        # Nesne tipi view/abstract ile aynı (DDLS/DF, tür kaynaktan çıkar). Gövde kuralı
+        # abstract entity'ninkiyle aynıdır (select/projection ARANMAZ — veri sorgu
+        # sınıfından gelir); tek fark başlıktan sonra isteğe bağlı parametre listesi.
+        # ⛔ abstract entity dalı DEĞİŞMEDİ (onun `with parameters` biçimi hâlâ RED; ayrı
+        # karar). Canlı yaratma/aktivasyon reçetesi: sap-rap skill referansları (kaynak çekirdekte ölçüldü).
 
-        def _kod_metni(metin):
-            # Yorumları (`//`, `/* */`) ve string içeriğini ('..', `''` kaçışı) atar;
-            # satır sonları korunur. Anahtar sözcük YALNIZ kodda sayılır.
-            cikti = []
-            i, n = 0, len(metin)
-            while i < n:
-                c = metin[i]
-                if c == "'":
-                    j = i + 1
-                    while j < n:
-                        if metin[j] == "'":
-                            if j + 1 < n and metin[j + 1] == "'":
-                                j += 2
-                                continue
-                            break
-                        j += 1
-                    cikti.append("''")
-                    i = j + 1
-                elif metin.startswith('//', i):
-                    j = metin.find('\n', i)
-                    i = n if j < 0 else j
-                elif metin.startswith('/*', i):
-                    j = metin.find('*/', i + 2)
-                    cikti.append(' ')
-                    i = n if j < 0 else j + 2
-                else:
-                    cikti.append(c)
-                    i += 1
-            return ''.join(cikti)
+        def _parametre_sonrasi_eleman_listesi(govde):
+            # Custom entity: başlık adından sonra ya hemen `{` ya da
+            # `with parameters <liste>` ve ardından `{` gelmeli. Parametre listesinde
+            # annotation değeri `{...}` / `[...]` olabilir (`@X: { a: 1 }`) — `:`'dan
+            # hemen sonra gelen `{` ve parantez/köşeli içindekiler eleman listesi
+            # SAYILMAZ. Liste `as`/`returns`/`implemented` taşırsa (view / table function
+            # karışımı) RED. Sınır: bu bir dilbilgisi ayrıştırıcısı DEĞİL, akıl sağlığı
+            # kapısıdır — kesin hüküm SAP aktivasyonundadır.
+            if re.match(r'\s*\{', govde):
+                return True
+            pm = re.match(r'\s*with\s+parameters\b', govde, re.IGNORECASE)
+            if not pm:
+                return False
+            derinlik, onceki = 0, ''
+            for i in range(pm.end(), len(govde)):
+                c = govde[i]
+                if c in '([':
+                    derinlik += 1
+                elif c in ')]':
+                    derinlik -= 1
+                elif c == '{':
+                    if derinlik == 0 and onceki != ':':
+                        liste = govde[pm.end():i]
+                        return (':' in liste and not re.search(
+                            r'\b(?:as|returns|implemented)\b', liste, re.IGNORECASE))
+                    derinlik += 1
+                elif c == '}':
+                    derinlik -= 1
+                if not c.isspace():
+                    onceki = c
+            return False
+
+        # Ayıklayıcı modül düzeyinde TEK kopya (`cds_kod_metni`; #410 K3 — populate_cds_views
+        # başlık tespiti de aynı fonksiyonu kullanır).
+        _kod_metni = cds_kod_metni
 
         kod = _kod_metni(cds_source)
         bicimler = ("define view <name> / define [root|transient] view entity <name> "
                     "(as select [distinct] from | as projection on) · "
-                    "define [root] abstract entity <name> { ... }")
+                    "define [root] abstract entity <name> { ... } · "
+                    "define [root] custom entity <name> [with parameters ...] { ... }")
         baslik = re.search(
             r'\bdefine\s+((?:root\s+|transient\s+)?view\s+entity|view|(?:root\s+)?abstract\s+entity'
-            r'|table\s+function|custom\s+entity)\s+([A-Za-z_/][\w/]*)',
+            r'|table\s+function|(?:root\s+)?custom\s+entity)\s+([A-Za-z_/][\w/]*)',
             kod, re.IGNORECASE)
         if not baslik:
             raise SAPValidationError(
@@ -6810,12 +7261,15 @@ define table {name.lower()} {{
                 "necessarily wrong - do NOT rewrite it; report it.",
                 field='cds_source'
             )
-        if tur == 'custom entity':
-            raise SAPValidationError(
-                "CDS custom entity is not supported by this tool (no measured example). "
-                "The source is not necessarily wrong - do NOT rewrite it; report it.",
-                field='cds_source'
-            )
+        if tur.endswith('custom entity'):
+            if not _parametre_sonrasi_eleman_listesi(govde):
+                raise SAPValidationError(
+                    f"CDS '{tur}' must be followed (after an optional 'with parameters ...' "
+                    "list) by its element list '{ ... }' (a custom entity has no "
+                    "select/projection; its data comes from the query class).",
+                    field='cds_source'
+                )
+            return
         if tur.endswith('abstract entity'):
             if not re.match(r'\s*\{', govde):
                 raise SAPValidationError(
@@ -6893,7 +7347,7 @@ define table {name.lower()} {{
                  adtcore:name="{name.upper()}"
                  adtcore:description="{attr_escape(description)}"
                  adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
   <ddl:sourceMainArtifact>
@@ -6926,7 +7380,7 @@ define table {name.lower()} {{
         response = self._retry_request(make_request, operation=f'create CDS view {name}')
 
         if response.status_code in [200, 201]:
-            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/ddl/sources/{name.lower()}')
+            object_url = response.headers.get('Location', f'/sap/bc/adt/ddic/ddl/sources/{_adt_seg(name)}')
             return {
                 'success': True,
                 'object_url': object_url,
@@ -6968,7 +7422,7 @@ define table {name.lower()} {{
         headers = self._get_headers(accept_type)
 
         response = self.session.get(
-            f"{self.url}/sap/bc/adt/ddic/{endpoint}/{name.lower()}",
+            f"{self.url}/sap/bc/adt/ddic/{endpoint}/{_adt_seg(name)}",
             headers=headers,
             timeout=self.timeout_short
         )
@@ -7029,7 +7483,7 @@ constants:
                        adtcore:name="{name.upper()}"
                        adtcore:description="{attr_escape(description)}"
                        adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
 </atypgr:abapTypeGroup>'''
@@ -7069,7 +7523,7 @@ constants:
 
         # Now upload the source code
         # The URL is constructed from the type group name (lowercase)
-        object_url = f'/sap/bc/adt/ddic/typegroups/{name.lower()}'
+        object_url = f'/sap/bc/adt/ddic/typegroups/{_adt_seg(name)}'
         source_url = f"{self.url}{object_url}/source/main"
 
         source_headers = self._get_headers(
@@ -7124,7 +7578,7 @@ constants:
                          adtcore:name="{name.upper()}"
                          adtcore:description="{attr_escape(description)}"
                          adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
 </group:abapFunctionGroup>'''
@@ -7150,7 +7604,7 @@ constants:
         )
 
         if response.status_code in [200, 201]:
-            object_url = f'/sap/bc/adt/functions/groups/{name.lower()}'
+            object_url = f'/sap/bc/adt/functions/groups/{_adt_seg(name)}'
             return {
                 'success': True,
                 'object_url': object_url,
@@ -7218,14 +7672,14 @@ constants:
         # CSRF-retry wrapper: stale CSRF token -> 403 was the FM-create root cause.
         response = self._request_with_csrf_retry(
             'post',
-            f"{self.url}/sap/bc/adt/functions/groups/{function_group.lower()}/fmodules",
+            f"{self.url}/sap/bc/adt/functions/groups/{_adt_seg(function_group)}/fmodules",
             headers=headers,
             data=fm_xml.encode('utf-8'),
             params=params,
             timeout=self.timeout_default
         )
 
-        object_url = f'/sap/bc/adt/functions/groups/{function_group.lower()}/fmodules/{name.lower()}'
+        object_url = f'/sap/bc/adt/functions/groups/{_adt_seg(function_group)}/fmodules/{_adt_seg(name)}'
 
         if response.status_code in [200, 201]:
             return {
@@ -7238,12 +7692,12 @@ constants:
         # 400 ExceptionResourceAlreadyExists on this system. ⛔ Z51 (v0.5.1): artık idempotent başarı DEĞİL.
         if self._zaten_var_mi(response):
             raise self._zaten_var_hatasi('Function module', name, response,
-                                         f'/sap/bc/adt/functions/groups/{function_group.lower()}/fmodules')
+                                         f'/sap/bc/adt/functions/groups/{_adt_seg(function_group)}/fmodules')
         raise SAPADTError(
             f"Failed to create function module {name}",
             status_code=response.status_code,
             response_text=response.text[:500],
-            endpoint=f'/sap/bc/adt/functions/groups/{function_group.lower()}/fmodules'
+            endpoint=f'/sap/bc/adt/functions/groups/{_adt_seg(function_group)}/fmodules'
         )
 
     def set_function_module_source(self, name, function_group, source_code,
@@ -7841,7 +8295,7 @@ constants:
                   adtcore:name="{name.upper()}"
                   adtcore:description="{attr_escape(description)}"
                   adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
 </ddlx:ddlxSource>'''
@@ -7872,7 +8326,7 @@ constants:
                 response_text=response.text[:500]
             )
 
-        object_url = f'/sap/bc/adt/ddic/ddlx/sources/{name.lower()}'
+        object_url = f'/sap/bc/adt/ddic/ddlx/sources/{_adt_seg(name)}'
 
         # Upload the source (pass transport so SAP registers write under correct CTS entry)
         # v0.5.2: yükleme hatası artık YUTULMAZ — kabuk yaratıldı ama kaynak yazılmadıysa başarı DEĞİLDİR.
@@ -7915,7 +8369,7 @@ constants:
                adtcore:name="{name.upper()}"
                adtcore:description="{attr_escape(description)}"
                adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
 </acm:dclSource>'''
@@ -7944,7 +8398,7 @@ constants:
                 response_text=response.text[:500]
             )
 
-        object_url = f'/sap/bc/adt/acm/dcl/sources/{name.lower()}'
+        object_url = f'/sap/bc/adt/acm/dcl/sources/{_adt_seg(name)}'
 
         # Upload the source (pass transport so SAP registers write under correct CTS entry)
         # v0.5.2: yükleme hatası artık YUTULMAZ (DDLX ile aynı).
@@ -7991,7 +8445,7 @@ constants:
         # endpoint (/behaviordefinitions, /bo eksik) → 404, hiç çalışmıyordu.
         bdef_base = '/sap/bc/adt/bo/behaviordefinitions'
         bdef_ct = 'application/vnd.sap.adt.blues.v1+xml'
-        object_url = f'{bdef_base}/{name.lower()}'
+        object_url = f'{bdef_base}/{_adt_seg(name)}'
 
         shell_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -8001,7 +8455,7 @@ constants:
             f'                 adtcore:description="{attr_escape(description or name)}"\n'
             '                 adtcore:type="BDEF/BDO"\n'
             f'                 adtcore:masterLanguage="{self.language}">\n'
-            f'  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"\n'
+            f'  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"\n'
             '                      adtcore:type="DEVC/K"\n'
             f'                      adtcore:name="{package_name.upper()}"/>\n'
             '</blue:blueSource>'
@@ -8116,10 +8570,10 @@ constants:
                                adtcore:name="{name.upper()}"
                                adtcore:description="{attr_escape(description or name)}"
                                adtcore:masterLanguage="{self.language}">
-  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{package_name.lower()}"
+  <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/{_adt_seg(package_name)}"
                       adtcore:type="DEVC/K"
                       adtcore:name="{package_name.upper()}"/>
-  <bimpl:behaviorDefinitionRef adtcore:uri="/sap/bc/adt/behaviordefinitions/{behavior_definition.lower()}"
+  <bimpl:behaviorDefinitionRef adtcore:uri="/sap/bc/adt/behaviordefinitions/{_adt_seg(behavior_definition)}"
                                 adtcore:name="{behavior_definition.upper()}"/>
 </bimpl:behaviorImplementation>'''
 
@@ -8147,7 +8601,7 @@ constants:
                 response_text=response.text[:500]
             )
 
-        object_url = f'/sap/bc/adt/behaviorimplementations/{name.lower()}'
+        object_url = f'/sap/bc/adt/behaviorimplementations/{_adt_seg(name)}'
 
         # Upload source if provided
         if source:
@@ -8171,6 +8625,658 @@ constants:
             'name': name.upper(),
             'message': f'Behavior implementation {name} created'
         }
+
+    # ── Enhancement spot (ENHS/XSB) + BAdI tanimi — kaynak cekirdek #413 (olculdu 2026-11-08) ─────
+    # Recete + tuzaklar: references/enhancement-spot-badi.md. Saf yardimcilar (ayristir /
+    # kur / uygula / kiyasla / ad denetimi) sinifin ALTINDA modul seviyesindedir.
+    # ⛔ PUT TAM BELGEDIR: gonderilmeyen filtre/tanim SUNUCUDA SILINIR (olculdu) ⇒ yazilan belge
+    #    daima taze GET'ten kurulur; cagiran yalniz degisen alani verir.
+
+    def get_enhancement_spot(self, spot, version=None):
+        """GET spot belgesi -> requests.Response.
+
+        ⚠ `version='active'` AKTIFLIK KANITI DEGILDIR: hic aktive edilmemis spotta da 200 +
+        `adtcore:version="active"` + inaktif icerik doner (olculdu, 20/20 okumada "active").
+        Aktiflik = `activate_enhancement_spot` (aktivasyon `success` + worklist sondasi +
+        surumsuz GET).
+        """
+        params = {'version': version} if version else None
+        return self.session.get(self.url + enhs_spot_url(spot), headers=self._get_headers(ENHS_CT),
+                                params=params, verify=False, timeout=self.timeout_default)
+
+    def create_enhancement_spot(self, spot, description, package, transport, root=None):
+        """BOS kabuk spot yarat (POST koleksiyon `?corrNr=`) -> {'ok','status','location','text'}.
+
+        Icerik bu cagrida GONDERILMEZ: tanimlar ayrica `write_enhancement_spot` ile (kilit ->
+        PUT -> unlock) yazilir. Icerikli tek POST da kaydediyor (olculdu) ama birincil yol
+        bos kabuktur — kilit/transport zinciri tek yerde kalir.
+        """
+        hatalar = enhs_ad_denetimi(spot, (), root=root)
+        if hatalar:
+            raise SAPValidationError('ENHS yaratma reddedildi (ADR 0005-A): ' + '; '.join(hatalar))
+        if not transport:
+            raise SAPValidationError('ENHS yaratma: transport (corrNr) zorunlu')
+        govde = enhs_bos_kabuk_govdesi(spot, description, package, self.language)
+        r = self._request_with_csrf_retry(
+            'post', self.url + ENHS_KOLEKSIYON, headers=self._get_headers(ENHS_CT, ENHS_CT),
+            params={'corrNr': transport}, data=govde.encode('utf-8'))
+        return {'ok': r.status_code == 201, 'status': r.status_code,
+                'location': r.headers.get('Location'), 'text': (r.text or '')[:500]}
+
+    def _enhs_yazilabilir_oku(self, spot, root):
+        """Yazma oncesi okuma: GET -> (model, None) | (None, hata). Ayni denetim iki kez kosar:
+        kilitten ONCE (standart obje kilitlenmez) ve kilit ALTINDA (TOCTOU)."""
+        try:
+            r = self.get_enhancement_spot(spot)
+        except Exception as exc:  # noqa: BLE001 — okunamadi: yazma YOK
+            return None, 'get_istisna:%s' % type(exc).__name__
+        if r.status_code != 200:
+            return None, 'get_http_%s' % r.status_code
+        try:
+            m = enhs_belgesi_ayristir(r.content)
+        except (ValueError, ET.ParseError) as exc:
+            return None, 'get_ayristirilamadi:%s' % exc
+        if (m['spot'].get('masterSystem') or '').upper() == 'SAP':
+            return None, 'standart_obje: masterSystem=SAP (ADR 0005-A)'
+        if (m['spot'].get('name') or '').upper() != (spot or '').upper():
+            return None, 'get_ad_uyusmuyor:%s' % m['spot'].get('name')
+        hatalar = enhs_ad_denetimi(spot, [t.get('name') for t in m['tanimlar']], root=root)
+        if hatalar:
+            return None, 'mevcut_belge_ad_denetimi: ' + '; '.join(hatalar)
+        if m['modellenmeyen']:
+            # TAM-belge PUT modelin tasimadigi alani SUNUCUDA SILER — yazma YOK.
+            return None, 'modellenmeyen_alan: ' + ', '.join(m['modellenmeyen'])
+        return m, None
+
+    def write_enhancement_spot(self, spot, model, transport, taban, root=None):
+        """Tam belgeyi yaz: ad denetimi -> on GET (kilitsiz) -> kilit -> KILIT ALTINDA GET ->
+        PUT -> unlock(finally).
+
+        `taban` = cagiranin `model`'i kurarken okudugu belgenin modeli (`enhs_belgesi_ayristir`).
+        Kilit altindaki GET'te ① modellenmeyen alan varsa ② modellenen alanlar `taban`dan farkliysa
+        (okuma ile kilit arasinda baskasi yazdi) YAZMA YOK (`kilit_alti:` / `taban_degisti:`).
+        Yeniden kurma YAPILMAZ: lib degisikligi degil sonuc modelini alir; ustune yazmak araya
+        giren degisikligi siler. Cagiran yeniden okuyup tekrar dener.
+        Doner {'ok','put_status','hata','lock_released','gonderilen'}. `Exception` sinifindan
+        istisna ATMAZ (hata alaninda raporlanir); KeyboardInterrupt/SystemExit gecer, kilit yine
+        `finally`de birakilir. `lock_released` False ise kilit acik kalmis olabilir —
+        `kilit_birakilamadi_uyarisi`.
+        """
+        sonuc = {'ok': False, 'put_status': None, 'hata': None, 'lock_released': None,
+                 'gonderilen': None}
+        if not transport:
+            sonuc['hata'] = 'transport_yok'
+            return sonuc
+        if not isinstance(taban, dict) or 'tanimlar' not in taban or 'spot' not in taban:
+            sonuc['hata'] = 'taban_yok: cagiranin okudugu belge modeli zorunlu'
+            return sonuc
+        hatalar = enhs_ad_denetimi(spot, [t.get('name') for t in model.get('tanimlar') or []],
+                                   root=root)
+        if hatalar:
+            sonuc['hata'] = 'ad_denetimi: ' + '; '.join(hatalar)
+            return sonuc
+        # 2. katman, kilitten ONCE: standart spot'a (masterSystem SAP) ya da standart adli tanim
+        # tasiyan spot'a kilit bile alinmaz.
+        mevcut, hata = self._enhs_yazilabilir_oku(spot, root)
+        if hata:
+            sonuc['hata'] = hata
+            return sonuc
+        _, sira_hatasi = enhs_govde_sirasi(model.get('tanimlar') or [],
+                                           [t.get('name') for t in mevcut['tanimlar']])
+        if sira_hatasi:                       # kilitsiz erken red; kilit altinda yeniden hesaplanir
+            sonuc['hata'] = sira_hatasi
+            return sonuc
+        url = enhs_spot_url(spot)
+        try:
+            el = self.lock_object(url, transport=transport)
+        except Exception as exc:  # noqa: BLE001 — kilit alinamadi: yazma YOK
+            sonuc['hata'] = 'kilit_istisna:%s: %s' % (type(exc).__name__, str(exc)[:200])
+            return sonuc
+        if el in ('NO_LOCK_SUPPORT', 'IMPLICIT_LOCK', None, ''):
+            # Kilitsiz PUT 400 `lockHandle` doner (olculdu) — denenmez.
+            sonuc['hata'] = 'kilit_alinamadi:%s' % el
+            sonuc['lock_released'] = True
+            return sonuc
+        try:
+            # KILIT ALTINDA yeniden oku: okuma ile kilit arasinda belgeye giren alan korunur.
+            taze, hata = self._enhs_yazilabilir_oku(spot, root)
+            if hata:
+                sonuc['hata'] = 'kilit_alti:' + hata
+                return sonuc
+            fark = enhs_kiyasla(taban, taze)
+            if fark:
+                sonuc['hata'] = 'taban_degisti: ' + '; '.join(fark[:5])
+                return sonuc
+            sirali, sira_hatasi = enhs_govde_sirasi(model.get('tanimlar') or [],
+                                                    [t.get('name') for t in taze['tanimlar']])
+            if sira_hatasi:
+                sonuc['hata'] = sira_hatasi
+                return sonuc
+            govde = enhs_belgesi_kur(dict(model, tanimlar=sirali))
+            sonuc['gonderilen'] = govde
+            try:
+                r = self._request_with_csrf_retry(
+                    'put', self.url + url, headers=self._get_headers(ENHS_CT, ENHS_CT),
+                    params={'corrNr': getattr(self, '_last_lock_effective_transport', None) or transport,
+                            'lockHandle': el},
+                    data=govde.encode('utf-8'))
+            except Exception as exc:  # noqa: BLE001 — PUT istisnasi raporlanir, sizmaz
+                sonuc['hata'] = 'put_istisna:%s' % type(exc).__name__
+                return sonuc
+            sonuc['put_status'] = r.status_code
+            if not 200 <= r.status_code < 300:
+                sonuc['hata'] = 'put_http_%s: %s' % (r.status_code, (r.text or '')[:300])
+                return sonuc
+            sonuc['ok'] = True
+            return sonuc
+        finally:
+            sonuc['lock_released'] = bool(self.unlock_object(url, el))
+
+    def activate_enhancement_spot(self, spot):
+        """Spot'u aktive et; hukum = aktivasyon sonucu + worklist sondasi + SURUMSUZ GET.
+
+        Uc kosul birlikte: `activate_object` sonucu `success` True (`activationExecuted` DEGIL —
+        olculdu: success=true + activationExecuted=false iken spot aktifti) · worklist'te yok
+        (ad + ana tip ENHS) · surumsuz GET `adtcore:version="active"`. `?version=active`
+        HUKUMDE KULLANILMAZ — istenen surumu yankilar (20/20 okumada "active", 11'i inaktifken).
+        Sonda ya da surumsuz GET kurulamazsa sonuc AKTIF DEGIL, `dogrulanamadi=True`'dur.
+        Doner {'aktif','dogrulanamadi','worklist_sonda','kalan_inaktif','surumsuz_surum',
+               'aktivasyon','errors'}.
+        """
+        url = enhs_spot_url(spot)
+        akt = self.activate_object((spot or '').upper(), url, object_type=ENHS_TIP)
+        akt = akt if isinstance(akt, dict) else {'success': False, 'errors': [{'message': repr(akt)}]}
+        hedef = enhs_worklist_hedefi(spot)
+        ok, sonda, kalan = aktivasyon_worklist_sondasi(self, hedef)
+        surum = enhs_surumsuz_surum(self, spot)
+        if surum is None and ok is not False:
+            ok = None                         # surumsuz GET okunamadi: aktif DENEMEZ
+        elif surum != 'active' and ok is True:
+            ok = False                        # bekleyen inaktif surum var
+        return {'aktif': akt.get('success') is True and ok is True,
+                'dogrulanamadi': ok is None, 'worklist_sonda': sonda, 'kalan_inaktif': kalan,
+                'surumsuz_surum': surum,
+                'aktivasyon': {k: akt.get(k) for k in ('success', 'aktivasyon_hukmu', 'hukum_sebep',
+                                                       'activation_executed')},
+                'errors': akt.get('errors') or []}
+
+
+# =============================================================================
+# Enhancement spot (ENHS/XSB) + BAdI tanimi — saf yardimcilar (kaynak cekirdek #413)
+# =============================================================================
+# CANLI OLCUM (2026-11-08, bir gelistirme sistemi SAP_BASIS 758; recete
+# references/enhancement-spot-badi.md): koleksiyon `/enhancements/enhsxsb`, icerik tipi
+# `application/vnd.sap.adt.enh.enhs.v2+xml`, nesne kilidi nesne URL'inde `_action=LOCK`.
+ENHS_KOLEKSIYON = '/sap/bc/adt/enhancements/enhsxsb'
+ENHS_CT = 'application/vnd.sap.adt.enh.enhs.v2+xml'
+ENHS_TIP = 'ENHS/XSB'
+ENHS_SPOT_AD_SINIRI = 30      # OLCULDU: validation 400 InvalidObjName, T100 SWB_TOOL 017 V1=30
+ENHS_BADI_AD_SINIRI = 30      # AFF semasi — canli sinir OLCULMEDI
+ENHS_FILTRE_TIPLERI = ('C', 'I')   # yeni filtrede OLCULEN tipler; okunan belgedeki tip korunur
+_ENHS_NS = 'http://www.sap.com/adt/enhancements/enhs'
+_ENHCORE_NS = 'http://www.sap.com/abapsource/enhancementscore'
+_XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance'
+_ATOM_NS = 'http://www.w3.org/2005/Atom'
+_ENHS_TANIM_OZN = ('name', 'shorttext', 'singleUse', 'useFallbackClass', 'filterLimitation',
+                   'contextMode', 'amdp', 'internalUse')
+# Sunucunun okumada ekledigi, yazmada GONDERILMEYEN oznitelikler (olculdu: PUT'ta yoktu,
+# readback'te `customLogicRegistered="false"` + `documentationId=""`). Dolu documentationId
+# modellenmez (yazinca ne olacagi OLCULMEDI) ⇒ fail-closed.
+_ENHS_TANIM_SUNUCU_OZN = ('customLogicRegistered',)
+# Yeni tanimin varsayilanlari = olculen ilk PUT'un degerleri (K1).
+ENHS_TANIM_VARSAYILAN = {'singleUse': 'true', 'useFallbackClass': 'false',
+                         'filterLimitation': 'false', 'contextMode': 'N', 'amdp': 'false',
+                         'internalUse': 'false'}
+
+
+def enhs_spot_url(spot):
+    """Spot nesne URL'i (yol parcasi `utils.ad_politikasi.url_segmenti` — kucuk harf, kodlu)."""
+    return '%s/%s' % (ENHS_KOLEKSIYON, _adt_seg(spot))
+
+
+def enhs_worklist_hedefi(spot):
+    """Aktivasyon worklist sondasi hedefi: AD + ANA TIP `ENHS`, URI'siz.
+
+    ⛔ Worklist spot'u `adtcore:type="ENHS/XS"` + `.../enhancements/enhsxs/<ad>` URI'siyle
+    listeler (olculdu); aktivasyon istegi ise `ENHS/XSB` + `.../enhsxsb/<ad>` kullanir. URI ya
+    da tam tip verilirse `aktivasyon_worklist_kalan` HIC eslesmez ⇒ inaktif spot "aktif"
+    gorunur (sahte-yesil). Ana parca `ENHS` ad ile birlikte eslesir.
+    """
+    return [{'name': (spot or '').upper(), 'type': 'ENHS'}]
+
+
+def enhs_surumsuz_surum(adt, spot):
+    """SURUMSUZ GET'in `adtcore:version`'i ('active'/'inactive') | None (okunamadi).
+
+    Hukmun okudugu yuzey budur. Olcum (bir gelistirme sistemi, 20 okuma): surumsuz GET 10 yazma
+    sonrasi okumanin 10'unda + hic aktive edilmemis spot okumasinda `inactive`, 9 aktivasyon
+    sonrasi okumanin 9'unda `active`. `?version=active` 20/20 `active` (YANKI — aktiflik kaniti
+    degil). `?version=inactive` 20/20 surumsuz GET ile ayni degeri verdi; arac yine surumsuz GET'i
+    kullanir (tek yuzey).
+    """
+    try:
+        r = adt.get_enhancement_spot(spot)
+        if getattr(r, 'status_code', None) != 200:
+            return None
+        return enhs_belgesi_ayristir(r.content)['spot'].get('version') or None
+    except Exception:  # noqa: BLE001 — okunamadi = OLCULEMEDI
+        return None
+
+
+def enhs_govde_sirasi(tanimlar, canli_adlar):
+    """PUT govdesindeki tanim SIRASI -> (sirali_liste, hata|None).
+
+    ⛔ SAP kaynagi (`CL_ENH_ADT_BADI_DEF_CONT_SVC->SET_DATA_TO_TOOL`, okundu; canlida
+    TETIKLENMEDI): eski tanimlari silen dongu calisma alaninda SON eski tanimi birakir; gövdedeki
+    tanim icin `READ TABLE ... INTO` bulamazsa calisma alani degismez, `CLEAR` yalniz dongu
+    sonunda ⇒ govdenin ILK tanimi canlida yoksa yeni tanim son eski tanimin metin kimliklerini
+    (filtre metin kimligi dahil) devralir. Kural: once canlida OLAN tanimlar (canli sirasiyla),
+    yeniler SONA (`add_badi_def` append eder; sira yalniz gosterim). Canlida tanim varken
+    govdedeki tanimlarin HICBIRI canlida yoksa tuzak kacinilmaz ⇒ RED (iki adimda yap: once ekle,
+    sonra `--remove-badi`).
+    """
+    canli = [(a or '').upper() for a in canli_adlar or []]
+    ad = lambda t: (t.get('name') or '').upper()  # noqa: E731
+    mevcutlar = sorted([t for t in tanimlar if ad(t) in canli], key=lambda t: canli.index(ad(t)))
+    yeniler = [t for t in tanimlar if ad(t) not in canli]
+    if canli and tanimlar and not mevcutlar:
+        return None, ('sira_tuzagi: canlida tanim var (%s) ama govdedeki tanimlarin hicbiri canlida '
+                      'yok — SAP calisma alani tuzagi; iki adimda yap (once yenileri ekle, sonra '
+                      'eskileri --remove-badi ile kaldir)' % ', '.join(canli))
+    return mevcutlar + yeniler, None
+
+
+def enhs_coklu_kullanim(deger):
+    """'evet'/'hayir' (coklu kullanim) -> `enhs:singleUse` degeri. TERS esleme: coklu = 'false'.
+
+    `singleUse="true"` = TEK kullanim (`BADI_MAIN-SINGLE_USE = X`, olculdu); "coklu kullanim:
+    evet" -> `singleUse="false"` (standart spot'larin canli XML'iyle olculdu).
+    """
+    d = (deger or '').strip().lower()
+    if d == 'evet':
+        return 'false'
+    if d == 'hayir':
+        return 'true'
+    raise ValueError('coklu_kullanim evet|hayir olmali: %r' % deger)
+
+
+def enhs_spec_uygula(model, spec):
+    """Spec (`{'tanimlar': [..]}`) -> (yeni_model, yapilanlar). Her oge EKLE/GUNCELLE'dir;
+    spec'te olmayan tanim canlidaki haliyle KALIR; silme spec'te YOKTUR (yalniz acik bayrak).
+
+    Oge anahtarlari: badi (zorunlu), interface, shorttext, coklu_kullanim (evet|hayir),
+    fallback, ornek [..], filtreler [{'ad','tip','kisa','dtel'}]. Bilinmeyen anahtar ValueError.
+    """
+    izinli = {'badi', 'interface', 'shorttext', 'coklu_kullanim', 'fallback', 'ornek', 'filtreler'}
+    ogeler = (spec or {}).get('tanimlar')
+    if not isinstance(ogeler, list) or not ogeler:
+        raise ValueError("spec 'tanimlar' bos olmayan liste olmali")
+    yap = []
+    for o in ogeler:
+        fazla = set(o) - izinli
+        if fazla:
+            raise ValueError('spec ogesinde bilinmeyen anahtar(lar): %s' % ', '.join(sorted(fazla)))
+        filtreler = o.get('filtreler') or []
+        d = {'badi': o.get('badi'), 'interface': o.get('interface'), 'shorttext': o.get('shorttext'),
+             'singleUse': (enhs_coklu_kullanim(o['coklu_kullanim'])
+                           if o.get('coklu_kullanim') is not None else None),
+             'fallback': o.get('fallback'), 'ornek_ekle': o.get('ornek') or [],
+             'filtre_ekle': [{'name': f.get('ad'), 'type': f.get('tip'), 'shorttext': f.get('kisa')}
+                             for f in filtreler],
+             'filtre_kontrol': {(f.get('ad') or '').upper(): f['dtel'] for f in filtreler if f.get('dtel')}}
+        model, y = enhs_tanim_uygula(model, d)
+        yap.extend('%s: %s' % ((o.get('badi') or '').upper(), x) for x in y)
+    return model, yap
+
+
+def enhs_ad_denetimi(spot, badi_adlari=(), root=None):
+    """ADR 0005-A + ad uzunlugu: [] = yazilabilir, aksi hata metinleri listesi.
+
+    Musteri karari TEK kaynaktan: `utils.ad_politikasi.musteri_karari` (Z/Y ya da projede
+    `customer_namespaces` ile bildirilmis `/<NS>/`). Yeni kural ICAT EDILMEZ (ADR 0019).
+    """
+    from utils.ad_politikasi import musteri_karari, red_gerekcesi
+    hatalar = []
+    for tur, ad, sinir in ([('spot', spot, ENHS_SPOT_AD_SINIRI)]
+                           + [('BAdI', a, ENHS_BADI_AD_SINIRI) for a in badi_adlari or ()]):
+        a = (ad or '').strip().upper()
+        karar = musteri_karari(a, root=root)
+        if karar != 'musteri':
+            hatalar.append('%s adi %r musteri ad alaninda degil (%s)%s'
+                           % (tur, a, karar, red_gerekcesi(a, root=root)))
+        if len(a) > sinir:
+            hatalar.append('%s adi %r %d karakter > %d' % (tur, a, len(a), sinir))
+    return hatalar
+
+
+def _enhs_q(deger):
+    """XML oznitelik degeri: &, <, >, " kacisli, cift tirnakli."""
+    from xml.sax.saxutils import escape as _esc
+    return '"%s"' % _esc('' if deger is None else str(deger), {'"': '&quot;'})
+
+
+def enhs_bos_kabuk_govdesi(spot, description, package, language):
+    """Bos spot yaratma govdesi (olculen POST bicimi; `<enhs:badiDefinitions/>`)."""
+    return enhs_belgesi_kur({'spot': {'name': (spot or '').upper(), 'description': description,
+                                      'language': language, 'masterLanguage': language,
+                                      'package': package},
+                             'tanimlar': []})
+
+
+def _enhs_ref(ad, yol, tip, etiket):
+    return '<enhs:%s adtcore:uri=%s adtcore:type="%s" adtcore:name=%s/>' % (
+        etiket, _enhs_q('/sap/bc/adt/oo/%s/%s' % (yol, _adt_seg(ad))), tip, _enhs_q(ad.upper()))
+
+
+def enhs_belgesi_kur(model):
+    """Model -> PUT/POST tam belgesi (olculen bicim, UTF-8 metin). Sunucu ozniteligi YAZILMAZ."""
+    s = model['spot']
+    p = ['<?xml version="1.0" encoding="UTF-8"?>',
+         '<enhs:objectData xmlns:enhs="%s" xmlns:adtcore="%s" xmlns:enhcore="%s" adtcore:name=%s '
+         'adtcore:type="%s" adtcore:description=%s adtcore:language=%s adtcore:masterLanguage=%s>'
+         % (_ENHS_NS, _AKT_ADTCORE_NS, _ENHCORE_NS, _enhs_q((s.get('name') or '').upper()), ENHS_TIP,
+            _enhs_q(s.get('description')), _enhs_q(s.get('language') or s.get('masterLanguage')),
+            _enhs_q(s.get('masterLanguage') or s.get('language'))),
+         '<adtcore:packageRef adtcore:name=%s/>' % _enhs_q(s.get('package')),
+         '<enhs:contentCommon enhs:toolType="BADI_DEF"/>',
+         '<enhs:contentSpecific><enhs:badiTechnology>']
+    tanimlar = model.get('tanimlar') or []
+    if not tanimlar:
+        p.append('<enhs:badiDefinitions/>')
+    else:
+        p.append('<enhs:badiDefinitions>')
+        for t in tanimlar:
+            p.append('<enhs:badiDefinition %s>' % ' '.join(
+                'enhs:%s=%s' % (k, _enhs_q(t.get(k))) for k in _ENHS_TANIM_OZN))
+            p.append(_enhs_ref(t['interface'], 'interfaces', 'INTF/OI', 'interface'))
+            if t.get('defaultClass'):
+                p.append(_enhs_ref(t['defaultClass'], 'classes', 'CLAS/OC', 'defaultClass'))
+            if t.get('sampleClasses'):
+                p.append('<enhs:sampleClasses>%s</enhs:sampleClasses>' % ''.join(
+                    _enhs_ref(c, 'classes', 'CLAS/OC', 'sampleClass') for c in t['sampleClasses']))
+            if t.get('filters'):
+                p.append('<enhs:filters>')
+                for f in t['filters']:
+                    bas = '<enhs:filter enhs:filterName=%s enhs:filterType=%s enhs:shorttext=%s' % (
+                        _enhs_q(f['name']), _enhs_q(f['type']), _enhs_q(f.get('shorttext')))
+                    if f.get('onlyConstant') == 'true':   # okunan degeri korunur (PUT kabulu OLCULMEDI)
+                        bas += ' enhs:onlyConstantFilterValues="true"'
+                    if f.get('check'):
+                        p.append(bas + '><enhs:filterCheck xsi:type="enhcore:DictionaryCheck" '
+                                 'xmlns:xsi="%s" xmlns:enhcore="%s"><enhcore:checkObject '
+                                 'adtcore:uri=%s adtcore:type="DTEL/DE" adtcore:name=%s/>'
+                                 '</enhs:filterCheck></enhs:filter>'
+                                 % (_XSI_NS, _ENHCORE_NS,
+                                    _enhs_q('/sap/bc/adt/ddic/dataelements/%s' % _adt_seg(f['check'])),
+                                    _enhs_q(f['check'].upper())))
+                    else:
+                        p.append(bas + '/>')
+                p.append('</enhs:filters>')
+            p.append('</enhs:badiDefinition>')
+        p.append('</enhs:badiDefinitions>')
+    p.append('</enhs:badiTechnology></enhs:contentSpecific></enhs:objectData>')
+    return ''.join(p)
+
+
+def _enhs_yerel(etiket):
+    return etiket.split('}')[-1]
+
+
+def _enhs_ref_adi(e, beklenen_tip, yol, m):
+    tip = e.get('{%s}type' % _AKT_ADTCORE_NS) or ''
+    ad = e.get('{%s}name' % _AKT_ADTCORE_NS) or ''
+    if tip.upper() != beklenen_tip:
+        m.append('%s@type=%s' % (yol, tip))
+    return ad.upper()
+
+
+def _enhs_filtre_ayristir(f, yol, m):
+    sonuc = {'name': f.get('{%s}filterName' % _ENHS_NS), 'type': f.get('{%s}filterType' % _ENHS_NS),
+             'shorttext': f.get('{%s}shorttext' % _ENHS_NS), 'check': None}
+    yol = '%s/filter[%s]' % (yol, sonuc['name'])
+    for k, v in f.attrib.items():
+        y = _enhs_yerel(k)
+        if y in ('filterName', 'filterType', 'shorttext'):
+            continue
+        # "Yalniz sabit filtre degerleri" (BADI_FILTER-CONSTANT): GET'te yalniz `="true"` bicimi
+        # OLCULDU (standart spot okumasi, 3/3 filtre); bayraksiz filtrede oznitelik YOK. Baska
+        # deger bicimi OLCULMEDI ⇒ modellenmeyen (yazma yok).
+        if y == 'onlyConstantFilterValues' and v == 'true':
+            sonuc['onlyConstant'] = v
+            continue
+        m.append('%s@%s=%s' % (yol, y, v) if y == 'onlyConstantFilterValues' else '%s@%s' % (yol, y))
+    for c in f:
+        if c.tag != '{%s}filterCheck' % _ENHS_NS:
+            m.append('%s/%s' % (yol, _enhs_yerel(c.tag)))
+            continue
+        if (c.get('{%s}type' % _XSI_NS) or '').split(':')[-1] != 'DictionaryCheck':
+            m.append('%s/filterCheck@xsi:type=%s' % (yol, c.get('{%s}type' % _XSI_NS)))
+            continue
+        nesneler = [o for o in c if o.tag == '{%s}checkObject' % _ENHCORE_NS]
+        if len(nesneler) != 1 or len(list(c)) != 1:
+            m.append('%s/filterCheck(cocuk=%d)' % (yol, len(list(c))))
+            continue
+        sonuc['check'] = _enhs_ref_adi(nesneler[0], 'DTEL/DE', yol + '/filterCheck', m)
+    return sonuc
+
+
+def _enhs_tanim_ayristir(bd, m, ek=None):
+    ek = [] if ek is None else ek
+    t = {k: bd.get('{%s}%s' % (_ENHS_NS, k)) for k in _ENHS_TANIM_OZN}
+    yol = 'badiDefinition[%s]' % t['name']
+    for k, v in bd.attrib.items():
+        y = _enhs_yerel(k)
+        if y in _ENHS_TANIM_OZN:
+            continue
+        if y in _ENHS_TANIM_SUNUCU_OZN or (y == 'documentationId' and not v):
+            ek.append('%s@%s' % (yol, y))
+            continue
+        m.append('%s@%s' % (yol, y))
+    t.update({'interface': None, 'defaultClass': None, 'sampleClasses': [], 'filters': []})
+    for c in bd:
+        y = _enhs_yerel(c.tag)
+        if c.tag == '{%s}link' % _ATOM_NS:
+            ek.append('%s/atom:link' % yol)
+            continue
+        if c.tag == '{%s}interface' % _ENHS_NS:
+            t['interface'] = _enhs_ref_adi(c, 'INTF/OI', yol + '/interface', m)
+        elif c.tag == '{%s}defaultClass' % _ENHS_NS:
+            t['defaultClass'] = _enhs_ref_adi(c, 'CLAS/OC', yol + '/defaultClass', m)
+        elif c.tag == '{%s}sampleClasses' % _ENHS_NS:
+            for s in c:
+                if s.tag == '{%s}sampleClass' % _ENHS_NS:
+                    t['sampleClasses'].append(_enhs_ref_adi(s, 'CLAS/OC', yol + '/sampleClass', m))
+                else:
+                    m.append('%s/sampleClasses/%s' % (yol, _enhs_yerel(s.tag)))
+        elif c.tag == '{%s}filters' % _ENHS_NS:
+            for f in c:
+                if f.tag == '{%s}filter' % _ENHS_NS:
+                    t['filters'].append(_enhs_filtre_ayristir(f, yol, m))
+                else:
+                    m.append('%s/filters/%s' % (yol, _enhs_yerel(f.tag)))
+        else:
+            m.append('%s/%s' % (yol, y))
+    if not t['interface']:
+        m.append('%s/interface(yok)' % yol)
+    return t
+
+
+def enhs_belgesi_ayristir(govde):
+    """GET govdesi -> {'spot': {..}, 'tanimlar': [..], 'modellenmeyen': [..], 'sunucu_ek': [..]}.
+
+    `sunucu_ek` = tolere edilen sunucu eklentileri (yazilmaz, readback kiyasina GIRMEZ).
+
+    ⛔ `modellenmeyen` BOS DEGILSE belge YAZILMAZ: PUT tam belgedir, modelin tasimadigi her
+    alan (bilinmeyen eleman/oznitelik, Dictionary disi filtre kontrolu, dolu documentationId)
+    yazinca SUNUCUDA SILINIR. Sunucunun salt-okunur eklentileri (atom:link, enhs:usages,
+    adtcore meta oznitelikleri, `customLogicRegistered`, bos `documentationId`) tolere edilir.
+    Govde `enhs:objectData` degilse ValueError.
+    """
+    root = ET.fromstring(govde if isinstance(govde, (bytes, bytearray)) else (govde or '').encode('utf-8'))
+    if root.tag != '{%s}objectData' % _ENHS_NS:
+        raise ValueError('enhs_belgesi_degil:%s' % _enhs_yerel(root.tag))
+    a = lambda k: root.get('{%s}%s' % (_AKT_ADTCORE_NS, k))  # noqa: E731
+    spot = {k: a(k) for k in ('name', 'type', 'description', 'language', 'masterLanguage',
+                              'masterSystem', 'version')}
+    spot['package'] = None
+    m, tanimlar, arac, ek = [], [], None, []
+    for k in root.attrib:
+        if not k.startswith('{%s}' % _AKT_ADTCORE_NS):
+            m.append('objectData@%s' % _enhs_yerel(k))
+    for c in root:
+        if c.tag == '{%s}link' % _ATOM_NS:
+            ek.append('objectData/atom:link')
+            continue
+        if c.tag == '{%s}packageRef' % _AKT_ADTCORE_NS:
+            spot['package'] = c.get('{%s}name' % _AKT_ADTCORE_NS)
+        elif c.tag == '{%s}contentCommon' % _ENHS_NS:
+            arac = c.get('{%s}toolType' % _ENHS_NS)
+            if (c.get('{%s}internal' % _ENHS_NS) or 'false') != 'false':
+                m.append('contentCommon@internal=%s' % c.get('{%s}internal' % _ENHS_NS))
+            for k in c.attrib:
+                if _enhs_yerel(k) in ('internal', 'internalFlagEditable'):
+                    ek.append('contentCommon@%s' % _enhs_yerel(k))
+            for u in c:
+                if u.tag != '{%s}usages' % _ENHS_NS:
+                    m.append('contentCommon/%s' % _enhs_yerel(u.tag))
+                else:
+                    ek.append('contentCommon/usages')   # sunucu doldurur; GONDERILMEZ
+        elif c.tag == '{%s}contentSpecific' % _ENHS_NS:
+            for bt in c:
+                if bt.tag != '{%s}badiTechnology' % _ENHS_NS:
+                    m.append('contentSpecific/%s' % _enhs_yerel(bt.tag))
+                    continue
+                for bl in bt:
+                    if bl.tag != '{%s}badiDefinitions' % _ENHS_NS:
+                        m.append('badiTechnology/%s' % _enhs_yerel(bl.tag))
+                        continue
+                    for bd in bl:
+                        if bd.tag == '{%s}badiDefinition' % _ENHS_NS:
+                            tanimlar.append(_enhs_tanim_ayristir(bd, m, ek))
+                        else:
+                            m.append('badiDefinitions/%s' % _enhs_yerel(bd.tag))
+        else:
+            m.append('objectData/%s' % _enhs_yerel(c.tag))
+    if arac != 'BADI_DEF':
+        m.append('contentCommon@toolType=%s' % arac)
+    return {'spot': spot, 'tanimlar': tanimlar, 'modellenmeyen': m, 'sunucu_ek': ek}
+
+
+def enhs_tanim_uygula(model, degisiklik):
+    """Modele TEK tanim degisikligi uygula -> (yeni_model, yapilanlar). Girdi modeli DEGISMEZ.
+
+    degisiklik: {'badi': AD (zorunlu), 'kaldir': bool, 'shorttext', 'interface', 'singleUse'
+    ('true'/'false'), 'fallback': SINIF, 'fallback_kaldir': bool, 'ornek_ekle': [..],
+    'ornek_kaldir': [..], 'filtre_ekle': [{'name','type','shorttext'}], 'filtre_kontrol':
+    {FILTRE: DTEL}, 'filtre_kaldir': [..]}. Verilmeyen her alan GET'teki degeriyle KALIR.
+    Gecersiz istek (olmayani kaldirmak, arabirimsiz yeni tanim, olculmemis filtre tipi) ValueError.
+    """
+    import copy
+    yeni = copy.deepcopy(model)
+    d = degisiklik or {}
+    ad = (d.get('badi') or '').strip().upper()
+    if not ad:
+        raise ValueError('badi adi zorunlu')
+    yap = []
+    tanimlar = yeni['tanimlar']
+    sira = [i for i, t in enumerate(tanimlar) if (t.get('name') or '').upper() == ad]
+    if d.get('kaldir'):
+        if not sira:
+            raise ValueError('kaldirilacak BAdI tanimi yok: %s' % ad)
+        del tanimlar[sira[0]]
+        return yeni, ['tanim kaldirildi: %s' % ad]
+    if sira:
+        t = tanimlar[sira[0]]
+    else:
+        if not d.get('interface') or not d.get('shorttext'):
+            raise ValueError('yeni BAdI tanimi %s icin --interface ve --shorttext zorunlu' % ad)
+        t = dict(ENHS_TANIM_VARSAYILAN, name=ad, shorttext=None, interface=None,
+                 defaultClass=None, sampleClasses=[], filters=[])
+        tanimlar.append(t)
+        yap.append('yeni tanim: %s' % ad)
+    if d.get('shorttext') is not None:
+        t['shorttext'] = d['shorttext']
+        yap.append('shorttext')
+    if d.get('interface'):
+        t['interface'] = d['interface'].upper()
+        yap.append('interface')
+    if d.get('singleUse') is not None:
+        t['singleUse'] = d['singleUse']
+        yap.append('singleUse')
+    if d.get('fallback') and d.get('fallback_kaldir'):
+        raise ValueError('fallback hem verildi hem kaldiriliyor')
+    if d.get('fallback'):
+        t['defaultClass'], t['useFallbackClass'] = d['fallback'].upper(), 'true'
+        yap.append('fallback')
+    if d.get('fallback_kaldir'):
+        if not t.get('defaultClass'):
+            raise ValueError('kaldirilacak fallback sinifi yok (%s)' % ad)
+        t['defaultClass'], t['useFallbackClass'] = None, 'false'
+        yap.append('fallback kaldirildi')
+    for c in d.get('ornek_kaldir') or []:
+        c = c.upper()
+        if c not in t['sampleClasses']:
+            raise ValueError('kaldirilacak ornek sinif yok: %s' % c)
+        t['sampleClasses'].remove(c)
+        yap.append('ornek kaldirildi: %s' % c)
+    for c in d.get('ornek_ekle') or []:
+        if c.upper() not in t['sampleClasses']:
+            t['sampleClasses'].append(c.upper())
+            yap.append('ornek: %s' % c.upper())
+    for fa in d.get('filtre_kaldir') or []:
+        fa = fa.upper()
+        konum = [i for i, f in enumerate(t['filters']) if (f.get('name') or '').upper() == fa]
+        if not konum:
+            raise ValueError('kaldirilacak filtre yok: %s' % fa)
+        del t['filters'][konum[0]]
+        yap.append('filtre kaldirildi: %s' % fa)
+    for f in d.get('filtre_ekle') or []:
+        fa, tip = (f.get('name') or '').strip().upper(), (f.get('type') or '').upper()
+        if not fa:
+            raise ValueError('filtre adi bos (SAP e037)')
+        mevcut =[x for x in t['filters'] if (x.get('name') or '').upper() == fa]
+        if mevcut:
+            if tip and tip != (mevcut[0].get('type') or '').upper():
+                raise ValueError('filtre %s tipi degistirilemez (%s -> %s; OLCULMEDI)'
+                                 % (fa, mevcut[0].get('type'), tip))
+            mevcut[0]['shorttext'] = f.get('shorttext')
+            yap.append('filtre guncellendi: %s' % fa)
+            continue
+        if tip not in ENHS_FILTRE_TIPLERI:
+            raise ValueError('filtre tipi %r OLCULMEDI (olculen: %s)' % (tip, ', '.join(ENHS_FILTRE_TIPLERI)))
+        t['filters'].append({'name': fa, 'type': tip, 'shorttext': f.get('shorttext'), 'check': None})
+        yap.append('filtre: %s' % fa)
+    for fa, dtel in (d.get('filtre_kontrol') or {}).items():
+        konum = [x for x in t['filters'] if (x.get('name') or '').upper() == fa.upper()]
+        if not konum:
+            raise ValueError('kontrolu verilen filtre yok: %s' % fa)
+        konum[0]['check'] = dtel.upper() if dtel else None
+        yap.append('filtre kontrolu: %s' % fa.upper())
+    return yeni, yap
+
+
+def enhs_kiyasla(beklenen, okunan):
+    """Gonderilen model <-> readback modeli: modellenen alanlarda farklar listesi ([] = esit)."""
+    fark = []
+    for k in ('name', 'description', 'package'):
+        b, o = beklenen['spot'].get(k), okunan['spot'].get(k)
+        if k == 'name':
+            b, o = (b or '').upper(), (o or '').upper()
+        if b != o:
+            fark.append('spot.%s: gonderilen=%r okunan=%r' % (k, b, o))
+    bt = {(t.get('name') or '').upper(): t for t in beklenen['tanimlar']}
+    ot = {(t.get('name') or '').upper(): t for t in okunan['tanimlar']}
+    for ad in sorted(set(bt) | set(ot)):
+        if ad not in ot:
+            fark.append('tanim %s okunanda YOK' % ad)
+            continue
+        if ad not in bt:
+            fark.append('tanim %s gonderilmedi ama okunanda VAR' % ad)
+            continue
+        for k in _ENHS_TANIM_OZN + ('interface', 'defaultClass', 'sampleClasses', 'filters'):
+            if bt[ad].get(k) != ot[ad].get(k):
+                fark.append('tanim[%s].%s: gonderilen=%r okunan=%r' % (ad, k, bt[ad].get(k), ot[ad].get(k)))
+    return fark
 
 
 # =============================================================================
@@ -8200,7 +9306,7 @@ def _resolve_source_url(object_name, object_type):
         pass
     seg = _DRIFT_FALLBACK_PATHS.get((object_type or '').lower())
     if seg:
-        return f'/sap/bc/adt/{seg}/{object_name.lower()}/source/main'
+        return f'/sap/bc/adt/{seg}/{_adt_seg(object_name)}/source/main'
     return None
 
 

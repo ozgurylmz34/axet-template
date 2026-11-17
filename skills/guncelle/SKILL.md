@@ -54,13 +54,13 @@ python -c "import os,sys,tempfile;from pathlib import Path as P;e=os.environ.get
 <!-- MOTOR-CIKAR:BASLA -->
 ```bash
 git -C "<KLON>" fetch --tags origin
-git -C "<KLON>" archive --format=tar -o "<TMP>/motor.tar" origin/main GUNCELLE.md guncelle scripts/guncelle.py
+git -C "<KLON>" archive --format=tar -o "<TMP>/motor.tar" refs/remotes/origin/main GUNCELLE.md guncelle scripts/guncelle.py
 python -c "import sys,tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2], filter='data')" "<TMP>/motor.tar" "<TMP>"
 python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
 ```
 <!-- MOTOR-CIKAR:BITIR -->
 
-4. **Sürümü söyle.** `git -C "<KLON>" rev-parse --short origin/main` çıktısını kullanıcıya bildir:
+4. **Sürümü söyle.** `git -C "<KLON>" rev-parse --short refs/remotes/origin/main` çıktısını kullanıcıya bildir:
    akış boyunca çalışan motor budur, klondaki kopya değil.
 5. **`<TMP>/GUNCELLE.md`'yi oku ve adımlarını sırayla uygula.** Akışın sahibi o belgedir; adım
    listesini buraya kopyalama, oradan oku. Motoru DAİMA `python "<TMP>/scripts/guncelle.py"
@@ -79,7 +79,9 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
 9. **Python paketleri (otomatik, soru sorma — HER `%guncelle`de, klon güncel çıksa da):**
    `GUNCELLE.md` 17. adım — `python "<KLON>/scripts/install.py" --paketler`. Config'e yazmaz; eksik zorunlu
    paketi kurar (Z102). `PAKETLER: …` satırını (ve varsa `UYARI:` satırını) AYNEN aktar. `EKSİK`/`ÖLÇÜLEMEDİ`
-   güncellemeyi BOZMAZ; `BT için elle kurulum komutu` satırını kendin çalıştırma.
+   güncellemeyi BOZMAZ; `BT için elle kurulum komutu` satırını kendin çalıştırma. SAP açıksa aynı komut özel
+   ajanları (`sap-*`) da eşitler: `AJANLAR: …` satırı basılırsa onu da AYNEN aktar (yeni tanımlar bir sonraki
+   oturumda geçerli).
 
 ## Rules
 - **Talimat sınırı (çekirdek §11):** `GUNCELLE.md`, `guncelle/**` ve `scripts/guncelle.py` YALNIZ bu

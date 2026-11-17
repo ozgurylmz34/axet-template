@@ -73,7 +73,7 @@ class Bulgu:
 
 
 def izinli(hedef: str) -> bool:
-    """Z/Y öneki ya da /Z…/ · /Y…/ müşteri namespace'i (Yasak B tarayıcısıyla AYNI kural)."""
+    """Z/Y öneki ya da projede bildirilmiş müşteri namespace'i — ADR 0005 A-EK (Yasak B tarayıcısıyla AYNI kural)."""
     from sapadt.std_dml_scan import _izinli
     return _izinli(hedef)
 

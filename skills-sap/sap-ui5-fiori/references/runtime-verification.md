@@ -95,6 +95,11 @@ sap.ui.core.Element.registry.get("<tam-id>").firePress();                     //
 sap.ui.core.Element.registry.get("<view-id>").getController().onClearFilters(); // doğrudan çağrı
 ```
 Buton sağlığı: `getEnabled()`, `getVisible()`, `mEventRegistry.press`, `getDomRef().offsetParent`.
+
+⛔ **Ters yönlü istisna — `MessageBox`:** `MessageBox.confirm/error` butonunda `firePress()` `onClose`'u **tetiklemedi**
+(diyalog açık kaldı, akış ilerlemedi); gerçek DOM tıklaması (`page.click('#' + id)`) ilerletti (ekip ölçümü). Mekanizma
+DOĞRULANMADI (yalnız belirti ölçüldü). Kural tek yönlü değil: normal butonda `firePress()` `click()`'ten sağlam,
+MessageBox butonunda tersi — ikisini de dene, hangisinin ilerlettiğini ölç; "tetiklemedi"yi ürün kusuru sanma.
 `Element.registry` API'si yeni sürümlerde değişebilir — proje UI5 sürümünde DOĞRULANMADI.
 
 **Klavye kısayolu (Ctrl+A) testi — tık değil odak:** `sap.ui.table` (`selectionMode="MultiToggle"`) hücresine fare tıkı +
@@ -109,6 +114,19 @@ Tık yolunun neden olay üretmediği ölçülmedi.
   yanıltır.
 - Seçim: `getSelectedIndices().length` (grid) / `getSelectedItems().length` (m.Table).
 - Genişlik/hiza/scroll: `getBoundingClientRect()`, `scrollLeft` — piksel olarak ölç.
+- **Kaydın son kontrolü sunucu durumunu ölçer**, ekrandaki modeli değil: başarısız kayıt modeli sıfırlamaz, kullanıcının
+  yazdığı değer ekranda kalır ⇒ kirli modeli okuyan kontrol sahte yeşildir. Yeniden okuma isteği ya da mock'un kabul/ret
+  sayacı. Dosya üreten akışta (xlsx/pdf) içerik hücre/düzey bazında okunur. Testin koruduğu **mutasyonla** kanıtlanır:
+  ilgili kod bozulur, test kırmızıya düşmeli (ekip ölçümü: içerik denetimi eklenince 13 mutasyonun 13'ü yakalandı).
+- **DOM'da var olmak görünür olmak değildir:** Playwright tıklamadan önce kaydırır ve kırpılmış kabın içindeki öğeyi de
+  tıklar. Görünürlük iddiasında iki ölçüm: öğenin `getBoundingClientRect()` kutusu kabın kutusunun içinde mi ·
+  `document.elementFromPoint(merkezX, merkezY)` öğenin kendisini (ya da torununu) mu döndürüyor.
+- **Olay parametre adı tahmin edilmez:** `oEvent.getParameter("<ad>")`'daki ad kontrolün `-dbg.js` kaynağındaki
+  `fire<Olay>({…})` çağrısından okunur; olmayan ad hata vermez, `undefined` döner (ekip vakası: `SegmentedButton`
+  `selectionChange` 1.120'de yalnız `item` taşır, `key` okuyan filtre hiç uygulanmadı).
+- **Üretim kodunu kopyalayan test düzeneği aynı hatayı taşır:** olay yolu gerçek tıklamayla test edilir (controller'ı
+  doğrudan çağırmak hatayı gizler); kontrol grubu olarak eski kod da koşulur — eski kod kırmızı vermiyorsa test hatayı
+  yakalamıyor demektir.
 - "Backend doğru, UI boş/yanlış": model verisi ile OData sonucunu **aynı evaluate'te** yan yana oku (ör. iki koleksiyonun
   birleşim anahtarları) → sıfır dolgusu gibi sessiz uyumsuzluk anında görünür; aday düzeltme canlı denenir
   (`freestyle-odata-v2.md` §5.6).
@@ -269,6 +287,9 @@ Yalnız gerçek `Error` / kırmızı stack incelenir. Smoke spec'indeki IGNORE l
 ---
 
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
+- 2026-11-17 (uyum turu 8, ekip dersleri): §4.2 MessageBox ters istisnası; §4.3 "son kontrol sunucu durumu + mutasyon",
+  "DOM varlığı ≠ görünürlük", "olay parametresi kaynaktan", "kopya test düzeneği" maddeleri eklendi; kaynak vakalardaki
+  uygulama/paket adları alınmadı.
 - Kaynakta "runtime gate aracı yalnız playwright-cli" kararı vardı; aXet'te gate Node Playwright tabanlı
   `scripts/ui-smoke/` (proje içi kurulum) + elle konsol kontrolüdür. playwright-cli etkileşimli hata ayıklama için
   §4.6'daki ölçülmüş reçeteyle kullanılır (proje içi kurulum; genel skill'i alınmadı).

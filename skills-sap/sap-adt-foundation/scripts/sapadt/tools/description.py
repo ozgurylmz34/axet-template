@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""adt_set_description — mevcut Z/Y objenin kısa açıklamasını (adtcore:description) değiştirir (aXet 2026-09-13). YAZMA.
+"""adt_set_description — mevcut müşteri objesinin (Z/Y ya da projede bildirilmiş /<NS>/) kısa açıklamasını (adtcore:description) değiştirir (aXet 2026-09-13). YAZMA.
 
 REÇETE (kaynak çekirdek, salt-okur):
   · `scripts/sap_set_object_description.py:48-57` tip → ana envelope URL segmenti · `:68-70` açıklama regex'i ·
@@ -146,13 +146,13 @@ def _listede_mi(adt, name: str, url: str):
 
 @profil_tool(available_on=("s4_private",))
 def adt_set_description(name: str, object_type: str, description: str, transport: str) -> dict:
-    """Change the short description (adtcore:description) of an existing Z/Y object: LOCK → PUT → UNLOCK → activation state → readback.
+    """Change the short description (adtcore:description) of an existing customer object (Z/Y or a project-declared /<NS>/): LOCK → PUT → UNLOCK → activation state → readback.
 
     Desteklenen tipler: class, bdef, srvd, ddls (cds), ddlx, dcl — canlı ölçüm yalnız ddls. `srvb`, `prog`, `dtel` ve diğerleri →
     `unsupported_type` (gerekçe mesajda). Obje kaynağına dokunmaz. Açıklama `master_language`'de, kullanıcıdan/spesifikasyondan gelir.
 
     Args:
-        name: Obje adı (Z*/Y*).
+        name: Obje adı (Z*/Y* ya da projede bildirilmiş /<NS>/…).
         object_type: Yukarıdaki tiplerden biri.
         description: Yeni açıklama (tek satır, boş olamaz; sınıfta ≤ 60; envelope `descriptionTextLimit` varsa ona göre).
         transport: Değiştirilebilir transport (zorunlu; kilit corrNr ile alınır).

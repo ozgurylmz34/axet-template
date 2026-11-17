@@ -6,6 +6,337 @@ Her başlık bir yayın etiketidir (`git tag`). Kalem numaraları yayın commit'
 
 ★ = kritik kalem (`%guncelle` planında varsayılan olarak SEÇİLİ gelir).
 
+## v0.5.22 — 2026-11-17
+
+### 0.5.22-01 · SAP rolleri aXet özel ajanı olarak kurulur: sap-arastirma · sap-backend · sap-ui5 · sap-inceleme · sap-gelistirme (yetenek)
+
+- **neden:** aXet.code 1.5.1 kullanıcı tanımlı ajanları destekliyor. SAP paketi açıkken kurulum (ve her %guncelle) şablonun beş ajanını kullanıcı ajan dizinine yazar. Ölçüldü: bu ajanlar yerleşik görev ajanından farklı olarak çekirdek kuralları, SAP kurallarını, ekip hafızasını ve proje AGENTS.md'sini görür — brifinge kuralları kopyalamak gerekmez, yalnız işin kendisi yazılır. sap-arastirma ve sap-inceleme'de dosya düzenleme araçları kapalı (bash açık; salt okuma istemle sağlanır). sap-gelistirme isteğe bağlı bir ana ajandır (`axet-code --agent sap-gelistirme`): her mesajda önce kapsam sınıflaması yapar (yeni talepte 'INTAKE: S0|S1|S2', devam mesajında 'INTAKE: devam'), sonra uygulamaya geçer; varsayılan ajan değiştirilmez. Kullanıcının aynı adlı kendi ajanı varsa ona dokunulmaz; SAP paketi kapatılınca ya da kaldırmada yalnız şablonun kurduğu ajanlar silinir. doctor kurulu ajanların güncel olup olmadığını gösterir; şablondan çıkarılmış (emekli) bir ajan kuruluysa uyarır. Güncelleme yarım kalıp `agents/` klasörü gelmezse kurulu ajanlara dokunulmaz.
+- **dosyalar:** `agents/README.md`, `agents/sap-arastirma.md`, `agents/sap-backend.md`, `agents/sap-ui5.md`, `agents/sap-inceleme.md`, `agents/sap-gelistirme.md`, `scripts/ajan_kurulum.py`, `scripts/install.py`, `scripts/doctor.py`, `tests/test_ajan_kurulum.py`, `tests/_helpers.py`, `guncelle/harita.json`, `guncelle/kartlar/sinif-kurulum-bakim-scripti.md`, `GUNCELLE.md`, `skills/guncelle/SKILL.md`, `README.md`, `AGENTS.md`, `docs/onboarding.md`, `tests/test_kur.py`
+- **test:** `python tests/run_tests.py -k test_ajan_kurulum`, `python tests/run_tests.py -k test_install`, `python tests/run_tests.py -k guncelle_harita`
+- **gerektirir:** —
+
+### 0.5.22-02 · Alt ajan kuralları aXet.code 1.5.1 ölçümüne göre güncellendi (düzeltme)
+
+- **neden:** Çekirdek ve SAP rol brifleri 'aXet'te özel ajan çalışmaz' diyordu; 1.5.1'de çalışıyor. Kurallar artık iki durumu ayırır: yerleşik görev ajanı çekirdeği ve proje kurallarını görmez (brifing her şeyi metin olarak taşır), özel sap-* ajanları görür ama konuşmayı ve paket .rules.md'sini görmez. Bağımsız inceleme için salt-okur sap-inceleme ajanı önerilir. Davranış ölçümleri belgesine 1.5.1 satırları (özel ajan, fazlar, alt ajan bağlamı) eklendi. Ölçüldü (1.5.1, run kipi): yerleşik görev ajanının çalışma dizini dışındaki klasöre `ls`'i görünmeyen izin sorusunda asılı kalıyor, aynı yerdeki dosyaya `view` geçiyor — kural artık alt ajana dış yol verilecekse klasör değil dosyanın tam yolunun verilmesini söyler.
+- **dosyalar:** `core/00-temel.md`, `skills-sap/sap-code-review/references/reviewer-brief.md`, `skills-sap/sap-dev/references/role-briefs.md`, `skills-sap/sap-dev/SKILL.md`
+- **test:** `python tests/run_tests.py -k sap_skill_bilgi`, `python scripts/doctor.py`
+- **gerektirir:** —
+
+### 0.5.22-03 · Güncelleme aracı yayın kataloğunu ve kartları daima uzak daldan okur (düzeltme)
+
+- **neden:** Güncelleme aracı yayın kataloğunu, güncelleme kartlarını ve CI kaydını `origin/main` kısa adıyla okuyordu. Klonda aynı adlı bir etiket varsa git kısa adı etikete çözer ve kalemler yanlış kaynaktan okunurdu (oturum özetindeki aynı kusur da düzeltildi). Artık git'e daima tam uzak dal adı verilir — %guncelle talimatının motoru çıkardığı ve sürümü sorduğu komutlar dahil (gölge etiket motorun kendisini seçebiliyordu); ekrandaki mesajlar değişmedi. Fonksiyon grubu belgesindeki ad kuralı da müşteri ad alanına göre güncellendi.
+- **dosyalar:** `scripts/guncelle.py`, `scripts/guncelle_proje.py`, `tests/test_guncelle_uzak_ref.py`, `skills-sap/sap-classic-abap/references/fugr-fm.md`, `skills/guncelle/SKILL.md`, `GUNCELLE.md`
+- **test:** `python tests/run_tests.py -k test_guncelle_uzak_ref`, `python tests/run_tests.py -k test_guncelle_proje`
+- **gerektirir:** —
+
+### ★ 0.5.22-04 · Müşteri namespace'i (/<NS>/) desteği: ad kapısı ve SAP ad doğrulaması (yetenek)
+
+- **neden:** Kendi SAP namespace'ini kullanan projeler artık sap-project.json'daki customer_namespaces listesine /<NS>/ yazarak o namespace'teki objeleri yaratıp değiştirebilir. Listede olmayan namespace (ör. /ABC/), SAP'nin kendi namespace'leri ve standart objeler eskisi gibi reddedilir; liste bozuk, çift yazılmış ya da proje kökünde bağlantı dosyası yoksa yalnız Z/Y kabul edilir. Transport yaratma/release hâlâ yok. Red mesajı namespace'in neden kabul edilmediğini söyler.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ad_politikasi.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/guardrails.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-adt-foundation/tests/test_ad_politikasi.py`
+- **test:** `python tests/run_tests.py -k ad_politikasi`, `python tests/run_tests.py -k guard`, `python tests/run_tests.py -k namespace`
+- **gerektirir:** —
+
+### ★ 0.5.22-05 · Davranış değişikliği: bildirilmemiş /Z…/ ve /Y…/ tablolar artık standart sayılır (düzeltme)
+
+- **neden:** Kaynakta standart tabloya doğrudan INSERT/UPDATE/DELETE/MODIFY ve standart objeyi genişletme (append/extend) denetimleri eskiden her /Z…/ ve /Y…/ namespace'ini müşteri sayıyordu. Artık yalnız Z/Y adlı ya da customer_namespaces ile bildirilmiş namespace'teki hedef serbest. Projeniz kendi /Z…/ namespace'ine yazıyorsa ve bu güncellemeden sonra yazma reddediliyorsa çözüm: o namespace'i sap-project.json customer_namespaces listesine ekleyin.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/std_dml_scan.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/std_ext_scan.py`, `skills-sap/sap-adt-foundation/IMPLEMENTATION.md`, `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-adt-foundation/tests/test_std_dml_scan.py`, `skills-sap/sap-adt-foundation/tests/test_std_ext_gate.py`
+- **test:** `python tests/run_tests.py -k StdDml`, `python tests/run_tests.py -k std_ext`
+- **gerektirir:** —
+
+### 0.5.22-06 · İnceleme kapıları namespace'li ve çözülemeyen adı 'temiz' saymaz (yetenek)
+
+- **neden:** Yazma öncesi inceleme denetimleri obje adını tek bir ortak ad kuralıyla okur. Namespace'li adlar (/NSPC/…) artık denetlenir; adı çözülemeyen (ör. /AB/X) ya da namespace'i bildirilmemiş kaynakta denetim 'kapsam dışı/temiz' yerine 'ölçülemedi' der. RAP consumption katmanı kuralı Y ve bildirilmiş namespace adlarını da görür, abapGit .bdef.asbdef dosyalarını BDEF sayar. İnceleme raporu DCL (erişim kontrolü) dosyalarının hiç denetlenmediğini açıkça yazar. Yorum satırı (`//eski_alan : tip;`, `/* … */`) artık alan sanılmaz: tablo/yapı kapıları alanları yorumlar ayıklanmış metinde tarar — önceki taslakta boşluksuz yorumlu bir alan satırı kapıyı 'ölçülemedi'ye düşürüp Z/Y projede de yazmayı engelliyordu. Standart tablo alan denetimi `_Item` gibi ilişki adlarını ve rakamla başlayan parçaları alan saymaz. Tablo ve yapı ADI da yorum ayıklanmış metinden okunur: yorumdaki eski `define table` adı yanlış objenin kıyaslanmasına (obje yoksa sahte 'temiz') yol açmaz.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_rap_readonly_consumption.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_reuse_gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_sap_active_version.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_sap_struct_consistency.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_struct_field_dtel_active.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_abaplint.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_audit_fields_autofill.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_bdef_backtick.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_released_objects.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_standard_table_fields.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_dtel_creation_labels.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_sap_master_language.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_rap_managed_etag.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/run_review.py`, `skills-sap/sap-adt-foundation/tests/test_validator_ad_grameri.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_table_field_drop.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddl_yorum.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_cds_currency_reference.py`, `skills-sap/sap-adt-foundation/tests/test_bug_gate_tur8_duzeltme.py`
+- **test:** `python tests/run_tests.py -k validator_ad`, `python tests/run_tests.py -k reviewer`, `python tests/run_tests.py -k gate_status`, `python tests/run_tests.py -k fixtures`
+- **gerektirir:** —
+
+### ★ 0.5.22-07 · Tablo değişikliğinde alan tipi daralması artık yakalanır (düzeltme)
+
+- **neden:** Var olan tabloda alan tipini küçültmek (ör. abap.char(100) → abap.char(10), abap.int4 → abap.int2) eskiden fark edilmiyordu ve sessiz veri kaybına yol açabiliyordu. Artık alan tipleri SAP'deki gerçek uzunluk/ondalıkla karşılaştırılır: daralma, tür değişikliği ve tipi okunamayan alan yazmayı durdurur; genişleme uyarı verir; yalnız veri öğesi adı değişip fiziksel tip aynı kalıyorsa bilgi notu çıkar ve yazma engellenmez.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_table_field_drop.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/run_review.py`, `skills-sap/sap-adt-foundation/tests/test_validator_ad_grameri.py`
+- **test:** `python tests/run_tests.py -k validator_ad`, `python tests/run_tests.py -k reviewer`
+- **gerektirir:** —
+
+### 0.5.22-08 · Para birimi referansında yanlış engelleme giderildi (düzeltme)
+
+- **neden:** Koşul kaydı para birimi/birim veri öğeleri (KONWA, KONWS, KMEIN, KONMS) tanınmadığı için bu tipte para birimi alanına başvuran tutar alanı yanlışlıkla 'referans tabloda yok' diye engelleniyordu. Ayrıca sözlükte tanınmayan para birimi tipi artık engel değil uyarı, başka tabloya nitelikli başvuru geçerli, takma adsız CDS elemanları da denetlenir.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/ddic_semantics.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/validators/check_cds_currency_reference.py`, `skills-sap/sap-adt-foundation/tests/test_validator_ad_grameri.py`
+- **test:** `python tests/run_tests.py -k validator_ad`
+- **gerektirir:** —
+
+### 0.5.22-09 · Fonksiyon grubu include'una yazma ve aktivasyon (group argümanı) (yetenek)
+
+- **neden:** Fonksiyon grubunun include'ları (LZ…F01 gibi) artık adt_get, adt_push_source, adt_activate ve adt_lock_check ile, object_type="fugr_include" ve group argümanı verilerek okunup yazılabilir. Yazmadan, aktive etmeden ve kilit sorgulamadan önce include'un gerçekten o gruba ait olduğu SAP'den kanıtlanır; kanıt tutmazsa hiçbir şey yazılmaz. Grup müşteri adı olmalı ve include grubun önekiyle başlamalı; standart gruba yazma kapıda reddedilir. Yazımda transport zorunludur.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/object_types.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/pull_state.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/_reviewer.py`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/tests/test_fugr_include_yazim.py`, `skills-sap/sap-adt-foundation/tests/test_cli_gate.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k fugr_include`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k cli_gate`
+- **gerektirir:** —
+
+### 0.5.22-10 · BAdI enhancement spot okuma ve yazma araçları (yetenek)
+
+- **neden:** İki yeni araç: adt_badi_spot_read bir BAdI enhancement spot'unu ve BAdI tanımlarını okur; adt_badi_spot_write müşteri spot'u yaratır, BAdI tanımı ekler, günceller ya da açıkça istenen tanımı kaldırır. Spot her yazımda SAP'den taze okunur, verilmeyen alanlar ve listede olmayan tanımlar korunur; okumadan sonra spot başkası tarafından değiştirildiyse yazılmaz. Standart spot'a ve standart BAdI adına yazma reddedilir; transport zorunludur. Yalnız s4_private profilinde açıktır.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/tools/badi.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/object_types.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/gate.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/_app.py`, `skills-sap/sap-adt-foundation/references/enhancement-spot-badi.md`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/SKILL.md`, `skills-sap/sap-dev/references/role-briefs.md`, `skills-sap/sap-adt-foundation/tests/test_badi_spot.py`, `skills-sap/sap-adt-foundation/tests/fixtures/enhs_badi_spot/readback_aktif.xml`, `skills-sap/sap-adt-foundation/tests/fixtures/enhs_badi_spot/put_kabul.xml`, `skills-sap/sap-adt-foundation/tests/test_cli_gate.py`, `docs/sap-api-policy.md`, `skills-sap/README.md`, `skills-sap/sap-adt-foundation/references/profiles.md`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k badi_spot`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k cli_gate`
+- **gerektirir:** —
+
+### 0.5.22-11 · CSRF reddi dilden bağımsız tanınır; CDS custom entity kaynak denetiminden geçer (düzeltme)
+
+- **neden:** SAP'nin CSRF reddi yalnız İngilizce hata metniyle tanınıyordu; başka dilde dönen yanıtlarda istek taze token'la yeniden denenmiyordu. Artık 403 yanıtı CSRF başlığı ya da metni taşıyorsa her yolda aynı şekilde tanınır. Ayrıca define custom entity ile başlayan CDS kaynağı artık yanlışlıkla reddedilmiyor.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/utils/cds_metin.py`, `skills-sap/sap-adt-foundation/tests/test_csrf_custom_entity.py`, `skills-sap/sap-adt-foundation/tests/test_ddic_textpool.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k csrf_custom`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k ddic_textpool`
+- **gerektirir:** —
+
+### 0.5.22-12 · Kaynak yazma hatasında gerçek SAP yanıtı gösterilir (düzeltme)
+
+- **neden:** Kaynak yazımı reddedildiğinde (ör. kaynak taraması reddi) araç sonraki transport biçimlerini de deneyip yalnız sonuncunun yanıtını gösteriyordu; bu yanıt çoğu zaman kendi kilidine çarpan bir 409 olduğundan teşhis yanlış yöne gidiyordu. Artık içerik reddinde ilk yanıtta durulur ve yanıtta denenen her biçimin sonucu listelenir (bağlantı adresi ve parola temizlenmiş olarak).
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/tests/test_kucuk_duzeltmeler_tur8.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k kucuk_duzeltmeler_tur8`
+- **gerektirir:** —
+
+### 0.5.22-13 · Hayalet transport listesi okunamazsa 'yok' denmez (düzeltme)
+
+- **neden:** Başarısız bir yazımdan sonra boş kalmış transport'ları bulan sorgu okunamadığında 'hayalet transport yok' ile aynı görünüyordu. Artık okunamazsa bunu açıkça söyler ve SE10'da elle bakılmasını önerir.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/tests/test_kucuk_duzeltmeler_tur8.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k kucuk_duzeltmeler_tur8`
+- **gerektirir:** —
+
+### 0.5.22-14 · SAP oturumu iş bitince kapatılır; SQL süresi milisaniye olarak verilir (yetenek)
+
+- **neden:** Araç SAP'de açtığı oturumu süreç biterken kapatmaya çalışır; böylece oturum SAP tarafında zaman aşımına kadar boşta kalmaz (kapatılamazsa iş etkilenmez). adt_sql_query yanıtına SAP'nin sorgu süresi execution_time_ms alanıyla, birimi milisaniye olarak eklendi.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py`, `skills-sap/sap-adt-foundation/tests/test_kucuk_duzeltmeler_tur8.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k kucuk_duzeltmeler_tur8`
+- **gerektirir:** —
+
+### 0.5.22-15 · Namespace'li obje adları SAP adreslerinde doğru kodlanır (düzeltme)
+
+- **neden:** /NS/ ile başlayan obje adları SAP ADT adreslerine kodlanmadan yazılıyordu; bu yüzden namespace'li objelerde istek yanlış adrese gidebiliyordu. Artık bütün adres parçaları tek bir yardımcıyla kodlanır; Z/Y adlarında adres değişmez.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_adt_lib.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/rap_service.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/composite.py`, `skills-sap/sap-adt-foundation/tests/test_kucuk_duzeltmeler_tur8.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k kucuk_duzeltmeler_tur8`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k lib_regressions`
+- **gerektirir:** —
+
+### 0.5.22-16 · Behavior definition (BDEF) için where-used (yetenek)
+
+- **neden:** adt_where_used object_type="bdef" ile artık çalışır; eskiden 'desteklenmeyen tip' hatası veriyordu. Obje önce aynı adresten var mı diye sorulur: yoksa 'tüketicisi yok' değil 'obje yok' döner; sunucu hatası 'yok' sayılmaz. Yanıt BDEF'in kendisini de bir referans olarak içerir ve count onu da sayar. Bu araç aXet'ten canlı SAP'de ölçülmedi.
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/tools/query.py`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/tests/test_tur8_tamamlama.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k tur8_tamamlama`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k verdict_query_tools`
+- **gerektirir:** —
+
+### 0.5.22-17 · Namespace'li obje yerel dosyası proje dışına yazılmaz/silinmez; servis yayınında $metadata yolu verilir (düzeltme)
+
+- **neden:** Kütüphanenin yerel dosya adı türeten üç yeri (indirme, yazma, silme) /NS/ ile başlayan adı olduğu gibi dosya yoluna koyuyordu; Windows'ta bu yol sürücü köküne kaçar ve silme oradaki aynı adlı dosyayı silebilirdi. Artık ad #ns#x biçimine çevrilir; Z/Y adları değişmez. adt_publish_service yanıtına doğrulama için okunacak metadata_path eklendi (Z/Y: /sap/opu/odata/sap/<AD>/$metadata; namespace'li servis /sap/opu/odata/<ns>/<AD>/$metadata — namespace'li yol canlıda ölçülmedi). adt_set_description açıklaması namespace'li müşteri adlarını da anar. Obje SAP'de silindiği hâlde yerel dosya adı çevrilemezse sonuç artık 'başarısız' değil 'silindi' döner (yerel temizlik uyarıyla atlanır).
+- **dosyalar:** `skills-sap/sap-adt-foundation/scripts/sapadt/lib/sap_client.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/atom.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/lib/rap_service.py`, `skills-sap/sap-adt-foundation/scripts/sapadt/tools/description.py`, `skills-sap/sap-adt-foundation/references/tool-catalog.md`, `skills-sap/sap-adt-foundation/tests/test_tur8_tamamlama.py`, `skills-sap/sap-adt-foundation/tests/test_bug_gate_tur8_duzeltme.py`
+- **test:** `python skills-sap/sap-adt-foundation/tests/run_tests.py -k tur8_tamamlama`, `python skills-sap/sap-adt-foundation/tests/run_tests.py -k set_description`
+- **gerektirir:** —
+
+### 0.5.22-18 · Kanonik freestyle UI5 şablonu (1.71 / 1.120 sürüm parçalı) (yetenek)
+
+- **neden:** Yeni liste/rapor uygulaması artık sıfırdan ya da proje içindeki eski bir kopyadan değil, skill'le gelen şablondan kurulur: seçim ekranı → grid liste → değişiklik ekranı, kişiselleştirme util'i (kolon göster/gizle, varyant, Excel, kolon filtresi penceresi) ve backend UI5 sürümüne göre seçilen sürüm parçası. Proje kopyalarının birbirinden yüzlerce satır ayrıştığı ölçülmüştü. Değişiklik ekranı alt kalem yolunda kalem anahtarındaki tırnak da kaçırılır. Şablon dosyaları her platformda LF olarak çıkar (Windows klonunda CRLF'e çevrilmez).
+- **dosyalar:** `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/README.md`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/package.json`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/ui5-deploy.yaml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/ui5.yaml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/Component.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/controller/App.controller.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/controller/BaseController.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/controller/Change.controller.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/controller/Filter.controller.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/controller/List.controller.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/css/style.css`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/i18n/i18n.properties`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/i18n/i18n_tr.properties`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/manifest.json`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/model/models.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/ColumnFilterParser.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/Config.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/KolonFiltrePenceresi.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/Sayi.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/TablePersonalizer.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/Tarih.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/util/TokenValidator.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/view/App.view.xml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/view/Change.view.xml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/view/Filter.view.xml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/app/webapp/view/List.view.xml`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/README.md`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZCL_SD000_UI_VARIANT.ccimp.abap`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZCL_SD000_UI_VARIANT.clas.abap`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZSD000_C_UI_VARIANT.bdef`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZSD000_C_UI_VARIANT.ddls.cds`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZSD000_I_UI_VARIANT.bdef`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZSD000_I_UI_VARIANT.ddls.cds`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/backend-referans/ZSD000_T_UIVAR.tabl.abap`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.120/README.md`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.120/webapp/index.html`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.120/webapp/util/SurumParca.js`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.71/README.md`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.71/webapp/index.html`, `skills-sap/sap-ui5-fiori/templates/ui5-freestyle/surum/1.71/webapp/util/SurumParca.js`, `skills-sap/sap-ui5-fiori/tests/test_ui5_sablon.py`, `skills-sap/sap-ui5-fiori/SKILL.md`, `skills-sap/sap-ui5-fiori/references/list-grid-alv.md`, `.gitattributes`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k ui5_sablon`
+- **gerektirir:** —
+
+### ★ 0.5.22-19 · UI5 sürümü ve tema backend'den ölçülür; sürüme bağlı kontroller tablosu (yetenek)
+
+- **neden:** minUI5Version ve tema örnekten kopyalanınca eski backend'de açılmayan kontrol (modül 404) ya da sessizce temel temaya düşen sahte Horizon çıkıyordu. app-skeleton §7.1 ölçüm komutlarını ve @since tablosunu verir; manifest i18n her iki hatta çalışan dizgi biçimine çevrildi (1.71.85 nesne biçimini ve supportedLocales/fallbackLocale'i okumaz).
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/app-skeleton.md`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`, `skills-sap/sap-ui5-fiori/references/fiori-elements-ux.md`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k ui5_sablon`
+- **gerektirir:** —
+
+### 0.5.22-20 · Grid kolon filtresi: kutuda düz arama, koşul Filtre… penceresinden (kural)
+
+- **neden:** Kolon başlığı kutusuna koşul sözdizimi yazmak kullanıcının bilmesi gereken gizli bir dildi; kutu artık düz arama yapar, koşul yazımı uyarıyla reddedilir ve önceki filtre korunur, koşullar tip duyarlı tanımlı listeden pencerede seçilir. Satır modu ve boş durum sürüme bağlandı; AnalyticalTable tuzakları eklendi.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/list-grid-alv.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k ui5_sablon`
+- **gerektirir:** —
+
+### 0.5.22-21 · FE-53..FE-57 inceleme maddeleri (yetenek)
+
+- **neden:** Sürüm/tema/@since seçimi, sunucu sayfalaması (ölçülen 100 satır, d.__next), instance action'da eTag (428), mükerrer anahtarda 400 ve custom entity'de alanlar arası or (500) için inceleme satırları; FE-32 ve FE-46, UI-BOOT-01, UI-PERSO-01 güncellendi.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/checklists.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`
+- **test:** `python maintenance/sync_check.py --kimlik-denetle`
+- **gerektirir:** —
+
+### ★ 0.5.22-22 · BSP adı müşteri namespace'ini tanır (deploy_ui prepare + ICF yolu) (yetenek)
+
+- **neden:** prepare BSP adını yalnız Z ile sınırlıyordu; artık Z/Y ve sap-project.json'da bildirilmiş /<NS>/ kabul edilir, karar SAP yazma kapısıyla aynı müşteri ad politikasından gelir (yüklenemezse reddeder). Namespace'li BSP'nin canlı ICF yolu doğru kurulur, deploy görevinde yinelenen anahtar ihlal sayılır. Bildirilmemiş namespace reddedilir.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/scripts/deploy_ui.py`, `skills-sap/sap-ui5-fiori/scripts/_bspnet.py`, `skills-sap/sap-ui5-fiori/tests/test_bsp_adi_namespace.py`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-fiori/SKILL.md`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k bsp_adi`, `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k deploy_ui`, `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k static_assets`
+- **gerektirir:** —
+
+### 0.5.22-23 · check_ui_odata_refs namespace'li servisleri çözer (yetenek)
+
+- **neden:** /sap/opu/odata/<ns>/<AD>/ adresli servisler /NS/<AD> adıyla eşlenir; ana servis otomatik seçimi yalnız bildirilmiş müşteri namespace'inde yapılır, aksi hâlde açık --metadata istenir.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/scripts/check_ui_odata_refs.py`, `skills-sap/sap-ui5-fiori/tests/test_odata_refs.py`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k odata_refs`
+- **gerektirir:** —
+
+### 0.5.22-24 · check_i18n_keys dinamik önekli anahtarı tanır (düzeltme)
+
+- **neden:** getText("kfp.op." + sOp) gibi önekli kullanım eksik anahtar sanılıp yanlış ERROR veriyordu (şablonda görüldü); artık o önekle başlayan en az bir anahtarın temel ve dil dosyalarında bulunması aranır. Birleştirme olmadan noktayla biten bir anahtar (`getText("btn.")`) önek sayılmaz, eksikse raporlanır.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/scripts/check_i18n_keys.py`, `skills-sap/sap-ui5-fiori/tests/test_static_checks.py`, `skills-sap/sap-ui5-fiori/references/freestyle-odata-v2.md`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k TestI18n`
+- **gerektirir:** —
+
+### 0.5.22-25 · XML yorum maskesi senaryo testleri (yetenek)
+
+- **neden:** T1–T4 tuzak taramasının yorum içindeki metni saymadığı ve satır numarasını koruduğu kaynak senaryolarla test edildi (davranış zaten vardı).
+- **dosyalar:** `skills-sap/sap-ui5-fiori/tests/test_ui5_xml_yorumu.py`
+- **test:** `cd skills-sap/sap-ui5-fiori/ && python tests/run_tests.py -k xml_yorumu`
+- **gerektirir:** —
+
+### 0.5.22-26 · UI test ve deploy dersleri (kural)
+
+- **neden:** Kesilen deploy'da BSP yine yaratılmış olabilir; UI testinde DOM varlığı görünürlük değildir, olay parametresi kaynaktan okunur, son kontrol sunucu durumunu ölçer; MessageBox'ta firePress ters çalışır; yapıcıda süslü parantez bağlamadır; onay diyaloğu Esc kilidi; MockServer ETag ':' sahte 412; maket CDN sürümü kütüphane dosyasıyla ölçülür.
+- **dosyalar:** `skills-sap/sap-ui5-fiori/references/runtime-verification.md`, `skills-sap/sap-ui5-fiori/references/deploy-and-local-run.md`, `skills-sap/sap-ui5-fiori/references/known-errors-ui5.md`
+- **test:** —
+- **gerektirir:** —
+
+### ★ 0.5.22-27 · PDF: klasör adında # olan belge artık doğru basılıyor; dizin listesi açılırsa durur (düzeltme)
+
+- **neden:** html_to_pdf.js girdi yolunu düz metin birleştirerek URL'e çeviriyordu; klasör adındaki # URL parçası sayılıyor, tarayıcı üst klasörün dizin listesini basıyor ve araç yine 'PDF OK' diyordu (sessiz yanlış çıktı). Yol artık kodlanarak açılır; açılan sayfa bir dizin listesiyse PDF yazılmaz, çıkış 2. \\localhost\ UNC yolu 127.0.0.1 üzerinden açılır.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js`, `skills-sap/sap-fs-ts-docs/tests/test_node_scripts.py`
+- **test:** `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k node`
+- **gerektirir:** —
+
+### ★ 0.5.22-28 · PDF: geniş görsel, pre ya da tablo artık bütün belgeyi küçültmüyor (düzeltme)
+
+- **neden:** Sayfadan taşan tek bir öğe Chromium'un bütün belgeyi küçültmesine yol açıyordu (gövde 10,5 → 7 pt) ve geniş pre sağdan kırpılıyordu. html_to_pdf.js basmadan önce yalnız taşan/kırpık öğeye ve taşan tabloya PDF'e özel CSS uygular (sığan tablo değişmez). Her koşumda YERLESIM satırı basılır; düzeltilemeyen taşma kalırsa PDF yazılır ama 'PDF UYARILI' + stderr uyarısı (çıkış 0). Bayraksız page.pdf seçenekleri aynı; taşan öğeli belgenin PDF'i bilinçli olarak değişir.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/scripts/html_to_pdf.js`, `skills-sap/sap-fs-ts-docs/scripts/build_doc_pdf.py`, `skills-sap/sap-fs-ts-docs/scripts/build_kd_pdf.py`, `skills-sap/sap-fs-ts-docs/references/pdf-with-screenshots.md`, `skills-sap/sap-fs-ts-docs/tests/test_node_scripts.py`
+- **test:** `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k node`, `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k build_verify`
+- **gerektirir:** —
+
+### ★ 0.5.22-29 · Alan tablosu üreticisi: custom entity, -- yorumu ve namespace'li adlar doğru okunuyor (düzeltme)
+
+- **neden:** gen_field_table.py custom entity adını '?' yapıyor ve başlık annotation'ındaki { işaretini gövde sanabiliyordu; -- satır yorumundaki eski 'define' başlığı ad olarak alınıyor, yorumlu alan satırı listeyi boşaltıyordu; etiket içindeki // metni kesiyordu; /NS/X adlı entity yanlış gövdeyle sessizce yanlış tablo üretiyordu. Yorum ayıklama string'e duyarlı oldu, ad grameri namespace'i tanıyor, komşu dosya #ns#x adıyla aranıyor. Yardımcı modül yalnız standart kütüphane kullanır (SAP bağlantısı ya da proje ayarı okumaz). Namespace'li kaynak alanı (`/nspc/fld as X`, `_tab./nspc/fld`) tabloya alınır; çözülemeyen alan satırı sessizce düşmez, belgede 'çözülemedi' satırıyla listelenir.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/scripts/gen_field_table.py`, `skills-sap/sap-fs-ts-docs/scripts/doc_ad_metin.py`, `skills-sap/sap-fs-ts-docs/tests/test_field_table.py`
+- **test:** `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k field_table`
+- **gerektirir:** —
+
+### 0.5.22-30 · Taslak FS/TS üreticisi namespace'li tabloları kaybetmiyor (düzeltme)
+
+- **neden:** program_to_spec.py ad yakalamasında / tanınmadığı için FROM /ns/tab hiçbir listeye girmiyordu. Namespace'li adlar artık katı gramerle alınır ve ayrı 'Namespace'li tablolar' satırında listelenir (müşterinin mi SAP'nin mi olduğu teyit edilecek); Türkçe sözcükler kesilmez.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/scripts/program_to_spec.py`, `skills-sap/sap-fs-ts-docs/tests/test_program_to_spec.py`
+- **test:** `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k program_to_spec`
+- **gerektirir:** —
+
+### 0.5.22-31 · Klasik program iskeleti: Git Bash'te / ile başlayan ad için ipucu (yetenek)
+
+- **neden:** Git Bash / ile başlayan argümanı Windows yoluna çevirir (/NS/X → C:/Program Files/Git/NS/X); ad reddi bu durumda nedenini söylemiyordu. Red mesajı artık MSYS_NO_PATHCONV=1 ipucu verir. Namespace'li program adı kabulü bu turda yok (ad kararı Z/Y).
+- **dosyalar:** `skills-sap/sap-classic-abap/scripts/scaffold_classic_program.py`, `tests/test_kural_hatirlatma.py`
+- **test:** `python tests/run_tests.py -k kural_hatirlatma`
+- **gerektirir:** —
+
+### 0.5.22-32 · Kod inceleme kontrol listeleri: BE-89 yeni; BE-12/13/20/26/55 güncel (yetenek)
+
+- **neden:** RAP sorgu sağlayıcıda get_as_ranges ile alanlar arası 'or' filtresi 500 döndürüyor (BE-89). ATC P1 kuralında mevcut koddaki clean-core ailesi muaf (proje politikası aksini demiyorsa); BY \_assoc okumada varsayılan FIELDS ( … ) WITH (ALL FIELDS türetilmiş alanlı view'da dökümle bitebiliyor); RAP işleyicide SUBMIT/iş planlama yasak; arayüz parametresinde satır içi tablo tipi ve türetilmiş RAP tipi isimli tip ister; yeni yapı da onay ister. validator-map fonksiyon grubu include anahtarlarını listeler.
+- **dosyalar:** `skills-sap/sap-code-review/references/checklist-abap.md`, `skills-sap/sap-code-review/references/checklist-rap.md`, `skills-sap/sap-code-review/references/checklist-cds-ddic.md`, `skills-sap/sap-code-review/references/validator-map.md`, `skills-sap/sap-code-review/tests/test_checklists.py`
+- **test:** `cd skills-sap/sap-code-review && python -m unittest discover -s tests -p test_checklists.py`
+- **gerektirir:** —
+
+### 0.5.22-33 · CDS/DDIC: namespace önekli adlar, başka tabloya para birimi başvurusu, tablo yaratma maddeleri (kural)
+
+- **neden:** Paket öneki müşteri namespace'i de olabilir (/NSPC/SD001_V_ 14 karakter — classic view sığmaz, view entity tercih edilir). CURR alanı başka tablonun para birimi alanına nitelenmiş olarak başvurabilir. Yeni tablo için C-TBL-CRE-01 (DTEL'siz alan listesi, WARNING) ve C-TBL-CRE-02 (onay kaydı, BLOCKER); C-STR-FIELD-01 WARNING oldu; tip değişikliği fiziksel tiple kıyaslanır; etiket metnini AI önerir ama kullanıcı onaylar; mevcut koddaki ham tablo kullanımı tek başına bulgu değildir.
+- **dosyalar:** `skills-sap/sap-cds-ddic/references/cds.md`, `skills-sap/sap-cds-ddic/references/checklists.md`, `skills-sap/sap-cds-ddic/references/tables-structures.md`
+- **test:** `cd skills-sap/sap-code-review && python -m unittest discover -s tests -p test_checklists.py`
+- **gerektirir:** —
+
+### 0.5.22-34 · RAP dersleri: etag, custom entity, BY \_assoc niteleyicisi, SUBMIT yasağı, BO dışı tampon (kural)
+
+- **neden:** Ölçülmüş RAP hataları referanslara eklendi: etag satırı üç save biçimini kapsar; aynı tabloyu paylaşan iki managed kök; custom entity + query sınıfı (araç desteği henüz yok); ALL FIELDS WITH kardinalitesi bozuk view'da HANA -305; işleyicide SUBMIT/JOB yasak (DESTINATION NONE serbest); additional save'de READ ENTITIES BO dışı tabloyu görmez; eski sürümde snapshot notu.
+- **dosyalar:** `skills-sap/sap-rap/references/troubleshoot.md`, `skills-sap/sap-rap/references/layering-and-bdef.md`, `skills-sap/sap-rap/references/behavior-impl.md`
+- **test:** —
+- **gerektirir:** —
+
+### 0.5.22-35 · Klasik ABAP dersleri: güncelleme modülü, türetilmiş RAP tipi, ABAP Unit sahte sıfır, exit include (kural)
+
+- **neden:** Güncelleme modülü (IN UPDATE TASK) metadata PUT ile kurulur; kanıt aktivasyon sonrası TFDIR-UTASK. Arayüzde türetilmiş RAP tipi isimli TYPES ister. Aktivasyondan hemen sonraki ABAP Unit koşusu sahte 0 test verebilir (doğrulama sırası yazıldı). Standart programa bağlı exit include'larda kısa yorum kuralı.
+- **dosyalar:** `skills-sap/sap-classic-abap/references/classes.md`, `skills-sap/sap-classic-abap/references/fugr-fm.md`, `skills-sap/sap-classic-abap/references/known-errors-classic.md`, `skills-sap/sap-classic-abap/references/programs-includes.md`
+- **test:** —
+- **gerektirir:** —
+
+### 0.5.22-36 · Temel ADT notları: ATC sırası ve muafiyeti, ENHO'lu include, 1909 profili (kural)
+
+- **neden:** ATC aktif sürümü ölçer (push → aktive → ATC), öncesi ↔ sonrası kıyaslanır, ölçülemeyen tip temiz sayılmaz, mevcut koddaki clean-core P1 ailesi iş kalemi değildir; paket ATC'si pahalıdır. ENHO'ya bağlı include tek başına aktive edilebilir. s4_private 1909'da view entity ve BDEF strict yok.
+- **dosyalar:** `skills-sap/sap-adt-foundation/references/foundation-ops.md`, `skills-sap/sap-adt-foundation/references/foundation-query.md`, `skills-sap/sap-adt-foundation/references/profiles.md`
+- **test:** —
+- **gerektirir:** —
+
+### 0.5.22-37 · OData ETag: callFunction için eTag açıkça verilir (kural)
+
+- **neden:** UI5 V2 otomatik If-Match başlığını yalnız update/remove'da ekler; ETag'li BO'da instance action callFunction eTag'siz 428 alır. Backend referansına not eklendi.
+- **dosyalar:** `skills-sap/sap-odata-backend/references/segw-service.md`
+- **test:** —
+- **gerektirir:** —
+
+### 0.5.22-38 · TS build'den önce yazılır (kural)
+
+- **neden:** Yeni geliştirmede sıra: FS onayı → TS → build → inceleme → SAP yazma; TS'i kodu yazan ajan yazmaz.
+- **dosyalar:** `skills-sap/sap-fs-ts-docs/references/ts-authoring.md`
+- **test:** `cd skills-sap/sap-fs-ts-docs/tests && python run_tests.py -k skill_structure`
+- **gerektirir:** —
+
+### 0.5.22-39 · SD modülü dersleri (SD-D1…SD-D11) (yetenek)
+
+- **neden:** SD iş alımı için ölçülmüş saha dersleri ayrı dosyada: fiyat onayı/koşul kaydı, teslimat planı, embedded EWM, sessiz yanlış fiyatın görünür eksikten ağır olması, canlı testte kâhinin standart tablo kaydı olması. sd.md ilgili tetikleyicilerden bu derslere işaret eder.
+- **dosyalar:** `skills-sap/sap-intake-triage/references/modules/sd-dersler.md`, `skills-sap/sap-intake-triage/references/modules/sd.md`
+- **test:** —
+- **gerektirir:** —
+
+### ★ 0.5.22-40 · Müşteri namespace'i kesin yasak metninde tanımlandı (yetenek)
+
+- **neden:** SAP'de kendi namespace'ini (/<NS>/) kullanan projeler artık bunu sap-project.json'daki customer_namespaces listesiyle bildirebilir; yasak metni neyin müşteri adı, neyin standart obje olduğunu açıkça söyler (SAP'nin kendi namespace'leri ve bildirilmemiş namespace standarttır). Proje AGENTS.md damgası ve alt görev brifleri aynı metni taşır. Yeni proje sihirbazı AGENTS.md'deki namespace satırını sap-project.json'dan doldurur (bildirim yoksa 'yok').
+- **dosyalar:** `core/sap/00-sap.md`, `skills-sap/sap-dev/references/role-briefs.md`, `templates/project-sap/sap-project.json`, `templates/project/AGENTS.md`, `skills-sap/sap-dev/references/naming.md`, `tests/test_new_project.py`, `scripts/yeni_proje.py`
+- **test:** `python tests/run_tests.py -k test_sap_stamp`, `python tests/run_tests.py -k test_sap_skill_bilgi`, `python tests/run_tests.py -k test_new_project`, `python tests/run_tests.py -k test_doctor`
+- **gerektirir:** —
+
+### 0.5.22-41 · new_package.py namespace'li paket klasörü kurar (yetenek)
+
+- **neden:** Bildirilmiş müşteri namespace'iyle paket (/<NS>/SD001_CLC) açılabilir: klasör adı abapGit biçiminde (#ns#…), adlandırma kuralları namespace önekiyle üretilir. Namespace bildirilmemişse ya da SAP paketi kurulu değilse yalnız Z/Y kabul edilir; Z/Y paketlerinin çıktısı değişmedi. Git Bash ad başındaki `/`'yı Windows yoluna çevirirse (`C:/Program Files/Git/NSPC/…`) yanıltıcı ret yerine `MSYS_NO_PATHCONV=1` ipucu verilir; `--project-dir` ortamdaki eski proje değişkenini ezer.
+- **dosyalar:** `scripts/new_package.py`, `templates/package/.rules.md.tmpl`, `scripts/check_package_naming.py`, `tests/test_new_package.py`
+- **test:** `python tests/run_tests.py -k test_new_package`, `python tests/run_tests.py -k test_package_naming`
+- **gerektirir:** —
+
+### 0.5.22-42 · Alt görev brifleri: bağlam disiplini ve teslim öncesi öz-kapı (kural)
+
+- **neden:** SAP alt görevleri büyük tablo/kaynak okurken bağlamı şişirmesin diye okuma kuralları eklendi; backend ve UI5 alt görevleri teslimden önce sonucu bağımsız kaynakla kıyaslar, aynı hatanın kopyalarını ve etkilenen metinleri arar. İnceleme brifi uzun kaynakta bölge okumayı ve kapsama tablosunda madde başına tek satırı ister. Brif şablonu onay soran komut biçimlerinden ve gereksiz ağır doğrulamadan kaçınmayı söyler.
+- **dosyalar:** `skills-sap/sap-dev/references/role-briefs.md`, `skills-sap/sap-code-review/references/reviewer-brief.md`, `skills/code-review/SKILL.md`, `skills/explore/references/brief-template.md`, `skills/research/SKILL.md`, `skills-sap/sap-dev/SKILL.md`
+- **test:** `python tests/run_tests.py -k test_sap_skill_bilgi`, `python tests/run_tests.py -k test_skill`
+- **gerektirir:** —
+
+### 0.5.22-43 · Onay soran komut biçimi çekirdek kuralı (kural)
+
+- **neden:** Kullanıcı ekranda değilken izin soran bir komut işi saatlerce durdurabilir; çekirdek artık geçici çıktıyı silmek yerine üzerine yazmayı, çalışma dizini dışına çıkmamayı ve reddedilen komutu tekrarlamamayı söyler.
+- **dosyalar:** `core/00-temel.md`
+- **test:** `python tests/run_tests.py -k test_doctor`
+- **gerektirir:** —
+
+### 0.5.22-44 · Gün sonu: push etmek main'e girmek değildir (kural)
+
+- **neden:** Gün sonunda dal push'lansa da iş main'e girmemiş olabilir; artık iş listesinde dalın durumu (PR yok / PR açık) yazılır, bitmiş iş için PR akışı önerilir ve incelemesi koşmamış iş main'e alınmaz.
+- **dosyalar:** `skills/gun-sonu/SKILL.md`
+- **test:** `python tests/run_tests.py -k test_skill`
+- **gerektirir:** —
+
+### 0.5.22-45 · Açılış özeti yayın listesini aynı adlı etiketle karıştırmaz (düzeltme)
+
+- **neden:** Klonda origin/main adlı bir etiket varsa açılış özeti güncelleme kalemlerini yanlış kaynaktan okuyabiliyordu; artık uzak dalın tam adı kullanılır.
+- **dosyalar:** `scripts/session_brief.py`, `tests/test_session_brief.py`
+- **test:** `python tests/run_tests.py -k test_session_brief`
+- **gerektirir:** —
+
+### 0.5.22-46 · Ekip hafızasına 10 yeni çalışma dersi, 4 ders güncellendi (yetenek)
+
+- **neden:** Yeni dersler: engellenen silmeyi kullanıcıya komut olarak vermemek, iş parametresini koda gömmemek, kayıt tarihini ölçmek, kurulumdan sonra yeni partiyi sormak, Python ile bayt kipinde düzenlemek, uygulama testini onayla yazmak, yeniden incelemeyi dar tutmak, aralıklı hata avına bütçe koymak, kaynağa işaret önermeden önce aramak, belge incelemesini iki turda yapmak. Kabuk kaçışı, deploy kapsamı, kararları önce toplama ve yeniden sınıflandırma derslerine yeni vakalar eklendi.
+- **dosyalar:** `memory/MEMORY.md`, `memory/feedback_engellenen-silmeyi-komut-olarak-verme.md`, `memory/feedback_is-parametresini-koda-gomme.md`, `memory/feedback_kayit-tarihini-olc.md`, `memory/feedback_kurulumdan-sonra-yeni-parti-sorulur.md`, `memory/feedback_python-yerinde-duzenleme-bayt-kipi.md`, `memory/feedback_uygulama-testi-onayla-yazilir.md`, `memory/feedback_yeniden-inceleme-dar-kapsam.md`, `memory/feedback_aralikli-hata-avina-butce.md`, `memory/feedback_isaret-onermeden-once-prior-art.md`, `memory/feedback_belge-incelemesi-iki-tur.md`, `memory/feedback_bash-heredoc-turkce-kacis.md`, `memory/feedback_deploy-kullanici-testi-sonrasi.md`, `memory/feedback_kararlari-once-topla.md`, `memory/feedback_kendi-isini-yeniden-siniflandirip-kural-disina-cikma.md`
+- **test:** `python tests/run_tests.py -k test_recall`
+- **gerektirir:** —
+
+### 0.5.22-47 · Yayın kataloğu, README sürüm satırı ve CI kaydı (düzeltme)
+
+- **neden:** Her yayında üretilen kayıt dosyaları: değişiklik günlüğü, bu katalog, yayının CI sonucu ve README'nin sürüm satırı.
+- **dosyalar:** `CHANGELOG.md`, `guncelle/yayinlar.json`, `guncelle/ci-durum.json`, `README.md`
+- **test:** `python tests/run_tests.py -k yayin_surumleri`, `python tests/run_tests.py -k readme`
+- **gerektirir:** —
+
 ## v0.5.21 — 2026-10-28
 
 ### ★ 0.5.21-01 · Metot bloğu sınırı tek yerden bulunur: sınır belirsizse metot include'una yazılmaz · `adt_get_method` tek satırlık metodu da okur (düzeltme)

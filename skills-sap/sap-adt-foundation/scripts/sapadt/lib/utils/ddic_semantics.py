@@ -26,8 +26,13 @@ görmezden gelmesine yol açar (sessiz gevşetme).
 CURR_DTELS = {
     'netwr', 'mwsbp', 'kbetr', 'dmbtr', 'wrbtr', 'kzwi1', 'kzwi2',
     'kzwi3', 'kzwi4', 'kzwi5', 'kzwi6', 'sklfr', 'klfre', 'lfrec',
-    'price', 'curr', 'amount',
+    'price', 'amount',
 }
+# ⚠ GEVŞETME (kaynak çekirdek #402 EK-3, 2026-11-08, kaynak sahibi onaylı; aXet 2026-11-17): `curr` ÇIKARILDI —
+# "kısaltılamaz" kuralının bilinçli istisnası. Ölçüm: DD04L (S/4 private DEV) `ROLLNAME='CURR'` → 0 satır ⇒ DTEL
+# yolunda hiçbir alanla eşleşemezdi; tek etkisi CDS kolon-adı sezgisindeydi: `curr as Curr` (para BİRİMİ, CUKY)
+# elemanı tutar sayılıp "ölçülen CURR" paydasını şişiriyordu. BİLİNEN SINIR: `amount` DD04L'de NUMC(9) ve
+# QUAN_DTELS'teki `quan` DD04L'de 0 satır — ikisi sözlükte DURUYOR (gözlenmiş hata yok).
 
 # Built-in QUAN DTEL'leri
 QUAN_DTELS = {
@@ -36,8 +41,11 @@ QUAN_DTELS = {
 }
 
 # Built-in CUKY/UNIT DTEL'leri
-CUKY_DTELS = {'waers', 'waerk', 'hwaer'}
-UNIT_DTELS = {'meins', 'vrkme', 'gewei', 'voleh', 'lager', 'unit'}
+# 2026-11-17 (kaynak çekirdek #399 ölçümü, S/4 DEV DD04L): koşul kaydı DTEL'leri eklendi — `konwa`/`konws` (CUKY) ·
+# `kmein`/`konms` (UNIT). Eksiklikleri `konwa` tipli para birimi alanına başvuran tutarı "referans tabloda yok"
+# BLOCKER'ına düşürüyordu (yanlış pozitif; standart KONP `KBETR` → `RV13A-KONWA`).
+CUKY_DTELS = {'waers', 'waerk', 'hwaer', 'konwa', 'konws'}
+UNIT_DTELS = {'meins', 'vrkme', 'gewei', 'voleh', 'lager', 'unit', 'kmein', 'konms'}
 
 
 # ---------------------------------------------------------------------------

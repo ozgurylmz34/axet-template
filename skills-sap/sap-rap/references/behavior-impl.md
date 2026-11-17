@@ -137,6 +137,14 @@ sebebi guard'sız self-MODIFY determination'dı (§5).
   " seçili alanlar: FIELDS ( ItemStatus DeliveryDate ) WITH CORRESPONDING #( keys )
   ```
   `FIELDS ( … )` ile `FROM` değil `WITH` yazılır. Yalnız varlık/key kontrolü için `FROM` yeterlidir.
+- ⛔ **Niteleyici — varsayılan `FIELDS ( … ) WITH`, `ALL FIELDS WITH` değil (ölçüldü):** `ALL FIELDS` türetilmiş alanları da
+  (association yolu, CASE, agregat) SELECT'e sokar. CASE tek değer ister → `[0..1]` association skaler alt sorguya çevrilir;
+  hedef view `key` ilan ettiği kümeden daha geniş bir `GROUP BY` yapıyorsa (ör. birimle gruplayan agregat view) karışık
+  veri doğduğu gün kardinalite bozulur ve okuma HANA **`-305`** ("single-row query returns more than one row",
+  `CX_SY_OPEN_SQL_DB`) ile dump eder. Aynı okuma 4 alanlık `FIELDS ( … ) WITH` ile patlamadı (zehirli kayıtta bile).
+  ⇒ Okuduğun alanları say; `ALL FIELDS WITH` yalnız alan kümesi gerçekten değişkense. Hedef projeksiyondaki her `[0..1]`
+  association için hedef view'ın `key` kümesi ⊇ `GROUP BY` kümesi mi bak; tutmuyorsa önce view'ı onar. Dar alan listesi
+  **savunmadır, kök düzeltme değildir** — kırık view'ı başka bir tüketici (OData'ya açılmış aynı alan) yine patlatabilir.
 - Ölçülen vakalar: dolu veride her kayıtta "plan tarihi zorunlu" yanlış hatası; strateji seçen alan boş geldiği için bir
   bakiye/kalem validasyonları **hiç koşmuyordu**; üçüncü yerde okunan alan key olduğu için şans eseri çalışıyordu.
 - **DENENEN — BAŞARISIZ:** `FIELDS ( … ) FROM …` sözdizimi hatası verince (`WITH expected after )`) `FIELDS`'i silmek → keys-only'ye
@@ -159,6 +167,7 @@ CCIMP'teki aynı deyimle kıyasla; kapatma kanıtı aktivasyondur.
 | `COMMIT ENTITIES` handler içinde | `500 BEHAVIOR_ILLEGAL_STATEMENT` | Released BO'ya MODIFY yap, commit etme; OData isteğinin sonunda framework commit eder (sipariş gerçekten yazıldı, doğrulandı). |
 | `COMMIT WORK` / `ROLLBACK WORK` / `BAPI_TRANSACTION_COMMIT` / `_ROLLBACK` — handler'da **ve handler'ın çağırdığı yardımcı sınıfta** | runtime `BEHAVIOR_ILLEGAL_STATEMENT` dump, bağlantı reset, ön yüzde yalnız "HTTP request failed". Sözdizimi/ATC/abaplint/bağımsız inceleme **geçer**; ilk gerçek create/action testinde çıkar (ölçüldü: üç inceleme turu kaçırdı). | Aşağıdaki ayrı LUW deseni. Yeni kodda `COMMIT` ara (`adt_grep_source`, `pattern: "COMMIT\\s+WORK|BAPI_TRANSACTION_"`). |
 | `MESSAGE` | `BEHAVIOR_ILLEGAL_STATEMENT … Statement MESSAGE_E is not allowed`. `cl_http_client` iletişim hatasında içeride MESSAGE verir → dump. | Mesaj `reported` ile; HTTP için §11. |
+| `SUBMIT` / iş planlama (`JOB_OPEN`/`JOB_CLOSE`'un dolaylı SUBMIT'i dahil) | 7.58 belgesine göre transactional context ihlali, çalışma zamanı hatası (`abapinvalid_stmts_in_rap_methods`: SUBMIT ✘; RFC modify fazında ✔, save fazında ✘) — çalışma anında **ölçülmedi** | İşi planlayan kodu RFC'li FM'e koy, **modify fazında** `CALL FUNCTION '<FM>' DESTINATION 'NONE'` (ayrı oturum + LUW, SM59 kaydı gerekmez; çağıranın `S_RFC` yetkisi rol önerisine yazılır) ya da kuyruk satırı + olay (`BP_EVENT_RAISE`) + dağıtıcı iş. Yasak listesini **hedef sürümün** belgesinden oku. |
 
 **Commit gerektiren klasik BAPI'yi RAP'ten çağırmak (ayrı LUW) — ÇALIŞAN (`s4_private`):**
 - BAPI + `BAPI_TRANSACTION_COMMIT/ROLLBACK`'i bir **Z RFC-enabled FM**'e sar; çağıran `CALL FUNCTION 'Z…_FM_…' DESTINATION 'NONE'`.
@@ -170,6 +179,18 @@ CCIMP'teki aynı deyimle kıyasla; kapatma kanıtı aktivasyondur.
   metin kullanıcıdan). (c) `EXCEPTIONS system_failure = 1 MESSAGE <var>` → `<var>` karakter benzeri (C/N/D/T), `string` değil.
 - FM push protokol notları: `%sap-adt-foundation` → `foundation-ops.md` §4.4.
 - `s4_public`/`btp_abap`'ta klasik FM yok → bu desen uygulanmaz; alternatif **DOĞRULANMADI**.
+
+**Eski sürümde denetim yok demeden önce:** yeni mekanizmanın (`CL_ABAP_TX`, denetim grubu) yokluğu eski sürümde
+denetim olmadığı anlamına gelmez. Ölçülen vaka (S/4 1909): `CL_ABAP_TX` 0 satır diye "faz denetimi yok" iddiası kuruldu;
+`BEHAVIOR_ILLEGAL_STATEMENT` dökümü COMMIT, ROLLBACK, SUBMIT, CALL TRANSACTION, LEAVE, MESSAGE ve RAISE EXCEPTION çıkışını
+zaten yasaklıyordu. Eski sürümün kendi döküm tanımını `SNAPT` (ERRID = döküm adı, LANGU = E) ve T100'den ara; iddiayı yalnız
+ölçülen eksene daralt (ör. "faz bazlı sRFC denetimi yok").
+
+**`managed with additional save` — BO dışı tablo `READ ENTITIES` ile görülmez (tasarım dersi, çalışma anında ölçülmedi):**
+`save_modified`'da BO dışı tablolara (geçmiş, kuyruk, karar satırları) yazılacak satırlar handler'ın **kendi tamponunda**
+durur; `READ ENTITIES` yalnız BO varlıklarının tamponunu okur. Aynı istekte "kaç karar verildi" / "sıradaki numara" hesabı
+**DB `SELECT` ∪ kendi tampon** üzerinden yapılır (aynı anahtarda tampon DB'yi ezer). Tablo BO dışından da (iş, başka handler)
+yazılıyorsa max+1 yerine UUID anahtar + zaman damgası sırası; yalnız BO içinden ve kilit altında yazılıyorsa max+1 kalabilir.
 
 ## 11. Handler'dan SAP içi OData/HTTP servis çağrısı
 

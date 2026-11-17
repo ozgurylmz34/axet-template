@@ -3,6 +3,9 @@
 > Üst ilke SAP çekirdeğindedir (her liste/rapor ekranı, kullanıcı istemese de sıralama, operatörlü filtre, kolon
 > göster/gizle, varyant, Excel sunar; UI5'te grid). Bu dosya **UI5 mekaniğini** verir. Backend (salt-okunur rapor
 > servisi, DCL, ortak VH expose) `%sap-rap`; Gateway `$filter` davranışı `%sap-odata-backend` → `references/filter-search.md`.
+> **Kopyalanacak kanonik kaynak:** `templates/ui5-freestyle/` (seçim ekranı → grid liste → değişiklik ekranı;
+> `util/TablePersonalizer.js` + kolon filtresi penceresi + `SurumParca` dahil). Proje-içi eski kopyalar kopya kaynağı
+> DEĞİLDİR: kaynak ekip ölçümünde aynı util'in proje kopyaları birbirinden 278–844 satır ayrışmıştı.
 
 ---
 
@@ -24,11 +27,10 @@
 1. **manifest** libs'e `"sap.ui.table": {}` + `"sap.ui.export": {}`; view'da `xmlns:table="sap.ui.table"`.
 2. **`table:Table`**
    ```xml
-   <table:Table id="tblList" rows="{/OrderSet}" threshold="200"
-                visibleRowCountMode="Auto" minAutoRowCount="10"
+   <table:Table id="tblList" threshold="200"
                 selectionMode="None"
-                enableColumnReordering="true" enableColumnFreeze="true"
-                rowsUpdated=".onRowsUpdated">
+                enableColumnReordering="true" enableColumnFreeze="true">
+     <!-- satır modu sürüme bağlı, koddan: SurumParca.satirModu(oTable, 10) — aşağıdaki not -->
      <table:extension>
        <OverflowToolbar>
          <Title text="{i18n>list.title}"/>
@@ -43,9 +45,11 @@
    ```
    - `selectionMode="None"` saf liste; `"Single"` master-detail.
    - `threshold="200"` OData lazy okuma.
-   - ⚠ `visibleRowCountMode` yeni UI5 sürümlerinde yerini `rowMode` aggregation'ına bırakıyor (kaynak araç
-     envanterindeki UI5 notu: 1.119+). Proje UI5 sürümünde hangisinin **deprecated** olduğunu API referansından
-     doğrula — DOĞRULANMADI; kaynak uygulamalar `visibleRowCountMode` ile çalışıyordu.
+   - **Satır modu sürüme bağlıdır** (`app-skeleton.md` §7.1): 1.120 hattı `rowMode` = `sap.ui.table.rowmodes.Auto`
+     (`minRowCount`; `@since 1.119`, `visibleRowCountMode` orada deprecated) · 1.71 hattı `visibleRowCountMode="Auto"` +
+     `minAutoRowCount`. Şablon bunu `SurumParca.satirModu(oTable, iMin)` ile koddan kurar; 1.71'de satır sayısının ekrana
+     uyması çalışma zamanında ÖLÇÜLMEDİ.
+   - `rows` binding'i view'da değil, ilk Listele'de koddan kurulur (aşağıdaki "Filtre girilmeden liste istek atmasın").
 3. **`table:Column`** (her biri)
    ```xml
    <table:Column id="colOrder" width="8rem" sortProperty="OrderId" filterProperty="OrderId">
@@ -61,7 +65,10 @@
    AND'lenir (temel filtre `binding.filter(aFilters, "Application")`).
 5. **Kolon göster/gizle + varyant + Excel** = kişiselleştirme yardımcısı (§3).
 
-**Binding:** `oTable.getBinding("rows")` (m.Table'da `"items"`); sayım `rowsUpdated` → `getBinding("rows").getLength()`.
+**Binding:** `oTable.getBinding("rows")` (m.Table'da `"items"`). Kayıt sayısı satır binding'inin `dataReceived`
+olayından (`bindRows({ path, events: { dataReceived } })`) → `isLengthFinal() ? getLength()`. ⛔ Tablonun `rowsUpdated`
+olayı `@since 1.86` (1.71'de yok) ve scroll'da da tetiklenir; `ListBinding.getCount()` `@since 1.93` — ikisi de ortak
+kodda kullanılmaz.
 
 **"Filtre girilmeden liste istek atmasın" (doğrudan `#/liste` açılışı, F5):** view'da `rows="{path: …, suspended: true}"`
 + route eşleşince filtre yaz + `resume()` deseni **tutmaz**: binding askıdayken tablo render'ı `getContexts()` ile
@@ -78,10 +85,12 @@ Master-detail: `selectionMode="Single"` + anahtar kolonda `Link press` ya da `ro
 
 ## 3. Kişiselleştirme yardımcısı (`TablePersonalizer`) — davranış sözleşmesi
 
-Kaynak ekip bunu uygulamalar arasında birebir kopyalanan **ortak bir util** olarak tutuyordu. **Util kodu bu skill'le
-gelmez** (müşteriye ait). Projede böyle bir util varsa kopyalanır ve yalnız kolon meta'sı doldurulur; sıfırdan
-sort/filtre/export yazılmaz. **Yoksa** aşağıdaki sözleşme bir kez yazılır, projede ortak util olarak tutulur
-(`%remember` ile yeri kaydedilir). Adı ilk kullanan ekranın adı değil, amacı olur.
+**Util kodu bu skill'le gelir:** `templates/ui5-freestyle/app/webapp/util/TablePersonalizer.js` (+ `ColumnFilterParser`,
+`KolonFiltrePenceresi`, `Tarih`, `Sayi`, sürüm parçasının `SurumParca`'sı). Yeni uygulamada şablondan kopyalanır ve
+yalnız kolon meta'sı doldurulur; sıfırdan sort/filtre/export **yazılmaz**. Projede daha eski bir kopya varsa önce
+şablonla farkına bak (eski kopyalarda sap-client taşıma, sessiz servis düşüşü ve kolon filtresi davranışı eksik
+olabilir); farkı kullanıcıya göster, kopyayı kendiliğinden ezme. Aşağıdaki tablo util'in sözleşmesidir — şablonun
+çalışan hâlini değiştirirken ya da eski kopyayı denetlerken ölçüt olarak kullan.
 
 Kurucu (kaynaktaki imza):
 ```javascript
@@ -94,10 +103,10 @@ new TablePersonalizer({ table: oTable, persoKey: "zxx001.orderList",
 |---|---|
 | **Kolonlar** | Geniş, ortalanmış `sap.m.Dialog`: arama + Tümünü seç/kaldır + scroll; kolon adları **tam** görünür |
 | **Varyant** | Tam yerleşim: `Config = { cols: [{ key, visible, width, index }] }` (görünürlük + genişlik + sıra). **Farklı kaydet** (ad ≤ 14 karakter — kaynakta varyant adı CHAR14), **Sil** (`MessageBox.confirm`), **Varsayılan yap (★)** → ekran açılışında otomatik uygulanır |
-| **Varyant deposu** | Kaynakta ortak bir OData varyant servisi (`ZCA000_UI_VARIANT_O2` demo adı) + `localStorage` yedeği. Servis yoksa / yayında değilse / 401 veriyorsa **yalnız localStorage** (`LOCAL_VARIANTS_ONLY = true`) — servis model'i kurulduğu anda `$metadata` çeker ve lokal çalıştırmada 401 popup'ı tetikler |
+| **Varyant deposu** | Ortak bir OData varyant servisi (şablonda `ZSD000_UI_VARIANT_O2` demo adı; RAP kaynakları `templates/ui5-freestyle/backend-referans/`) + `localStorage` yedeği. Servis yoksa (`Config.VARIANT: null`) / yayında değilse / 401 veriyorsa **yalnız localStorage** — ama **sessiz değil**: açılışta `Log.warning` (servis model'i kurulduğu anda `$metadata` çeker ve lokal çalıştırmada 401 popup'ı tetikler) |
 | **Excel** | `sap.ui.export.Spreadsheet`, gerçek `.xlsx`; OData binding'den **filtreye uyan tüm satırlar** (ekrandaki sayfa değil); kapsam sorulur: **Görünür / Tüm kolonlar** (`getColumnsForExport(bAll)`) |
-| **Kolon filtresi** | Native filtre olayında `preventDefault` + string kolonda düz `Contains` (**`caseSensitive` yok**) + wildcard (§6.2) |
-| **i18n** | `btn.cols`, `btn.excel`, `var.*`, `flt.*`, `exp.*`, `op.*` anahtarları **iki dosyada** (`freestyle-odata-v2.md` §9) |
+| **Kolon filtresi** | Başlık kutusu **düz arama** + menüde **Filtre…** penceresi (koşul listeden seçilir) — §6.4. Native filtre olayında `preventDefault`; **`caseSensitive` yok** |
+| **i18n** | `btn.cols`, `btn.excel`, `var.*`, `flt.*`, `kfp.*` (pencere; koşul adları `kfp.op.*` dinamik önekle), `exp.*` anahtarları **iki dosyada** (`freestyle-odata-v2.md` §9; `check_i18n_keys.py` dinamik öneki tanır) |
 
 - ⚠ **Kopyalamadan önce:** util'in varyant modeli (`new ODataModel(<varyant servisi>)`) ana modelin `sap-client`'ını
   taşımalı — eski kopyalar taşımıyordu ve iki client aynı tarayıcıda açıkken öbür client'ın varyantlarını okudu
@@ -119,11 +128,28 @@ new TablePersonalizer({ table: oTable, persoKey: "zxx001.orderList",
 | `sap.m.Dialog` içinde grid | Dialog `verticalScrolling="false" horizontalScrolling="false"` (grid kendi scroll'unu yönetir) |
 | Seçim sayımı | Gözle değil `getSelectedIndices().length` ile |
 
+### 4.1 `AnalyticalTable` (toplam / ara toplam) — 1.120 + analitik OData V2 tuzakları
+Ekip ölçümü (UI5 1.120.23, `sap.ui.table.AnalyticalTable` + `AnalyticalBinding`); hepsi **sessiz** — hata yok, yanlış ya da
+boş ekran:
+1. `group` olayında aynı tikte düzeltme (ör. bir kolonu zorla ilk seviyeye taşımak) tabloyu **boşaltır**: ikinci
+   `updateAnalyticalInfo` uçuştaki isteği düşürür. Çare: düzeltmeden sonra `getBinding("rows").refresh()`; `expandAll`
+   yalnız `dataReceived`'den sonra.
+2. Grup Σ satırları `provideGrandTotals`'a bağlıdır: Genel Toplam kapatılınca ara toplamlar da kaybolur (kütüphane
+   davranışı — FS/kılavuza not düşülür).
+3. Aynı alanda birden çok koşul: `AnalyticalBinding` yalnız `NE`'leri AND'ler, diğerlerini OR'lar — düz `ODataListBinding`
+   ile aynı varsayılmaz.
+4. `oModel.metadataLoaded()` parametresiz çağrı `$metadata` hata verirse **hiç çözülmez**; tembel yüklenen view
+   `metadataFailed`'i kaçırır. Önce `isMetadataLoadingFailed()`, sonra `metadataLoaded(true)` (red de döner) + hata bayrağı.
+5. `getDownloadUrl()` `initialize()` görmemiş binding'de `$filter`'sız URL döner ⇒ Excel filtresiz tüm veriyi çeker;
+   Excel'den önce binding'in başlatıldığını doğrula.
+Kolon filtresi penceresi (§6.4) `AnalyticalTable` menüsünde ÖLÇÜLMEDİ.
+
 ## 5. Görsel kurallar (liste)
 - İlk açılışta **6–8 görünür kolon**; kalanı kolon göster/gizle ile.
 - Sıra: tanımlayıcı → ana bilgi → durum → ana metrik (sağa hizalı) → ikincil → üçüncül.
 - Ham kod (A/B/X) yerine okunur metin (formatter + i18n); teknik alan (GUID, MANDT) gösterilmez.
-- Boş tablo: yönlendirici boş durum (`IllustratedMessage` + eylem butonu). Ayrıntı `fiori-elements-ux.md` §2.
+- Boş tablo: yönlendirici boş durum (CTA'lı). `IllustratedMessage` `@since 1.98`; altında grid `noData` içinde
+  `VBox` { `Text` + `Button` } (`app-skeleton.md` §7.1; şablonda `SurumParca.bosDurum`). Ayrıntı `fiori-elements-ux.md` §2.
 
 ## 6. Filtre / seçim ekranı = SELECT-OPTIONS pariteli
 
@@ -170,7 +196,8 @@ new Filter("Name", FilterOperator.Contains, q);            // düz substringof
   i-sınıfı → `I` · i-sınıfı → `İ` · Türkçe büyük harf eşlemesi (i → İ, ı → I); tekilleştir ve URL uzunluğunu ölç
   (ekip ölçümü: 4 varyant × 6–7 alan ≈ 6 KB). Tek kelimelik testte iki kusur da görünmez (ekip dersi, 2026-10-09).
   Backend yarısı: `%sap-odata-backend` → `references/filter-search.md` §1.
-- Wildcard yardımcısı (tek ortak fonksiyon; F4 araması, kolon filtresi, düz token aynı yardımcıyı kullanır):
+- Wildcard yardımcısı — **yalnız seçim ekranı ve değer yardımı araması** (F4 araması + düz token aynı yardımcıyı
+  kullanır). **Grid kolon filtresine uygulanmaz:** orada koşul pencereden seçilir (§6.4).
   ```javascript
   _parseSearchTerm: function (sPath, sRaw, sDefaultOp) {
       var s = (sRaw || "").trim(), bStart = s.charAt(0) === "*", bEnd = s.length > 1 && s.charAt(s.length - 1) === "*";
@@ -195,7 +222,32 @@ new Filter("Name", FilterOperator.Contains, q);            // düz substringof
 - Filtre ekranı ile grid arasında `baseFilters` sözleşmesi: filtre ekranı temel filtreyi kurar, kişiselleştirme
   yardımcısı kolon filtrelerini onun üstüne AND'ler.
 
+### 6.4 Grid kolon filtresi — kutuda düz arama, koşul **Filtre…** penceresinden
+
+- **Kutu (kolon başlığı menüsü):** yalnız **düz değer** — metin kolonunda İçerir (Türkçe i/İ/ı/I varyantlarıyla), sayı /
+  tarih / saat kolonunda Eşittir. Değer oturum dilinin biçimiyle yazılır (TR `1.250` → `$filter … eq 1250m`; tarih gridde
+  görünen biçimle, SIKI ayrıştırma — `31.11.2026` bir sonraki aya kaymaz, reddedilir).
+- **Koşul kutuya yazılmaz:** `=` `!` `<` `>` ile başlayan ya da `*` / `..` içeren metin → filtre **uygulanmaz**, uyarı
+  verilir, önceki filtre korunur (sessizce düz arama sayılmaz, sessizce yok sayılmaz). Geçersiz değer (`1.25` TR'de,
+  `31.11.2026`) de aynı biçimde reddedilir.
+- **Filtre… penceresi:** menüdeki öğe pencereyi açar; koşul kolon tipine göre **tanımlı listeden seçilir** (metin 13 ·
+  sayı/tarih 7 · saat 1 koşul), değer(ler) tipe uygun alana girilir (tarih = `DatePicker`); geçersiz alanda pencere
+  KAPANMAZ, alan kırmızı; dolu açılış + **Filtreyi Kaldır**. Metin kolonunda Türkçe varyantlar İçerir/İle başlar/İle
+  biter ve Eşittir (OR) / Eşit değil (AND) için de üretilir; Büyüktür/Küçüktür/Arasında varyantsızdır.
+- **Neden:** koşulu kutuya elle yazmak kullanıcının bilmesi gereken gizli bir sözdizimiydi; koşul tanımlı ve seçilen
+  hâlde sunulur (kaynak ekip kullanıcı kararı, 2026-11-15). Kutu en sık kullanım olan tek adımlı düz aramada kalır.
+- **Uygulama (şablon):** ayrıştırma `util/ColumnFilterParser.js` (`kutuDugumu` · `kosulDugumu` · `kosulListesi`),
+  pencere `util/KolonFiltrePenceresi.js`, bağlantı `TablePersonalizer._onMenuAc` / `_onColumnFilter`. Menüye öğe
+  eklemek UI5'in alt çizgili `ColumnMenu._addFilterMenuItem` metodunu gerektirir; çağrı **yalnız
+  `SurumParca.filtreMenusuneEkle`** içinde yaşar. Metot bulunamazsa öğe eklenmez, `Log.error`, kutu çalışmaya devam eder.
+- **Ölçüm sınırı:** davranış 1.71.85 ve 1.120.52 hattında tarayıcıda (gerçek grid, JSON model) kaynak ekipçe ölçüldü.
+  **ÖLÇÜLMEDİ:** gerçek backend'e giden `$filter` metni · 1.72–1.119 · `AnalyticalTable` menüsü.
+
 ## 7. `sap.m.Table` istisnası
+
+⛔ Şablonda **m.Table sürümünde bir util YOK** (yalnız grid). m.Table istisnası gerekiyorsa util'i sıfırdan yazma —
+DUR, kullanıcıya grid'in neden uymadığını ve yazılacak kodun kapsamını söyle, onay al. Eski proje kopyaları (m.Table
+util'i) kopya kaynağı değildir.
 Mobil öncelikli ya da hücre içeriği değişken ekran: `sap.m.Table` + `sap.m.table.columnmenu.Menu` (kolon başlığında
 sırala + tipe duyarlı operatörlü filtre: metin Contains/EQ/StartsWith/EndsWith/NE; sayı/tarih EQ/NE/GT/GE/LT/LE/BT;
 bool EQ) + `infoToolbar` aktif filtre çubuğu (`Alan op değer ✕` + "Tümünü temizle") + kolon göster/gizle popover +
@@ -215,7 +267,9 @@ ekranda değil merdivenle ölç (1600 / 1366 / 1280 / 1180 / 1093 / 1024 px; Win
 - [ ] Kolon genişlikleri tipe göre, anahtarlar başta, sabit kolon `id`'leri, `sortProperty` + `filterProperty`
 - [ ] Kolon göster/gizle + varyant (varsayılan ★) + Excel (Görünür/Tüm, filtreye uyan tüm satırlar)
 - [ ] Varyant servisi yoksa localStorage-only; lokal çalıştırmada 401 popup'ı yok
-- [ ] Filtre ekranı MultiInput + ValueHelpDialog; `caseSensitive` hiç yok; wildcard yardımcısı; `check_filter_search_pattern.py` PASS
+- [ ] Filtre ekranı MultiInput + ValueHelpDialog; `caseSensitive` hiç yok; wildcard yardımcısı (yalnız seçim ekranı/VH); `check_filter_search_pattern.py` PASS
+- [ ] Kolon filtresi: kutu düz arama, koşul yazımı reddedilir + önceki filtre korunur; **Filtre…** penceresi açılır (§6.4)
+- [ ] Satır modu + boş durum backend sürümüne uygun (`app-skeleton.md` §7.1)
 - [ ] Seçim temizliği tek giriş noktasında (`delete-flow-ui.md` §1)
 - [ ] Kişiselleştirme i18n anahtarları iki dosyada (`check_i18n_keys.py`)
 - [ ] Runtime: sırala, filtrele, kolon gizle, varyant kaydet/varsayılan/yeniden aç, Excel (`runtime-verification.md`)
@@ -223,11 +277,16 @@ ekranda değil merdivenle ölç (1600 / 1366 / 1280 / 1180 / 1093 / 1024 px; Win
 ---
 
 ## Bu dosyada ÇIKARILAN / DEĞİŞTİRİLEN
-- Müşteri rapor uygulamalarının yolları ("kopyala" referansları) ve util dosyasının kendisi alınmadı; yerine davranış
-  sözleşmesi (§3) yazıldı. Ortak varyant servisinin adı demo adla değiştirildi; servis bu template'le gelmez.
+- Müşteri rapor uygulamalarının yolları ("kopyala" referansları) alınmadı. İlk turda util dosyası da alınmamış, yerine
+  davranış sözleşmesi (§3) yazılmıştı; 2026-11-17 (uyum turu 8) kaynağın jenerikleştirilmiş kanonik şablonu
+  `templates/ui5-freestyle/` olarak geldi (util + varyant servisi RAP referansı dahil, demo adlarla) — §3 tersine çevrildi:
+  util artık şablondan kopyalanır.
+- 2026-11-17: grid kolon filtresi kutusu düz aramaya indirildi, koşullar **Filtre…** penceresine taşındı (§6.4; kaynak
+  2026-11-15 kararı); wildcard yardımcısı yalnız seçim ekranı/VH'ye daraltıldı; satır modu ve `rowsUpdated` sürüme
+  bağlandı (`app-skeleton.md` §7.1); m.Table için util yazımı DUR → sor kuralına bağlandı.
 - Karar kaydının ilk (m.Table + columnmenu + infoToolbar) gövdesi kanonik değil, §7 istisnasına indirildi.
 - `_parseSearchTerm` gövdesi kaynakta yoktu (yalnız eşleme tablosu); eşleme tablosuna göre yazıldı ve ölçüm notu eklendi.
 - Salt-okunur rapor backend reçetesi (wrapper view entity + DCL + SRVD/SRVB, conversion exit'li alan `cast`) alınmadı →
   `%sap-rap`.
-- Dialog içinde grid, `RowSelector`, `Edm.Time`, `rowMode` notları kaynaktaki plugin/araç envanteri ve UI standart
-  güncelleme notlarından eklendi; `rowMode` sürüm sınırı DOĞRULANMADI.
+- Dialog içinde grid, `RowSelector`, `Edm.Time` notları kaynaktaki plugin/araç envanteri ve UI standart güncelleme
+  notlarından eklendi. `rowMode` sürüm sınırı artık kaynak ekip ölçümüyle `app-skeleton.md` §7.1'de.

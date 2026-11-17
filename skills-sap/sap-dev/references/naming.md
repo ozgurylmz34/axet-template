@@ -30,6 +30,7 @@ tipini göstermez; yalnız sıradır.
 - Hiyerarşi: `Z_ROOT` → modül ana paketi `ZSD` → iş paketleri `ZSD001`, `ZSD001_CLC`, `ZSD002` …
 - **Paket ve transport yaratılmaz** (kesin yasak C); hangisinin kullanılacağı kullanıcıya sorulur.
 - Yerel klasör: `<source_root>/<MODÜL>/<PAKET>/` (`new_package.py`).
+- **Müşteri namespace'i:** projede `sap-project.json` → `customer_namespaces` ile bildirilmiş namespace'te aynı gövde kullanılır: `/<NS>/SD001`, `/<NS>/SD001_CLC`; obje öneki `/<NS>/SD001_…`, sınıf `/<NS>/CL_SD001_…`. Yerel klasör ve dosya adı abapGit biçimidir (`#<ns>#sd001_clc`; `/` yol parçası olamaz). Namespace'li kilit nesnesi biçimi ölçülmedi — DOĞRULANMADI. Bildirilmemiş namespace ve SAP'nin kendi namespace'leri standarttır (kesin yasak A).
 
 ## 4. Obje adları
 

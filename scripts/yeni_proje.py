@@ -509,7 +509,9 @@ def sap_satiri(sablon: str, sap: dict) -> str:
     satir = sablon
     for eski, yeni in (("sistem profili <…>", f"sistem profili {sap['sap_profile']} · sürüm {sap['release']}"),
                        ("master_language: <TR|EN>", f"master_language: {sap['master_language']}"),
-                       ("aktif paket: <…>", f"aktif paket: {AKTIF_PAKET_YOK}")):
+                       ("aktif paket: <…>", f"aktif paket: {AKTIF_PAKET_YOK}"),
+                       ("müşteri namespace'i: <yok ya da /NS/>",
+                        "müşteri namespace'i: " + (", ".join(sap.get("customer_namespaces") or []) or "yok"))):
         if eski not in satir:
             raise RuntimeError(f"şablon SAP satırında {eski!r} yok — templates/project/AGENTS.md değişmiş")
         satir = satir.replace(eski, yeni, 1)

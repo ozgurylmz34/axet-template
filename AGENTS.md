@@ -10,6 +10,8 @@ PROJECT-ID: axet-template
 - `skills/`, `skills-sap/` — `<ad>/SKILL.md` klasörleri (klasör adı = frontmatter `name`)
 - `memory/` — ekip hafızası (indeks + kayıtlar)
 - `templates/project/` — `new_project.py`'nin kopyaladığı proje iskeleti
+- `agents/` — SAP özel ajanları (`sap-*.md`); `scripts/ajan_kurulum.py` `{{AXET_KLON}}` yer tutucusunu doldurup işaret
+  satırıyla kullanıcı ajan dizinine kurar (`install.py --sap`, `--paketler`); işaretsiz aynı adlı ajana dokunulmaz
 - `scripts/` — `install.py` · `yeni_proje.py` · `new_project.py` · `doctor.py` (tam liste README "Yapı")
 - `aXet-Kur.cmd` — ilk kurulum (çift tık; `kur.ps1`'i yayın deposundan indirip çalıştırır)
 - `kur.ps1` — kurulum motoru · `kur.cmd` — terminal yolu: yeniden kurulum, `-Sifirla`, `-Kaldir`, `-DenemeModu`

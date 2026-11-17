@@ -130,7 +130,10 @@ class GeciciTest(unittest.TestCase):
         bos_gitconfig = self.tmp / "_gitconfig"
         bos_gitconfig.write_text("", encoding="utf-8")
         self.env = dict(os.environ)
-        for k in ("AXET_SAP_PROJECT_DIR", "AXET_PRECOMMIT", "AXET_STAGED_FILES", "GIT_DIR", "GIT_INDEX_FILE"):
+        # AXET_AGENTS_DIR: tanımlıysa ajan kurulumu XDG yerine ORAYA yazar (ajan_kurulum.ajan_dizini) — test gerçek
+        # kullanıcı ajan dizinine dokunmasın.
+        for k in ("AXET_SAP_PROJECT_DIR", "AXET_PRECOMMIT", "AXET_STAGED_FILES", "GIT_DIR", "GIT_INDEX_FILE",
+                  "AXET_AGENTS_DIR"):
             self.env.pop(k, None)
         self.env.update({
             "XDG_CONFIG_HOME": str(self.xdg), "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1",

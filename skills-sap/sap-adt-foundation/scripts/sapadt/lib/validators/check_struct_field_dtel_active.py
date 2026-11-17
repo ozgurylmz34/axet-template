@@ -28,7 +28,7 @@ aXet 2026-09-14 (D1, lider kararı):
   · DTEL GET 404 → BLOCKER'dan ÖNCE ad yapı / tablo / tablo tipi olarak sorulur (Z tipli alan
     bileşen tipi olabilir). Varsa "kapsam dışı: DTEL değil" notuyla atlanır; hiçbirinde yoksa
     BLOCKER; sonda okunamazsa ÖLÇÜLEMEDİ.
-  · Ad URL'de kodlanır (`/scwm/de_x` → `%2Fscwm%2Fde_x`; önek: `check_standard_table_fields.py`).
+  · Ad URL'de kodlanır (`/scwm/de_x` → `%2Fscwm%2Fde_x`; 2026-11-17'den beri `ad_politikasi.url_segmenti`).
   · Standart DTEL'ler KONTROL EDİLMEZ (kapsam beyanı her koşumda basılır).
 
 Bug gate 2026-09-14 (B1, lider kararı (b)): 404 sondası eksik DTEL başına 1+3 GET yapıyor ve her GET 10 sn
@@ -58,7 +58,6 @@ import threading
 import time
 import urllib3
 from pathlib import Path
-from urllib.parse import quote
 
 # Sözleşme yardımcısı script'in KENDİ dizinindedir; `utils` bir üst dizinde (lib/).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -66,6 +65,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _gate_status import gate_status, sap_baglanti_yok  # noqa: E402
 from utils import butce as _butce  # noqa: E402
 from utils.ddic_dtel import KAPSAM_BEYANI, dtel_adaylari  # noqa: E402
+from utils.ad_politikasi import url_segmenti  # noqa: E402  — ADT yol parçası tek kaynak
 
 _GATE = Path(__file__).stem
 # DTEL 404 aldığında adın DTEL dışı bir bileşen tipi olarak var olup olmadığı bu uçlarda sorulur.
@@ -168,7 +168,7 @@ def _get(client, uc: str, ad: str, butce: _Butce):
     # stream=False: gövde `session.get` içinde, yani İPLİKTE okunur (ayrı `r.content` okuması gereksiz — mutasyonla ölçüldü).
     def istek():
         return client.session.get(
-            client.url + f'/sap/bc/adt/ddic/{uc}/{quote(ad.lower(), safe="")}',
+            client.url + f'/sap/bc/adt/ddic/{uc}/{url_segmenti(ad)}',
             params={'sap-client': str(client.client or '')}, verify=False,
             timeout=min(_ISTEK_ZAMAN_ASIMI_SN, max(butce.kalan(), 0.01)))
     return _sureli(butce, istek)

@@ -14,6 +14,12 @@
 | Salt-okunur liste / worklist / value help | **davranışsız query CDS** (servisinde behavior'suz expose) |
 | Klasik dialog/rapor ya da mevcut SEGW servisi | klasik track — dokunma, RAP'a zorla taşıma yok |
 
+**Aynı persistent tabloyu paylaşan birden çok managed root (spike PASS, S/4 private DEV, tek ölçüm):** "ortak veri + ayrı
+frontend" deseninde (aynı belge tablosu üzerinde iki belge tipi, iki uygulama) her tip kendi managed root'u + kendi behavior
+pool'uyla kurulabilir: iki root `persistent table <ortak_tablo>` + `lock master` + `authorization master ( global )` ile yan
+yana aktive oldu, çakışma mesajı yok. **ÖLÇÜLMEDİ:** iki root'un aynı satırı eşzamanlı değiştirmesinde kilit davranışı ve
+draft tablolarının paylaşımı — eşzamanlı yazım senaryosu varsa ayrıca ölç.
+
 Karar gerekçesi her zaman yazılır (clean core seviyesi A/B/C/D, `%sap-dev` → naming §1). Bir iş kalemi ya klasik ya RAP
 track'le gider; RAP seçildiyse aynı iş için SEGW kullanılmaz.
 
@@ -106,6 +112,27 @@ view'da `where username = $session.user`. Servis ve publish: `service-publish.md
 - CLI yolu: `adt_post_shell` `object_type=ddls` (adım ①, yalnız metadata kabuğu — kaynak gövdeye konmaz) → `adt_get` →
   `adt_push_source ddls` (adım ②) → `adt_activate` → readback (adım ③). Kabuk yolu çevrimdışı test edildi, canlı **DOĞRULANMADI**
   (SKILL.md "CLI kapsamı"); araç canlıda düşerse kullanıcı kabuğu Eclipse ADT'de açar.
+
+## 5a. Custom entity + sorgu sınıfı (kaynakta ölçüldü 2026-11-08; aXet araç desteği ayrı)
+
+`define [root] custom entity <ad> [with parameters …] { … }` da DDLS'tir; select/projection yoktur, veri
+`@ObjectModel.query.implementedBy: 'ABAP:<SINIF>'` sınıfından (`IF_RAP_QUERY_PROVIDER`) gelir.
+⚠ **aXet CLI durumu:** yaratma kaynak kapısı custom entity'yi bu sürümde reddedebilir (`custom entity is not supported by
+this tool`) — önce `--list`/`tool-catalog.md`'ye bak; reddederse kullanıcı entity'yi Eclipse ADT'de yaratır. Aşağıdaki sıra
+ve gözlemler kaynak ekibin ölçümüdür (bir geliştirme sistemi, SAP_BASIS 758, yerel paket):
+- **Sıra = entity önce:** ① entity kabuk + kaynak ② entity aktivasyonu ③ sorgu sınıfı kabuk + kaynak (+ aktivasyon)
+  ④ sınıf entity'den sonra geldiyse entity'yi yeniden aktive et. Atomik toplu aktivasyon (`also`) gerekmedi.
+- **implementedBy sınıfı yokken entity AKTİVE OLUR**, yalnız uyarı: `Class '<SINIF>' for 'ObjectModel.query.implementedBy'
+  not found`; sınıf yaratılıp entity yeniden aktive edilince kalkar.
+- **Sınıf önce yapılırsa:** push sözdizimi kontrolünde `Type "<ENTITY>" is unknown` ile düşer ve "yüklenmedi" der, **ama kaynak
+  SAP'ye İNAKTİF sürüm olarak yüklenmiştir** (readback: inaktif = yerel dosya). Push'u tekrarlama: entity'yi yarat + aktive et,
+  sonra yalnız sınıfı aktive et.
+- `ddl:source_type` üç biçimde de `custom entity` döner (`root` / `with parameters` ayrı değer üretmez).
+- ⛔ **Aktiflik kanıtı yalnız metadata `adtcore:version="active"`**: aktivasyondan ÖNCE de `source/main?version=active` GET 200
+  + inaktif kaynağın içeriğini döndürdü ⇒ "active GET 200" kanıt değildir. İkinci teyit: `adt_inactive_objects` listesinde olmamak.
+- Sorgu sağlayıcısında `get_as_ranges( )` alanlar arası `or`'u taşıyamaz → `%sap-code-review` BE-89.
+- **ÖLÇÜLMEDİ:** sorgu sınıfının çalışma zamanı (servis bağlama, sayfalama, OData okuma) · transport'lu pakette yaratma ·
+  `abstract entity` + `with parameters` · `transient view entity`.
 
 ## 6. Behavior definition kuralları
 

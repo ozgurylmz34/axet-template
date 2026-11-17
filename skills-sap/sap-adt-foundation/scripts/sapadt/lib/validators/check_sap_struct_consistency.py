@@ -27,6 +27,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _gate_status import gate_status, sap_baglanti_yok  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils.ad_politikasi import AD_ADAYI, ad_coz  # noqa: E402 — TEK ad grameri (#402 K1)
+from utils.ddl_yorum import yorumlari_maskele  # noqa: E402 — yorum maskeleme tek kaynak
 
 _GATE = Path(__file__).stem
 
@@ -37,19 +40,39 @@ if sys.platform == 'win32':
 
 
 PLACEHOLDER_PATTERN = re.compile(r'\bcomponent_to_be_changed\s*:\s*abap\.string', re.IGNORECASE)
-STRUCT_NAME_PATTERN = re.compile(r'define\s+structure\s+(\w+)', re.IGNORECASE)
-FIELD_PATTERN = re.compile(r'^\s*(\w+)\s*:\s+', re.MULTILINE)
+# Yapı ve ALAN adları `ad_politikasi` gramerinden (#402 K1): `(\w+)` `/` eşlemediği için
+# namespace'li yapı "define structure yok" sayılıyor, namespace'li alan (`/nspc/fld : …`) alan
+# kümesine hiç girmiyordu (eksik alan SAP'de de eksikse fark GÖRÜNMEZDİ).
+STRUCT_NAME_PATTERN = re.compile(r'define\s+structure\s+(' + AD_ADAYI + r')', re.IGNORECASE)
+STRUCT_KW_PATTERN = re.compile(r'define\s+structure\b', re.IGNORECASE)
+_ALAN_SATIRI = re.compile(r'^(' + AD_ADAYI + r')\s*:\s+')
 
 
 def extract_struct_name(text: str) -> str | None:
-    m = STRUCT_NAME_PATTERN.search(text)
-    return m.group(1).upper() if m else None
+    """Katı gramere uyan yapı adı (büyük harf) ya da None (`define structure` yok / ad bozuk)."""
+    m = STRUCT_NAME_PATTERN.search(yorumlari_maskele(text))   # yorumdaki eski `define structure` adı okunmaz
+    ad = ad_coz(m.group(1))[0] if m else ''
+    return ad.upper() if ad else None
+
+
+def cozulemeyen_alanlar(text: str) -> list[str]:
+    """Alan konumunda olup katı gramere UYMAYAN adlar (`/ab/x : …`) — kıyas bunlarla ölçülemez.
+
+    Yorumlar MASKELENMİŞ metinde taranır (aXet tur 8 bug-gate): `//old_fld : zde_old;` ve
+    `/*fld : x;*/` satırı `AD_ADAYI`'nin `/…` koluna takılıp sahte `ad-cozulemedi` üretiyordu."""
+    out = []
+    for line in yorumlari_maskele(text).splitlines():
+        m = _ALAN_SATIRI.match(line.strip())
+        if m and not ad_coz(m.group(1))[0]:
+            out.append(m.group(1))
+    return out
 
 
 def extract_fields(text: str) -> set[str]:
     """Return set of field names from struct DDL source.
 
     Excludes annotation lines, keywords (define, with, where, and), and the struct name itself.
+    Ad gramere uymayan alan satırı kümeye GİRMEZ — çağıran `cozulemeyen_alanlar` ile ölçer.
     """
     keywords = {'define', 'structure', 'with', 'where', 'and', 'value', 'help',
                 'foreign', 'key', 'in', 'on', 'as', 'using', 'syst'}
@@ -57,7 +80,7 @@ def extract_fields(text: str) -> set[str]:
     struct_name = extract_struct_name(text)
     struct_name_lower = struct_name.lower() if struct_name else ''
     in_struct = False
-    for line in text.splitlines():
+    for line in yorumlari_maskele(text).splitlines():   # blok yorumdaki `ad : tip;` alan sayılmaz
         s = line.strip()
         if not s or s.startswith('@') or s.startswith('--') or s.startswith('//'):
             continue
@@ -69,8 +92,8 @@ def extract_fields(text: str) -> set[str]:
         if s.startswith('}'):
             break
         # Lines that match "name : type" with name at the start of the line (not indented continuation)
-        m = re.match(r'^(\w+)\s*:\s+', s)
-        if m:
+        m = _ALAN_SATIRI.match(s)
+        if m and ad_coz(m.group(1))[0]:
             name = m.group(1).lower()
             if name in keywords:
                 continue
@@ -94,12 +117,24 @@ def main() -> int:
 
     local_text = path.read_text(encoding='utf-8', errors='replace')
     struct_name = extract_struct_name(local_text)
+    if not struct_name and STRUCT_KW_PATTERN.search(yorumlari_maskele(local_text)):
+        # #402 K2: `define structure` VAR ama ad katı gramere uymadı (ör. `/AB/X`) ⇒ ÖLÇÜLEMEDİ.
+        print(f'ÖLÇÜLEMEDİ — {path.name} `define structure` içeriyor ama yapı adı çözülemedi '
+              f'→ SAP kıyası KOŞMADI')
+        gate_status(_GATE, 'SKIPPED', False, 'ad-cozulemedi')
+        return 0
     if not struct_name:
         print(f'UYARI: {path.name} içinde "define structure NAME" bulunamadı — validator atlandı')
         # Hedef obje ADI çıkarılamadı => SAP'de hiçbir şey sorgulanmadı.
         gate_status(_GATE, 'SKIPPED', False, 'struct-adi-cikarilamadi')
         return 0
 
+    bozuk = cozulemeyen_alanlar(local_text)
+    if bozuk:
+        print(f'ÖLÇÜLEMEDİ — {path.name}: alan adı çözülemedi {bozuk[:5]} → alan kümesi kıyası '
+              f'eksik olurdu, KOŞMADI')
+        gate_status(_GATE, 'SKIPPED', False, 'ad-cozulemedi')
+        return 0
     local_fields = extract_fields(local_text)
     if not local_fields:
         print(f'UYARI: {path.name} içinde alan bulunamadı — validator atlandı')
@@ -108,6 +143,7 @@ def main() -> int:
 
     # SAP'ye bağlan
     sys.path.insert(0, str(Path(__file__).parent.parent))
+    from utils.ad_politikasi import url_segmenti as _adt_seg  # noqa: E402 — ADT yol parçası tek kaynak
     try:
         from sap_adt_lib import SAPADTClient
         client = SAPADTClient()
@@ -119,7 +155,7 @@ def main() -> int:
     # SAP'den source çek (structures endpoint)
     try:
         r = client.session.get(
-            client.url + f'/sap/bc/adt/ddic/structures/{struct_name.lower()}/source/main',
+            client.url + f'/sap/bc/adt/ddic/structures/{_adt_seg(struct_name)}/source/main',
             params={'sap-client': str(client.client or '')}, verify=False, timeout=20
         )
     except Exception as e:
@@ -162,7 +198,7 @@ def main() -> int:
     # 3. Version check — metadata
     try:
         rm = client.session.get(
-            client.url + f'/sap/bc/adt/ddic/structures/{struct_name.lower()}',
+            client.url + f'/sap/bc/adt/ddic/structures/{_adt_seg(struct_name)}',
             params={'sap-client': str(client.client or '')}, verify=False, timeout=10
         )
         if rm.status_code == 200:

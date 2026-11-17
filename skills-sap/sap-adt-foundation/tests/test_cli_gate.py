@@ -71,10 +71,11 @@ class Kapi(unittest.TestCase):
         tools = {t["name"]: t for t in data["result"]["tools"]}
         okuma = sorted(n for n, t in tools.items() if t["class"] == "read")
         yazma = sorted(n for n, t in tools.items() if t["class"] == "write")
-        H.kaydet("1a --list okuma sayısı", "29", str(len(okuma)), len(okuma) == 29)
+        H.kaydet("1a --list okuma sayısı", "30", str(len(okuma)), len(okuma) == 30)
         # Z128: +adt_pretty_print · Z39 kalanı: +adt_textpool_read · Z166: +adt_dump_read
         # Z195 (2026-10-19): +adt_syntax_check (salt-okur checkrun, yazmadan taşındı) · +adt_get_method (yeni)
-        self.assertEqual(len(okuma), 29, okuma)
+        # Uyum turu 8 (2026-11-17): +adt_badi_spot_read (ENHS okuma, s4_private)
+        self.assertEqual(len(okuma), 30, okuma)
         for ad in ("adt_revisions", "adt_system_info", "adt_object_structure", "sap_doctor", "adt_pretty_print"):
             self.assertEqual((tools[ad]["class"], tools[ad]["available_on"]), ("read", ["all"]), ad)
         tr = tools["adt_textpool_read"]
@@ -104,7 +105,14 @@ class Kapi(unittest.TestCase):
                                       "adt_dtel_create", "adt_post_shell", "adt_publish_service",
                                       "adt_push_source", "adt_struct_create",
                                       "adt_screen_generate", "adt_msgclass_write", "adt_set_description",
-                                      "adt_table_create", "adt_ttyp_create", "adt_textpool_write"})
+                                      "adt_table_create", "adt_ttyp_create", "adt_textpool_write",
+                                      "adt_badi_spot_write"})
+        bs = tools["adt_badi_spot_write"]
+        ok_bs = (bs["available_on"] == ["s4_private"] and bs.get("requires_transport") is True
+                 and tools["adt_badi_spot_read"]["class"] == "read")
+        H.kaydet("1h adt_badi_spot_write: write · s4_private · transport; _read okuma", "hepsi doğru",
+                 json.dumps({k: bs.get(k) for k in ("class", "available_on", "requires_transport")}), ok_bs)
+        self.assertTrue(ok_bs, bs)
         mw = tools["adt_msgclass_write"]
         ok_mw = (mw["available_on"] == ["s4_private"] and mw.get("requires_transport") is True
                  and {a["name"] for a in mw["args"]} == {"name", "transport", "messages", "delete_numbers",
@@ -213,6 +221,8 @@ class Kapi(unittest.TestCase):
                                 "transport": TR, "row_type": "BAPIRET2"},
             "adt_textpool_write": {"name": "SAPMV45A", "transport": TR,
                                    "symbols": [{"key": "B01", "text": "Standart"}]},
+            "adt_badi_spot_write": {"name": "ES_STANDART", "transport": TR,
+                                    "definitions": [{"badi": "ZAXET_BADI_A", "shorttext": "x"}]},
         }
         _rc, _d, out, _e = H.run_cli(HOME_OPT, ["--list"])
         yazma = {t["name"] for t in json.loads(out)["result"]["tools"] if t["class"] == "write"}
@@ -229,6 +239,16 @@ class Kapi(unittest.TestCase):
                  ["adt_activate", "--args-json", json.dumps({"name": "ZAXET_X", "object_type": "class",
                                                              "also": [{"name": "MARA", "object_type": "tabl"}]}), *S1],
                  project=p, rc=2, code="ADR_0005_A")
+        # Uyum turu 8: Z spot içinde STANDART BAdI adı (definitions / remove_badis) ve FUGR/I standart grubu kapıda red
+        self.kos("5 adt_badi_spot_write Z spot + standart BAdI adı",
+                 ["adt_badi_spot_write", "--args-json", json.dumps({"name": "ZAXET_ES_A", "transport": TR,
+                  "definitions": [{"badi": "BADI_STANDART", "shorttext": "x"}]}), *S1], project=p, rc=2, code="ADR_0005_A")
+        self.kos("5 adt_badi_spot_write remove_badis standart ad",
+                 ["adt_badi_spot_write", "--args-json", json.dumps({"name": "ZAXET_ES_A", "transport": TR,
+                  "remove_badis": ["BADI_STANDART"]}), *S1], project=p, rc=2, code="ADR_0005_A")
+        self.kos("5 adt_push_source fugr_include standart grup",
+                 ["adt_push_source", "--args-json", json.dumps({"name": "LSVAKF01", "object_type": "fugr_include",
+                  "group": "SVAK", "source": "x", "transport": TR}), *S1], project=p, rc=2, code="ADR_0005_A")
         self.kos("5 adt_unit_run allow_risky_tests=true (yazma) standart ad",
                  ["adt_unit_run", "--args-json", json.dumps({"name": "CL_X", "allow_risky_tests": True}), *S1],
                  project=p, rc=2, code="ADR_0005_A")

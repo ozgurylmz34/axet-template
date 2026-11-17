@@ -15,7 +15,7 @@
 | C-CDS-NAME-01 | Ad paket `.rules.md` / `naming.md` §4.3 biçiminde | BLOCKER | `cds.md` §3.2 |
 | AX-CDS-TYPE-01 | Tür belirlendi (classic / view entity / abstract entity) ve kural dalı ona göre | BLOCKER | `cds.md` §1.1 |
 | C-CDS-SQLV-01 | Classic view'da `@AbapCatalog.sqlViewName` var; view entity'de **yok** | BLOCKER | `cds.md` §3.2 |
-| C-CDS-SQLV-02 | `sqlViewName` biçimi `<GÖVDE>_V_<1-5>` ve ≤ 14 karakter; ilk aktivasyonda doğru (sonradan yeniden adlandırılamaz) | BLOCKER | `cds.md` §3.2 |
+| C-CDS-SQLV-02 | `sqlViewName` biçimi `<GÖVDE>_V_<1-5>` ve ≤ 14 karakter; ilk aktivasyonda doğru (sonradan yeniden adlandırılamaz). Gövde = paket kökü `<önek><MOD 2-4 harf><3 hane>` (önek Z · Y · projede bildirilmiş `/<NS>/`). ⚠ Namespace'li pakette önek uzundur: `/NSPC/SD001_V_` tek başına 14 karakter ⇒ classic view sığmaz (`/NS/SD001_V_` 12 ⇒ 2 karakter kalır); SAP'nin namespace'li SQL view sınırı ÖLÇÜLMEDİ → orada view entity tercih et | BLOCKER | `cds.md` §3.2 |
 | C-CDS-LABEL-01 | `@EndUserText.label` var, `master_language`'de, spesifikasyondan | BLOCKER | kesin yasak D |
 | C-CDS-AUTH-01 | `@AccessControl.authorizationCheck` var | BLOCKER | `cds.md` §3.1 |
 | AX-CDS-AUTH-01 | Kaynaktaki standart view'lara **doğrudan** erişim var mı, `#CHECK` mi? Varsa çare/gerekçe | BLOCKER | `cds.md` §2 DCL-01 |
@@ -23,7 +23,7 @@
 | C-CDS-WIN-01 | `OVER (PARTITION BY …)` yok (ölçülen sistemde aktive olmadı → ABAP'a al) | BLOCKER | `cds.md` §4 T9 |
 | C-CDS-FROM-01 | Kaynak tablo/view'lar sistemde var; Z kaynak view'lar aktif | BLOCKER | `adt_get` |
 | C-CDS-FROM-03 | Standart tablo alan adları hedef sistemde teyitli (eski sistemden kopya değil; alan adı ≠ DTEL adı) | BLOCKER | `cds.md` §3.3 |
-| C-CDS-FROM-04 | Standart tablo yerine released CDS arandı; kullanılmıyorsa gerekçe kullanıcıya bildirildi; halef `#CHECK` + guard ise geçilmedi | WARNING | `cds.md` §2 DCL-02, §5 |
+| C-CDS-FROM-04 | (Yeni yazılan kod) standart tablo yerine released CDS arandı; kullanılmıyorsa gerekçe kullanıcıya bildirildi; halef `#CHECK` + guard ise geçilmedi. **Mevcut koddaki** ham tablo okuması tek başına bulgu değildir, migrasyon önerilmez (proje clean-core politikası aksini söylemiyorsa — `%sap-code-review` BE-68) | WARNING | `cds.md` §2 DCL-02, §5 |
 | C-CDS-FROM-05 | Replacement tablosu (`DD02L-VIEWREF` dolu: `MSEG`, `MKPF`, `MBEW`, `MSKU` …) yok; `MARC`'tan miktar alanı okunmuyor — classic view **ve view entity** (view entity de fiziksel tabloyu okur: 0 satır ya da 0 miktar). Classic view → `nsdm_e_*`; view entity'de miktar → `I_MaterialStock_2` (`group by` + `sum`) ya da `nsdm_e_*` | BLOCKER | `cds.md` §2 NSDM-01 |
 | C-CDS-CUR-02 | CURR/QUAN alanlarında `@Semantics.amount.currencyCode` / `quantity.unitOfMeasure` doğru referansla | BLOCKER | `tables-structures.md` §3.3 |
 | C-CDS-NS-01 | Eski sistemden taşındıysa namespace ve alan rename'leri regex/kontrolle uygulandı; spesifikasyonda silinen alanlar kaynaktan çıkarıldı (çekirdekte ayrıca C-CDS-NS-02, C-CDS-TD-02) | BLOCKER | `cds.md` §3.4 |
@@ -55,7 +55,7 @@ Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A)
 | DE-NAM-01 | Domain `…_D_…`, DTEL `…_E_…`; ad önerisi canlıda kontrol edildi (varsa başka ad) ve **kullanıcı açıkça onayladı** (`%sap-dev` §6) | BLOCKER | `naming.md` §4.7 |
 | DE-TR-01 | Oturum dili = `master_language`; yaratma sonrası metadata'dan `masterLanguage` okunacak | BLOCKER | kesin yasak D |
 | DE-TR-02 | 4 etiket (kısa ≤10 · orta ≤20 · uzun ≤40 · başlık ≤55) tam ve dolu | BLOCKER | `domain-dtel.md` §1.2 |
-| DE-TXT-01 | Açıklama/etiket spesifikasyondan ya da eski sistemden; tahmin yok | BLOCKER | SAP çekirdeği |
+| DE-TXT-01 | Açıklama/etiket önce kanonik kaynaktan (spesifikasyon · kardeş objenin canlı metni · tanımlıysa eski sistem) alıntılanır; bulunamazsa AI **öneri** sunar, türetimini kalem kalem gösterir ve kullanıcı onaylar (onay kaydı tutulur). Öneriden önce hedef alan uzunluğu ölçülür (sığmayan metin sessizce kırpılır). Yasak olan **sessiz uydurma**dır (addan anlam çıkarıp kaynaksız yazmak). Yeni iş kavramının görünen adını kullanıcı belirler | BLOCKER | SAP çekirdeği · kullanıcı kararı (öneri + onay) |
 | DE-DOM-01 | Tip/uzunluk/ondalık doğru; sabit değer / değer tablosu gerekiyorsa tanımlı; çıktı uzunluğu formülü kontrol edilecek | WARNING | `domain-dtel.md` §3 |
 | AX-DE-BUILTIN-01 | Built-in tipli DTEL'de `typeName` = tip adı (`DATS` …) | BLOCKER | `domain-dtel.md` §2 |
 | DE-ACT-01 | Aktivasyon öncesi/sonrası okuma: `typeName`, etiketler, tip | BLOCKER | `domain-dtel.md` §4 |
@@ -68,11 +68,11 @@ Bilinen kör noktalar: özyinelemeli CDS bağımlılığı (A → B → C → A)
 |---|---|---|---|
 | C-STR-NAME-01 | `…_S_…` biçimi, ≤ 30 karakter | BLOCKER | `naming.md` §4.7 |
 | C-STR-LABEL-01 | `@EndUserText.label` var, `master_language`'de, dolu | BLOCKER | kesin yasak D |
-| C-STR-FIELD-01 | Alanlar mümkünse DTEL'e bağlı (ilkel tip değil) | INFO | `naming.md` §5 |
+| C-STR-FIELD-01 | Alanlar mümkünse DTEL'e bağlı (ilkel tip değil). DTEL'siz (yerleşik `abap.*` tipli) her alan `alan · tip · obje` olarak **listelenir** ve kullanıcının tasarım onay kaydında **adıyla** geçer (BE-13; toplu dalga onayı ve TS'teki "DTEL'siz" kararı onay sayılmaz). Gerekçe kaynak içi yoruma yazılmaz (yorumlu yapı gövdesi push'ta 400 — §3 AX-STR-COMMENT-01) | WARNING | `naming.md` §5 · `%sap-code-review` BE-13 |
 | C-STR-FIELD-02 | Alan tipi Z/Y ya da `/ad-alanı/` ile başlayan tüm DTEL'ler sistemde var ve aktif (standart DTEL'ler bu satırın kapsamı dışında → C-STR-FIELD-03; Z tipli alan yapı/tablo tipiyse DTEL sayılmaz) | BLOCKER | yazma kapısı `check_struct_field_dtel_active.py` (artefaktlı ve artefaktsız `adt_struct_create`) · elle `adt_get` `dtel` |
 | C-STR-FIELD-03 | Standart DTEL adları (`MANDT`, `ERNAM`, `ERDAT` …) doğru | BLOCKER | `adt_get` |
 | C-STR-FIELD-04 | Büyük/küçük harf duyarsız mükerrer alan adı yok | BLOCKER | — |
-| C-STR-CUR-02 | CURR alanında nitelenmiş `@Semantics.amount.currencyCode`, referans alan aynı yapıda ve `@Semantics.currencyCode : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
+| C-STR-CUR-02 | CURR alanında nitelenmiş `@Semantics.amount.currencyCode`; başvurulan CUKY alanı mevcut ve başvurulan her **yerel** alan (Z'li DTEL'li ya da yerleşik `abap.cuky`) `@Semantics.currencyCode : true` işaretli. Başvuru aynı yapıya ise alan yoksa BLOCKER; alan var ama tipi (DTEL) bilinen CUKY'lerden doğrulanamıyorsa WARNING. Başvuru **başka tabloya/yapıya** nitelenmişse (`'t001.waers'`) SAP kabul eder — o tablo ayrıca okunur. Boş tablo kısmı (`'.waers'`) nitelenmiş sayılmaz. Ad karşılaştırması büyük/küçük harf duyarsız | BLOCKER | `tables-structures.md` §3.3 |
 | C-STR-UNIT-01 | QUAN alanında nitelenmiş `@Semantics.quantity.unitOfMeasure`, referans alan `@Semantics.unitOfMeasure : true` işaretli | BLOCKER | `tables-structures.md` §3.3 |
 | C-STR-DEPR-01 | `@AbapCatalog.preserveKey` yok | WARNING | `cds.md` §3.1 |
 | AX-STR-COMMENT-01 | DDL'de `//` yorum yok | BLOCKER | `tables-structures.md` §1.3 ③ |
@@ -93,14 +93,16 @@ Bilinen kör noktalar: append yapı varlığı · pool/cluster ayrımı · çok 
 | AX-TBL-ENH-01 | `@AbapCatalog.enhancement.category` var | BLOCKER | `tables-structures.md` §3.3 |
 | AX-TBL-NOTNULL-01 | `not null` yalnız anahtar alanlarda | WARNING | `tables-structures.md` §3.3 |
 | C-TBL-DTEL-01 | Yeni alanların DTEL'leri aktif; standart DTEL adları doğru; namespace'li DTEL tırnaksız küçük harf | BLOCKER | `tables-structures.md` §3.3 |
-| C-TBL-CUR-02 | CURR → CUKY referansı tabloda; nitelenmiş annotation + işaret | BLOCKER | `tables-structures.md` §3.3 |
+| C-TBL-CUR-02 | CURR → CUKY referansı: nitelenmiş annotation + başvurulan her yerel alanda (Z'li DTEL'li ya da `abap.cuky`) `@Semantics.currencyCode : true`. Aynı tabloya başvuruda alan tabloda yoksa (ya da bu turda eklenmiyorsa) BLOCKER; tipi doğrulanamazsa WARNING. **Başka tabloya** başvuru geçerlidir (standart KONP: `KBETR` → `RV13A-KONWA`, `PKWRT` → `T001-WAERS`); referans alanı koşul kaydı DTEL'i (`konwa`/`konws` CUKY · `kmein`/`konms` UNIT) ise tutar alanı para birimi tutarıdır, miktar değil | BLOCKER | `tables-structures.md` §3.3 |
 | C-TBL-QUAN-01 | QUAN → UNIT referansı tabloda; nitelenmiş annotation + işaret; miktar/tutar ayrımı DTEL veri tipinden | BLOCKER | `tables-structures.md` §3.3 |
-| C-TBL-DROP-01 | Mevcut alan siliniyor / rename / tip değişiyor mu? Evetse yazma yolu analizi + etki listesi + kullanıcı kararı | BLOCKER | `tables-structures.md` §3.4 |
+| C-TBL-DROP-01 | Mevcut alan siliniyor / rename / tip değişiyor mu? Evetse yazma yolu analizi + etki listesi + kullanıcı kararı. Tip değişimi **fiziksel tipe** göre okunur (yerleşik `abap.*` doğrudan, DTEL'in arkasındaki tip `adt_get` ile): tür değişikliği / daralma / çözülemeyen tip → BLOCKER · genişleme → WARNING · aynı fiziksel tip (yalnız DTEL adı değişti) → INFO | BLOCKER | `tables-structures.md` §3.4 |
 | C-TBL-APPEND-01 | Standart tabloya append eklenmiyor | BLOCKER | kesin yasak A |
 | C-TBL-DLI-01 | Delivery class değişiyor mu (genelde sabit kalmalı) | WARNING | — |
 | C-TBL-MAINT-01 | Data maintenance değişiyor mu | INFO | — |
 | C-TBL-ORDER-01 | Yeni iş alanı audit bloğunun üstünde; audit bloğu en sonda | WARNING | `tables-structures.md` §3.4 |
 | C-TBL-TD-01 | Spesifikasyondaki alan listesiyle (sayı, sıra) uyumlu | BLOCKER | — |
+| C-TBL-CRE-01 | (Yeni tablo) DTEL'siz (yerleşik `abap.*` tipli) alan var mı? Her biri `alan · tip · tablo` olarak **listelenir**; mümkünse mevcut (standart ya da Z) DTEL'e çevrilir. Client alanı `mandt : mandt` (DTEL), `abap.clnt` değil. Gerekçe kaynak içi yoruma yazılmaz (tablo yorumları SAP readback'te siliniyor) | WARNING | `tables-structures.md` §3.3 |
+| C-TBL-CRE-02 | (Yeni tablo/yapı) tasarım onay **kaydı** var mı: kullanıcının alan + key + DTEL tasarımına verdiği açık onayın karar cümlesi/yeri brifte duruyor ve C-TBL-CRE-01'in listelediği her DTEL'siz alan onda **adıyla** geçiyor. Kayıt yoksa ya da alan kayıtta yoksa **yaratma**, sor. Toplu dalga onayı ("29 tablo yaz") kapsam onayıdır, tasarım onayı değildir | BLOCKER | AX-TBL-APPROVAL-01 · `%sap-code-review` BE-13 |
 | AX-TBL-VERIFY-01 | Yazma sonrası içerik kıyası + `DD03L` alan sayısı + (yeniden yaratmada) `E071` silme kalıntısı planlı | BLOCKER | `tables-structures.md` §3.5 |
 
 Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponlama değişikliği · append içeren tablo değişikliği.
@@ -161,4 +163,5 @@ Bilinen kör noktalar: yabancı anahtar değişikliği etkisi · indeks/tamponla
 - Validator/script adları, reviewer çıktı YAML şablonu, zincir/wiring durumu notları → alınmadı (aXet'te karşılığı yok); "kapı PASS'i ≠ madde ölçüldü" dersi başlıkta kaldı.
 - Müşteri paketine özgü ad desenleri, teknik tasarım dokümanı araçları, ekran/kolon yerleşimi maddeleri (PACK-14) → genelleştirildi ya da çıkarıldı.
 - 2026-09-25 eşitleme (ekip dersleri): AX-CDS-DESC-01 ve AX-CDS-DUP-01 eklendi; kaynaktaki obje adları, belge numaraları ve sistem kimliği alınmadı.
+- 2026-11-17 (kaynak eşitleme): C-TBL-CRE-01/02 eklendi (kaynakla aynı kimlik); AX-TBL-APPROVAL-01 kapsamı (delivery class, data maintenance dahil) daha geniş olduğu için korundu, C-TBL-CRE-02 onun **kayıt** yarısıdır. C-STR-FIELD-01 INFO → WARNING (listeleme + onay kaydı). Kaynaktaki DTEL'siz alan validator'ı (`check_ddic_builtin_fields`) ve kardeş README `dtel-istisna:` kuralı aXet'te araç olarak YOK — satırlar elle yürünür.
 - 2026-10-19 kimlik hizası: kaynakla aynı kuralı taşıyan satır kaynağın kimliğini aldı (`C-CDS-*`, `C-STR-*`, `C-TBL-*`, `DE-*`); birden çok kaynak satırını birleştiren satır ilkinin kimliğini taşır (ör. C-CDS-SQLV-02 ⊃ SQLV-03 · C-CDS-CUR-02 ⊃ CUR-03 · C-TBL-DROP-01 ⊃ DROP-02/RENAME-01/TYPE-01); kaynakta karşılığı olmayan satırlar `AX-` ailesinde. Eski kısa adlar (CDS-FROM-1, TBL-DTEL …) yalnız bu tarihten önceki kayıtlarda geçer.

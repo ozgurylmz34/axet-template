@@ -467,6 +467,11 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/check_ui_odata_refs.py --app 
 - Çıkış 2 = ölçüm yok (metadata EDMX değil — çoğunlukla kaydedilen dosya bir logon sayfasıdır — ya da ikincil servis
   metadata'sı verilmedi). Kırmızı değildir, temiz de değildir.
 - aXet CLI'sinde `$metadata` okuma aracı yoktur; ikinci bir bağlantı yolu kurulmaması için script ağa çıkmaz.
+- **Namespace'li servis** (`/sap/opu/odata/<ns>/<AD>/`) servis adı `/NS/<AD>` olarak çözülür
+  (`--metadata-for /NSPC/ZCA000_VH_O2=<vh.xml>`). Ana servis otomatik seçiminde namespace'li aday yalnız projede bildirilmiş
+  müşteri namespace'iyse kabul edilir (`--project-dir <proje_kökü>` → `sap-project.json` `customer_namespaces`, kökte
+  `.conn_adt` şart); bildirilmemiş namespace'te ana servis seçilmez → çıkış 2 "servis adı çözülemedi" (`--metadata`'yı
+  açıkça ver).
 
 ### 8.1 Kopya UI'ı yeni servise taşırken (ör. SEGW → RAP) görülen tuzaklar
 | Tuzak | Belirti | Çözüm |
@@ -480,8 +485,11 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/check_ui_odata_refs.py --app 
 
 ## 9. i18n
 
-- `i18n/i18n.properties` = İngilizce (varsayılan), `i18n/i18n_tr.properties` = Türkçe; manifest
-  `supportedLocales ["", "tr"]`, `fallbackLocale ""`.
+- `i18n/i18n.properties` = İngilizce (varsayılan), `i18n/i18n_tr.properties` = Türkçe; manifest `sap.app.i18n` dizgi
+  (`"i18n/i18n.properties"`). Nesne biçim (`supportedLocales ["", "tr"]`, `fallbackLocale ""`) yalnız 1.120 hattında;
+  1.71.85 nesneyi desteklemez ve bu iki ayarı hiçbir yerde okumaz (`app-skeleton.md` §7.1).
+- Dinamik anahtar (`getText("kfp.op." + sOp)`) bir **önektir**: o önekle başlayan en az bir anahtar iki dosyada da olmalı
+  (`check_i18n_keys.py` öneki tanır; tek tek değerlerin tamlığını ÖLÇMEZ — önekli anahtar kümesini iki dosyada eşit tut).
 - **Etiket/metin değişikliği ve yeni anahtar HER İKİ dosyada.** `language=tr` ile TR dosyası yüklenir ve varsayılanı
   ezer → yalnız birini değiştirmek TR'de eski metni bırakır. `rg -n "<key>" webapp/i18n --glob "i18n*.properties"` →
   bulunan tüm dosyalar. Sonra kullanıcıya **hard refresh (Ctrl+F5)** (bundle önbelleklenir).

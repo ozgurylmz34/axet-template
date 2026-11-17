@@ -952,6 +952,7 @@ class DdicTextpool(unittest.TestCase):
         adt.retry_on_timeout = adt.retry_on_csrf_fail = adt.retry_on_5xx = True
         adt.retry_on_lock_conflict = False
         adt._should_retry = k._should_retry.__get__(adt)
+        adt._csrf_reddi_mi = k._csrf_reddi_mi   # #411 (tur 8): _should_retry ortak CSRF yüklemini çağırır (staticmethod)
         adt._retry_request = k._retry_request.__get__(adt)
 
     def _s9_kos(self, ilk_yanit):

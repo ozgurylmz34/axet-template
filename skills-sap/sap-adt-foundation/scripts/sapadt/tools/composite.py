@@ -256,7 +256,8 @@ def _verify_ddic_content(client, name: str, obj_type: str) -> dict:
     adt = getattr(client, "adt_client", client)
     try:
         if obj_type in ("structure", "tabl"):
-            url = f"/sap/bc/adt/ddic/structures/{name.lower()}/source/main"
+            from utils.ad_politikasi import url_segmenti as _adt_seg  # type: ignore  # yol parçası tek kaynak
+            url = f"/sap/bc/adt/ddic/structures/{_adt_seg(name)}/source/main"
             r = adt.session.get(adt.url + url, headers=adt._get_headers("text/plain"),
                                 params={"version": "active"}, timeout=30)
             if r.status_code != 200:
@@ -270,7 +271,8 @@ def _verify_ddic_content(client, name: str, obj_type: str) -> dict:
                 return {"ok": False, "reason": "no_fields", "source_head": src[:160]}
             return {"ok": True, "field_count": fcount}
         if obj_type == "ttyp":
-            url = f"/sap/bc/adt/ddic/tabletypes/{name.lower()}"
+            from utils.ad_politikasi import url_segmenti as _adt_seg  # type: ignore  # yol parçası tek kaynak
+            url = f"/sap/bc/adt/ddic/tabletypes/{_adt_seg(name)}"
             r = adt.session.get(
                 adt.url + url,
                 headers={"Authorization": adt._get_auth_header(),

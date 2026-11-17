@@ -245,6 +245,14 @@ zararsız" diye geçiştirmek de yanlış (push ≠ aktif). Include tek başına
   Sessiz otomasyon YOK: DUR → açıkla → kullanıcıdan açık onay iste. CLI Z/Y guard'ı bunu reddederse
   guard'ı aşmaya çalışma; kullanıcı bağlam programını SE80/ADT GUI'den aktive edebilir (kanıtlı çözüm).
 - Tek-obje yolu (include URI'si, `also` olmadan) bağlam programını çözmez → kullanma.
+- **Karşı gözlem — enhancement implementation üzerinden bağlı include (2026-11-06, tek ölçüm):** standart exit
+  include'una **doğrudan değil**, bir enhancement implementation içinden (`INCLUDE <z_include> IF FOUND.`) bağlanan Z include
+  **kendi URI'siyle tek başına** aktive oldu (`activationExecuted=true`, `generationExecuted=true`, hata 0); standart programın
+  aktivasyonu gerekmedi. ⇒ Yukarıdaki "bağlam programı üzerinden" kuralı **doğrudan INCLUDE edilen** exit include'u için
+  ölçülmüştür; enhancement yolunda önce include'un kendi aktivasyonunu dene, hata alırsan yukarıdaki yola geç.
+  ⚠ Ölçüm tuzağı: inaktif sürümü olmayan ana program için `version=inactive` sözdizimi kontrolü
+  `REPORT/PROGRAM statement is missing` (1,0) döner — artefakttır, sözdizimi hatası değil; kararı aktivasyonun kendi
+  kontrolüne ve `version=active` kontrolüne bırak.
 
 ### 4.3b Z adlı genişletme objesi — standart hedef kapıda reddedilir (Yasak A, Z104)
 Genişletme objesinin KENDİ adı Z'lidir (`ZZAVBAK`, `ZE_I_SO`); genişlettiği standart obje kaynağın İÇİNDE yazar. Bu yüzden
@@ -254,7 +262,8 @@ ad denetimi yetmez; yazma kapısı (`gate.check_std_extension`, adım 5) ve `adt
   · `annotate view|entity <std> with` (metadata extension) → `ADR_0005_A`, mesajda satır + hedef.
 - BDEF `extension …;`: genişletilen BDEF kaynakta YAZMAZ (ADT metadata'sı; `extend behavior for <X>`'teki X alias olabilir —
   SAP örneği `extend behavior for Shop`). Hedef yalnız `extension using interface <I>` ile görünür; yoksa fail-closed red.
-- Hedef Z/Y ya da `/Z…/`, `/Y…/` ise serbest (Z objeyi Z extend ile genişletmek). Yorum (`//`, `/* */`) ve `'…'` içindeki metin
+- Hedef Z/Y ya da `sap-project.json` `customer_namespaces` ile bildirilmiş `/<NS>/` ise serbest (Z objeyi Z extend ile genişletmek;
+  bildirilmemiş `/Z…/`, `/Y…/` 2026-11-17'den beri standart sayılır). Yorum (`//`, `/* */`) ve `'…'` içindeki metin
   taranmaz; baştaki BOM (U+FEFF) atılır. SAP'nin CDS/BDL'de `--`'yı yorum sayıp saymadığı DOĞRULANMADI ⇒ kaynak **üç
   görünümde** taranır ve bulgular birleştirilir: (a) `--` satırı tüketilir, silinmez (içindeki `/*` blok açmaz) · (b) `--`
   satır yorumu (SAP yorum sayıyorsa gerçek kod) · (c) `--` özel değil, içindeki `/*` blok açar (SAP saymıyorsa gerçek kod).

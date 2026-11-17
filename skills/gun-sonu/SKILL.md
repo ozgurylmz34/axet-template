@@ -59,6 +59,10 @@ description: >
      Raporda yaz: "push yok (remote yok) — iş yalnız bu makinede, yedeği yok". Dal açık kalır: iş listesindeki aktif
      maddeye `dal: <dal> (main'e birleşmedi)` ekle. Dalı `main`'e birleştirme gün sonunun parçası DEĞİLDİR ("gün sonu"
      birleştirme onayı sayılmaz); kullanıcı isterse `%commit-pr` adım 9 (yerel birleştirme), ayrı açık onayla.
+   - **Push ≠ main'e girdi.** Remote varken de dal push'lanınca iş `main`'de değildir: PR açılıp birleşmedikçe yarınki
+     güncelleme ve açılış "dal main değil" görür. İş listesindeki aktif maddeye `dal: <dal> (main'e girmedi — PR yok |
+     PR #<n> açık)` yaz ve raporda söyle. Bitmiş iş için `%commit-pr` öner (ayrı onay). İncelemesi koşmamış ya da
+     BLOCKER'ı açık iş PR'a/main'e alınmaz — gün kapansın diye kapı atlanmaz; dal açık kalır, durumu iş listesine yazılır.
    - Template reposunda (ekip `memory/` dersleri) değişiklik varsa o **ayrı depodur**: onayı oraya taşıma, ayrıca sor.
 9. **Doğrula:** `git status` (temiz ya da bilinçli bırakılanlar listeli) · `git log -1 --oneline` · push çıktısı (remote yoksa "push yok") ·
    adım 1'deki `session_brief.py" --no-fetch` komutu (aynı biçimle) son hâli. Bu koşu açılış brief'ini (`.axet-code/acilis-brief.md`) de yeniler: yarınki oturum

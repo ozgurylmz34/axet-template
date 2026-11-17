@@ -256,6 +256,27 @@ TASK_VALIDATORS = {
     ],
 }
 
+# KAPSAM BEYANI — HİÇBİR görev tipinin ÖLÇMEDİĞİ nesne türleri (kaynak çekirdek #405 ⑤; aXet 2026-11-17).
+# Görevi OLMAYAN tür "zincir boş" (kayıtlı boşluk: dtel_update · rap_service_binding) değildir: görev tipi listesinde
+# hiç yoktur ⇒ hiçbir koşum onu ölçmez (`_reviewer.py` DCL'i `None` = zincir yok eşler). Her raporda basılır
+# (sıfır-bulgu anı dahil). Yeni denetim BAĞLANMADI (kapsam kararı). (sonek kümesi, insan-okur etiket)
+OLCULMEYEN_TURLER = [
+    ((".dcls.asdcls", ".asdcls", ".dcl"), "DCL (erişim kontrolü, `define role`)"),
+]
+
+
+def olculmeyen_tur_satirlari(artifact) -> list[str]:
+    """Rapor gövdesinin bakılmayanlar satırları; incelenen dosyanın KENDİSİ bu türdeyse ayrıca söyler."""
+    ad = Path(str(artifact)).name.lower()
+    out = []
+    for sonekler, etiket in OLCULMEYEN_TURLER:
+        bu = ad.endswith(sonekler)
+        out.append(f"{etiket.split(' ', 1)[0]}: ÖLÇÜLMEDİ — {etiket} için görev tipi YOK"
+                   + (" · ⚠ İNCELENEN DOSYA BU TÜRDE: bu koşumun hükmü onun içeriğini "
+                      "ölçmez" if bu else ""))
+    return out
+
+
 # Checklist dosyaları — aXet: kaynak çekirdekteki playbook checklist'leri taşınmadı
 # (yollar bu repoda yok; var olmayan dosyaya atıf okuru boşa gönderir). Boş sözlük =
 # `checklist_reference: null`.
@@ -479,8 +500,10 @@ def main() -> int:
                              've dosyası olmayan gate\'ler ETKİLENMEZ. (aXet: env karşılığı YOK)')
     parser.add_argument('--ack-drop', default='',
                         help='Onaylı tablo DROP alanları (virgülle) — check_table_field_drop\'a '
-                             'iletilir. SADECE adı verilen alanlar ACK-WARNING; isimsiz drop/tip '
-                             'değişikliği yine BLOCKER. Kullanıcı+lider bilinçli onayı (ADR 0005-B).')
+                             'iletilir. SADECE adı verilen alanlar ACK-WARNING; isimsiz drop yine '
+                             'BLOCKER. Tip hükmüne etkisi YOK (kaynak #408): daralma/tür/çözülemeyen tip '
+                             'her zaman BLOCKER (genişleme WARNING, aynı fiziksel tip INFO). '
+                             'Kullanıcı+lider bilinçli onayı (ADR 0005-B).')
     args = parser.parse_args()
 
     # ⛔ OTOMATİK ÇIKARIM YOK (bilinçli): `.conn_adt` yokluğuna BAKMIYORUZ. Kullanıcının
@@ -657,6 +680,8 @@ def main() -> int:
             # ⛔ Verdict'e SAYILMAZ (görünürlük kalemi); tüketici kendi kararını verir.
             'sessiz_bulgu_count': len(sessiz_bulgular),
             'sessiz_bulgu_gates': [r['validator'] for r in sessiz_bulgular],
+            # kaynak #405 ⑤ — hiçbir görev tipinin ölçmediği türler (her koşumda)
+            'bakilmayan': olculmeyen_tur_satirlari(artifact_path),
             'checklist_reference': checklist,
             'results': results,
         }
@@ -754,6 +779,9 @@ def main() -> int:
                 print('     (indirilen gate yok — ölçüm üretemeyen BLOCKER bulunmadı)')
         if checklist:
             print(f'\nManuel checklist (ek kontrol için): {checklist}')
+        # #405 ⑤ KAPSAM BEYANI: bu reviewer'ın HİÇ ölçmediği türler (verdict'e girmez)
+        for satir in olculmeyen_tur_satirlari(artifact_path):
+            print(f'  BAKILMAYAN — {satir}')
         print(f'{"="*70}\n')
 
         if verdict == 'BLOCKER':

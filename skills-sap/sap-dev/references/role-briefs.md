@@ -4,7 +4,7 @@
 > kapsam dışı · engellenirsen · çıktı). Bu dosya o iskelete eklenecek **SAP bloklarını** ve **rol eklerini** verir.
 > Alt ajan SAP çekirdeğini (`core/sap/00-sap.md`), bu skill'i, proje `AGENTS.md`'sini, paket `.rules.md`'sini ve
 > hafızayı **görmez** (ölçülmüş davranış, aXet.code 1.3.0). Aşağıdaki bloklar bu yüzden kısaltılmadan yapıştırılır.
-> **Sıra:** genel şablon §1-§4 doldur → §2 BAĞLAM'a **S1-S4 bloklarını** ekle → ilgili **rol ekini** ekle → §5-§8 aynen kalır.
+> **Sıra:** genel şablon §1-§4 doldur → §2 BAĞLAM'a **S1-S5 bloklarını** ekle → ilgili **rol ekini** ekle → §5-§8 aynen kalır.
 > **Değişmez:** SAP'ye yazma işi alt ajana verilmez. Push, aktivasyon, kabuk yaratma, silme, publish ana oturumda
 > `%sap-adt-foundation` kapısından yapılır.
 > `<TEMPLATE>` ve `<PROJE_KÖKÜ>` yerine **mutlak yol** yaz; alt ajanın çalışma dizinini devraldığı ölçülmedi.
@@ -21,7 +21,7 @@
 
 | Kategori | Yasak |
 |---|---|
-| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
+| **A — Standart SAP objeleri** (müşteri ad alanında olmayan: Z/Y ya da projede bildirilmiş `/<NS>/` ile başlamayan — tanım aşağıda) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
 | **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. Hangi yol, hangi canlı teyitle: `%sap-dev` → `references/write-api-selection.md`. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
@@ -29,6 +29,8 @@
 **Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok. A ve C'de işlemi kullanıcı kendisi yapar; "DEVAM", onun bildirdiği sonucu sistemden okuyup doğrulamak ve kendi işine dönmektir — yasak işlemi sen yapmazsın.
 
 **Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar. Kullanıcı "adları ben veririm" derse de yaratımı sen yapmazsın: append'i ve append alanının Z DTEL'ini kullanıcı yaratır, sonucu sana bildirir; sen sistemden okuyup doğrularsın.
+
+**Müşteri ad alanı (A'nın tanımı):** ① Z ya da Y ile başlayan ad (kilit nesnesinde SAP `E` öneki ister: `EZ…`/`EY…`) ② projenin `sap-project.json` dosyasında `"customer_namespaces": ["/<NS>/"]` ile bildirilmiş namespace ile başlayan ad (`/<NS>/<AD>`). Geri kalan her ad standarttır: SAP'nin kendi namespace'leri (`/SCWM/`, `/SAPAPO/` …) ve bildirilmemiş namespace dahil; liste yoksa, boşsa ya da bozuksa yalnız Z/Y geçerlidir. Namespace'i SAP'ye kaydetmek (SE03, lisans anahtarı) C kapsamındadır, sen yapmazsın; anahtar hiçbir dosyaya yazılmaz. Listeye namespace eklemek kullanıcının beyanıdır: kendiliğinden ekleme, önce onay al; SAP'nin namespace'ini listeye yazmak A ihlalidir. D, namespace'li objeler için de geçerlidir.
 ```
 
 ### S2 — SAP'ye yazma yok: yalnız okuma sınıfı CLI araçları
@@ -38,7 +40,7 @@ SAP'ye yalnız şu CLI ile ve yalnız OKUMA sınıfı araçlarla erişirsin:
   python <TEMPLATE>/skills-sap/sap-adt-foundation/scripts/sap_adt_cli.py <tool> --args-json '{...}' --project-dir <PROJE_KÖKÜ>
   (araç ve sınıf listesi: aynı komut `--list`; çıktısı otoritedir. Uzun/tırnaklı argüman: --args-file <json>)
 OKUMA sınıfı (serbest): ping, sap_doctor, adt_get, adt_get_method, adt_msgclass_read, adt_textpool_read,
-  adt_search_objects, adt_transport_list, adt_where_used, adt_impact_analysis, adt_grep_source, adt_package_contents,
+  adt_badi_spot_read, adt_search_objects, adt_transport_list, adt_where_used, adt_impact_analysis, adt_grep_source, adt_package_contents,
   adt_object_structure, adt_revisions, adt_system_info, adt_atc_check, adt_table_read, adt_sql_query,
   adt_dump_list, adt_dump_read, adt_inactive_objects, adt_enhancements, adt_enhancement_read, adt_enhancement_options,
   adt_feature_probe, adt_lock_check, adt_unit_run (YALNIZ allow_risky_tests=false),
@@ -48,7 +50,7 @@ OKUMA sınıfı (serbest): ping, sap_doctor, adt_get, adt_get_method, adt_msgcla
 YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, adt_delete, adt_publish_service,
   adt_classrun, adt_domain_create, adt_dtel_create, adt_struct_create, adt_screen_generate,
   adt_table_create, adt_ttyp_create, adt_textpool_write, adt_msgclass_write, adt_set_description,
-  adt_unit_run + allow_risky_tests=true (kalıcı veri değiştirebilir).
+  adt_badi_spot_write, adt_unit_run + allow_risky_tests=true (kalıcı veri değiştirebilir).
 - Hiçbir komuta `--sap-write` / `--scope` ekleme. `install.py` çalıştırma.
 - SAP'ye ham REST/HTTP isteği atan script yazma ya da çalıştırma; SAP yolu yalnız bu CLI'dir.
 - Çıkış kodu 2 = kapı/guard reddi (SAP'ye gidilmedi). Reddi aşmak için komutu değiştirme, başka yol arama:
@@ -98,11 +100,24 @@ YAZMA sınıfı — ÇAĞIRMA: adt_post_shell, adt_push_source, adt_activate, ad
   `adt_sql_query` ATMA; ihtiyacı `ENGEL:` satırına yaz. Brifingde "onay alındı: <tablo/alan>" yazıyorsa yalnız o kapsamı oku.
 ```
 
+### S5 — Bağlam disiplini (büyük okuma bağlamı şişirir, uzun satır aracı kilitler)
+```text
+## BAĞLAM DİSİPLİNİ
+- Tablo okuma: önce `COUNT(*)` / `GROUP BY` ile büyüklüğü ölç; sonra yalnız gereken alanları seç (`SELECT *` yalnız
+  kolon adını öğrenmek için küçük `row_limit` ile). Tam tablo dökümü yerine süzgeç + `row_limit`; `truncated:true`
+  ise sonucu "tamamı" diye okuma.
+- Büyük kaynak (sınıf/program ≳1000 satır): tamamını okuma — metot adı ya da benzersiz metin çapasıyla bölgeyi bul
+  (`adt_grep_source`, `rg -n`), sonra o aralığı oku. Satır numarası tek başına çapa değildir (paralel düzenlemede kayar).
+- Büyük düz metin / log: önce boyutu ölç. Uzun satırlı dosyada geniş bağlamlı kalıp kullanma (`.{0,200}X.{0,200}`,
+  yüzlerce satırlık bağlam): önce düz kalıpla say / yerini bul, sonra yalnız eşleşen kayıtları ayrıştırıcıyla oku
+  (ör. satırı JSON olarak çözen kısa bir `python` betiği).
+```
+
 ---
 
 ## (a) SAP araştırma — salt okuma
 Kullanım: kaynak/spesifikasyon/eski sistem incelemesi, canlı obje haritası, etki alanı ölçümü; token-ağır okuma işi.
-Genel şablon §3 YAZMA ALANI = "YOK" (gerekirse yalnız `<PROJE_KÖKÜ>/.tmp/` altında ara dosya). S1-S4 + aşağısı:
+Genel şablon §3 YAZMA ALANI = "YOK" (gerekirse yalnız `<PROJE_KÖKÜ>/.tmp/` altında ara dosya). S1-S5 + aşağısı:
 
 ```text
 ## ROL: SAP ARAŞTIRMA (SALT OKUMA)
@@ -119,7 +134,7 @@ Genel şablon §3 YAZMA ALANI = "YOK" (gerekirse yalnız `<PROJE_KÖKÜ>/.tmp/` 
 ## (b) Backend geliştirme alt görevi — yerel kaynak hazırlama
 Kullanım: ABAP / CDS / RAP / DDIC kaynağını **yerel dosyada** hazırlatmak; çıktı ana oturumda `%code-review`'a,
 sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon §3 YAZMA ALANI = paketin yerel klasörü
-(obje tipi alt klasörleriyle: `classes/`, `cds/`, `functions/`, `programs/` …). S1-S4 + aşağısı:
+(obje tipi alt klasörleriyle: `classes/`, `cds/`, `functions/`, `programs/` …). S1-S5 + aşağısı:
 
 ```text
 ## ROL: BACKEND ALT GÖREVİ (YEREL KAYNAK; SAP'YE YAZMA YOK)
@@ -175,6 +190,20 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
   4. Araç koşmadıysa (komut hatası, traceback, `ABAPLINT-RUN-STATUS` satırı yok) "temiz" deme; nedenini yaz ve
      YAZIM ANI maddelerini elle yürü.
   5. Öz-denetim bağımsız incelemenin yerine geçmez; son hüküm ana oturumun `%sap-code-review` incelemesindedir.
+- TESLİM ÖNCESİ ÖZ-KAPI — incelemenin bulacağını önce sen bul (öz-denetimden SONRA; yalnız yorum/metin/tek sabit gibi
+  mantıksız düzeltmede uygulanmaz). Çünkü üretici kendi yazdığını onaylayan testi koşar, inceleme saldırgan testi koşar;
+  kaynak metodolojide bulguların çoğu üreticinin testlerinin bakmadığı yerdeydi (biçimi bağımsız kaynakla kıyaslamamak ·
+  davranış değişip anlatan metnin eski kalması · kardeş kopyanın atlanması). Yapamadığın adımı `ÖLÇÜLEMEDİ — <neden>` yaz.
+  1. KAHİN: sonucu bağımsız bir kaynakla aynı anahtar kümesinde kıyasla — CDS/sınıf çıktısı ↔ doğrudan tablo okuması
+     (`adt_sql_query`) · standart işlemin/released API'nin verdiği değer · kenar vakalar (boş · çok kalem · para
+     birimi/birim · tarih sınırı). Rapor: `KAHİN: <ne> · <N> anahtar · fark <k>`. Yaklaşım bir sınıf olarak ayrışıyorsa
+     yamaya geçme, ENGEL satırına YÖNTEM sorusu yaz.
+  2. SINIF: aynı hatanın diğer metot/include/kardeş sınıftaki kopyası (`adt_grep_source`, `adt_where_used`) ve komşu
+     biçimleri; tek vaka gelse de sınıf olarak kapat.
+  3. METİN: davranış değiştiyse onu anlatan metni bul. Senin yerel kaynağındaki mesaj metinleri ve yorumlar bu turda
+     güncellenir; TS/FS/KD bölümü ve test vakası `METİN: <yer> → güncellenmeli` diye listelenir (doküman turu ana oturumun kararı).
+  4. KARDEŞ: değişikliğin where-used tüketicileri için etki listesi + en az bir tüketicide okuma ölçümü. Yerel ölçüm
+     çıktısı yalnız `<PROJE_KÖKÜ>/.tmp/` altına yazılır.
 - ÇIKTI (genel §8'e ek) — ana oturumun inceleme ve yazma adımı için yapılandırılmış teslim:
   1. Obje listesi: ad · tip · yerel dosya yolu · yeni mi/değişiklik mi · dayandığı canlı çekim (obje + zaman)
   2. Niyet: değişiklik ne yapmalı (spesifikasyon referansı)
@@ -183,13 +212,14 @@ sonra ana oturumun `%sap-adt-foundation` yazma akışına girer. Genel şablon �
   5. Aktivasyon sırası önerisi (ör. DDIC → CDS → BDEF + behavior sınıfı birlikte → servis tanımı → binding)
   6. Kullanıcıdan gelmesi gerekenler: obje adı/TITLE, DTEL adı, tablo onayı, transport — açık kalem olarak
   7. Öz-denetim: abaplint son durum satırı + KAPSAMA TABLOSU (aynen) + gerekçelenen satırlar
+  8. Öz-kapı: KAHİN · SINIF · METİN · KARDEŞ — dört ayrı başlık
 ```
 
 ## (c) Ön yüz (UI5) geliştirme alt görevi — yerel kaynak hazırlama
 UI5 yöntemi `%sap-ui5-fiori` skill'indedir. Alt ajan yalnız brifingi görür (ölçüldü, bakımcı ölçüm kaydı;
 skill'i kendisinin yükleyip yükleyemediği ölçülmedi) → ana oturum işe uyan referans bölümünü (ör. `freestyle-odata-v2.md`
 save/§7, `checklists.md` FE satırları) brifinge metin olarak ekler. Bu ek, yöntemi **varsaymadan** projedeki çalışan
-uygulamadan da doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel klasörü. S1-S4 + aşağısı:
+uygulamadan da doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel klasörü. S1-S5 + aşağısı:
 
 ```text
 ## ROL: UI5 ALT GÖREVİ (YEREL KAYNAK; SAP'YE YAZMA VE DEPLOY YOK)
@@ -242,9 +272,25 @@ uygulamadan da doğrulatır. Genel şablon §3 YAZMA ALANI = uygulamanın yerel 
      yalnız iki durumda geçerlidir: araç yanılıyor (kanıtla) ya da ihlal senin değişikliğinden önce de vardı ("önceden var").
   4. Araç koşmadıysa (komut hatası, traceback) "temiz" deme; nedenini yaz ve YAZIM ANI maddelerini elle yürü.
   5. Öz-denetim bağımsız incelemenin yerine geçmez; son hüküm ana oturumun incelemesindedir.
+- Mock kurarken ya da mock'a karşı yeşil geçen bir ekranı teslim ederken (backend canlıysa) mock'un davranışını — sayfa
+  boyu ve `__next`, etag/`If-Match`, hata kodları, süzgeç sınırları, alan değer kümeleri — ana oturumun verdiği canlı
+  istek/yanıt dökümünden kur; döküm yoksa bu davranışları DOĞRULANMADI yaz. Mock-yeşili canlı kanıtı sayma: sunucu
+  sayfalaması, ETag zorunluluğu ve aksiyon hata kodu mock'ta yoksa ekran mock'ta geçip canlıda kırılır. Backend henüz yoksa uygulanmaz.
+- TESLİM ÖNCESİ ÖZ-KAPI — (b)'deki dört adım, UI5'e göre (öz-denetimden SONRA; yalnız etiket/i18n metni değişikliğinde
+  uygulanmaz; tam tarayıcı turu İSTEMEZ). Yapamadığın adımı `ÖLÇÜLEMEDİ — <neden>` yaz.
+  1. KAHİN: davranış iddianı gerçek sistemle kıyasla — ana oturumun verdiği canlı OData istek/yanıt dökümü (mock değil).
+     Bir biçimi (filtre metni · sayı/tarih · URL · Excel çıktısı) üretiyor ya da ayrıştırıyorsan çıkan değeri sunucunun
+     kabul ettiği/döndürdüğüyle kıyasla; kontrol grubu değişiklik öncesi kod (`git show <taban>:<yol>`). Rapor:
+     `KAHİN: <ne> · <N> vaka · fark <k>`. Yaklaşım bir sınıf olarak ayrışıyorsa yamaya geçme, YÖNTEM sorusunu ENGEL'e yaz.
+  2. SINIF: komşu biçimler — diğer kolon türleri (metin/sayı/tarih/saat) · diğer giriş yolları (kutu · menü · varyant ·
+     Excel · yeniden listeleme) · kardeş uygulamalardaki kopya yardımcı (`rg` ile dosya ve fonksiyon adı).
+  3. METİN: i18n ve kod yorumları bu turda güncellenir; kullanıcı kılavuzu (KD), TS/FS bölümü, test vakası ve ekran
+     görüntüleri `METİN: <yer> → güncellenmeli` diye listelenir.
+  4. KARDEŞ: değişen yardımcıyı kullanan diğer ekran/uygulamalar için etki listesi. Ölçüm betikleri ve çıktıları yalnız
+     `<PROJE_KÖKÜ>/.tmp/` altına; canlı sistemde kalıcı veri bırakma.
 - ÇIKTI (genel §8'e ek): değişen dosyalar · binding/handler/navigasyon etkisi · ALV paritesi maddeleri tek tek
   (var / yok + dosya:satır) · dayandığı metadata/backend kaynağı · çalışma zamanı doğrulaması yapıldı mı ·
-  öz-denetim (statik kontrol çıktıları + KAPSAMA TABLOSU, aynen).
+  öz-denetim (statik kontrol çıktıları + KAPSAMA TABLOSU, aynen) · öz-kapı (KAHİN · SINIF · METİN · KARDEŞ).
 ```
 
 ## (d) Özellik (feature) koordinasyonu — ana oturumun işi
@@ -267,10 +313,12 @@ gönderemez ve konuşmayı görmez → koordinasyon **devredilemez**; ayrı bir 
 ## Kaynak metodolojiden alınmayanlar
 | Unsur | Neden |
 |---|---|
-| Rol başına araç izin listesi ile SAP yazma engeli | aXet'te özel ajan tanımı çalışmaz; engel S2 metni + CLI yazma kapısı (`--sap-write` + kullanıcı opt-in) ile sağlanır |
+| Rol başına araç izin listesi ile SAP yazma engeli | aXet.code ≥ 1.5.1'de rol başına özel ajan var (`agents/sap-*.md`; salt-okur roller dosya yazma araçlarını kapatır), ama SAP yazma bash üzerinden geçtiği için engel araç listesiyle değil S2 metni + CLI yazma kapısı (`--sap-write` + kullanıcı opt-in) ile sağlanır |
 | Uzmanın inceleme ajanına "hazır" sinyali ve lider aracılı inceleme döngüsü | Karşılığı: ana oturum `%code-review` çalıştırır; (b) ÇIKTI teslim alanları o incelemenin girdisidir |
 | Teslim öncesi ortak kontrol programı (kontrol listesi satırlarını ölçüp kapsama tablosu basan program) | aXet'e taşınmadı; karşılığı (b)/(c) öz-denetimindeki elle kapsama tablosu + mevcut çevrimdışı kontroller (`abaplint_run.py`, UI5 `check_*.py`) |
 | Metodoloji junction'ı arama talimatı | aXet'te junction yok |
 | Seans işaretli çekme script'i ve düzenleme öncesi engelleyici kanca | Hook yok; karşılığı `adt_get` çekme kaydı + `adt_push_source` kıyası (ana oturumda) |
 | UI5 MCP araçları (API referansı, linter, manifest doğrulama) ve tarayıcı otomasyonu ile doğrulama seviyeleri | aXet yerel MCP'yi yok sayar (ölçüldü); UI5 yöntemi ve script'li kontroller `%sap-ui5-fiori`'de |
 | Boşta ajan tutma / ayakta kalan (standing) roller | aXet `agent` aracında karşılığı yok; her devir tek seferlik |
+| Ajan tanımlarındaki "onay penceresi açan komut yazma" bölümü (izin listesi `ask` kuralları, liderin bekleyen ajanı durdurup devam ettirmesi, izin bekleme gözlem aracı) | Kaynağın izin/ajan altyapısına özgü; aXet'te genel karşılığı brifing şablonu §3 satırıdır (silme yok, geçici çıktıyı üzerine yaz, mutlak yol; görünmeyen izin sorusu çekirdek §7'de ölçülü) |
+| Bağlam disiplininde lider/başka ajan oturum kaydını (transkript) okuma yasağı ve kayıt okuma araçları | aXet'te alt ajan transkript dosyası ölçülmedi; S5 yalnız genel büyük-dosya kuralını taşır |

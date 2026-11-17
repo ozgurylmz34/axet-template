@@ -93,6 +93,48 @@ class TestI18n(_Taban):
             (Path(d) / "webapp").mkdir()
             self.kontrol("i18n: i18n klasörsüz webapp → ÖLÇÜM YOK", d, 2, icermeli=("ÖLÇÜM YOK",))
 
+    def _onekli_app(self, d, en_ek, tr_ek):
+        w = Path(d) / "webapp"
+        (w / "i18n").mkdir(parents=True)
+        (w / "util").mkdir()
+        (w / "util" / "Pencere.js").write_text(
+            'sap.ui.define([], function () {\n  return function (oB, sOp) { return oB.getText("kfp.op." + sOp); };\n});\n',
+            encoding="utf-8")
+        (w / "i18n" / "i18n.properties").write_text("app=A\n" + en_ek, encoding="utf-8")
+        (w / "i18n" / "i18n_tr.properties").write_text("app=A\n" + tr_ek, encoding="utf-8")
+
+    def test_dinamik_onek_var(self):
+        """`getText("kfp.op." + sOp)` anahtar değil önektir: önekli anahtar iki dosyada varsa temiz."""
+        with tempfile.TemporaryDirectory() as d:
+            self._onekli_app(d, "kfp.op.EQ=Equals\n", "kfp.op.EQ=Eşittir\n")
+            self.kontrol("i18n: dinamik önek `kfp.op.` iki dosyada var → temiz", d, 0,
+                         icermeli=("SONUÇ: 0 ERROR, 0 WARN.",))
+
+    def test_dinamik_onek_dil_dosyasinda_yok(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._onekli_app(d, "kfp.op.EQ=Equals\n", "")
+            self.kontrol("i18n: dinamik önek TR dosyasında yok → ERROR (negatif)", d, 1,
+                         icermeli=("'kfp.op.*' önekli anahtar i18n_tr.properties'de yok", "SONUÇ: 1 ERROR, 0 WARN."))
+
+    def test_noktali_anahtar_birlestirmesiz_onek_sayilmaz(self):
+        """Noktayla biten anahtar YALNIZ JS'te `+` birleştirmesi görülünce önektir (aXet tur 8 bug-gate): XML
+        `{i18n>list.}` ve JS `getText("btn.")` düz anahtardır — `list.title` var diye eksik `list.` örtülmez."""
+        with tempfile.TemporaryDirectory() as d:
+            w = Path(d) / "webapp"
+            (w / "i18n").mkdir(parents=True)
+            (w / "view").mkdir()
+            (w / "view" / "Ana.view.xml").write_text(
+                '<mvc:View xmlns:mvc="sap.ui.core.mvc" xmlns="sap.m"><Title text="{i18n>list.}"/></mvc:View>\n',
+                encoding="utf-8")
+            (w / "util").mkdir()
+            (w / "util" / "Y.js").write_text(
+                'sap.ui.define([], function () {\n  return function (oB) { return oB.getText("btn."); };\n});\n',
+                encoding="utf-8")
+            (w / "i18n" / "i18n.properties").write_text("list.title=L\nbtn.save=S\n", encoding="utf-8")
+            (w / "i18n" / "i18n_tr.properties").write_text("list.title=L\nbtn.save=K\n", encoding="utf-8")
+            self.kontrol("i18n: birleştirmesiz noktalı anahtar önek değil → ERROR", d, 1,
+                         icermeli=("'list.' temel i18n.properties'te yok", "'btn.' temel i18n.properties'te yok"))
+
 
 if __name__ == "__main__":
     unittest.main()

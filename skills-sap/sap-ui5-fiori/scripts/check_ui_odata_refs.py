@@ -26,6 +26,13 @@ Kullanım:
          [--service <ANA_SERVIS>] [--metadata-for <SERVIS>=<dosya>]...
   (--service yoksa manifest `mainService` uri'sinden çıkarılır)
 
+NAMESPACE'Lİ SERVİS (2026-11-17): `/<NS>/<AD>` servisinin kökü `/sap/opu/odata/<ns>/<AD>` (`sap/` DEĞİL). Model
+haritası bu yolu `/NS/<AD>` olarak çözer; `sap/` yolu her yerde ÖNCELİKLİDİR (eski davranış aynen). Ana servis
+manifest'ten seçilirken namespace'li yol YALNIZ müşteri namespace'iyse seçilir (projede `sap-project.json` →
+`customer_namespaces` + `.conn_adt`; kök `--project-dir` ya da cwd) — SAP'nin kendi servisi (`/IWFND/…`) ana servis
+SEÇİLMEZ, eski davranış (exit 2) kalır. Çözüm foundation `ad_politikasi`'ndan; yüklenemezse namespace yolu
+çözülmez (eski davranış). Namespace'li gerçek bir servise istek aXet'te ÖLÇÜLMEDİ.
+
 Çıkış: 0 KIRMIZI yok (hüküm satırını OKU: TEMİZ / eksen ÖLÇÜLMEDİ / UYARI)
        1 en az bir KIRMIZI (yapısal) uyumsuzluk
        2 ÖLÇEMEDİM (yol yok · taranacak dosya yok · servis adı çözülemedi · metadata dosyası yok/EDMX değil ·
@@ -58,6 +65,28 @@ RE_ISIMLI_SUSLU = re.compile(r'\{\s*([A-Za-z0-9_]+)>/([A-Za-z0-9_]+)\s*\}')
 RE_FILTER_DEGISKEN = re.compile(r'new Filter\(\s*(?!["\'{])[A-Za-z_$][\w$.]*\s*,')
 RE_LITERAL = re.compile(r'(["\'])/([A-Z][A-Za-z0-9_]*)\1')
 RE_SERVIS_URI = re.compile(r'^/sap/opu/odata/sap/([^/"?]+)/?$', re.I)
+FOUNDATION_SCRIPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir,
+                                  "sap-adt-foundation", "scripts")
+
+
+def _ad_politikasi():
+    """Foundation `ad_politikasi` (namespace'li servis kökü + müşteri kararı TEK kaynağı) ya da None."""
+    try:
+        yol = os.path.normpath(FOUNDATION_SCRIPTS)
+        if yol not in sys.path:
+            sys.path.insert(0, yol)
+        import sapadt  # noqa: F401 — `sapadt/lib/`i sys.path'e ekler
+        from utils import ad_politikasi as pol
+        return pol
+    except Exception:  # noqa: BLE001 — yoksa namespace yolu çözülmez (eski davranış, sahte temiz YOK)
+        return None
+
+
+def ns_servisi(uri: str) -> str | None:
+    """`/sap/opu/odata/<ns>/<AD>/` → `/NS/<AD>` (yalnız namespace dalı; `sap/` yolu burada None)."""
+    pol = _ad_politikasi()
+    aday = pol.odata_uri_servisi(uri) if pol else None
+    return aday if aday and aday.startswith("/") else None
 
 ENTITY_DESENLERI = ".read('/X') · path: '/X' · entitySet='X' · var X = '/X' (tek/çift tırnak)"
 ODATA_METOTLARI = {"read", "callFunction", "create", "update", "remove", "createKey"}
@@ -105,6 +134,10 @@ def model_haritasi(app: str):
             u = RE_SERVIS_URI.match(d.get("uri") or "")
             if u:
                 servis_ds[ad] = u.group(1)
+            else:  # sap/ yolu değilse `<ns>/<AD>` → `/NS/<AD>` (namespace'li servis kökü)
+                ns = ns_servisi(d.get("uri") or "")
+                if ns:
+                    servis_ds[ad] = ns
     harita = {}
     for ad, mdl in ((m.get("sap.ui5") or {}).get("models") or {}).items():
         if isinstance(mdl, dict) and mdl.get("dataSource") in servis_ds:
@@ -340,7 +373,13 @@ def main() -> int:
     ap.add_argument("--service", help="ana OData servis adı (yoksa manifest'ten)")
     ap.add_argument("--metadata-for", action="append", default=[], metavar="SERVIS=DOSYA",
                     help="ikincil servis metadata dosyası (tekrarlanabilir)")
+    ap.add_argument("--project-dir", help="proje kökü (sap-project.json customer_namespaces + .conn_adt); "
+                                          "yalnız namespace'li ana servis seçimi için (varsayılan: cwd)")
     a = ap.parse_args()
+    if a.project_dir:
+        pol = _ad_politikasi()
+        if pol:
+            os.environ[pol.PROJE_ENV] = os.path.abspath(a.project_dir)
 
     if not os.path.isdir(a.app):
         print(f"[FAIL] --app yolu YOK: {a.app} (çözülen: {os.path.abspath(a.app)}) — ÖLÇÜM DEĞİL (exit 2)")
@@ -360,8 +399,16 @@ def main() -> int:
         mani = os.path.join(a.app, "webapp", "manifest.json")
         if os.path.isfile(mani):
             with open(mani, encoding="utf-8-sig", errors="replace") as fh:
-                m = re.search(r'"uri":\s*"/sap/opu/odata/sap/([^/"]+)/?"', fh.read(), re.I)
+                mani_metin = fh.read()
+            m = re.search(r'"uri":\s*"/sap/opu/odata/sap/([^/"]+)/?"', mani_metin, re.I)
             service = m.group(1) if m else None
+            if not service:  # namespace'li kök — YALNIZ projede bildirilmiş müşteri namespace'i
+                pol = _ad_politikasi()
+                for mu in re.finditer(r'"uri":\s*"(/sap/opu/odata/[^"]+)"', mani_metin, re.I):
+                    aday = ns_servisi(mu.group(1))
+                    if aday and pol and pol.musteri_govdesi(aday) is not None:
+                        service = aday
+                        break
     if not service:
         print("[FAIL] servis adı çözülemedi (--service ver) — exit 2")
         return 2

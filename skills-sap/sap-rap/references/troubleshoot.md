@@ -60,7 +60,7 @@
 | Action'dan yaratılan belge numarası boş | Released BO late numbering | Tüketici yeniden sorgular | eml §2 |
 | Not/metin kaydedildi görünüyor ama işlemde yok | Controlled commit metni yazmadı | `SAVE_TEXT savemode_direct = 'X'` | eml §8 |
 | Save'de veri yazılmıyor | managed'de elle yazma / unmanaged'de saver boş | managed: framework yazar; unmanaged: saver | layering §6 |
-| ETag/kilit hatası (managed) | `lock master`/`etag master` eksik | BDEF'e ekle | draft-and-locks §2 |
+| ETag/kilit hatası (managed) | `lock master`/`etag master` eksik — uygulama türü `managed`, `managed with additional save` ve `managed with unmanaged save` üçü de kapsamda (namespace'li BDEF dahil) | BDEF'e ekle | draft-and-locks §2 |
 | Draft tutarsızlığı | Draft tablosu/`Prepare` eksik | Draft tablosu + draft action'ları (**DOĞRULANMADI**) | draft-and-locks §3 |
 | Mesaj kullanıcıda kesik | 50 karakter sınırı | Belge no öneğin ardına, `+N` | delete-guard §6 |
 | `CALL_FUNCTION_NOT_REMOTE` | FM Remote-Enabled değil | Kullanıcı SE37'de işaretler | behavior-impl §10 |

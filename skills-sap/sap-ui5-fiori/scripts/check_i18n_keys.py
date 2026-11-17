@@ -15,6 +15,8 @@ Her `webapp` için:
   WARN   yer tutuculu metinde tek kesme işareti (MessageFormat'ta `'` kaçış karakteridir → `''` yazılır)
 Referanslar: XML `{i18n>anahtar}` / `${i18n>anahtar}` · manifest `{{anahtar}}` · JS `getText("anahtar"` ve
 `--js-helper` ile verilen yardımcı adları (varsayılan: _txt, _t, _getText).
+Dinamik önek: JS'te noktayla biten sabit (`getText("kfp.op." + sOp)`) anahtar DEĞİL önektir — o dosyada bu önekle
+başlayan EN AZ BİR anahtar aranır (önekin hangi tamamlamalarının kullanıldığı statik bilinmez).
 
 Kullanım:
   python check_i18n_keys.py <proje-ya-da-uygulama-klasörü> [--locale-optional] [--js-helper _msg]
@@ -38,7 +40,8 @@ YER_TUTUCU = re.compile(r"\{(\d+)\}")
 U_KACIS = re.compile(r"\\u([0-9a-fA-F]{4})")
 
 BAKILMAYANLAR = [
-    "değişkenle kurulan anahtarlar (getText(sKey), dizi/haritadan okunan anahtarlar)",
+    "değişkenle kurulan anahtarlar (getText(sKey), dizi/haritadan okunan anahtarlar); dinamik önekin "
+    "(`\"kfp.op.\" + sOp`) HER tamamlaması — yalnız önekle başlayan en az bir anahtarın varlığı",
     "i18n modeli dışında adlandırılmış kaynak modelleri (ör. `{msg>...}`) ve kütüphane (sap.m) metinleri",
     "metnin DOĞRULUĞU / dili / yazım hatası (anahtar var ama metin yanlış) — ekranda kullanıcı testi",
     "kullanılmayan (ölü) anahtarlar",
@@ -73,9 +76,17 @@ def properties_oku(p: Path) -> dict[str, str]:
     return sonuc
 
 
+ONEK_ISARETI = "*"   # referans sözlüğünde dinamik önek anahtarı: `kfp.op.*` (`*` anahtar karakter kümesinde yok)
+
+
 def referanslar(webapp: Path, yardimcilar: list[str]) -> dict[str, str]:
-    """{anahtar: ilk görüldüğü 'dosya:satır'}"""
-    js_ref = re.compile(r"\b(?:" + "|".join(re.escape(h) for h in yardimcilar) + r")\(\s*([\"'])([\w.\-]+)\1")
+    """{anahtar: ilk görüldüğü 'dosya:satır'} — dinamik önek `ONEK_ISARETI` ile biter (`kfp.op.*`).
+
+    Önek YALNIZ JS'te noktayla biten sabitin hemen ardından `+` birleştirmesi gelince sayılır
+    (`getText("kfp.op." + sOp)`). aXet tur 8 bug-gate: eskiden noktayla biten HER anahtar önek sayılıyordu ⇒ XML
+    `{i18n>list.}` / JS `getText("btn.")` eksik olsa da `list.title` varlığı onu örtüyordu (sahte temiz)."""
+    js_ref = re.compile(r"\b(?:" + "|".join(re.escape(h) for h in yardimcilar)
+                        + r")\(\s*([\"'])([\w.\-]+)\1(\s*\+)?")
     bulunan: dict[str, str] = {}
     for dizin, altlar, dosyalar in os.walk(webapp):
         altlar[:] = [a for a in altlar if a.lower() not in S.BUDANAN]
@@ -88,7 +99,10 @@ def referanslar(webapp: Path, yardimcilar: list[str]) -> dict[str, str]:
             if dl.endswith(".js"):
                 for no, kod in S.js_kod_satirlari(ham):
                     for m in js_ref.finditer(kod):
-                        bulunan.setdefault(m.group(2), f"{f.relative_to(webapp).as_posix()}:{no}")
+                        anahtar = m.group(2)
+                        if anahtar.endswith(".") and m.group(3):   # `"önek." + değişken` → dinamik önek
+                            anahtar += ONEK_ISARETI
+                        bulunan.setdefault(anahtar, f"{f.relative_to(webapp).as_posix()}:{no}")
                 continue
             metin = S.xml_yorumsuz(ham) if dl.endswith(".xml") else ham
             desen = MANIFEST_REF if dl == "manifest.json" else XML_REF
@@ -124,6 +138,14 @@ def webapp_denetle(webapp: Path, yardimcilar: list[str], dil_opsiyonel: bool) ->
     if not temel_yol.is_file():
         hatalar.append(f"temel dosya yok: {temel_yol.name}")
     for anahtar, yer in sorted(refs.items()):
+        if anahtar.endswith(ONEK_ISARETI):  # dinamik önek (`"kfp.op." + sOp`): bu önekle başlayan en az bir anahtar
+            onek = anahtar[:-len(ONEK_ISARETI)]
+            if not any(k.startswith(onek) for k in temel):
+                hatalar.append(f"'{anahtar}' önekli anahtar temel i18n.properties'te yok ({yer})")
+            for p, tablo in diller:
+                if tablo is not None and not any(k.startswith(onek) for k in tablo):
+                    (uyarilar if dil_opsiyonel else hatalar).append(f"'{anahtar}' önekli anahtar {p.name}'de yok ({yer})")
+            continue
         if anahtar not in temel:
             hatalar.append(f"'{anahtar}' temel i18n.properties'te yok ({yer})")
         for p, tablo in diller:

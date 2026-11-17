@@ -33,6 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _gate_status import gate_status, sap_baglanti_yok  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils.ad_politikasi import AD_ADAYI, musteri_karari  # noqa: E402 — TEK ad grameri (#402 K1)
 
 _GATE = Path(__file__).stem
 
@@ -69,7 +71,9 @@ ADT_PATHS = {
 # AYRIŞTIRMA vardır. Kullanım yeri: `main()` içindeki "AD ÇÖZÜLEMEDİ ≠ OBJE YOK" dalı.
 # ⛔ Yalnız ÇIKARILAN ada uygulanır; `--name` ile gelen ad operatörün beyanıdır ve
 #    filtrelenmez (aksi hâlde kapı, operatörün bilerek sorduğu objeyi sessizce atlardı).
-_MUSTERI_AD_RE = re.compile(r'^(?:[ZY]\w*|/\w+/\w+)$', re.IGNORECASE)
+# kaynak çekirdek #402 K1: karar artık `ad_politikasi.musteri_karari`'dadır (TEK kaynak). Eski yerel
+# `^(?:[ZY]\w*|/\w+/\w+)$` HER namespace'i müşteri sayıyordu; bildirilmemiş namespace'li ad
+# `namespace-kayitsiz` (ÖLÇÜLEMEDİ) alır — `adt_push_source` de o ada yazmaz (A-EK).
 
 # CDS DDL yorum biçimleri. `//` ve `--` TAM SATIR yorumları boşaltılır, `/* */` blok
 # yorumu satır sayısı korunarak silinir.
@@ -97,7 +101,7 @@ def _yorumlari_siyir(text: str) -> str:
 
     ⚠ String literalleri BİLEREK sıyrılmaz (`@EndUserText.label: 'define root view
     entity örneği'` gibi): literal ayrıştırmak yeni bir FP sınıfı açar. O vektör
-    `_MUSTERI_AD_RE` katmanında yakalanır — ayrı değişmez, ayrı mutasyon.
+    müşteri-adı katmanında (`musteri_karari`) yakalanır — ayrı değişmez, ayrı mutasyon.
 
     Satır SAYISI korunur (yorum satırı silinmez, boşaltılır): ileride satır numarası
     raporlanırsa kaymasın.
@@ -114,7 +118,7 @@ def infer_from_artifact(path: Path) -> tuple[str | None, str | None]:
     """Artifact'tan name + object_type tahmin et (YORUMLAR SIYRILMIŞ metinden)."""
     text = _yorumlari_siyir(path.read_text(encoding='utf-8', errors='replace'))
     # Struct/table: define structure NAME / define table NAME
-    m = re.search(r'define\s+structure\s+(\w+)', text, re.IGNORECASE)
+    m = re.search(r'define\s+structure\s+(' + AD_ADAYI + r')', text, re.IGNORECASE)
     if m:
         return m.group(1).upper(), 'structure'
     # ⚠ TABLE FUNCTION, `define table`'DAN ÖNCE denenmeli (2026-07-30 vakası).
@@ -124,21 +128,22 @@ def infer_from_artifact(path: Path) -> tuple[str | None, str | None]:
     # `activated:true` + "Active source verified" derken üst seviyede BLOCKER döndü;
     # aktivasyon gerçekte BAŞARILIYDI (içerik bayt-eşit doğrulandı).
     # Table function bir DDLS'tir (CDS ailesi), TABL değil.
-    m = re.search(r'define\s+table\s+function\s+(\w+)', text, re.IGNORECASE)
+    m = re.search(r'define\s+table\s+function\s+(' + AD_ADAYI + r')', text, re.IGNORECASE)
     if m:
         return m.group(1).upper(), 'ddls'
     # Negatif lookahead: sıra bozulsa bile "function" tablo adı sanılmasın (çift emniyet).
-    m = re.search(r'define\s+table\s+(?!function\b)(\w+)', text, re.IGNORECASE)
+    m = re.search(r'define\s+table\s+(?!function\b)(' + AD_ADAYI + r')', text, re.IGNORECASE)
     if m:
         return m.group(1).upper(), 'tabl'
     # CDS: define view NAME / define view entity NAME
-    m = re.search(r'define\s+(?:root\s+)?view(?:\s+entity)?\s+(\w+)', text, re.IGNORECASE)
+    m = re.search(r'define\s+(?:root\s+)?view(?:\s+entity)?\s+(' + AD_ADAYI + r')', text, re.IGNORECASE)
     if m:
         return m.group(1).upper(), 'ddls'
     # CDS abstract/custom entity: define abstract entity NAME / define custom entity NAME
     # (view yoktur → üstteki regex eşleşmez; eklenmezse abstract entity push'unda obje adı
     #  None döner → false BLOCKER. Vaka: ZDEMO1_I_SIM_R, 2026-06-29.)
-    m = re.search(r'define\s+(?:abstract|custom)\s+entity\s+(\w+)', text, re.IGNORECASE)
+    # `root` öneki de tanınır (`define root abstract|custom entity`; eskiden ad çözülemiyordu ⇒ SKIP).
+    m = re.search(r'define\s+(?:root\s+)?(?:abstract|custom)\s+entity\s+(' + AD_ADAYI + r')', text, re.IGNORECASE)
     if m:
         return m.group(1).upper(), 'ddls'
     return None, None
@@ -173,12 +178,14 @@ def main() -> int:
         # gate `measured=false` beyan eder; bloklama kararını TÜKETİCİ verir
         # (BLOCKER severity ⇒ `run_review` bunu yine SKIP=BLOCKER sayar; sessiz yeşil
         # DEĞİLDİR — yalnız GEREKÇE dürüstleşir ve `--cevrimdisi` indirimine girer).
-        if not name and (not n2 or not _MUSTERI_AD_RE.match(n2)):
+        karar = musteri_karari(n2) if n2 else 'ad-cozulemedi'
+        if not name and karar != 'musteri':
             print(f'SKIP — {p.name}: obje adı artefakttan çözülemedi '
-                  f'(çıkarılan: {n2!r}); SAP sorgulanMADI. "404 = obje yok" demek '
-                  f'sahte BLOCKER üretir. Adı biliyorsan --name/--object-type ver.',
+                  f'(çıkarılan: {n2!r}, karar: {karar}); SAP sorgulanMADI. "404 = obje yok" '
+                  f'demek sahte BLOCKER üretir. Adı biliyorsan --name/--object-type ver.',
                   file=sys.stderr)
-            gate_status(_GATE, 'SKIPPED', False, 'ad-cozulemedi')
+            gate_status(_GATE, 'SKIPPED', False,
+                        'namespace-kayitsiz' if karar == 'namespace-kayitsiz' else 'ad-cozulemedi')
             return 0
         name = name or n2
         obj_type = obj_type or t2
@@ -196,6 +203,7 @@ def main() -> int:
         return 0
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
+    from utils.ad_politikasi import url_segmenti as _adt_seg  # noqa: E402 — ADT yol parçası tek kaynak
     try:
         from sap_adt_lib import SAPADTClient
         client = SAPADTClient()
@@ -206,7 +214,7 @@ def main() -> int:
 
     try:
         r = client.session.get(
-            client.url + f'/sap/bc/adt/{path_segment}/{name.lower()}',
+            client.url + f'/sap/bc/adt/{path_segment}/{_adt_seg(name)}',
             params={'sap-client': str(client.client or '')}, verify=False, timeout=15
         )
     except Exception as e:
@@ -244,7 +252,7 @@ def main() -> int:
     if obj_type.lower() in SOURCE_BEARING:
         try:
             sr = client.session.get(
-                client.url + f'/sap/bc/adt/{path_segment}/{name.lower()}/source/main',
+                client.url + f'/sap/bc/adt/{path_segment}/{_adt_seg(name)}/source/main',
                 params={'sap-client': str(client.client or ''), 'version': 'active'},
                 headers={'Accept': 'text/plain'}, verify=False, timeout=15)
             body = sr.text if sr.status_code == 200 else ''

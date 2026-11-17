@@ -177,6 +177,20 @@ cli adt_atc_check '{"name":"ZCL_DEMO_CLASS","object_type":"class"}'
 ```
 - Okuma sınıfı; varyant verilmezse `.conn_adt`'deki ATC varyantı, o da yoksa `DEFAULT`.
 - Proje politikası (hangi öncelik zorunlu) proje `AGENTS.md`'sindedir; yoksa kullanıcıya sor.
+- ⛔ **Sıra: push → AKTİVE → ATC.** ATC **aktif** sürümü ölçer; push sonrası/aktivasyon öncesi koşu eski aktif kaynağı
+  denetler (ekip ölçümü: aynı bulgu push sonrası eski dosyanın satırında, aktivasyondan sonra yeni satırda). Bilinen bir
+  öncelik 1 ailesini **push öncesi** kodda kapat; aksi hâlde bedeli ikinci bir push + aktivasyon turudur.
+- **Tek atış kapı değildir — önce ↔ sonra:** aktivasyon öncesi (eski aktif sürüm) öncelik 1 sayısını al, aktivasyondan sonra
+  yeniden say. Bulgu bu turun dokunduğu metotta ise DUR, düzelt; dokunulmamış birimde ise "önceden vardı" bir **iddiadır** —
+  canlı ↔ yerel farkıyla kanıtla (bulgunun metodu farkta geçmiyor), topla ve tek kararı kullanıcıya bırak. Önceden var olan
+  bulgu zararsız demek değildir (aynı transport onu da taşır).
+- **Mevcut koddaki clean-core öncelik 1 ailesi** (ham standart tablo okumasından doğan released-API bulguları) bu turun
+  düzeltme kalemi değildir, migrasyon önerilmez — proje clean-core politikası aksini söylemiyorsa (`%sap-code-review` BE-12, BE-68).
+- **Ölçülemeyen tip temiz değildir:** kaynak ekipte araç `bdef` için "Unsupported object type" döndü; BDEF bulguları yalnız
+  paket kapsamlı koşuda göründü (ilk paket koşusunda P1 5 → 11; artış ölçülmemiş BDEF `strict` uyarılarıydı). aXet aracının tip
+  kapsamı ÖLÇÜLMEDİ → hata alırsan "temiz" yazma. Paket kapsamlı ATC pahalıdır: istemci zaman aşımına düşse de sunucuda koşu
+  sürer; peş peşe paket koşusu tetikleme. Aynı kusur iki kontrolde iki öncelikle (P2 metin + P1 "Syntax check warning")
+  görünebilir — önceliği alttaki mesaj belirler.
 - `adt_syntax_check` **okuma sınıfıdır** (Z195, 2026-10-19): salt-okur `POST /sap/bc/adt/checkruns` (`version=inactive`),
   aktive etmez. Push zaten sözdizimi kontrolü içerir → ayrı tur gereksiz. `valid:null` = "bakamadım" (ör. `notProcessed`),
   `valid:false` yalnız `ok:true` iken "hatalı". Tek metot okumak için `adt_get_method` (yalnız `source/main` GET).

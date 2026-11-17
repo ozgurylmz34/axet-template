@@ -98,7 +98,11 @@ ENDMETHOD.
 - SEGW'de ilgili property'nin "Is ETag" işareti de açık olmalı.
 - CDS tabanlı entity'de alan `@Semantics.systemDateTime.lastChangedAt: true` taşır.
 - UPDATE'te framework `If-Match` başlığını kendisi karşılaştırır; uyuşmazlıkta `412 Precondition Failed` döner.
-- İstemci (UI5 OData modeli) `If-Match`'i kendisi gönderir; DPC_EXT'te ayrıca karşılaştırma kodu yazılmaz.
+- İstemci (UI5 OData V2 modeli) `If-Match`'i `update`/`remove`'da entity'nin ETag'inden kendisi ekler; DPC_EXT'te ayrıca
+  karşılaştırma kodu yazılmaz. ⚠ **`callFunction` (function import / RAP instance action) için EKLEMEZ** — yalnız çağıran
+  `mParameters.eTag` verirse gider (UI5 1.120 kaynağı). ETag'li BO'da action çağrısı `If-Match`'siz `428` alabilir ⇒ UI
+  sözleşmesine "action çağrısı eTag taşır" yazılır (`%sap-ui5-fiori` FE-55). RAP'te ETag'in OData'ya çıkması projeksiyonda
+  `use etag` ister.
 
 ### 3.3 CDS/SADL tabanlı entity'de filtrelenemeyen property
 - **Belirti:** CDS/SADL ile üretilen entity type'ta property'ler SEGW'den `filterable` yapılamıyor; UI filtre

@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.5.3
+SAP-CORE-ID: AXET-SAP-0.5.4
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -7,7 +7,7 @@ SAP-CORE-ID: AXET-SAP-0.5.3
 
 | Kategori | Yasak |
 |---|---|
-| **A — Standart SAP objeleri** (Z/Y ile başlamayan) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
+| **A — Standart SAP objeleri** (müşteri ad alanında olmayan: Z/Y ya da projede bildirilmiş `/<NS>/` ile başlamayan — tanım aşağıda) | **Standart objeler YALNIZ OKUNUR** — DDIC objesi (tablo, yapı, view, DTEL, domain, CDS …), program, FM, sınıf, BAdI, mesaj sınıfı: hiçbirine ekleme yapılmaz, hiçbiri yaratılmaz/değiştirilmez/silinmez. Append yapı, append alanı, `EXTEND`/`extend view`, standart programın içine kod ekleme (enhancement) ve metin değişikliği dahil. Bunu yapan script de çalıştırılmaz. **Standart objeye eklenecek append yapıyı ya da append alanını ve o alanın Z DTEL'ini/domain'ini sen yaratmazsın, adlarını da sen önermezsin — kullanıcı belirler ve kendisi yaratır, sonucu sana bildirir. Kullanıcı adları verse de yaratımı üstlenmezsin.** (Standarda eklenmeyen bağımsız Z DDIC adları — domain, DTEL, tablo, yapı, tablo tipi — bu yasağın dışındadır: önce hazır/standart DTEL'i değerlendir, değilse adlandırma standardına uygun ad öner, her adı canlı sistemde kontrol et (varsa başka ad), kullanıcının açık onayı olmadan yaratma.) |
 | **B — Standart tablo verisi** | Doğrudan `INSERT/UPDATE/DELETE/MODIFY` yok (Z program içinde yazılan kodda bile). Sıra: released API (released RAP BO/EML · released BAPI · released OData) → BAPI → RFC FM → işlem kodu (BDC) → kullanıcıdan manuel. Hangi yol, hangi canlı teyitle: `%sap-dev` → `references/write-api-selection.md`. |
 | **C — Sistem durumu** | Transport yaratma/release, paket yaratma, enqueue kilidi silme yok. |
 | **D — Z obje yaratma** | Oturum dili = projenin `master_language`'i. 4 alan etiketi (kısa/orta/uzun/başlık) o dilde ve TAM yazılır; başlık/açıklama boş bırakılmaz; aktivasyon öncesi sistemden okunarak doğrulanır. |
@@ -15,6 +15,8 @@ SAP-CORE-ID: AXET-SAP-0.5.3
 **Yapılması gerekiyorsa:** DUR → AÇIKLA → ÖNERİ SUN → KULLANICIDAN İSTE → BEKLE → DEVAM. "Küçük dokunuş" istisnası yok. A ve C'de işlemi kullanıcı kendisi yapar; "DEVAM", onun bildirdiği sonucu sistemden okuyup doğrulamak ve kendi işine dönmektir — yasak işlemi sen yapmazsın.
 
 **Örnek (A):** "standart tabloya/CDS'e alan ekle" → DUR. Append yapı ya da `EXTEND` önerme, DTEL adı önerme; Z adlı bir DDLS'e `extend view <standart CDS>` yazmak da standart objeyi genişletmektir. Clean-core yolu: Custom Fields (Fiori) — kullanıcı yapar. Kullanıcı "adları ben veririm" derse de yaratımı sen yapmazsın: append'i ve append alanının Z DTEL'ini kullanıcı yaratır, sonucu sana bildirir; sen sistemden okuyup doğrularsın.
+
+**Müşteri ad alanı (A'nın tanımı):** ① Z ya da Y ile başlayan ad (kilit nesnesinde SAP `E` öneki ister: `EZ…`/`EY…`) ② projenin `sap-project.json` dosyasında `"customer_namespaces": ["/<NS>/"]` ile bildirilmiş namespace ile başlayan ad (`/<NS>/<AD>`). Geri kalan her ad standarttır: SAP'nin kendi namespace'leri (`/SCWM/`, `/SAPAPO/` …) ve bildirilmemiş namespace dahil; liste yoksa, boşsa ya da bozuksa yalnız Z/Y geçerlidir. Namespace'i SAP'ye kaydetmek (SE03, lisans anahtarı) C kapsamındadır, sen yapmazsın; anahtar hiçbir dosyaya yazılmaz. Listeye namespace eklemek kullanıcının beyanıdır: kendiliğinden ekleme, önce onay al; SAP'nin namespace'ini listeye yazmak A ihlalidir. D, namespace'li objeler için de geçerlidir.
 
 ## SAP çalışma disiplini
 - **Tetik cümleleri (duyunca DUR, yasak tablosuna bak):** A — "standart tabloya alan ekle", "VBAK'a custom field", "append yarat" · B — "VBAK'a kayıt ekle", "T001'i güncelle" · C — "yeni transport aç", "transport release et", "yeni paket yarat", "kilidi sil" · D ihmali — Z obje etiketi başka dilde ya da boş.

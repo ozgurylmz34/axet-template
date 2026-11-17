@@ -30,6 +30,10 @@ Klasik program (rapor, module pool, Dynpro) tüm kodu tek `REPORT` gövdesinde t
   düzeltti → yeni klasik program işine başlarken **ilk adım** yapıyı kurmaktır.
 - Yerel iskelet üretici: `scripts/scaffold_classic_program.py` (SAP'ye yazmaz; include adlarını türetir, TITLE ister,
   CLI sırasını **yazdırır**). Kullanım `--help`.
+- **Exit include'unda az yorum (kullanıcı kuralı):** standart programa bağlı exit include'ları (ör. `MV45AFZZ`'deki Z include)
+  her belge kaydında okunan, çok geliştiricinin paylaştığı dosyalardır. Eklenen her çağrı için **en çok tek kısa yorum satırı**
+  (ör. `* ZSD001 <iş adı>`); gerekçe, kapsam ve tarihçe TS'te durur. Mevcut uzun yorumlara kullanıcı istemedikçe dokunma.
+  (Ekip vakası: tek bir depo yeri kontrolü için ~25 satır yorum yazıldı, kullanıcı şikâyet etti.)
 
 ## 2. Seçim ekranı kuralları (aktivasyon hataları)
 

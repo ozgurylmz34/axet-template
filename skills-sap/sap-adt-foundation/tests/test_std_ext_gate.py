@@ -5,7 +5,10 @@
 araç içi ikinci katman (`tools/atom.py::adt_push_source`). Ağ yok; SAP'ye bağlanılmaz.
 
 Kırmızı ölçüm (2026-09-24, taban f2b2839): aynı sentetik `check_write` çağrıları 6/6 `allowed=True` döndü.
-Kontrol grubu: Z/Y ve /Z…/ hedefli genişletme, yorum/dize içindeki metin, BDEF tanımı → SERBEST.
+Kontrol grubu: Z/Y hedefli genişletme, yorum/dize içindeki metin, BDEF tanımı → SERBEST.
+2026-11-17 (ADR 0005 A-EK, müşteri namespace'i): hedef kararı `std_dml_scan._izinli` → `ad_politikasi`. Bildirilmemiş
+`/ZABC/`, `/YNS/` artık müşteri SAYILMAZ (eskiden `/Z…/`, `/Y…/` serbestti) ⇒ g/g2 POZİTİF'e taşındı. Bildirilmiş
+namespace serbestliği `test_std_dml_scan.StdDmlNamespace` ile ölçülür (aynı `_izinli`).
 """
 from __future__ import annotations
 
@@ -47,6 +50,10 @@ POZITIF = [
      "// açıklama: extend view entity ZI_X with\nextend view entity I_SalesOrder with { a }", "I_SALESORDER", 2),
     ("d4 standart namespace /SCWM/", "ddls", "extend view entity /SCWM/I_Task with { a }", "/SCWM/I_TASK", 1),
     ("d5 tip bilinmiyor (None) → yine taranır", None, APPEND_VBAK, "VBAK", 3),
+    ("g bildirilmemiş namespace /ZABC/ hedef (A-EK)", "ddls", "extend view entity /ZABC/I_X with {\n  a\n}",
+     "/ZABC/I_X", 1),
+    ("g2 bildirilmemiş namespace /YNS/ append (A-EK)", "tabl",
+     "extend type /yns/tab with zzyns {\n  zz : abap.char(1);\n}", "/YNS/TAB", 1),
     ("j BDEF extension using interface I_SalesOrderTP", "bdef",
      "extension using interface I_SalesOrderTP\n  implementation in class zbp_ext_so unique;\n\n"
      "extend behavior for SalesOrder\n{\n  validation zz_check on save { create; }\n}", "I_SALESORDERTP", 1),
@@ -63,8 +70,6 @@ NEGATIF = [
     ("f extend view entity ZI_X (Z hedef)", "ddls", "extend view entity ZI_X with {\n  a\n}"),
     ("f2 extend type zaxet_t (Z tablo)", "tabl", "extend type zaxet_t with zzaxet_t_ek {\n  zz : abap.char(1);\n}"),
     ("f3 annotate entity ZC_X (Z hedef)", "ddlx", "annotate entity ZC_X with {\n  @UI.hidden: true Id;\n}"),
-    ("g namespace /ZABC/ hedef", "ddls", "extend view entity /ZABC/I_X with {\n  a\n}"),
-    ("g2 namespace /YNS/ append", "tabl", "extend type /yns/tab with zzyns {\n  zz : abap.char(1);\n}"),
     ("j2 BDEF extension using interface Z (SAP örneği)", "bdef",
      "extension using interface zrap630i_shoptp_sol\nimplementation in class zbp_zrap630r_shop_x_fbk_sol unique;\n\n"
      "extend behavior for Shop\n{\n  extend draft determine action Prepare\n  {\n  }\n}"),

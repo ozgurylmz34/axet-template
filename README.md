@@ -5,7 +5,7 @@ kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullan�
 bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu okuyan tüm projelere yansır; projelerdeki
 şablon kopyaları (`AGENTS.md`, `.githooks`, denylist …) `%guncelle-proje` ile getirilir.
 
-> Sürüm: v0.5.21 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.22 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -16,7 +16,7 @@ bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu o
 | Skills | `skills/` (+ SAP: `skills-sap/`) | global `skills_paths`, `%ad` ile çağrı |
 | Auto-memory | `memory/` (ekip) + `<proje>/.axet-code/memory/` (proje), `%remember` | `context_paths` ile yüklenen indeksler |
 | Hook/guard ile engelleme | `config/permissions.json` deny kuralları (`bash`) + `.axetcode-denylist` | aXet izin kuralları (run modunda da bloklar) |
-| Alt ajanlar | skill içindeki rol brifingleri + yerleşik `agent` aracı | aXet'te özel ajan tanımı çalışmaz |
+| Alt ajanlar | SAP rolleri özel ajan olarak (`agents/`: sap-arastirma · sap-backend · sap-ui5 · sap-inceleme · sap-gelistirme) + yerleşik `agent` aracı | SAP paketi açıkken kurulum ve `%guncelle` kullanıcı ajan dizinine yazar (aXet.code 1.5.1+) |
 | Yükleme kanaryası | ilk yanıtın ilk satırı `[AXET-CORE-… · SAP · proje · hafıza]` | çekirdek §0 |
 
 ## Gereksinimler
@@ -90,6 +90,9 @@ python $HOME\axet\scripts\new_package.py --index --check                        
 `<source_root>/<MODÜL>/<PAKET>/` altına obje tipi klasörlerini, `.rules.md` (ad önekleri, bağımlılık, transport),
 `SPEC.md`, `SESSION_NOTES.md` ve `ref_docs/` kurar; `<source_root>/PAKETLER.md` listesini yeniler. `source_root`
 `sap-project.json`'dadır (yoksa `SOURCE_CODES`). **SAP'de paketi SE21 ile sen yaratırsın** — aXet paket yaratmaz.
+Kendi SAP namespace'inizle (`/<NS>/`) çalışıyorsanız onu `sap-project.json` → `customer_namespaces` listesine yazın
+(ör. `["/<NS>/"]`): ad kapısı, inceleme denetimleri ve `new_package.py` o namespace'i müşteri adı sayar (klasör adı
+abapGit biçiminde `#ns#…`). Liste boşsa yalnız Z/Y müşteri adıdır; SAP'nin kendi namespace'leri listeye yazılmaz.
 
 ## Yeni projede kabul kontrolü
 1. Projede yeni aXet oturumu aç ve `%basla` yaz: ilk satırda `proje: <PROJECT-ID>` görünür ve oturum özeti (`session_brief.py`) aktarılır.
@@ -170,6 +173,10 @@ kapanış `KAPANDI — test borcu var: %testler` der ve `doctor` borç sürdük�
 - `%hata-bildir` — aXet hatası ya da önerisi için kimlik taşımayan bildirim hazırla (GitHub hesabı gerekmez)
 - `%office-excel` · `%office-docs` · `%office-slides` — Excel, Word/PDF, sunum üretimi ve okuma
 - `%sistem` — projenin `conn/` altında tanımlı SAP sistemlerini listele, aktif olanı değiştir ("QA'ya geç")
+- SAP özel ajanları (SAP paketi açıkken kurulur, `axet-code agent list` → `user`): alt görevi `sap-arastirma` (araştırma;
+  dosya düzenleme araçları kapalı), `sap-backend`, `sap-ui5` ya da bağımsız inceleme için `sap-inceleme`'ye (dosya düzenleme kapalı) devret; bu
+  ajanlar çekirdeği, SAP kurallarını, ekip hafızasını ve proje `AGENTS.md`'sini kendileri görür. Her mesajda önce
+  kapsam sınıflaması yapan ana ajan: `axet-code --agent sap-gelistirme` (varsayılan ajan değişmez)
 - SAP işi: giriş `%sap-dev` (yeni talepte önce `%sap-intake-triage`); SAP skill listesi [`skills-sap/README.md`](skills-sap/README.md) · KD (kullanıcı kılavuzu): `%sap-fs-ts-docs`; freestyle UI5 ekran çekimiyle `%sap-ui5-user-guide` · SFP form objesi olmadan ABAP'ten PDF ve mail eki: `%sap-pdf-output`
 - `ctrl+p` → **User** sekmesi — projeye özel komutlar (`.axet-code/commands/`)
 - Kimlik bilgilerini (kullanıcı adı, şifre, token) sohbete **yazma**: prompt'lar kurumsal denetime gider.
@@ -188,7 +195,10 @@ aXet.code 1.3.0'da ölçüldü. Bilmen gerekenler:
   engelleyebilir (ör. `echo "git reset --hard notu"`). SAP'ye yazmanın güvenli yolu kapılı araçlardır.
   Eşleşme kuralları, ölçümler, bilinçli açıklar ve yanlış pozitifler: [`docs/izin-kurallari.md`](docs/izin-kurallari.md).
 - **Hook yok:** kurallar talimat, izin kuralı ve betikle uygulanır; mekanik zorlama sınırlıdır.
-- **Özel ajan tanımı çalışmaz** (`.axet-code/agents`, `agent create`): iş devri yerleşik `agent` aracıyla yapılır.
+- **Özel ajanlar 1.5.1'de çalışır, sınırlarıyla:** yerleşik görev ajanı (`task`) çekirdeği ve proje kurallarını
+  görmez, brifing her şeyi metin olarak taşır; özel `sap-*` ajanları görür ama konuşmayı ve paket `.rules.md`'sini
+  görmez (ölçüldü 2026-11-17). Template yalnız kendi kurduğu (işaretli) ajanları günceller ya da siler; aynı adlı
+  kendi ajanına dokunmaz, `doctor.py` bu çakışmayı WARN olarak gösterir.
 - **Merkezi klon yazmaya kapalı değildir.** Sapmayı `doctor.py` git'e karşı raporlar: klonun davranış yüzeyindeki
   (`core/`, `skills/`, `skills-sap/`, `scripts/`, `templates/`, `AGENTS.md`, `config/permissions.json`, `.axetcode-denylist`) senden gelen
   değişiklik WARN olur, `%guncelle`'nin kendi commit'leri bilgi satırı olur. Eski yazma koruması (config'e yazılan
@@ -214,10 +224,11 @@ core/            çekirdek kurallar (00-temel.md) · sap/ SAP paketi
 skills/          genel skill'ler            skills-sap/   SAP skill'leri
 memory/          ekip hafızası (indeks + kayıtlar)
 templates/project/  proje iskeleti (+ project-sap/)   templates/package/  new_package.py'nin kurduğu paket iskeleti
+agents/          SAP özel ajanları (install.py / %guncelle kullanıcı ajan dizinine kurar)
 config/          install.py'nin birleştirdiği izin kuralları
 scripts/         install.py · doctor.py · session_brief.py · guncelle.py · testler.py · guncelle_proje.py · yeni_proje.py
                  new_project.py · new_package.py · conn_sablon.py · tarayici_hazirla.py · sap_stamp.py
-                 project_precommit.py · check_package_naming.py · behavior_manifest.py · merge_pr.py
+                 project_precommit.py · check_package_naming.py · behavior_manifest.py · merge_pr.py · ajan_kurulum.py
 tests/           template script'lerinin testleri: python tests\run_tests.py (skill testleri skill klasöründe)
 docs/            onboarding.md (kurulum ve sorun giderme) · izin-kurallari.md · sap-api-policy.md
 .github/         CI iş akışı + hata/öneri bildirim formu

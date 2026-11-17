@@ -202,6 +202,12 @@ def main() -> int:
     if not m:
         print("[HATA] Ad deseni <GÖVDE>_P_<AD> ya da <GÖVDE>_R_<AD> olmalı, Z/Y ile başlamalı "
               "(sap-dev → references/naming.md §4.1).", file=sys.stderr)
+        if prog.startswith("/") or re.match(r"^[A-Z]:[/\\]", prog):
+            # Namespace'li ad (`/NS/…`) bu yerel iskelet üreticide desteklenmez (müşteri ad alanı kararı Z/Y; namespace
+            # kabulü yazma kapısının proje yapılandırmasıyla verilir). Git Bash `/` ile başlayan argümanı tırnaklı olsa da
+            # yol sanıp çevirir (`/NS/PROG` → `C:/Program Files/Git/NS/PROG`; kaynak ekipte ölçüldü).
+            print("NOT: namespace'li program adı (/<NS>/…) bu iskelet üreticide desteklenmiyor; ad bir sürücü yolu gibi "
+                  "görünüyorsa Git Bash dönüştürmüş olabilir — komutun önüne MSYS_NO_PATHCONV=1 koy.", file=sys.stderr)
         # K-O① (2026-09-18): bu red sessizce aşılmıştı (ad desenine uymayan dosya elle yazıldı)
         print("HATIRLATMA: bu reddi aşmak için dosyaları elle yazma, deseni ya da `.rules.md`'yi "
               "DEĞİŞTİRME — adı kullanıcıyla netleştir (core/00-temel.md §3).", file=sys.stderr)

@@ -1,8 +1,9 @@
 ---
 name: sap-ui5-fiori
 description: >
-  Use for freestyle SAPUI5 / Fiori apps on OData V2 that consume RAP or SEGW services: app skeleton (npm
-  workspace, manifest, bootstrap from the backend's own UI5, proxy), save plumbing (sequential update, to_X navigation, JSON
+  Use for freestyle SAPUI5 / Fiori apps on OData V2 that consume RAP or SEGW services: canonical app template
+  (1.71 / 1.120 version parts), app skeleton (npm workspace, manifest, bootstrap from the backend's own UI5, UI5 version
+  and theme measured from the backend, proxy), save plumbing (sequential update, to_X navigation, JSON
   edit buffer), value help, ALV-parity list screens with sap.ui.table grid, select-options filter screens,
   i18n, UI side of delete flows, local run, BSP deploy after user OK and runtime verification. Triggers:
   "UI5 ekranı", "Fiori uygulaması", "freestyle UI", "liste ekranı", "rapor filtre ekranı", "F4 value help",
@@ -46,8 +47,11 @@ description: >
    → `%verify-done` → paket `SESSION_NOTES.md`.
 
 ### 1. Yeni uygulama iskeleti
-- **Önce oku:** `references/app-skeleton.md` (§13 kontrol listesi) · `references/checklists.md` Faz 1–2.
-- **Yap:** `ui/` workspace, sade uygulama `package.json` (middleware paket adları dahil), `ui5.yaml` (kanonik host), backend UI5'inden yükleyen `index.html`,
+- **Şablondan başla:** `templates/ui5-freestyle/README.md` — backend UI5 sürümü + tema ölçülür (`app-skeleton.md` §7.1),
+  ortak gövde `app/` + seçilen `surum/<1.71|1.120>/` parçası kopyalanır, yer tutucular doldurulur. Sıfırdan iskelet
+  yalnız şablon uymuyorsa (gerekçeyi kullanıcıya söyle).
+- **Önce oku:** `references/app-skeleton.md` (§7.1 sürüm/tema, §13 kontrol listesi) · `references/checklists.md` Faz 1–2.
+- **Yap (şablonun açıkladığı parçalar):** `ui/` workspace, sade uygulama `package.json` (middleware paket adları dahil), `ui5.yaml` (kanonik host), backend UI5'inden yükleyen `index.html`,
   manifest, Component, `App.view`, `localService/metadata.xml`, i18n iki dosya.
 - **Karara bağla (kod yazmadan):** düzenlenebilir alt grid var mı (→ JSON edit-buffer), liste ekranı var mı (→ grid).
 - **Doğrula:** `check_i18n_keys.py`, `check_list_view_grid.py`, `deploy_ui.py prepare <app> --no-build`.
@@ -68,8 +72,9 @@ description: >
 ### 4. Liste / rapor ekranı ve filtre ekranı
 - **Önce oku:** `references/list-grid-alv.md` · görsel kurallar `references/fiori-elements-ux.md` §2.
 - **Kullanıcıdan:** kolonlar ve sırası, filtre alanları, projede ortak kişiselleştirme util'i / varyant servisi var mı.
-- **Yap:** grid beş parça; kolon göster/gizle + varyant + Excel (§3 sözleşmesi); filtre MultiInput + ValueHelpDialog,
-  `caseSensitive` yok, wildcard yardımcısı.
+- **Yap:** şablonun seçim → grid liste ekranından kopyala: grid beş parça; `TablePersonalizer` (kolon göster/gizle +
+  varyant + Excel + kolon filtresi kutusu/penceresi — §3, §6.4); filtre MultiInput + ValueHelpDialog, `caseSensitive` yok,
+  wildcard yardımcısı yalnız seçim ekranı/VH'de. Satır modu ve boş durum sürüme bağlı (`app-skeleton.md` §7.1).
 - **Doğrula:** `check_list_view_grid.py`, `check_filter_search_pattern.py`; runtime'da sırala/filtrele/varyant/Excel.
 
 ### 5. Statik kontroller (her değişiklikten sonra)
@@ -79,7 +84,7 @@ python $S/check_ui5_freestyle_traps.py <app>
 python $S/check_list_view_grid.py <app>
 python $S/check_filter_search_pattern.py <app>
 python $S/check_i18n_keys.py <app>
-python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [--metadata-for SERVIS=dosya]
+python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [--metadata-for SERVIS=dosya] [--project-dir <proje>]
 ```
 Çıkış 2 = ölçüm yok (temiz değil). Her çıktının **KAPSAM** satırı rapora yazılır — "0 bulgu" yalnız o yüzey içindir.
 
@@ -101,6 +106,8 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 ### 8. Deploy (kullanıcı OK'undan sonra)
 - **Önce oku:** `references/deploy-and-local-run.md` §2–6.
 - **Kullanıcıdan:** BSP adı, SAP paketi, transport; lokal testten sonra sohbette açık **OK**.
+- **BSP adı:** müşteri ad alanında (Z/Y ya da `sap-project.json` `customer_namespaces`'ta bildirilmiş `/<NS>/`), ≤ 15;
+  namespace'li adda `prepare --project-dir <proje>` (deploy-and-local-run §2).
 - **Sıra:** `deploy_ui.py prepare <app>` → lokal test kullanıcıya gösterildi → OK → (geliştirici kabuğunda
   `FIORI_TOOLS_USER`/`FIORI_TOOLS_PASSWORD` set) → `deploy_ui.py deploy <app> --user-ok "<onay cümlesi>" --sap-write
   --scope S1 --reason "<gerekçe>" --project-dir <proje>` (SAP yazma kapısı: `sap-write.local` + tier DEV +
@@ -130,9 +137,10 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 ## Referanslar, şablonlar ve script'ler
 | Dosya | İçerik |
 |---|---|
-| `references/app-skeleton.md` | adlandırma (BSP ≤ 15), npm workspace, devDeps, scripts, `ui5.yaml`, kanonik host, `index.html` bootstrap (backend UI5'i; mock modu), manifest şablonu + kuralları (`settings.data` tuzağı, annotation), Component, App.view, localService, CSS/kütüphaneler, iskelet kontrol listesi |
+| `templates/ui5-freestyle/` | kanonik freestyle uygulama: seçim ekranı → grid liste → değişiklik ekranı; ortak gövde `app/` + sürüm parçaları `surum/1.71/`, `surum/1.120/` (`SurumParca`); varyant servisi RAP referansı `backend-referans/`; kopyalama sırası ve ölçülmeyenler `README.md` |
+| `references/app-skeleton.md` | adlandırma (BSP ≤ 15, müşteri ad alanı), §7.1 UI5 sürümü + tema backend'den ölçülür ve sürüme bağlı kontroller tablosu, npm workspace, devDeps, scripts, `ui5.yaml`, kanonik host, `index.html` bootstrap (backend UI5'i; mock modu), manifest şablonu + kuralları (`settings.data` tuzağı, annotation), Component, App.view, localService, CSS/kütüphaneler, iskelet kontrol listesi |
 | `references/freestyle-odata-v2.md` | PRE-FLIGHT, save deseni + `_runSeq` + S1–S12, JSON edit-buffer, `to_X`, `setData` şekli, master-detail, value-help C1–C8, T1–T7 tuzakları, OData tipleri, Edm payload tipleri, sayısal input, miktar formatter, sıfır dolgusu, `MessageBox.success`, çok satırlı `_parseError`, function import, canlı `$metadata` çapraz kontrolü, i18n, `$batch` |
-| `references/list-grid-alv.md` | grid kararı ve reddedilenler, grid beş parça, kişiselleştirme util sözleşmesi (kolonlar/varyant/Excel), grid seçimi ve dialog, SELECT-OPTIONS filtre ekranı + `_parseSearchTerm`, m.Table istisnası |
+| `references/list-grid-alv.md` | grid kararı ve reddedilenler, grid beş parça (sürüme bağlı satır modu), kişiselleştirme util sözleşmesi (şablondan; kolonlar/varyant/Excel), grid seçimi ve dialog, `AnalyticalTable` tuzakları, SELECT-OPTIONS filtre ekranı + `_parseSearchTerm`, kolon filtresi kutu + **Filtre…** penceresi (§6.4), m.Table istisnası |
 | `references/delete-flow-ui.md` | seçim bayatlaması, pending guard = save payload'ı, sıralı `remove` + kapanış tuzağı, mesaj/i18n, minimum runtime testi |
 | `references/deploy-and-local-run.md` | lokal çalıştırma, popup iki tuzak (flex ↔ hesap kilidi), PID ile kapatma, `ui5-deploy.yaml`, `deploy_ui.py` akışı ve kullanıcı OK kapısı, env kimlik, elle komut, deploy hataları, statik varlık doğrulaması, önerilen izin kuralları |
 | `references/runtime-verification.md` | dört katman, statik kontroller ve KAPSAM okuma, done kriteri, Playwright smoke, aXet içinde playwright-cli reçetesi (§4.6), `firePress`/model API ölçümü, backend'siz mekanizma teyidi, test verisi kuralı, zararsız konsol gürültüsü |
@@ -144,9 +152,9 @@ python $S/check_ui_odata_refs.py --app <app> --metadata <kaydedilen $metadata> [
 | `scripts/fetch_ui_source.py` | kaynağı yerelde olmayan uygulama: `indir` (OData zip / ADT filestore → `webapp` geri kurma + iskelet + `.canli/`) · `eslik` (değiştirmeden build == canlı) · `drift` · `anlik-kur` (yerelde olan uygulamaya `.canli/`, Z160) · `metadata` (tip-kapsamlı alan kontrolü; `--kaydet` ile `metadata.xml`'i SAP yanıtıyla yeniler) — deploy-and-local-run §7 |
 | `scripts/ui_local_proxy.py` | salt-okur yerel test sunucusu: dist'i sunar, `/sap/*` okumalarını iletir (GET/HEAD + yalnız GET parçalı `/sap/opu/odata(4)/…/$batch`; ayrıştır → doğrula → yeniden kur: parça bazlı beyaz liste — tek `Content-Type`, sınırla bölünen her parça `application/http` + tam `GET … HTTP/1.1`; emin olunamayan 403 — ve SAP'ye istemcinin baytları değil proxy'nin kurduğu kanonik gövde gider: yeni sınır, prolog/epilog yok, beyaz liste iç başlıklar), yazma istekleri ve yabancı Host 403 |
 | `scripts/check_filter_search_pattern.py` | `caseSensitive:false` BLOCKER; filtre VH'si MultiInput değil WARNING |
-| `scripts/check_i18n_keys.py` | kullanılan anahtar iki dosyada mı, yer tutucu kümesi, tek kesme |
-| `scripts/check_ui_odata_refs.py` | kaydedilmiş `$metadata`'ya karşı entity set / function import / property (çok servisli), çevrimdışı |
-| `scripts/deploy_ui.py` | `prepare` (ağ yok) · `verify` (canlı preload ↔ dist) · `deploy` (`--user-ok` + env kimlik + SAP yazma kapısı `gate.check_write`/`check_target_system` zorunlu) |
+| `scripts/check_i18n_keys.py` | kullanılan anahtar iki dosyada mı (dinamik önek `"x." + v` dahil), yer tutucu kümesi, tek kesme |
+| `scripts/check_ui_odata_refs.py` | kaydedilmiş `$metadata`'ya karşı entity set / function import / property (çok servisli, namespace'li servis `/NS/AD`), çevrimdışı |
+| `scripts/deploy_ui.py` | `prepare` (ağ yok; BSP adı müşteri ad politikasıyla, yinelenen anahtar) · `verify` (canlı preload ↔ dist) · `deploy` (`--user-ok` + env kimlik + SAP yazma kapısı `gate.check_write`/`check_target_system` zorunlu) |
 | `scripts/verify_ui_static_assets.py` | canlı BSP statik dosyaları ↔ dist ↔ webapp (enjekte meta ayıklanır) |
 | `scripts/ui-smoke/` | Playwright smoke: config, genel spec, hesap kilidi güvenli koşucu |
 | `tests/run_tests.py` | script'lerin çevrimdışı pozitif/negatif testleri (örnek uygulamalar + sahte yerel sunucu) |

@@ -11,8 +11,15 @@ Kullanım:
   --sayfa-no : (isteğe bağlı, yalnız --pdf/--pdf-out ile) her sayfanın altına "Sayfa X / Y". Alt boşluk belgeden
                ölçülür; yetmiyor ya da ölçülemiyorsa PDF yazılmaz, çıkış 2 (DURDU).
   --yer-imi  : (isteğe bağlı, yalnız --pdf/--pdf-out ile) başlıklardan PDF yer imleri; yer imi sayısı PDF'ten okunur.
-  Bayraksız PDF eskisiyle aynıdır. Daha önce teslim edilmiş bir dokümanın yeniden üretiminde bayrak eklemek PDF'i
-  değiştirir (sayfa sayısı değişmez, altbilgi/yer imi eklenir).
+  Bayraksız PDF'te page.pdf SEÇENEKLERİ eskisiyle aynıdır; İÇERİK ise yalnız taşan/kırpık öğesi olmayan belgede aynıdır
+  (2026-11-17 yerleşim düzeltmesi; ölçülen vektörler ve sınırı `html_to_pdf.js` YERLEŞİM bloğunda) — taşan görsel/`pre`/
+  tablo içeren belgede çıktı bilinçli değişir. Daha önce teslim edilmiş bir dokümanın yeniden üretiminde bayrak eklemek
+  PDF'i değiştirir (sayfa sayısı değişmez, altbilgi/yer imi eklenir).
+
+PDF YERLEŞİMİ: görsel/`pre`/tablo taşmasının PDF düzeltmesi `html_to_pdf.js`'tedir (yalnız-PDF CSS) — aşağıdaki CSS ekran
+HTML'i içindir; PDF için buraya kural EKLEME (ekran HTML'i/uygulama içi yardım değişir, `@media print` PDF'e ulaşmaz).
+⚠ Git Bash'te `/` ile başlayan başlık ("/NS/ZCA001 …") yol sanılıp dönüştürülür ("C:/Program Files/Git/NS/…"): komutun
+önüne `MSYS_NO_PATHCONV=1` koy (PowerShell/cmd'de gerekmez).
 
 Görseller HTML'in yanındaki `screenshots/` klasöründen göreli yolla okunur.
 Çıkış: 0 başarılı · 2 eksik bağımlılık / okunamayan girdi / kullanım hatası / --sayfa-no DURDU · 1 PDF üretim hatası.

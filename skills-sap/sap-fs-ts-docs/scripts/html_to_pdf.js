@@ -5,7 +5,12 @@
  *   node html_to_pdf.js <girdi.html> <cikti.pdf> [--sayfa-no] [--yer-imi]
  *   node html_to_pdf.js --check        # playwright-core çözülebiliyor mu (tarayıcı açmaz)
  *
- * İSTEĞE BAĞLI BAYRAKLAR (Z201) — bayraksız çıktı ESKİSİYLE AYNIDIR (aynı page.pdf seçenekleri):
+ * ⚠ Git Bash (MSYS): `/` ile başlayan ARGÜMAN (ör. üreticinin başlığı "/NS/ZCA001 …") Windows yolu sanılıp dönüştürülür
+ *   ("C:/Program Files/Git/NS/ZCA001 …"; kaynak ekipte ölçüldü). Çağrının önüne `MSYS_NO_PATHCONV=1` koy (PowerShell/cmd'de
+ *   gerekmez). Kod bunu düzeltemez — argüman süreçten önce bozulur.
+ *
+ * İSTEĞE BAĞLI BAYRAKLAR (Z201) — bayraksız page.pdf SEÇENEKLERİ eskisiyle aynıdır; 2026-11-17'den beri bayraktan bağımsız
+ * YERLEŞİM düzeltmesi uygulanır (aşağıdaki blok; yalnız taşan/kırpık öğeye ve taşan tabloya dokunur):
  *   --sayfa-no  her sayfanın alt boşluğuna "Sayfa X / Y" (yalnız METİN; footerTemplate).
  *   --yer-imi   başlık hiyerarşisinden (h1..h6) PDF yer imleri (Playwright `outline`).
  *
@@ -28,16 +33,45 @@
  *   PLAYWRIGHT_CORE_PATH  playwright-core klasörü (mevcut kuruluma yönlendirme)
  *   PDF_BROWSER_CHANNEL   chrome (varsayılan, sistem Chrome'u) | msedge | chromium (paketli; indirme gerektirir)
  *
- * Çıkış: 0 başarılı · 2 eksik bağımlılık / kullanım hatası / --sayfa-no DURDU · 1 üretim hatası.
+ * Çıkış: 0 PDF yazıldı (`PDF OK` yalnız yerleşim temizken; kalan taşma/kırpıkta `PDF UYARILI` + stderr
+ *   `⚠ UYARI YERLESIM`) · 2 eksik bağımlılık / kullanım hatası / --sayfa-no DURDU / [DURDU] dizin listesi açıldı ·
+ *   1 üretim hatası.
+ */
+/*
+ * YERLEŞİM DÜZELTMESİ (2026-11-17; kaynak ekipte ölçülen kusurlar) — HER koşumda, bayraktan bağımsız.
+ *  ⚠ "Bayraksız çıktı eskisiyle aynı" kuralı DARALDI: page.pdf SEÇENEK NESNESİ hâlâ eskisiyle BİREBİR; ama belge basılmadan
+ *   önce yalnız-PDF CSS'i alır. Bu CSS'in `body` dışındaki HER kuralı `data-ix-pdf-sar` işaretli öğeye/tabloya bağlıdır ve
+ *   işaret yalnız baskı genişliğinde TAŞAN (görsel, `pre` içeriği, tablo) ya da KIRPIK (`pre`) öğeye konur ⇒ taşan/kırpık
+ *   öğesi olmayan belgede işaret 0, geriye `body{overflow-wrap:break-word}` kalır. SINIR: kendi dar kutusundan taşan ama
+ *   sayfaya taşmayan bölünmeyen sözcük `break-word` ile kırılır (yerleşim değişir). Taşan öğesi olan belgede çıktı
+ *   bilinçli olarak DEĞİŞİR — ama yalnız işaretli öğede; aynı belgedeki sığan tablo değişmez.
+ *  Ölçülen kusurlar: ① yol `"file:///" + IN` ile kuruluyordu ⇒ klasör adındaki `#` URL parçası sayılıp yolu kesiyordu;
+ *   tarayıcı kesik yolun DİZİN LİSTESİNİ basıyordu ve araç `PDF OK` diyordu (sessiz). Şimdi `url.pathToFileURL` + açılan
+ *   sayfa dizin listesiyse çıkış 2. ② `max-width` yalnız `figure img`'deydi: başlık satırı olmayan görsel taşıyordu.
+ *   ③ geniş `pre` (`white-space:pre`) kırpılıyordu (190 karakterin 105'i basıldı). ④ tablo hücresindeki bölünmeyen satır
+ *   içi kod tabloyu sayfadan taşırıyordu. Chromium baskıda sayfadan taşan içerik görünce BÜTÜN belgeyi küçültür (ölçüldü:
+ *   gövde 10,5 pt → 7,0 pt).
+ *  ⛔ CSS YERİ = BURASI, üreticinin CSS'i DEĞİL: `emulateMedia("screen")` ⇒ `@media print` kuralı PDF'e HİÇ ulaşmaz;
+ *   üretici CSS'ine düz kural yazmak ekran HTML'ini (uygulama içi yardım) da değiştirirdi. `addStyleTag` iki üreticiyi +
+ *   diskteki ESKİ HTML'leri tek yerde kapsar.
+ *  ⛔ `img`/`pre`/tablo kuralı GLOBAL VERİLMEZ (ölçüldü): `overflow-wrap:anywhere`, `white-space:pre-wrap` ve yüzdeli
+ *   `max-width` hücrenin min-content'ini küçültür ⇒ SIĞAN tabloların sütun dağılımını da değiştirir (ikon 195 → 43,6 pt;
+ *   hücredeki `pre` "SELEC|T *" diye bölündü). Bu yüzden: tablo hücresi DIŞINDA taşan görsel / taşan ya da kırpık `pre`
+ *   öğe bazında işaretlenir; hücre içindekiler yalnız TAŞAN tablonun kademesiyle sarılır — 1. kademe hücre içi `code` +
+ *   `pre`, hâlâ taşıyorsa 2. kademe hücre içi `img`, hâlâ taşıyorsa 3. kademe tüm hücre. Görselde `height:auto` ŞART:
+ *   yalnız `max-width` + `width`/`height` öznitelikleri en-boy oranını bozar (1200×300 → 516×225).
+ *   `body{overflow-wrap:break-word}` min-content'i DEĞİŞTİRMEZ (CSS Text 3) ⇒ global verilebilir.
  */
 "use strict";
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const url = require("url");
 
 console.log("KAPSAM (SCOPE): html_to_pdf — HTML'i tarayıcıda açıp A4 PDF yazar; bakılanlar: sayfa yüklenmesi, PDF dosyasının " +
-  "oluşması; --sayfa-no: etkin alt boşluk (@page/JS margin) ↔ altbilgi yüksekliği; --yer-imi: PDF'teki yer imi sayısı ↔ " +
-  "başlık sayısı. Bakılmayanlar: görsellerin yüklenmesi, bağlantı hedefleri, içerik → verify_doc_html.py.");
+  "oluşması, açılan sayfanın dizin listesi olmaması, baskı genişliğinde taşan/kırpık öğe (YERLESIM satırı); --sayfa-no: " +
+  "etkin alt boşluk (@page/JS margin) ↔ altbilgi yüksekliği; --yer-imi: PDF'teki yer imi sayısı ↔ başlık sayısı. " +
+  "Bakılmayanlar: görsellerin yüklenmesi, bağlantı hedefleri, içerik → verify_doc_html.py; shadow root/iframe yerleşimi.");
 
 const INSTALL = "playwright-core bulunamadı. Kurulum: proje klasöründe `npm install playwright-core` ya da " +
   "PLAYWRIGHT_CORE_PATH ile mevcut bir playwright-core klasörünü göster.";
@@ -279,6 +313,135 @@ async function basliklariHazirla(page) {
   });
 }
 
+/** Açılan sayfa Chromium'un DİZİN LİSTESİ mi (kusur ①). Kaynak ekipte ölçüldü: liste sayfası `#parentDirLinkBox` +
+ *  `#tbody` + global `addRow()` taşır; başlık "Index of …" yerele bağlı olabilir ⇒ başlık TEK BAŞINA ölçüt değil
+ *  ("Index of" başlıklı gerçek belge listelenmez). */
+async function dizinListesiMi(page) {
+  return await page.evaluate(() => ({
+    liste: !!document.getElementById("parentDirLinkBox") && !!document.getElementById("tbody") &&
+           typeof window.addRow === "function",
+    baslik: document.title,
+  }));
+}
+
+/** Girdi yolunun `file:` URL'i (kusur ①). `url.pathToFileURL`: `#`, `%`, `?`, boşluk ve Türkçe harf kodlanır.
+ *  ⛔ `\\localhost\…` UNC: `pathToFileURL` `file://localhost/…` kurar, WHATWG ayrıştırıcısı `file:` şemasında `localhost`
+ *  host'unu BOŞALTIR ⇒ `file:///C$/…` (paylaşım adı yerel yol sanılır; kaynak ekipte ölçüldü). Çare yalnız bu host'a dardır:
+ *  `localhost` → `127.0.0.1` (aynı makine). `\\?\UNC\localhost\…` aynı sınıftır. Başka host ve yerel yol DEĞİŞMEZ. */
+const LOCALHOST_UNC_RE = /^(\\\\(?:\?\\UNC\\)?)localhost(?=\\)/i;
+function dosyaUrl(yol) {
+  return url.pathToFileURL(yol.replace(LOCALHOST_UNC_RE, (m, onek) => onek + "127.0.0.1")).href;
+}
+
+// Yalnız PDF'e giden CSS (ekran HTML'i değişmez). Belge, daha yüksek özgüllüklü kendi kuralıyla ezebilir (ör. satır içi
+// `style="white-space:pre"`); ezilen öğe YERLESIM ölçümünde kalan taşma olarak sayılır. `body` dışındaki her seçici
+// `data-ix-pdf-sar` işaretine bağlıdır: işareti `yerlesimOlc` yalnız taşan/kırpık öğeye ve taşan tabloya koyar
+// (seçici listesi satır satır: mutasyon çapaları tek eşleşmeli).
+const PDF_CSS =
+  "img[data-ix-pdf-sar]," +
+  "table:is([data-ix-pdf-sar=\"2\"],[data-ix-pdf-sar=\"3\"]) :is(td,th) img{max-width:100%;height:auto}" +
+  "pre[data-ix-pdf-sar]," +
+  "table[data-ix-pdf-sar] :is(td,th) pre{white-space:pre-wrap;overflow-wrap:anywhere}" +
+  "body{overflow-wrap:break-word}" +
+  "table[data-ix-pdf-sar] :is(td,th) code{overflow-wrap:anywhere}" +
+  "table[data-ix-pdf-sar=\"3\"] :is(td,th){overflow-wrap:anywhere}";
+const SAYFA_GENISLIK_MM = 210;   // format "A4" (preferCSSPageSize verilmez ⇒ CSS `size` geçersiz)
+
+/** Baskı genişliğinde taşan / kırpık öğeleri sayar; `duzelt` ise önce tablo hücresi dışındaki taşan görsele / taşan ya da
+ *  kırpık `pre`'ye öğe işareti, sonra taşan tablolara kademeli (1 kod+pre · 2 görsel · 3 tüm hücre) sarma işareti koyar.
+ *  Baskı genişliği = A4 − yan boşluk; yan boşluk = JS margin ile belgedeki HER `@page` kuralının (koşullu gruplar dahil,
+ *  koşulu DEĞERLENDİRİLMEDEN) sol+sağ toplamının EN BÜYÜĞÜ (muhafazakâr: dar genişlik ⇒ fazla işaret/uyarı, sessiz taşma
+ *  değil). Mutlak olmayan birim (`em`/`%`) ve okunamayan stil sayfası ölçülmez, sayısı beyanda yazılır. Ölçüm kökün
+ *  genişliği geçici olarak baskı genişliğine çekilerek yapılır, sonra geri alınır. Taşan = sağ kenarı sınırı aşan, kırpan
+ *  atası olmayan EN DIŞTAKİ öğe; kırpık = `overflow-x` görünür değilken içeriği sığmayan öğe. TARANMAYAN: shadow root,
+ *  iframe, sola taşma. */
+async function yerlesimOlc(page, duzelt) {
+  return await page.evaluate(([sayfaMm, jsSol, jsSag, duz]) => {
+    const BIRIM = { mm: 1, cm: 10, in: 25.4, pt: 25.4 / 72, pc: 25.4 / 6, px: 25.4 / 96, q: 0.25 };
+    const mmYap = v => {
+      const m = /^\s*(-?[\d.]+)\s*(mm|cm|in|pt|pc|px|q)\s*$/i.exec(v || "");
+      return m ? parseFloat(m[1]) * BIRIM[m[2].toLowerCase()] : null;
+    };
+    let yan = jsSol + jsSag, yanKaynak = "js-margin", birimsiz = 0, okunamaz = 0;
+    const sayfaKurallari = kurallar => {
+      for (const r of Array.from(kurallar || [])) {
+        if (r.type === 6 /* PAGE_RULE */ && r.style) {
+          const sl = r.style.getPropertyValue("margin-left"), sg = r.style.getPropertyValue("margin-right");
+          if (!sl && !sg) continue;
+          const a = sl ? mmYap(sl) : jsSol, c = sg ? mmYap(sg) : jsSag;
+          if (a === null || c === null) { birimsiz++; continue; }
+          if (a + c > yan) { yan = a + c; yanKaynak = "css-@page" + (r.selectorText ? " " + r.selectorText : ""); }
+        } else if (r.type === 3 /* IMPORT_RULE */) {
+          try { sayfaKurallari(r.styleSheet && r.styleSheet.cssRules); } catch (e) { okunamaz++; }
+        } else if (r.cssRules) {
+          sayfaKurallari(r.cssRules);
+        }
+      }
+    };
+    for (const ss of Array.from(document.styleSheets).concat(Array.from(document.adoptedStyleSheets || []))) {
+      try { sayfaKurallari(ss.cssRules); } catch (e) { okunamaz++; }
+    }
+    const genislikMm = sayfaMm - yan;
+    const W = genislikMm * 96 / 25.4;
+    const kok = document.documentElement, eskiKokGenislik = kok.style.width;
+    kok.style.width = W + "px";
+    const sinir = () => kok.getBoundingClientRect().left + W + 1;
+    const kirpanAta = e => {
+      for (let a = e.parentElement; a && a !== kok; a = a.parentElement) {
+        if (getComputedStyle(a).overflowX !== "visible") return true;
+      }
+      return false;
+    };
+    const ogeler = () => Array.from(document.body ? document.body.querySelectorAll("*") : []);
+    const tasanlar = () => {
+      const L = sinir();
+      return ogeler().filter(e => {
+        const R = e.getBoundingClientRect();
+        if (!(R.right > L) || (R.width === 0 && R.height === 0)) return false;
+        const ust = e.parentElement;
+        if (ust && ust !== document.body && ust.getBoundingClientRect().right > L) return false;   // en dıştaki
+        return !kirpanAta(e);
+      });
+    };
+    const kirpik = e => getComputedStyle(e).overflowX !== "visible" && e.scrollWidth > e.clientWidth + 1;
+    const kirpiklar = () => ogeler().filter(kirpik);
+    // Öğe işareti (tablo hücresi DIŞI): sayfadan taşan görsel · içeriği sayfadan taşan ya da kırpık `pre`.
+    // Hücre içindekiler işaretlenmez — onlar taşan tablonun kademesine girer (sığan tablo değişmesin).
+    const icerikSag = e => { const r = document.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().right; };
+    let isGorsel = 0, isPre = 0;
+    if (duz) {
+      const L = sinir();
+      const adaylar = Array.from(document.querySelectorAll("img,pre")).filter(e => !e.closest("td,th"));
+      for (const e of adaylar) {
+        const gorsel = e.tagName === "IMG";
+        const tasar = (gorsel ? e.getBoundingClientRect().right : icerikSag(e)) > L && !kirpanAta(e);
+        if (tasar || (!gorsel && kirpik(e))) { e.setAttribute("data-ix-pdf-sar", "1"); if (gorsel) isGorsel++; else isPre++; }
+      }
+    }
+    let kademe1 = 0, kademe2 = 0, kademe3 = 0;
+    if (duz) {
+      for (const t of document.querySelectorAll("table")) {
+        if (t.getBoundingClientRect().right > sinir()) { t.setAttribute("data-ix-pdf-sar", "1"); kademe1++; }
+      }
+      for (const t of document.querySelectorAll('table[data-ix-pdf-sar="1"]')) {
+        if (t.getBoundingClientRect().right > sinir()) { t.setAttribute("data-ix-pdf-sar", "2"); kademe2++; }
+      }
+      for (const t of document.querySelectorAll('table[data-ix-pdf-sar="2"]')) {
+        if (t.getBoundingClientRect().right > sinir()) { t.setAttribute("data-ix-pdf-sar", "3"); kademe3++; }
+      }
+    }
+    const say = arr => {
+      const m = {};
+      for (const e of arr) { const k = e.tagName.toLowerCase(); m[k] = (m[k] || 0) + 1; }
+      return Object.keys(m).sort().map(k => k + " " + m[k]).join(", ");
+    };
+    const ta = tasanlar(), ki = kirpiklar();
+    kok.style.width = eskiKokGenislik;
+    return { genislikMm, yanKaynak, birimsiz, okunamaz, isGorsel, isPre, kademe1, kademe2, kademe3,
+             tasanN: ta.length, tasan: say(ta), kirpikN: ki.length, kirpik: say(ki) };
+  }, [SAYFA_GENISLIK_MM, 12, 12, !!duzelt]);
+}
+
 async function main(argv) {
   if (argv[0] === "--check") {
     const p = resolvePlaywrightCore();
@@ -307,7 +470,9 @@ async function main(argv) {
   if (!pw) { console.error("HATA: " + INSTALL); return 2; }
   const { chromium } = require(pw);
   const channel = process.env.PDF_BROWSER_CHANNEL || "chrome";
-  const fileUrl = "file:///" + IN.split(path.sep).join("/");
+  // ⛔ `dosyaUrl` (pathToFileURL + localhost UNC düzeltmesi; kusur ①). Eski `"file:///" + IN` klasör adındaki `#`'ı
+  //    URL parçası sayıyordu.
+  const fileUrl = dosyaUrl(IN);
   let browser;
   try {
     browser = await chromium.launch({ channel: channel === "chromium" ? undefined : channel, headless: true, args: ["--no-sandbox"] });
@@ -317,12 +482,41 @@ async function main(argv) {
     return 2;
   }
   let yerImi = null;
+  let yerlesimUyari = 0;
   try {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.goto(fileUrl, { waitUntil: "networkidle", timeout: 60000 });
     await page.emulateMedia({ media: "screen" });
-    // ⛔ Bayraksız seçenek nesnesi eskisiyle BİREBİR (bayraksız çıktı değişmez).
+    const dz = await dizinListesiMi(page);
+    if (dz.liste) {
+      console.error("[DURDU] PDF FAIL: acilan sayfa bir DIZIN LISTESI (baslik: " + JSON.stringify(dz.baslik) +
+                    "), belge degil — girdi yolu bir dizin mi ya da yol URL'e cevrilirken kesildi mi? Girdi: " + IN +
+                    " · acilan: " + fileUrl);
+      oncekiPdfUyar();
+      return 2;
+    }
+    // YERLEŞİM (kusur ②③④): önce ölç, yalnız-PDF CSS'i ekle, taşanları işaretle, yeniden ölç. --sayfa-no / --yer-imi
+    // ölçümlerinden ÖNCE: onlar SON yerleşimi ölçmeli.
+    const yOnce = await yerlesimOlc(page, false);
+    await page.addStyleTag({ content: PDF_CSS });
+    const y = await yerlesimOlc(page, true);
+    console.log("YERLESIM: baski genisligi " + y.genislikMm.toFixed(1) + "mm (" + y.yanKaynak + ")" +
+                " | duzeltme oncesi tasan " + yOnce.tasanN + ", kirpik " + yOnce.kirpikN +
+                " | PDF-CSS isaretli oge: tasan gorsel " + y.isGorsel + ", tasan/kirpik pre " + y.isPre +
+                " | tasan tablo sarildi: kod/pre " + y.kademe1 + ", gorsel " + y.kademe2 + ", tum hucre " + y.kademe3 +
+                " | kalan tasan " + y.tasanN + (y.tasanN ? " (" + y.tasan + ")" : "") +
+                ", kirpik " + y.kirpikN + (y.kirpikN ? " (" + y.kirpik + ")" : "") +
+                " | olculmeyen @page yan boslugu " + y.birimsiz + ", okunamayan stil sayfasi " + y.okunamaz +
+                " | shadow root/iframe TARANMADI");
+    yerlesimUyari = y.tasanN + y.kirpikN;
+    if (yerlesimUyari > 0) {
+      console.error("⚠ UYARI YERLESIM: " + y.tasanN + " oge baski genisligini (" + y.genislikMm.toFixed(1) +
+                    "mm) asiyor — Chromium BUTUN belgeyi kucultebilir; " + y.kirpikN +
+                    " oge kirpik (icerigi PDF'te kesilir). Belge kendi CSS'iyle duzeltmeyi eziyor olabilir.");
+    }
+    // ⛔ Bayraksız seçenek nesnesi eskisiyle BİREBİR. Çıktının kendisi yalnız taşan/kırpık öğeli belgede değişir
+    //    (YERLEŞİM bloğu); önceki metin "bayraksız çıktı değişmez" diyordu.
     const opts = { path: OUT, format: "A4", printBackground: true, margin: JS_MARGIN };
     if (bayrak.has("--sayfa-no")) {
       const o = await altBoslukOlc(page, JS_ALT_MM);
@@ -392,8 +586,17 @@ async function main(argv) {
       }
     }
   }
-  console.log("PDF OK: " + OUT + " (" + fs.statSync(OUT).size + " bayt)");
+  // `PDF OK` YALNIZ yerleşim temizken: kalan taşma/kırpıkta PDF yazılır ama OK denmez (çıkış 0).
+  if (yerlesimUyari > 0) {
+    console.log("PDF UYARILI (" + yerlesimUyari + " yerlesim uyarisi, stderr): " + OUT + " (" + fs.statSync(OUT).size + " bayt)");
+  } else {
+    console.log("PDF OK: " + OUT + " (" + fs.statSync(OUT).size + " bayt)");
+  }
   return 0;
 }
 
-main(process.argv.slice(2)).then(code => process.exit(code)).catch(e => { console.error("HATA:", e); oncekiPdfUyar(); process.exit(1); });
+if (require.main === module) {
+  main(process.argv.slice(2)).then(code => process.exit(code)).catch(e => { console.error("HATA:", e); oncekiPdfUyar(); process.exit(1); });
+} else {
+  module.exports = { dosyaUrl, PDF_CSS };   // birim testi için (tarayıcı açmaz)
+}

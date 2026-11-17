@@ -114,7 +114,7 @@ kapsam beyanıyla yaz, sistemden tekrar okuyarak doğrula, inaktif obje kalmadı
 | Transport | Yaratılmaz, uydurulmaz; kullanıcıdan istenir. İş bir transporta bağlıysa aynısıyla devam edilir. `ask_user` ile sorarken ikinci seçenek `İptal`; "siz açın" gibi yasak bir eylem (kesin yasak C) seçenek yapılmaz. |
 | Paket | Yaratılmaz; hangisinin kullanılacağı sorulur. |
 | Yeni program / include | Yaratmadan önce TITLE istenir; include TITLE'ına tip soneki eklenir (`references/naming.md` §6). |
-| Yeni DDIC tablo | Alanlar, her alanın data element'i, anahtar ve uzunluklar gösterilir; açık onay alınır. İstemci alanı `mandt : mandt`. Yönetim alanları (oluşturan/zaman, son değiştiren/zaman, RAP'ta ETag için yerel son değişiklik zamanı) tasarımda listelenir. |
+| Yeni DDIC tablo ya da yapı | Alanlar, her alanın data element'i, anahtar ve uzunluklar gösterilir; açık onay alınır. İstemci alanı `mandt : mandt`. Yönetim alanları (oluşturan/zaman, son değiştiren/zaman, RAP'ta ETag için yerel son değişiklik zamanı) tasarımda listelenir. DTEL'siz (yerleşik `abap.*` tipli) her alan `alan · tip · obje` olarak listelenir ve onay kaydında **adıyla** geçer; toplu "tabloları yaz" onayı kapsam onayıdır, tasarım onayı değildir (`%sap-cds-ddic` C-TBL-CRE-01/02, C-STR-FIELD-01). |
 | Yeni Z DDIC objesinin adı (domain, data element, tablo, yapı, tablo tipi, kilit objesi, arama yardımı…; NR objesi dahil) | Öneri sunabilirsin, ama sırayla: ① önce yeniden kullanım — released/standart ya da mevcut Z obje yeterli mi (`references/naming.md` §5) ② değilse adlandırma standardına ve paket `.rules.md` öneklerine uygun ad (`references/naming.md` §4; uzunluk: genel ≤ 30, tablo ≤ 16, NR objesi ≤ 10) ③ **her adı canlıda kontrol et** (`adt_search_objects` / `adt_get`; NR objesi için sistemdeki NR tanımı) — varsa başka ad öner ④ tablo hâlinde sun (ad · tip · amaç · canlı kontrol sonucu) ⑤ kullanıcının **açık onayı** olmadan o adla yaratma. Genel mutabakat ("devam et") ad onayı sayılmaz: tablo açıkça onaylanır, intake'te ad başına `ONAY` kutusu. |
 | Standart objeye append alanı / append yapı adı | AI önermez, append'i ve append alanının Z DTEL'ini/domain'ini de yaratmaz; kullanıcı belirler, kendisi yaratır, sonucu bildirir (kesin yasak A — standart objeler yalnız okunur). |
 | Z obje açıklama ve etiketleri | Spesifikasyondan ya da eski sistemden alınır; tahmin edilmez. |
@@ -139,6 +139,10 @@ kapsam beyanıyla yaz, sistemden tekrar okuyarak doğrula, inaktif obje kalmadı
 - Tahmin yok: alan adı, tip, annotation, syntax ve yöntem mevcut artefakttan ya da referanstan doğrulanır;
   yoksa sistemden okunur; hâlâ belirsizse DUR ve sor.
 - Alt ajana SAP araştırması devredilirse brifinge kesin yasakları, "yazma sınıfı araç çağırma" kuralını ve
-  paketin `.rules.md` önekleri **metin olarak** yazılır (alt ajan çekirdeği ve proje dosyalarını görmez).
+  paketin `.rules.md` önekleri **metin olarak** yazılır (yerleşik görev ajanı çekirdeği ve proje dosyalarını görmez;
+  özel `sap-*` ajanları çekirdeği ve `AGENTS.md`'yi görür ama paket `.rules.md`'sini görmez).
   Hazır bloklar ve rol ekleri (araştırma, backend, UI5, koordinasyon kontrol listesi): `references/role-briefs.md`.
+  aXet.code ≥ 1.5.1'de bu roller özel ajan olarak da kuruludur (SAP paketi açıkken; şablon `agents/`):
+  `sap-arastirma` · `sap-backend` · `sap-ui5` · `sap-inceleme`; her talepte önce intake isteyen oturum için
+  `sap-gelistirme` ana ajanı (`--agent sap-gelistirme`). Ajanlar rol ekini kendileri açar; brifinge işin kendisi yazılır.
 - Paket `.rules.md` bu skill'in referanslarıyla çelişirse paket kuralı geçerlidir; çelişkiyi kullanıcıya bildir.

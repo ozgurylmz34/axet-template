@@ -339,12 +339,16 @@ def _hedef_coz(tgt: str, literaller: list[str]) -> tuple[str, bool]:
 
 
 def _izinli(hedef: str) -> bool:
-    """Z/Y öneki ya da /Z…/ · /Y…/ müşteri namespace'i. Başka `/NS/` bilinemez → yasaklı."""
+    """Müşteri tablosu mu? Karar TEK kaynaktan (`lib/utils/ad_politikasi.musteri_adi_mi`, ADR 0005 A-EK):
+    Z/Y öneki ya da projede `customer_namespaces` ile BİLDİRİLMİŞ `/<NS>/`. Bildirilmemiş her `/NS/` (önceden
+    kabul edilen `/Z…/`·`/Y…/` dahil — 2026-11-17 sıkılaştırma) bilinemez → yasaklı (fail-closed)."""
     h = hedef.strip().upper()
     if h[:1] in ("Z", "Y"):
         return True
-    m = re.match(r"^/([A-Z0-9_]+)/", h)
-    return bool(m and m.group(1)[:1] in ("Z", "Y"))
+    if not h.startswith("/"):
+        return False
+    from utils.ad_politikasi import musteri_adi_mi  # lazy: `sapadt` import'u lib/'i sys.path'e ekler
+    return musteri_adi_mi(h)
 
 
 def _bildirimler(ifadeler: list[_Ifade]) -> tuple[set[str], set[str]]:

@@ -22,6 +22,9 @@ Kullanım:
     python check_reuse_gate.py <artifact_path>
 
 Exit: 0 (bu validator BLOCKER üretmez).
+      0 + `AXET-GATE-STATUS … measured=false reason=ad-cozulemedi` — `define view entity` VAR ama entity adı
+      katı ad gramerine uymadı (ör. `/AB/X`, `/NSPC X`): ÖLÇÜLEMEDİ, "kapsam dışı" DEĞİL (kaynak çekirdek #402).
+      Namespace'li ad (`/NSPC/…`) `ad_politikasi` gramerince AYRIŞTIRILIR ve denetlenir.
 """
 import argparse
 import os
@@ -29,13 +32,19 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils.ad_politikasi import AD_ADAYI, ad_coz  # noqa: E402  — tek ad grameri
+
 if sys.platform == 'win32':
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
+# Ad yakalama `ad_politikasi.AD_ADAYI` (gevşek) + `ad_coz` (katı) — validator kendi ad desenini YAZMAZ.
 ENTITY_RE = re.compile(
-    r'\bdefine\s+(?:root\s+)?view\s+entity\s+(\w+)', re.IGNORECASE)
+    r'\bdefine\s+(?:root\s+)?view\s+entity\s+(' + AD_ADAYI + r')', re.IGNORECASE)
+# Tür anahtar sözcüğü (adsız): ENTITY_RE eşleşmeyip bu eşleşirse ad ÇÖZÜLEMEMİŞTİR.
+ENTITY_KW_RE = re.compile(r'\bdefine\s+(?:root\s+)?view\s+entity\b', re.IGNORECASE)
 UZANTILAR = ('.cds', '.asddls', '.ddls')
 _ATLA = {'.git', '.axet-code', 'node_modules', '__pycache__', '.venv', 'venv'}
 _TARAMA_SINIRI = 5000
@@ -67,7 +76,9 @@ def _envanter(kok: Path, haric: Path):
             except OSError:
                 continue
             for m in ENTITY_RE.finditer(txt):
-                inv.setdefault(m.group(1).upper(), p)
+                ad, _neden = ad_coz(m.group(1))
+                if ad:      # şekli bozuk ad envantere girmez (yeni nesnenin adı ayrıca denetlenir)
+                    inv.setdefault(ad.upper(), p)
     return inv, False
 
 
@@ -85,10 +96,17 @@ def main() -> int:
 
     text = path.read_text(encoding='utf-8', errors='replace')
     m = ENTITY_RE.search(text)
-    if not m:
+    ad, _neden = ad_coz(m.group(1)) if m else ('', None)
+    if not ad:
+        if ENTITY_KW_RE.search(text):
+            # Tür anahtar sözcüğü VAR ama ad çözülemedi: eski hâl "kapsam dışı" diyordu (kontrol koşmadan temiz).
+            print(f'ÖLÇÜLEMEDİ — {path.name} `define view entity` içeriyor ama entity adı '
+                  f'çözülemedi → reuse-gate KOŞMADI; "temiz" anlamına GELMEZ.')
+            durum_beyani('SKIPPED', False, 'ad-cozulemedi')
+            return 0
         print(f'OK — {path.name} view entity değil, reuse-gate kapsamı dışı')
         return 0
-    yeni = m.group(1).upper()
+    yeni = ad.upper()
 
     proje = os.environ.get('AXET_SAP_PROJECT_DIR')
     kok = Path(proje) if proje and Path(proje).is_dir() else path.resolve().parent

@@ -49,7 +49,7 @@ Teknik ad İngilizce, açıklama/etiket metinleri projenin `master_language`'ind
 | Message class | `{PKG}_MSG` | `^{PKG}_MSG$` |
 | Number range | `{PKG}_NR` | `^{PKG}_NR$` |
 | Enhancement implementation | `{PKG}_ENH_*` | `^{PKG}_ENH_[A-Z0-9_]+$` |
-| Lock object | `E{PKG}_*` | `^E{PKG}_[A-Z0-9_]+$` |
+| Lock object{LOCK_NOTE} | `{LOCK}_*` | `^{LOCK}_[A-Z0-9_]+$` |
 
 Önek çakışmaları obje tipi ve klasörle ayrılır: `_I_` hem klasik include (`programs/`) hem CDS interface view
 (`cds/`); `_E_` hem data element hem CDS extension view. Aynı kök adı iki tip için kullanma.

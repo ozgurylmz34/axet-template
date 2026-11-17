@@ -129,7 +129,7 @@ def template_durumu(fetch: bool) -> list[str]:
 GUNCELLEME_CACHE = Path.home() / ".axet-template-cache" / "last_guncelle_check"
 GUNCELLEME_EVERY_SEC = 86400
 DURUM_DIZIN_ADI = ".axet-guncelleme"          # scripts/guncelle.py:46 ile AYNI ad
-YAYINLAR_REF = "origin/main:guncelle/yayinlar.json"
+YAYINLAR_REF = "refs/remotes/origin/main:guncelle/yayinlar.json"  # tam ref: aynı adlı etiket kısa adı gölgeler
 
 
 def _gunluk_fetch(fetch: bool) -> str:

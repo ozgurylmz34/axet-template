@@ -22,6 +22,15 @@ class IskeletAdReddiTest(GeciciTest):
         self.assertIn("Ad deseni", r.stderr)
         self.assertIn("HATIRLATMA: bu reddi aşmak için dosyaları elle yazma", r.stderr)
         self.assertFalse(out.exists() and any(out.iterdir()), "red hâlinde dosya yazıldı")
+        self.assertNotIn("MSYS_NO_PATHCONV", r.stderr)
+
+    def test_namespace_ya_da_msys_yolunda_ipucu(self):
+        for ad in ("/NSPC/SD001_P_X", "C:/Program Files/Git/NSPC/SD001_P_X"):
+            out = self.tmp / "programs_ns"
+            r = self.calistir(SCAFFOLD, ad, "--title", "Deneme", "--out", str(out))
+            self.assertEqual(r.returncode, 2, self.cikti(r))
+            self.assertIn("MSYS_NO_PATHCONV=1", r.stderr)
+            self.assertFalse(out.exists() and any(out.iterdir()), "red hâlinde dosya yazıldı")
 
     def test_gecerli_adda_hatirlatma_yok(self):
         """KONTROL GRUBU: hatırlatma her çıktıya basılsaydı gürültü olurdu."""

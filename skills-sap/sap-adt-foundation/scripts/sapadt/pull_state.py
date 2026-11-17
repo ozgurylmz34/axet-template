@@ -37,6 +37,8 @@ def tip_anahtari(object_type) -> str:
         return _TIP_ESANLAM[t]
     try:
         import object_types as _ot  # type: ignore
+        if _ot.is_fugr_include_type(t):   # Q383: fugr_include/fugr-include/fugr/i tek anahtar
+            return "fugr_include"
         if _ot.is_class_include(t):
             return _ot.normalize_class_include(t)
         return _ot.normalize_object_type(t)

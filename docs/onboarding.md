@@ -307,6 +307,7 @@ python $HOME\axet\scripts\doctor.py --live      # aXet'in çekirdeği fiilen yü
 | `KURULUMU-TAMAMLA` "YAPMAN GEREKEN" deyip durdu | Pencerenin tam yoluyla gösterdiği `conn\DEV.env`'i doldur, kaydet, tekrar çift tıkla (§3.2) |
 | İlk satırda `proje: YOK` | Oturum proje kökünde mi açıldı; `AGENTS.md`'de `PROJECT-ID` satırı var mı |
 | İlk satırda `AXET-CORE` yok | Kurulum tamamlandı mı; `python $HOME\axet\scripts\doctor.py` çıktısındaki global config satırları |
+| `axet-code agent list`'te `sap-*` ajanları yok ya da `doctor` "özel ajanlar eksik ya da eski" dedi | aXet'te `%guncelle` yaz (SAP paketi açıkken ajanları eşitler). "Aynı adlı kendi ajanın var" uyarısında template ajanı kurulmaz: kendi ajanını yeniden adlandırırsan bir sonraki `%guncelle` kurar |
 | SAP CLI yalnız `ping` açıyor | `sap-project.json` yok ya da `sap_profile` / `master_language` geçersiz |
 | Yazma reddi `tier_not_writable` | `.conn_adt` içindeki sistem tipi DEV değil ya da okunamıyor |
 | Skill listede yok | `doctor.py` (frontmatter biçimi, açıklama ≤ 1024 karakter); aXet logu `.axet-code/logs/axet-code.log` |

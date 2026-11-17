@@ -151,7 +151,7 @@ class Klon:
         aynıdır (Q4): `origin/main` kataloğundaki kalem ya yayını HEAD'de içerildiği için ya da
         `uygulanan.json`'da kayıtlı olduğu için tamamdır (motorun plan kuralı, guncelle.py:717).
         Katalog okunamazsa eski ölçüye düşülür (katalogsuz eski yayın)."""
-        r = self.git("show", "origin/main:guncelle/yayinlar.json")
+        r = self.git("show", "refs/remotes/origin/main:guncelle/yayinlar.json")
         katalog = None
         if r.returncode == 0:
             try:

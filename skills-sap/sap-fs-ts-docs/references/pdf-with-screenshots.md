@@ -134,7 +134,24 @@ paneller önce `eval` ile `data-kd` özniteliğiyle etiketlenir.
      `<style>` içine göm ya da bayraksız üret.
    · `--yer-imi` — başlıklardan (h1–h6) PDF yer imleri. Araç sayıyı PDF'in kendisinden okur
      (`YER-IMI PDF: N yer imi / M baslik`); fark ya da yokluk stderr'e UYARI düşer, çıkış kodu değişmez.
-   Bayraksız çıktı eskisiyle aynıdır. Teslim edilmiş bir dokümanı yeniden üretirken bayrak eklemek PDF'i değiştirir.
+   Bayraksız page.pdf seçenekleri eskisiyle aynıdır; içerik yalnız taşan/kırpık öğesi olmayan belgede aynıdır (aşağıdaki
+   yerleşim). Teslim edilmiş bir dokümanı yeniden üretirken bayrak eklemek PDF'i değiştirir.
+   **Yerleşim (her koşumda, bayraktan bağımsız):** basmadan önce yalnız-PDF CSS eklenir ve YALNIZ baskı genişliğinde
+   taşan/kırpık öğeye uygulanır: tablo dışında sayfadan taşan görsel sığdırılır (en-boy oranı korunur) · taşan ya da kırpık
+   `pre` sarılır · uzun sözcük sarılır · TAŞAN tablo kademeli sarılır (1: hücre içi `code` + `pre` · 2: hücre içi görsel ·
+   3: tüm hücre). Sığan tabloya ve sığan görsele dokunulmaz (global kural sığan tablonun sütunlarını değiştiriyordu —
+   ölçüldü). Sebep: Chromium sayfadan taşan TEK bir öğe görünce **bütün belgeyi küçültür** (ölçüldü: gövde 10,5 → 7,0 pt)
+   ve `pre` sağdan kırpılır. Her koşumda `YERLESIM:` satırı basılır (baskı genişliği · düzeltme öncesi/sonrası taşan ve
+   kırpık öğe). Düzeltilemeyen taşma kalırsa PDF yine yazılır ama son satır **`PDF UYARILI`** olur + stderr
+   `⚠ UYARI YERLESIM` (çıkış 0) — `PDF OK` yalnız temiz yerleşimde basılır. Bu kuralları üretici CSS'ine
+   (`build_doc_pdf.py` / `build_kd_pdf.py`) YAZMA: betik ekran medyasıyla basar (`@media print` PDF'e ulaşmaz) ve üretici
+   HTML'i ekranda / uygulama içi yardımda da kullanılır.
+   **Klasör adında `#`/`%`/boşluk:** yol `url.pathToFileURL` ile kodlanır. Açılan sayfa bir dizin listesiyse (eski kusur:
+   `#` URL parçası sayılıp üst klasörün listesi `PDF OK` ile basılıyordu) `[DURDU] PDF FAIL`, çıkış 2. `\\localhost\…` UNC
+   yolu `\\127.0.0.1\…` olarak açılır (URL ayrıştırıcısı `localhost` host'unu siler).
+   ⚠ **Git Bash'te `/` ile başlayan argüman** (ör. başlık `"/NS/ZCA001 Deneme"`) MSYS tarafından yol sanılıp
+   `C:/Program Files/Git/NS/ZCA001 Deneme`'ye çevrilir — betik bunu göremez. Çağrının önüne `MSYS_NO_PATHCONV=1` koy;
+   PowerShell/cmd'de gerekmez.
 5. **Uygulama içi yardım kopyası:** `build_kd_pdf.py … --help-dir <app>/webapp/help` HTML'i `kullanici-kilavuzu.html` adıyla ve
    görselleri `screenshots/` altına kopyalar (canlıda görünmesi yeniden deploy ister).
 
@@ -173,6 +190,7 @@ python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/verify_doc_html.py docs/KD-S
 | Mermaid kaynağının bir kısmı HTML/PDF'te düz metin olarak görünüyor; kaynak `<!-- … -->` içinde "gizlenmişti" | mermaid oku `A --> B` içindeki ilk `-->` HTML yorumunu orada kapatır; hata yok | mermaid kaynağını HTML yorumunda saklama — render edilen çitte bırak ya da ayrı `.mmd` dosyasında tut. `verify_doc_html.py` ham mermaid aramasını yalnız `<pre>` bloklarında ve `language-mermaid` sınıfında yapar, yorumdan taşan metni **yakalamaz**: üretilen HTML'in görünür metninde `-->` ve `graph TD` / `flowchart` ara (ekip dersi, 2026-10-10) |
 | Kaynak değişmediği hâlde her üretimde diyagram PNG'leri değişmiş görünüyor (`git status` → `M …png`, yardım kopyası da) | üretici her koşuda mermaid'i yeniden çizer; PNG baytları kenar yumuşatma gürültüsüyle farklı çıkar | "dosya değişti" ≠ "içerik değişti": Markdown'daki mermaid bloğu değişmediyse o PNG'leri commit'e alma, yalnız o dosyaları adıyla geri al (`git restore -- <png yolu>`); dizin ya da joker vermeden (ekip dersi, 2026-10-10, dört doküman turu) |
 | PDF metninde ş/ğ/ı/ç `�` görünüyor (Windows, `pdftotext`) | `pdftotext` kodlama bayrağı verilmedi; PDF sağlam | metin sondası daima `pdftotext -enc UTF-8 <pdf> -`; bayraksız ölçüm sahte "bozuk karakter" bulgusu üretir (ekip dersi, 2026-10-10) |
+| Çıplak dosya adıyla (`x.html`) `html_to_pdf.js` dosyayı bulamıyor | göreli yol **sürecin çalışma dizinine** göre çözülür (`path.resolve`); kabuk aracının çalışma dizini her çağrıda başka yere dönebilir | **tam yol** ver. (Eski not "yol yalnız `/` içeriyorsa kabul edilir" yanlıştı: aynı çıplak ad dosyanın dizininden PDF OK verdi — ekip ölçümü 2026-11-07) |
 | Arayüz İngilizce | dil parametresi yok | `?sap-ui-language=tr` |
 | Konsolda `UnicodeEncodeError` | Windows konsol kod sayfası | script'ler UTF-8'e ayarlar; çıktıyı dosyaya yaz |
 | Mock boş ya da yanlış servis | `ui5-mock.yaml` eski | `urlPath` + `metadata.xml` güncelle |
