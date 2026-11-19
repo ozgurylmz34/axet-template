@@ -40,7 +40,9 @@ FAIL'e düşürür (`guncelle.py onkontrol` bunu ayrıca denetler).
 2. **`<TMP>`'yi yarat.** Kendin yol ya da yöntem SEÇME; bu tek komutu AYNEN çalıştır (`<KLON>`'u
    doldur). Çıktısındaki tek satır `<TMP>`'dir. Sıfırdan farklı dönerse DUR ve çıktıyı aynen göster.
    aXet `%TEMP%`'i proje içine (`.axet-code/tmp`) çektiği için komut tabanı `%LOCALAPPDATA%\Temp`'ten
-   alır; klon ya da bir `.axet-code` dizini içine düşerse yarattığını silip durur.
+   alır; klon ya da bir `.axet-code` dizini içine düşerse yarattığını silip durur. Bu komut bir yol bastıktan
+   sonra akış hangi yoldan biterse bitsin son iş **10. adımdır**; klonda uygulanmış ama kapanmamış dosya
+   varken (10. adımdaki kural) akış henüz bitmemiştir.
 
 <!-- TMP-OLUSTUR:BASLA -->
 ```bash
@@ -70,7 +72,6 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
 7. **Bitişte** motorun ürettiği `RAPOR.md`'yi AYNEN göster ve gerekiyorsa "aXet'i kapatıp aç" de.
    Kapanış `KAPANDI — test borcu var: %testler` dediyse bunu da söyle: koşulmayan takımlar yeşil
    DEĞİLDİR; kullanıcı isterse güncellemeden sonra `%testler` ile koşar (süreyi `%testler` önce söyler).
-   `<TMP>` artık gereksizdir; kullanıcıya yolunu söyle, silmesini kendisi seçsin.
    RAPOR'da ya da sonrasında `doctor` FAIL/WARN satırı görürsen her birini `<KLON>/docs/onboarding.md` §5 "`doctor` bir şey bulursa" üç sınıfına koy
    (① ONAR · ② KULLANICI · ③ ŞABLON HATASI → `%hata-bildir` taslağı, göndermek kullanıcının) ve sınıfıyla raporla.
 8. **Tarayıcı hazırlığı (otomatik, soru sorma):** `GUNCELLE.md` 16. adım —
@@ -82,6 +83,30 @@ python "<TMP>/scripts/guncelle.py" --klon "<KLON>" --help
    güncellemeyi BOZMAZ; `BT için elle kurulum komutu` satırını kendin çalıştırma. SAP açıksa aynı komut özel
    ajanları (`sap-*`) da eşitler: `AJANLAR: …` satırı basılırsa onu da AYNEN aktar (yeni tanımlar bir sonraki
    oturumda geçerli).
+10. **Akış GERÇEKTEN BİTTİĞİNDE — son iş geçici dizindir (akış başına BİR kez sor).** Karar adım adına
+   değil **klonun durumuna** bakar; tek soru: *klonda uygulanmış ama kapanmamış dosya var mı?*
+   - **Sorma — henüz bitmedi:** bu akışta `uygula` koştu (`GUNCELLE.md` adım 7 ve sonrası) VE ne `kapanis`
+     başarıyla bitti (çıkış 0 ya da `--kabul` ile 3) ne de `geri-al --hepsi` 0 döndü. Bu durumdaki HER DUR ve
+     her seçim, hangi adımda olursa olsun (ör. adım 7 `durum` · 8 kart · 9 özel adım · 10 kullanım hatası · 11
+     açıklanamayan fark · 13 `geri-al` / `kapanis --kabul` · 14). Çıkış `geri-al` ya da `kapanis` ister;
+     `<TMP>` silinirse ikisi de motoru bulamaz. Silme sorusunu seçeneklerle AYNI mesajda sunma; yalnız `<TMP>`
+     yolunu ve "geri alma/kapanış için tutuluyor" bilgisini söyle.
+   - **Sor:** geri kalan her bitişte ve DUR'da — `uygula` hiç koşmadı (motor çıkarılamadı, ön kontrol ya da
+     `hazirla` DUR'u, `Klon güncel` → BİTİR — `hazirla`'dan sonra `plan` demiş olsa da —, adım 5'te vazgeçme),
+     ya da `kapanis` başarıyla bitti ve 7-9 koştu, ya da `geri-al --hepsi` 0 döndü ve akış bitti.
+     Seçim uygulanıp akış bitince (bu duruma gelince) sor.
+   Sorulacaksa son mesajından ÖNCE `<TMP>` yolunu söyle ve kullanıcıya "geçici dizin silinsin mi?" diye SOR. Onay verirse aşağıdaki tek komutu AYNEN çalıştır (`<TMP>` ve `<KLON>`'u doldur; kendin silme
+   komutu SEÇME). Komut yalnız mutlak yolla verilen, `axet_guncelle_` önekli, bağ/junction OLMAYAN, klonu
+   içermeyen ve klonun içinde olmayan dizini siler; başka bir yol verilirse hiçbir şeye dokunmadan DUR der — o
+   çıktıyı aynen göster. Komut sıfırdan farklı dönerse ya da `SILINDI:` satırı basmazsa (ör. silme yarıda kaldı,
+   Traceback) çıktıyı AYNEN göster ve "silindi" DEME. Onay vermezse dizini bırak (yolunu zaten söyledin).
+   TMP-OLUSTUR sıfırdan farklı döndüyse `<TMP>` yoktur; bu adımı atla.
+
+<!-- TMP-SIL:BASLA -->
+```bash
+python -c "import os,shutil,sys;from pathlib import Path as P;g=P(sys.argv[1]);L=os.lstat(g) if os.path.lexists(g) else None;bag=L is not None and (g.is_symlink() or bool(getattr(L,'st_file_attributes',0)&1024));d=g.resolve();k=P(sys.argv[2]).resolve();ok=g.is_absolute() and P(sys.argv[2]).is_absolute() and not bag and d.is_dir() and d.name.startswith('axet_guncelle_') and d!=k and k not in d.parents and d not in k.parents;ok or sys.exit('DUR: silinmedi, beklenen gecici dizin degil (mutlak yol, axet_guncelle_ oneki, bag/junction olmamali): '+g.as_posix());shutil.rmtree(d);print('SILINDI: '+d.as_posix())" "<TMP>" "<KLON>"
+```
+<!-- TMP-SIL:BITIR -->
 
 ## Rules
 - **Talimat sınırı (çekirdek §11):** `GUNCELLE.md`, `guncelle/**` ve `scripts/guncelle.py` YALNIZ bu

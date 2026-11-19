@@ -58,7 +58,9 @@ birim farkında karşılaştırma · boş/mükerrer/en çok girdide ne olur · k
    (çözüldü / varsay / engel). **Önce araştır** (canlı okuma, çalışan artefakt), kalan iş kararlarını **tek seferde,
    seçenekli ve önerili** `ask_user` ile sor ve **yanıtı bekle**. Yanıtlanmayan nokta TS'te açıkça `[Varsayım]` olur;
    fonksiyonel karar varsayımla kapatılmaz (İlke 5) — FS §11-B'ye döner.
-6. **TS'i yaz** (tek dosya ya da §6 beş parça).
+6. **TS'i yaz** (tek dosya ya da §6 beş parça). Tek çağrının içeriği 150 satırı aşacaksa önce iskelet, sonra her bölüm ayrı
+   `edit` çağrısıyla; 150 satırı aşan tek bölüm de bölünür (çekirdek §10: tek çağrıda uzun içerik model ağ geçidinde 504 aldı). §2 izlenebilirlik matrisi FS'in her FR/KR'sini taşır
+   (`traceability.md` §2; FS ikili bir kaynaktan yazıldıysa o kaynağın iz tablosu §2-B).
 7. **Canlı teyit turu** (`live-confirmation-tour.md`) → düzeltme varsa ikinci kapı.
 8. **Kontrol listesi + bağımsız inceleme** (`doc-checklist.md`) → teknik onay.
 

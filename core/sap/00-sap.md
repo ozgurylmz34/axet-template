@@ -1,5 +1,5 @@
 # SAP / ABAP Paketi — Kesin Kurallar
-SAP-CORE-ID: AXET-SAP-0.5.4
+SAP-CORE-ID: AXET-SAP-0.5.5
 
 > `scripts/install.py --sap` ile yüklenir. Sistem, `master_language`, paket ve transport bilgisi proje `AGENTS.md`'sindedir.
 
@@ -32,6 +32,10 @@ SAP-CORE-ID: AXET-SAP-0.5.4
 - Z obje adı (tablo, program, sınıf, CDS …) ÖNERMEDEN önce — yalnız öneri istense ve paket söylenmese de — paketin `.rules.md` önek/adlandırma kuralını oku: paket söylenmediyse proje `AGENTS.md` aktif paketi, o da yoksa `<source_root>/*/*/.rules.md` (tek paket varsa o). Hafızadaki proje kuralıyla çelişirse ikisini de göster, hangisinin geçerli olduğunu kullanıcıya sor; birden çok aday paket varsa hangisi olduğunu sor.
 - SAP bağlantı bilgisi proje kökündeki gitignore'lu dosyadadır: içeriğini okuma, sohbete yazma; script'ler okur.
 - Ayrıntılı ADT yöntemleri SAP skill'lerindedir (`skills-sap/`); işlemden önce ilgili skill'i oku.
+- **İstek belgesi `.docx`/`.xlsx` (FS, gereksinim):** `read_docx` görseli ve tablo yapısını düşürür → `%sap-fs-ts-docs`
+  skill'inin kaynak paketi adımını uygula. Alt ajana belge yolu değil paketin `INDEX.md`/`metin.md` yolunu ver, görselleri
+  (`media/`) `view` ile açtır (ölçüldü 1.5.1: `.docx` yolu verilen `task` 2/2 okuyamadı, paketle 45 sn'de doğru okudu).
+  Paket `.pdf` desteklemez: PDF'te çekirdek §4/§7 yolu (metni çıkar, dosya yolunu ver).
 
 ## Yazma yolu, veri ve kimlik bilgisi
 - **Yeni talep = önce intake:** yeni geliştirme, revizyon, rapor, alan ya da ekran talebinde önce `sap-intake-triage` skill'ini uygula; kapsamı S0/S1/S2 diye sınıfla ve gerekçesini yaz. SAP'ye her yazma çağrısında kapsam beyan edilir; S2'de mutabakatlı intake artefaktı olmadan araç yazmaz. Kapsamı küçük gösterme; iş büyürse yeniden sınıfla.

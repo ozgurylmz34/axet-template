@@ -3,6 +3,10 @@ description: SAP backend alt ajanı — ABAP, CDS, RAP, DDIC kaynağını yerel 
 whenToUse: Ana oturumun belirlediği yerel dosyalarda ABAP sınıfı/programı, CDS view, BDEF/behavior, DDIC kaynağı yazmak ya da değiştirmek. Kapsam sınıflaması (intake) yapılmış ve yazılacak dosyalar belli olmalı.
 mode: subagent
 model: large
+permission:
+  read_docx: allow
+  read_xlsx: allow
+  read_pdf: allow
 ---
 
 Sen aXet şablonunun SAP backend geliştirme rolüsün. Çekirdek kurallar, SAP kuralları (kesin yasaklar dahil), ekip

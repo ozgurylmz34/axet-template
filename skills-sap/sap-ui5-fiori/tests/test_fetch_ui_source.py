@@ -79,8 +79,9 @@ class TestKaynakKur(unittest.TestCase):
               and set(atilan) == {"Component.js", "Component.js.map", "controller/List.controller.js",
                                   "controller/List.controller.js.map", "Component-preload.js",
                                   "Component-preload.js.map"}
-              and uyari == [] and K.uygulama_kimligi(webapp) == "zxx001.order")
-        H.kaydet("kaynak_kur: -dbg → asıl ad, build ürünü atılır, metin LF", "8 kaynak, 6 atılan, 0 uyarı",
+              and uyari == [] and K.uygulama_kimligi(webapp) == "zxx001.order"
+              and len(webapp) == 6)  # Z153: etiketteki sayı hükme de girer (etiket "8" diyordu, gerçek 6)
+        H.kaydet("kaynak_kur: -dbg → asıl ad, build ürünü atılır, metin LF", "6 kaynak, 6 atılan, 0 uyarı",
                  f"{len(webapp)} kaynak, {len(atilan)} atılan, {len(uyari)} uyarı", ok)
         self.assertTrue(ok, (sorted(webapp), atilan, uyari))
 
@@ -349,6 +350,30 @@ class TestZipSlip(unittest.TestCase):
         H.kaydet("anlik_yaz hepsi-ya-hiç: 3 hata noktası → eski bayt bayt · kontrol + kurtarma", "6/6",
                  str(yanlis or "6/6"), ok)
         self.assertTrue(ok, sonuc)
+
+    def test_anlik_oku_yarim_takasta_eski_goruntuyu_okur(self):
+        """Z155ⓕ: süreç takasın ortasında ölürse (`dist` → `dist.eski` oldu, `dist.yeni` henüz `dist` değil) anlık
+        görüntü "yok" sayılmaz — `anlik_oku` eski görüntüyü (`dist.eski` + eski `bilgi.json`) okur, diske DOKUNMAZ;
+        drift ölçümü "YOK" demez. Kurtarma bir sonraki `anlik_yaz`'da. Kontrol: `dist.eski` de yoksa None."""
+        app = self.ust / "app"
+        K.anlik_yaz(app, {"a.js": b"ESKI"}, {"bsp": BSP, "k": 1})
+        kok = app / K.ANLIK_KLASOR
+        (kok / "dist").rename(kok / "dist.eski")          # ölüm anı: yeni görüntü henüz yerine geçmedi
+        (kok / "dist.yeni").mkdir()
+        (kok / "dist.yeni" / "a.js").write_bytes(b"YARIM")
+        oku = K.anlik_oku(app)
+        adlar = sorted(q.name for q in kok.iterdir())
+        okundu = oku is not None and oku[0] == {"a.js": b"ESKI"} and oku[1].get("k") == 1
+        dokunulmadi = adlar == ["bilgi.json", "dist.eski", "dist.yeni"]
+        K.anlik_yaz(app, {"a.js": b"YENI"}, {"bsp": BSP})
+        kurtarildi = K.anlik_oku(app)[0] == {"a.js": b"YENI"} and sorted(q.name for q in kok.iterdir()) == [
+            "bilgi.json", "dist"]
+        (kok / "dist").rename(kok / "bozuk")
+        kontrol = K.anlik_oku(app) is None
+        ok = okundu and dokunulmadi and kurtarildi and kontrol
+        H.kaydet("anlik_oku yarım takas: dist.eski okunur · disk aynı · sonraki yazım kurtarır · kontrol None",
+                 "4/4", [okundu, dokunulmadi, kurtarildi, kontrol], ok)
+        self.assertTrue(ok, (oku, adlar))
 
     def test_anlik_yaz_guvensiz_adda_eskisi_silinmez(self):
         app = self.ust / "app"
@@ -846,7 +871,7 @@ class TestSaltOkurProxy(unittest.TestCase):
         # Gevşeme yeni kapı açmasın: hedef boşlukla başlamaz, kontrol baytı / DEL taşımaz, yöntem yalnız `GET `.
         asil = "GET Items('A 1') HTTP/1.1".encode("utf-8")
         bozuk = [("hedef boşlukla başlar", "GET  Items('A 1') HTTP/1.1"), ("hedefte sekme", "GET Items('A	1') HTTP/1.1"),
-                 ("hedefte DEL", "GET Items('A1') HTTP/1.1"), ("hedefte VT", "GET Items('A1') HTTP/1.1"),
+                 ("hedefte DEL", "GET Items('A\x7f1') HTTP/1.1"), ("hedefte VT", "GET Items('A\x0b1') HTTP/1.1"),
                  ("NBSP ayraçlı DELETE", "DELETE Items('A 1') HTTP/1.1"),
                  ("GET yerine DELETE", "DELETE Items('A 1') HTTP/1.1")]
         yanlis = [ad for ad, v in gecmeli.items() if not P.izin_ver("POST", v[0], v[1], v[2])[0]]
@@ -1319,6 +1344,67 @@ class TestSaltOkurProxy(unittest.TestCase):
         ok = gercek == (403, 0, 200, 403, 202, ["POST /sap/opu/odata/sap/X/$batch"])
         H.kaydet("proxy uçtan uca: yabancı Host 403/0 istek · JSON tip 403", "403/0/200/403/202 · 1 POST",
                  str(gercek[:5]) + f" · {len(post_iz)} POST", ok)
+        self.assertTrue(ok, gercek)
+
+    def test_koken_basligi(self):
+        """Z155ⓓ: `Origin` yalnız bu sunucunun kendi kökeni olabilir; `Sec-Fetch-Site` yalnız same-origin / none.
+        Başlıksız istek (curl, betik) geçer. Başka localhost portu da yabancıdır (same-site)."""
+        vakalar = [
+            ((None, None, 8484), True), (("http://localhost:8484", None, 8484), True),
+            (("http://127.0.0.1:8484", "same-origin", 8484), True), ((None, "none", 8484), True),
+            ((None, "same-origin", 8484), True), (("HTTP://LOCALHOST:8484", None, 8484), True),
+            (("http://localhost", None, 80), True),
+            (("https://saldirgan.example", "cross-site", 8484), False), (("http://localhost:3000", None, 8484), False),
+            ((None, "same-site", 8484), False), ((None, "cross-site", 8484), False), (("null", None, 8484), False),
+            (("http://localhost:8484", "cross-site", 8484), False), (("http://localhost:8484.saldirgan.example", None,
+                                                                     8484), False),
+            (("", None, 8484), False), (("https://localhost:8484", None, 8484), False),
+        ]
+        yanlis = [(g, b) for g, b in vakalar if P.koken_gecerli(*g) != b]
+        ok = not yanlis
+        H.kaydet("proxy koken_gecerli: Origin kendi köken · Sec-Fetch-Site same-origin/none", f"{len(vakalar)}/"
+                 f"{len(vakalar)}", f"{len(vakalar) - len(yanlis)}/{len(vakalar)}", ok)
+        self.assertTrue(ok, yanlis)
+
+    def test_uctan_uca_yabanci_koken_sapye_gitmez(self):
+        """Z155ⓓ kablolama: yabancı Origin / Sec-Fetch-Site cross-site GET → 403 ve SAP'ye 0 istek; OPTIONS (preflight)
+        → 403; kendi köken + başlıksız GET → 200 (kontrol)."""
+        H.proxy_bypass_surec_ici()
+        kok = Path(tempfile.mkdtemp(prefix="ui5proxy_"))
+        (kok / "index.html").write_bytes(b"<html/>")
+        try:
+            with H.SahteSunucu({"/sap/opu/odata/sap/X/Set": b'{"d":[]}'}) as sap:
+                import ssl
+                srv = P.Sunucu(("127.0.0.1", 0), P.isleyici_sinifi(kok, sap.url, "100", (H.KULLANICI, H.PAROLA),
+                                                                     ssl.create_default_context()))
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                port = srv.server_address[1]
+                taban = f"http://127.0.0.1:{port}"
+
+                def kod(yontem="GET", **baslik):
+                    req = urllib.request.Request(taban + "/sap/opu/odata/sap/X/Set", method=yontem,
+                                                 headers={k.replace("_", "-"): v for k, v in baslik.items()})
+                    try:
+                        return urllib.request.urlopen(req, timeout=10).status
+                    except urllib.error.HTTPError as e:
+                        return e.code
+                try:
+                    yabanci = kod(Origin="https://saldirgan.example", Sec_Fetch_Site="cross-site")
+                    baska_port = kod(Origin="http://localhost:1")
+                    ayni_site = kod(Sec_Fetch_Site="same-site")
+                    on_ucus = kod("OPTIONS", Origin="https://saldirgan.example")
+                    sap_sayi = len(sap.istekler)
+                    kendi = kod(Origin=f"http://127.0.0.1:{port}", Sec_Fetch_Site="same-origin")
+                    basliksiz = kod()
+                finally:
+                    srv.shutdown()
+                    srv.server_close()
+        finally:
+            shutil.rmtree(kok, ignore_errors=True)
+        gercek = (yabanci, baska_port, ayni_site, on_ucus, sap_sayi, kendi, basliksiz)
+        ok = gercek == (403, 403, 403, 403, 0, 200, 200)
+        H.kaydet("proxy uçtan uca: yabancı köken/port/site + OPTIONS 403 · SAP 0 · kendi köken 200",
+                 "403/403/403/403/0/200/200", str(gercek), ok)
         self.assertTrue(ok, gercek)
 
     def test_uctan_uca_yazma_sapye_gitmez(self):

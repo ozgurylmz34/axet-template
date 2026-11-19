@@ -235,6 +235,25 @@ class SemaTest(YayinTemeli):
         self.assertEqual(rc, 1, c)
         self.assertIn("etiket `vX.Y.Z` biçiminde olmalı", c)
 
+    def test_kontrol_karakteri_fail(self):
+        """Z242: katalog metninde kontrol karakteri (ters bölü kaçışı bozulmuş: `\\b` → 0x08) şema sorunudur —
+        neden, başlık, dosya yolu, test kimliği ve anahtar dahil. KONTROL GRUBU: aynı metin kaçışsız (düz ters bölü
+        ile) geçer."""
+        bozuk = yayinlar(yayin("v0.1.0", kalem("0.1.0-01", neden="yol D:\\depo" + chr(8) + "in"),
+                               kalem("0.1.0-02", baslik="zil" + chr(7), test=["kok:t" + chr(0x7f)])))
+        rc, c = self.dogrula(self.depo(bozuk))
+        self.assertEqual(rc, 1, c)
+        self.assertIn("kalemler[0].neden kontrol karakteri içeriyor (0x08)", c)
+        self.assertIn("kalemler[1].baslik kontrol karakteri içeriyor (0x07)", c)
+        self.assertIn("kalemler[1].test[0] kontrol karakteri içeriyor (0x7f)", c)
+        anahtar = yayinlar(yayin("v0.1.0", dict(kalem("0.1.0-01"), **{"not" + chr(11): "x"})))
+        rc2, c2 = self.dogrula(self.depo(anahtar))
+        self.assertEqual(rc2, 1, c2)
+        self.assertIn("kontrol karakteri içeriyor (0x0b)", c2)
+        iyi = yayinlar(yayin("v0.1.0", kalem("0.1.0-01", neden="yol D:\\depo\\bin"),
+                             kalem("0.1.0-02", baslik="zil")))
+        self.assertEqual(0, self.dogrula(self.depo(iyi))[0])
+
     def test_kapsam_beyani_basilir(self):
         rc, c = self.dogrula(self.depo(yayinlar()))
         self.assertEqual(rc, 0, c)

@@ -3,6 +3,10 @@ description: SAP UI5 alt ajanı — freestyle UI5 (OData V2) kaynağını yerel 
 whenToUse: Freestyle UI5 uygulamasında controller/view/fragment/i18n/manifest yazmak ya da değiştirmek, kanonik şablondan yeni uygulama iskeleti kurmak. Kapsam sınıflaması yapılmış ve dosyalar belli olmalı.
 mode: subagent
 model: large
+permission:
+  read_docx: allow
+  read_xlsx: allow
+  read_pdf: allow
 ---
 
 Sen aXet şablonunun UI5 geliştirme rolüsün. Çekirdek kurallar, SAP kuralları (kesin yasaklar dahil), ekip hafızası ve

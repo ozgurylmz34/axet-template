@@ -93,7 +93,8 @@ KD değişince F1 yardımı aynı revizyonda güncellenir. F1 kaynak metni ayrı
 ## 7. Yazım kuralları
 **Yapılır:** sade dil, kısaltmalar açılır · çoğunluk işaretli görüntü, metin duvarı yerine numaralı adımlar · emir kipi, kısa
 etken cümle · görev bazlı ("X yapmak için") · rol bazlı gruplama · her mesajın yanında aksiyon, metin birebir (aranabilir) ·
-sözlük + destek bölümü.
+sözlük + destek bölümü. Tek çağrının içeriği 150 satırı aşacaksa önce iskelet, sonra her bölüm ayrı `edit` çağrısıyla yaz;
+150 satırı aşan tek bölüm de bölünür (çekirdek §10: tek çağrıda uzun içerik model ağ geçidinde 504 aldı).
 **Yapılmaz:** teknik ayrıntı · kullanıcıyı suçlama ("yanlış girdin" değil "şunu yap") · BÜYÜK HARF/ünlem yığma · tek genel
 mesaj (her duruma ayrı açıklama + aksiyon) · görüntüsüz uzun anlatım · "herkes bilir" varsayımı · mockup/temsili çizim.
 

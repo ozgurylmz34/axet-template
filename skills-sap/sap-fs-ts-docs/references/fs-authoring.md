@@ -105,6 +105,16 @@ her giriş kuralı TS'te ve build'de ayrı bir soru olarak geri gelir.
 ## 5. Kaynağa bağlılık — uydurma yok
 1. **Sıkı dayanak:** her iş kuralı, süreç akışı, gereksinim ve doğrulama verilen girdilerden (istek, intake artefaktı,
    analiz notu, `ref_docs/`) türer. Deneyim yalnız girdiyi **yapılandırmak** için kullanılır, olgu **eklemek** için değil.
+   İstek `.docx`/`.xlsx` ise girdi **kaynak paketidir** (`traceability.md` §2-B): metin mekanik çıkarılır, model kaynağı
+   yeniden yazmaz (ölçüldü: yeniden yazılan kaynakta 21 test satırı 13'e indi, bir başlık düştü); gömülü HTML prototip
+   ekranların kaynağıdır. Kaynaktaki ekran görüntüleri de kaynaktır ama içlerindeki metin mekanik çıkmaz: her görsel
+   `view` aracıyla açılır, gördüğün `gorsel-notlari.md`'de yalnız o görselin işaret satırlarının
+   (`<!-- gorulen:KG-nn -->` … `<!-- /gorulen:KG-nn -->`) arasına yazılır (görsel başına bir `edit`; işaret dışındaki
+   metin sayılmaz). Görüntülenemeyen biçimi (ör. `emf`) Pillow kuruluysa
+   `python -c "from PIL import Image; Image.open('<görsel>').save('media/<kimlik>.kullanici.png')"` ile çevir, PNG'yi
+   `view` ile aç; olmazsa kullanıcıdan PNG iste ve aynı ada kaydet (`traceability.md` §2-B "Görsel okuma").
+   FS yazılırken her kaynak maddesi ve her görsel iz tablosunda bir kimliğe, `BİLGİ`'ye ya da gerekçeli
+   `KAPSAM-DIŞI`'na bağlanır ve `kaynak_paketi.py iz` PASS olmadan FS incelemeye gitmez.
 2. **Eksik veri → dur ve sor.** İstenen süreç girdide yoksa ya da çok zayıfsa uydurma içerikle doldurulmaz; eksik açıkça
    söylenir. Sorular araştırmayla bilgilendirilmiş, **tek seferde, seçenekli ve önerili** sorulur (`ask_user`).
 3. **Taslak modu:** kullanıcı eksik bilgiye rağmen "taslak" isterse boşluklar makul varsayımla doldurulur ve her biri etiketlenir.
@@ -157,7 +167,9 @@ varyant, Excel'e aktarma) FS'te gereksinim olarak yazılır; kullanıcı ayrıca
 
 ## 7. Yazım kuralları
 **Yapılır:** her gereksinim test edilebilir · iş kuralı açık ve ölçülebilir ("10.000 kayıtta 3 saniye") · mockup eklenir ·
-kapsam dışı açıkça yazılır · onaysız geliştirme başlatılmaz · gövde = kapanmış hedef durum.
+kapsam dışı açıkça yazılır · onaysız geliştirme başlatılmaz · gövde = kapanmış hedef durum · tek çağrının içeriği
+150 satırı aşacaksa önce iskelet, sonra her bölüm ayrı `edit` çağrısıyla yazılır; 150 satırı aşan tek bölüm de bölünür
+(çekirdek §10: ~400 satırlık FS tek `write`'ta 504 aldı).
 **Büyük/küçük harf:** başlık, menü, içindekiler metinlerinde cümle düzeni; durum/aşama adları başlıkta Baş Harfleri Büyük;
 vurgu amaçlı BÜYÜK sözcük başlıkta yok; gövde ve tablolarda BÜYÜK HARF yalnız ekranda görülen sistem değeri için
 (`DURUM = BEKLEMEDE`). `## BÖLÜM N:` düzeyi büyük, `### x.y` cümle düzeni. Üreteçle yazılan eklerde bu tek bir başlık

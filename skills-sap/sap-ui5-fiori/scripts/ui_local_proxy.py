@@ -17,6 +17,8 @@ Derlenmiş `dist/`'i (ya da `--kok` ile verilen klasörü) sunar; `/sap/*` istek
       Content-Type sınırıyla ayrıştırır — istek sınırından bağımsız)
   başka yolda $batch (ör. /sap/bc/soap/…), diğer her POST / PUT / MERGE / PATCH / DELETE → 403, SAP'ye GİTMEZ
   Host başlığı localhost:<port> / 127.0.0.1:<port> değilse → 403 (DNS rebinding), SAP'ye GİTMEZ
+  Origin bu sunucunun kendi kökeni değilse ya da Sec-Fetch-Site same-origin / none değilse → 403 (başka site ya da
+  başka localhost portu tarayıcı üzerinden çağıramaz); başlıksız istemci (curl) geçer · OPTIONS → 403
 Reddedilen her istek konsola `REDDEDİLDİ` satırıyla yazılır. Amaç: değişikliği SAP'ye YAZMADAN, deploy ÖNCESİ,
 gerçek veriyle kullanıcıya göstermek (kaydet/sil düğmeleri bu modda 403 alır — beklenen davranıştır).
 
@@ -49,7 +51,6 @@ import _bspnet as B  # noqa: E402
 GECEN_ISTEK = ("accept", "accept-language", "content-type", "cookie", "x-csrf-token", "maxdataserviceversion",
                "dataserviceversion", "x-requested-with", "sap-contextid-accept")
 ATLANAN_YANIT = {"transfer-encoding", "connection", "content-encoding", "content-length", "strict-transport-security"}
-YAZMA_YONTEMLERI = ("PUT", "MERGE", "PATCH", "DELETE")
 # YENİDEN KURMADA iç istekten SAP'ye taşınan başlıklar — BEYAZ LİSTE (küçük ad → yazım). Listede olmayan her başlık
 # (X-Method-Override, Content-Length, If-Match, Prefer, GET'teki Content-Type …) SAP'ye yapısal olarak ULAŞMAZ.
 # Gerekçe: UI5 1.120.23 gerçek tarayıcı ölçümü (2026-09-26) — V2 okuma parçası tam olarak sap-cancel-on-close,
@@ -312,6 +313,27 @@ def host_gecerli(host: str | None, port: int) -> bool:
     return h in kabul
 
 
+def koken_gecerli(origin: str | None, sec_fetch_site: str | None, port: int) -> bool:
+    """İstek bu yerel sunucunun KENDİ sayfasından mı (ya da tarayıcısız bir istemciden mi)? (Z155ⓓ)
+
+    Neden: yabancı bir site tarayıcıya `localhost:<port>/sap/...`'a kör GET yaptırabilir — Host denetimi bunu
+    durdurmaz (Host doğrudur) ve proxy kimliği kendisi ekler. Tarayıcı çapraz-köken isteğe `Origin` ve/veya
+    `Sec-Fetch-Site` koyar. Kabul: `Origin` yok ya da `http://localhost:<port>` / `http://127.0.0.1:<port>` (port 80
+    ise portsuz da) · `Sec-Fetch-Site` yok ya da `same-origin` / `none` (adres çubuğu). Başka localhost portu da
+    yabancıdır (tarayıcı onu `same-site` sayar). Başlık taşımayan istemci (curl, betik) geçer. Saf fonksiyon.
+    """
+    if origin is not None:
+        o = origin.strip().lower()
+        kabul = {f"http://localhost:{port}", f"http://127.0.0.1:{port}"}
+        if port == 80:
+            kabul |= {"http://localhost", "http://127.0.0.1"}
+        if o not in kabul:
+            return False
+    if sec_fetch_site is not None and sec_fetch_site.strip().lower() not in ("same-origin", "none"):
+        return False
+    return True
+
+
 def isleyici_sinifi(kok: Path, taban: str, client: str, kimlik: tuple[str, str], ctx):
     auth = "Basic " + base64.b64encode(f"{kimlik[0]}:{kimlik[1]}".encode()).decode()
 
@@ -373,6 +395,12 @@ def isleyici_sinifi(kok: Path, taban: str, client: str, kimlik: tuple[str, str],
             if not host_gecerli(self.headers.get("Host"), self.server.server_address[1]):
                 print(f"REDDEDİLDİ {self.command} {self.path[:150]} — yabancı Host başlığı", flush=True)
                 return self._yanit(403, "Salt-okur yerel test sunucusu: Host localhost/127.0.0.1 degil")
+            if not koken_gecerli(self.headers.get("Origin"), self.headers.get("Sec-Fetch-Site"),
+                                 self.server.server_address[1]):
+                print(f"REDDEDİLDİ {self.command} {self.path[:150]} — yabancı köken "
+                      f"(Origin {str(self.headers.get('Origin'))[:60]}, Sec-Fetch-Site "
+                      f"{str(self.headers.get('Sec-Fetch-Site'))[:20]})", flush=True)
+                return self._yanit(403, "Salt-okur yerel test sunucusu: istek bu sunucunun kendi sayfasindan degil")
             if self.command == "POST":
                 icerik_tipi = tek_icerik_tipi(icerik_tipleri)
                 if icerik_tipi is None:
@@ -412,6 +440,11 @@ def isleyici_sinifi(kok: Path, taban: str, client: str, kimlik: tuple[str, str],
 
         def do_DELETE(self):  # noqa: N802
             self._karar()
+
+        def do_OPTIONS(self):  # noqa: N802
+            # Z155ⓓ: CORS ön uçuşu (preflight) hiçbir yolda onaylanmaz — açık 403 + iz (eskiden 501, izsiz).
+            print(f"REDDEDİLDİ {self.command} {self.path[:150]} — OPTIONS (CORS ön uçuşu) desteklenmez", flush=True)
+            return self._yanit(403, "Salt-okur yerel test sunucusu: OPTIONS desteklenmez")
 
     return Isleyici
 

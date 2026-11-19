@@ -331,6 +331,63 @@ class KimlikKaydiUreteci(GeciciTest):
         self.assertFalse(self.kayit.exists(), "KURALSIZ varken kilit yazılmadı ama kimlik kaydı yazıldı")
         self.assertIn("kimlik kaydı da YAZILMADI", cikti)
 
+    def calistir_argv(self, *argv: str) -> tuple[int, str, str]:
+        """`main()` serbest argv ile (erken hata yolları `--source` vermeyebilir)."""
+        cikti, hata = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.sc, "RULES_FILE", self.kurallar), \
+                mock.patch.object(self.sc, "LOCK_FILE", self.tmp / "sync-lock.json"), \
+                mock.patch.object(self.sc, "KIMLIK_KAYDI", self.kayit), \
+                mock.patch.object(self.sc, "AXET_HOME", self.tmp / "bos-axet"), \
+                mock.patch.object(sys, "argv", ["sync_check.py", *argv]), \
+                contextlib.redirect_stdout(cikti), contextlib.redirect_stderr(hata):
+            rc = self.sc.main()
+        return rc, cikti.getvalue(), hata.getvalue()
+
+    def test_json_kipinde_erken_hata_stdout_gecerli_json(self):
+        """Z214: `--json` kipinde ERKEN hata yolları da stdout'a yalnız `{"hata": …}` basar (rc ≠ 0); düz kipte
+        mesaj eskisi gibi düz metin (kontrol)."""
+        cekirdek = f"{self.sc.CEKIRDEK_KAYNAK}={self.cekirdek}"
+        git_olmayan = self.tmp / "git-olmayan"
+        git_olmayan.mkdir()
+        vakalar = {
+            "kaynak yok": ("--json",),
+            "kaynak adı tanımsız": ("--source", f"TANIMSIZ={self.cekirdek}", "--json"),
+            "kaynak git değil": ("--source", f"{self.sc.CEKIRDEK_KAYNAK}={git_olmayan}", "--json"),
+            "kimlik kaydı çekirdeksiz": ("--source", f"TANIMSIZ={self.cekirdek}", "--kimlik-kaydi", "--json"),
+        }
+        kotu = {}
+        for ad, argv in vakalar.items():
+            rc, cikti, hata = self.calistir_argv(*argv)
+            try:
+                veri = json.loads(cikti)
+                gecerli = isinstance(veri, dict) and str(veri.get("hata", "")).startswith("HATA")
+            except ValueError:
+                gecerli = False
+            if rc == 0 or not gecerli:
+                kotu[ad] = (rc, cikti[:120], hata[:120])
+        # `_yazilmadi` erken yolları: çekirdek kaynağı kural dosyasında yok · kimlik kaydı üretilemedi
+        self.kural_yaz(ad="BASKA-KAYNAK")
+        rc, cikti, _ = self.calistir_argv("--source", f"BASKA-KAYNAK={self.cekirdek}", "--update-lock", "--json")
+        try:
+            if rc == 0 or "'sources' içinde yok" not in str(json.loads(cikti).get("hata", "")):
+                kotu["update-lock çekirdek tanımsız"] = (rc, cikti[:120])
+        except ValueError:
+            kotu["update-lock çekirdek tanımsız"] = (rc, cikti[:120])
+        self.kural_yaz()
+        (self.cekirdek / self.sc.CEKIRDEK_EK_DOSYALAR[0]).unlink()
+        rc2, cikti2, _ = self.calistir_argv("--source", cekirdek, "--kimlik-kaydi", "--json")
+        try:
+            v2 = json.loads(cikti2)
+            if rc2 == 0 or "üretilemedi" not in str(v2.get("hata", "")):
+                kotu["kimlik kaydı üretilemedi"] = (rc2, cikti2[:120])
+        except ValueError:
+            kotu["kimlik kaydı üretilemedi"] = (rc2, cikti2[:120])
+        rc0, duz, _ = self.calistir_argv()
+        self.maxDiff = None
+        self.assertEqual({}, kotu)
+        self.assertEqual(3, rc0)
+        self.assertTrue(duz.startswith("HATA: en az bir --source"), duz)   # kontrol: düz kip değişmedi
+
     def test_json_kipinde_yazilmadi_mesaji_stderr(self):
         self.kural_yaz(karar="gecersiz-karar")
         rc, cikti, hata = self.calistir_main("--kimlik-kaydi", "--json")

@@ -468,7 +468,7 @@ def anlik_yaz(app: Path, dosyalar: dict, bilgi: dict) -> Path:
     except OSError as exc:
         exc.kalanlar = list(getattr(exc, "kalanlar", [])) + yollari_kaldir([yeni, bilgi_yeni])
         raise
-    yollari_kaldir([eski])  # kalırsa zararsız: `anlik_oku` okumaz, sonraki `anlik_yaz` temizler
+    yollari_kaldir([eski])  # kalırsa zararsız: `dist` varken `anlik_oku` okumaz, sonraki `anlik_yaz` temizler
     return kok
 
 
@@ -478,10 +478,20 @@ def _yer_degistir(kaynak: Path, hedef: Path) -> None:
 
 
 def anlik_oku(app: Path) -> tuple[dict, dict] | None:
+    """Anlık görüntü (dist dosyaları, bilgi) ya da None (yok).
+
+    Z155ⓕ (2026-11-19): süreç `anlik_yaz` takasının ortasında ÖLÜRSE (`dist` → `dist.eski` oldu, yeni görüntü henüz
+    `dist` değil) eski görüntü `dist.eski` + eski `bilgi.json`'dur (bilgi takasın SON adımında değişir) — "yok"
+    sayılmaz, oradan okunur. Diske dokunulmaz (okuyucu); yerine koyma sonraki `anlik_yaz`'ın işidir."""
     kok = app / ANLIK_KLASOR
-    if not (kok / ANLIK_BILGI).is_file() or not (kok / "dist").is_dir():
+    if not (kok / ANLIK_BILGI).is_file():
         return None
-    return klasor_oku(kok / "dist"), json.loads((kok / ANLIK_BILGI).read_text(encoding="utf-8"))
+    dist = kok / "dist"
+    if not dist.is_dir():
+        dist = kok / "dist.eski"
+        if not dist.is_dir():
+            return None
+    return klasor_oku(dist), json.loads((kok / ANLIK_BILGI).read_text(encoding="utf-8"))
 
 
 def ozet(k: dict, n: int = 6) -> str:

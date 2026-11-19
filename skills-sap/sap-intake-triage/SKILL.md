@@ -41,6 +41,11 @@ Tam protokol, kriterler ve örnekler: `references/protocol.md` — ilk kullanım
 2. **Modül paketini oku (varsa):** `references/modules/<modül>.md` (bugün yalnız `sd.md`). Paket yoksa uydurma; genel protokolle ilerle.
    Standart tablo/BAPI/genişletme/SPRO bilgisi gerekiyorsa `references/modules/referans/<modül>/` (hipotez; canlıda teyit).
 3. **İsterlerden konu çıkar:** her anlamlı alan/gereksinim bir domain konusu doğurabilir ("kullanılabilir stok" → ATP; "kredi durumu" → kredi yönetimi).
+   İster **`.docx`/`.xlsx`** olarak geldiyse önce tek betik çağrısıyla mekanik **kaynak paketi** üret ve onu oku:
+   `python <TEMPLATE>/skills-sap/sap-fs-ts-docs/scripts/kaynak_paketi.py cikar <dosya>` → `.axet-code/tmp/<id>/INDEX.md`
+   (çıkarım kapsamındaki metin `KM-nnnn`, yapılandırılmayan XML metni geri düşüş bölümünde, görseller, gömülü nesneler — ör. HTML ekran prototipi; `%sap-fs-ts-docs` `references/traceability.md` §2-B).
+   Kaynak metnini modelle yeniden yazıp özetini kaynak yerine koyma; DOĞRULAMA FAIL ise kullanıcıya söyle. İster `.pdf` ise paket yoktur (çıkış 3): kullanıcıdan `.docx`/`.xlsx` hâlini iste ya da metni çıkarıp dosyaya yaz, o dosyanın yolunu kullan (kaynak izi ÖLÇÜLEMEDİ kalır).
+   Ekran görüntüleri metne çıkmaz: `gorsel-notlari.md`'deki her görseli `view` aracıyla aç ve gördüğünü (ekran, alan, düğme, değer) yalnız o görselin işaret satırlarının (`<!-- gorulen:KG-nn -->` … `<!-- /gorulen:KG-nn -->`) arasına yaz — görsel başına bir `edit`; GÖRÜNTÜLENEMEZ biçimi Pillow kuruluysa `python -c "from PIL import Image; Image.open('<görsel>').save('media/<kimlik>.kullanici.png')"` ile çevir ve PNG'yi `view` ile aç, olmazsa kullanıcıdan PNG iste ve aynı ada kaydet. Görselden çıkan alanlar da konu çıkarımına girer.
 4. **3 eksende araştır** (kapsamla orantılı derinlik):
    - (a) **Domain:** nasıl çalışır — resmi kaynak; sözdizimi/annotation tahmin edilmez.
    - (b) **Canlı sistem + ilgili kod:** `%sap-adt-foundation` CLI okuma araçlarıyla önce harita

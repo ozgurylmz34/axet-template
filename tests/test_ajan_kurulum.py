@@ -308,6 +308,54 @@ class SablonAjanlariTest(unittest.TestCase):
             with self.subTest(ajan=ad):
                 self.assertRegex(fm, r"(?m)^disallowedTools: \[edit, multiedit, write\]$")
 
+    BELGE_IZNI = {"read_docx": "allow", "read_xlsx": "allow", "read_pdf": "allow"}
+    # Alt ajanlar izinli; ana ajan (mode: primary) izinsiz — ölçülen sorun yalnız alt ajanın asılmasıydı, ana ajana allow
+    # kullanıcının config'teki read_* kuralını ezebilir (bağımsız inceleme F4, ölçülmedi ⇒ bilinçli dışarıda).
+    IZINLI = {"sap-arastirma.md", "sap-backend.md", "sap-ui5.md", "sap-inceleme.md"}
+
+    def _beklenen_izin(self, ad: str) -> dict[str, str]:
+        return self.BELGE_IZNI if ad in self.IZINLI else {}
+
+    def _izin_blogu(self, fm: str) -> dict[str, str]:
+        """`permission:` bloğu → {araç: karar}. Blok yoksa {} (iki boşluk girintili `araç: karar` satırları)."""
+        m = re.search(r"(?m)^permission:\n((?:  \S.*\n?)*)", fm + "\n")
+        if not m:
+            return {}
+        return dict(re.findall(r"(?m)^  ([a-z_]+): (\S+)$", m.group(1)))
+
+    def test_belge_okuma_izni(self):
+        """Ölçüldü (1.5.1 `run`): `permission` bloğu yokken özel alt ajanın `read_docx` çağrısı görünmeyen izin sorusunda
+        asılı kaldı (3/3, >290 sn); kontrollü deneyde aynı deneme ajanı blokla 41 sn'de okudu. Blok yalnız üç okuma aracını
+        açar (bash/yazma yok) ve yalnız alt ajanlarda durur; ana ajan `sap-gelistirme`de blok YOK."""
+        self.assertEqual(self.IZINLI | {"sap-gelistirme.md"}, self.ZORUNLU)
+        for p in self.AJANLAR:
+            fm = self._fm(p.read_text(encoding="utf-8").replace("\r\n", "\n"))
+            with self.subTest(ajan=p.name):
+                self.assertEqual(self._izin_blogu(fm), self._beklenen_izin(p.name))
+                if p.name in self.IZINLI:
+                    self.assertRegex(fm, r"(?m)^mode: subagent$")
+                else:
+                    self.assertNotIn("permission", fm)
+
+    def test_belge_okuma_izni_kurulumda_korunur(self):
+        """Kurulum (`planla` → `uygula`; yer tutucu + işaret) frontmatter'daki izin bloğunu düşürmez/bozmaz."""
+        with tempfile.TemporaryDirectory() as td:
+            hedef = Path(td) / "hedef"
+            plan = ak.planla(sap=True, kaynak=AXET_HOME / "agents", hedef_dizin=hedef)
+            self.assertEqual(sorted(e.tur for e in plan), ["yaz"] * len(self.ZORUNLU))
+            self.assertEqual(ak.uygula(plan), [])
+            for ad in sorted(self.ZORUNLU):
+                kurulu = (hedef / ad).read_text(encoding="utf-8")
+                with self.subTest(ajan=ad):
+                    self.assertTrue(ak.bizim_mi(kurulu))
+                    self.assertEqual(self._izin_blogu(self._fm(kurulu)), self._beklenen_izin(ad))
+
+    def test_izin_blogu_ayristirici_KONTROL(self):
+        """Ayrıştırıcının kendisi: blok yok → {} · fazladan araç görünür (vakum-assertion'a karşı)."""
+        self.assertEqual(self._izin_blogu("---\nmode: subagent"), {})
+        self.assertEqual(self._izin_blogu("---\npermission:\n  read_docx: allow\n  bash: allow\nmode: subagent"),
+                         {"read_docx": "allow", "bash": "allow"})
+
     def test_yonlendirilen_dosyalar_var(self):
         for p in self.AJANLAR:
             for yol in re.findall(r"\{\{AXET_KLON\}\}/([^\s`]+)", p.read_text(encoding="utf-8")):

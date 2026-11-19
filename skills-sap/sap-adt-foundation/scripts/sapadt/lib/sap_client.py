@@ -145,6 +145,16 @@ def _sap_govdesi_eki(adt, exc) -> str:
     return f"\n{SAP_GOVDE_IMZASI} sebep: {sebep} · govde{kesik}: {govde[:SAP_HATA_GOVDE_SINIRI]}"
 
 
+def _yanit_hata_satiri(adt, response, islem: str) -> str:
+    """Z220 (2026-11-19): istisnasız 2xx-dışı yanıtın `[ERROR]` satırı — gövde `_sap_govdesi_eki` ile AYNI
+    redaksiyon + kesme sırasından geçer (eskiden `response.text[:500]` ham basılıyordu: host / parola sızabilirdi).
+    Durum kodu `[NNN]` biçiminde: `_create_hata_sinifi` yalnız bu biçimi okur."""
+    from sap_adt_lib import SAPADTError
+    kod = getattr(response, "status_code", None)
+    yanit_ozu = SAPADTError(f"{islem} failed", status_code=kod, response_text=getattr(response, "text", None))
+    return f"\n[ERROR] [{kod}] {islem} failed" + _sap_govdesi_eki(adt, yanit_ozu)
+
+
 def worklist_ana_objeleri(govde: str) -> List[Dict[str, Any]]:
     """Aktive-bekleyen worklist govdesi -> OBJE-seviyesi girdiler.
 
@@ -3161,7 +3171,7 @@ class SAPClient:
             if response.status_code == 405 and 'AlreadyExists' in response.text:
                 print("\n[OK] Table type already exists")
                 return True
-            print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+            print(_yanit_hata_satiri(self.adt_client, response, "Create table type"))
             return False
 
         except Exception as e:
@@ -3234,7 +3244,7 @@ class SAPClient:
                 # → enqueue request-end'de düşer, temizlenecek kalıntı kalmaz.
                 return True
             else:
-                print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+                print(_yanit_hata_satiri(self.adt_client, response, "Create message class"))
                 return False
 
         except Exception as e:
@@ -3329,7 +3339,7 @@ class SAPClient:
                 print(f"     Generated functions: ENQUEUE_{name.upper()}, DEQUEUE_{name.upper()}")
                 return True
             else:
-                print(f"\n[ERROR] {response.status_code}: {response.text[:500]}")
+                print(_yanit_hata_satiri(self.adt_client, response, "Create lock object"))
                 return False
 
         except Exception as e:

@@ -399,6 +399,21 @@ def adt_where_used(name: str, object_type: str = "class") -> dict:
 # adt_atc_check  (gap-analysis #10)
 # =============================================================================
 
+def _pozitif_tam_sayi(deger):
+    """int ya da rakamlı metin ("50", " 50 ") → int ≥ 1; bool, ondalık, boş, negatif, sıfır → None (Z209 F1).
+
+    ⚠ Yardımcıdır, araç DEĞİL: `@profil_tool()` dekoratörünün ÜSTÜNDE durur (dekoratörle `def adt_atc_check`
+    arasına girerse dekoratör bunu kaydeder, `adt_atc_check` kayıttan düşer — bug-gate R2 F4)."""
+    if isinstance(deger, bool):
+        return None
+    if isinstance(deger, int):
+        return deger if deger >= 1 else None
+    if isinstance(deger, str) and deger.strip().isascii() and deger.strip().isdigit():  # "²".isdigit() True ama int() düşer
+        sayi = int(deger.strip())
+        return sayi if sayi >= 1 else None
+    return None
+
+
 @profil_tool()
 def adt_atc_check(name: str, object_type: str = "class",
                   variant: str | None = None, max_verdicts: int = 100) -> dict:
@@ -414,11 +429,19 @@ def adt_atc_check(name: str, object_type: str = "class",
         max_verdicts: Maks bulgu sayısı.
 
     Returns:
-        {ok, name, type, variant, finding_count, findings: [...], client_log}
+        {ok, name, type, variant, finding_count, kesilmis_olabilir, kapsam, findings: [...], client_log}
+        `kesilmis_olabilir` = bulgu sayısı `max_verdicts` tavanına eşit (Z209) — "N bulgu" değil "en az N bulgu".
         ENHS (BAdI spot) → `atc_kapsam_disi` (istek GÖNDERİLMEZ): SAP spot için `FINDING_STATS 0,0,0` + boş obje
         listesi döndürür ve bu sonuç VAR OLMAYAN objeninkiyle aynıdır (kaynak çekirdek canlı ölçümü 2026-11-11) —
         "0 bulgu" temizlik kanıtı olamaz; ATC'yi BAdI arabirimi/sınıflarında koş.
     """
+    # Z209 bug-gate F1 (2026-11-19): CLI JSON'u tip dönüştürmeden geçirir ⇒ `{"max_verdicts":"50"}` metin gelir.
+    # Tavan karşılaştırması (`len(findings) >= max_verdicts`) metinde TypeError verip SAP'de koşmuş ATC'nin
+    # bulgularını kaybediyordu ⇒ SAP'ye gitmeden ÖNCE tam sayıya çevrilir; çevrilemezse açık kullanım hatası.
+    max_verdicts = _pozitif_tam_sayi(max_verdicts)
+    if max_verdicts is None:
+        return {"ok": False, "error": "invalid_argument", "name": name, "type": object_type,
+                "finding_count": None, "message": "max_verdicts pozitif tam sayı olmalı (ör. 100 ya da \"100\")."}
     # Kaynak çekirdek #415 (9b38ab6): işlem-izinli tipte (ENHS) ATC kapsam dışı — ölçülemedi ≠ temiz.
     try:
         from object_types import islem_reddi  # type: ignore
@@ -459,12 +482,19 @@ def adt_atc_check(name: str, object_type: str = "class",
                 "finding_count_unverified": len(findings),
                 "client_log": buf.getvalue().strip(),
             }
+        # Z209 (2026-11-19): SAP en çok `max_verdicts` bulgu döndürür ⇒ sayı tavana eşitse liste kesilmiş olabilir;
+        # "100 bulgu" ile "en az 100 bulgu" ayırt edilsin.
+        kesilmis = len(findings) >= max_verdicts
         return {
             "ok": True,
             "name": name,
             "type": object_type,
             "variant": variant,
             "finding_count": len(findings),
+            "kesilmis_olabilir": kesilmis,
+            "kapsam": (f"KESİLMİŞ OLABİLİR: bulgu sayısı tavana eşit (max_verdicts={max_verdicts}) — gerçek sayı daha "
+                       "fazla olabilir; max_verdicts'i artırıp yeniden koş." if kesilmis else
+                       f"bulgu sayısı tavanın altında (max_verdicts={max_verdicts}) — liste tam."),
             "priority_1_count": len(prio1),          # ZORUNLU düzelt
             "other_priority_count": len(prio_other),  # kullanıcı onayıyla pass
             "must_fix": len(prio1) > 0,

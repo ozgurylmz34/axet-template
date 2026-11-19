@@ -6,7 +6,8 @@
 # INTAKE — <kısa-ad>  (<tarih>)
 - Modül / iş-tipi / KAPSAM: SD / rapor / S2  (gerekçe: ...)
 - Sistem sürümü: sap-project.json release = <değer> · canlı = <değer> (araç + argüman) · fark: <yok | var → kullanıcıya soruldu, cevap>
-- İstenen (özet):
+- Kaynak: <istek metni | kaynak paketi: <dosya adı> · sha256 <ilk 16> · DOĞRULAMA PASS · KM/KG/KN sayısı (paket .axet-code/tmp/<id>/ git dışı, `cikar` ile yeniden üretilir; iz tablosu FS ile <source_root>/<MODÜL>/<PAKET>/ref_docs/iz-<FS no>.md) | yok> — ikili dosya (.docx/.xlsx) yolu değil
+- İstenen (özet; kaynağın yerine geçmez):
 - Çıkan domain-konuları: [konu → araştırma özeti (a/b/c eksen)]
 - Etkilenen objeler (canlı-doğrulanmış): [obje → reuse/yeni/değişir → blast-radius]
   | Obje (tip) | reuse / yeni / değişir | Ad önerisi (yeni Z ise; standarda + paket öneklerine uygun) | Canlı kontrol (araç + argüman → sonuç) | ONAY |

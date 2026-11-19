@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """ABAP `METHOD <ad>.` .. `ENDMETHOD.` blok sınırı — METİNSEL, TEK KAYNAK (Z213; kaynak çekirdek #362,
-`scripts/utils/abap_metot_blok.py`, sınır mantığı birebir — bu başlık aXet yollarına uyarlandı; TEK FARK
-`bitis_sonrasi_kod`: `ENDMETHOD.`'dan sonra aynı satırda kod kalan bitiş BELİRSİZ sayılır, tur 7 bug-gate F1).
+`scripts/utils/abap_metot_blok.py`, sınır mantığı birebir — bu başlık aXet yollarına uyarlandı). `ENDMETHOD.`'dan
+sonra aynı satırda kod kalan bitiş BELİRSİZ sayılır: aXet'te tur 7 bug-gate F1 ile `bitis_sonrasi_kod` olarak geldi,
+kaynak çekirdek aynı kuralı `d5da3c1`'de (Issue #379, `_bitis_sonrasi_kod`) aldı. Davranış eşit (2026-11-19, iki
+modül 20.000 rastgele girdide aynı sonucu verdi); fark yalnız ad (aXet `tools/diag.py` alt çizgisiz adı import eder)
+ve yorumlar — sonraki birebir kopyada `diag.py` import'u ada göre uyarlanır.
 
 Tüketiciler (ikisi de aynı sınır kararını kullanır; ayrı desen YENİDEN TÜRETİLMEZ):
   · `tools/diag.py` `_metot_cikar` → `adt_get_method` (salt-okur)
@@ -21,7 +24,7 @@ SÖZLEŞME — `metot_bloklari(kaynak, metot)` → `[(bas, son, metin)]`, 1-taba
       - aynı satırda yalnız bir `ENDMETHOD` → tek satırlık blok (`son == bas`)
       - sonraki satırlarda ilk deyim tek başına `ENDMETHOD` → blok o satırda biter
       - araya `METHOD` girerse, bitiş satırında METHOD/ENDMETHOD karışırsa ya da `ENDMETHOD.`'dan sonra
-        aynı satırda kod kalırsa (`ENDMETHOD. ENDCLASS.` — `bitis_sonrasi_kod`; aXet ek, kaynak çekirdekte yok)
+        aynı satırda kod kalırsa (`ENDMETHOD. ENDCLASS.` — `bitis_sonrasi_kod`; kaynak çekirdekte de var, Issue #379)
         → `son = SINIR_BELIRSIZ` (çağıran ÖLÇÜLEMEDİ der; YANLIŞ GÖVDE DÖNMEZ) ve tarama durur
       - hiç deyim yoksa → `son = None` (kapanmamış) ve tarama durur
   · deyim = satır başında ya da `.`'dan sonra gelen anahtar kelime, deyim BİÇİMİNDE
@@ -106,7 +109,7 @@ def bitis_sonrasi_kod(satir: str) -> bool:
     """Satırdaki son `ENDMETHOD` deyiminin `.`'sından sonra KOD kalıyor mu (yorum/boşluk hariç)?
 
     Bitiş satırı bloğa BÜTÜN girer; `ENDMETHOD. ENDCLASS.` gibi bir satırda kalan deyim metot include'una
-    PUT edilirdi (aXet tur 7 bug-gate F1, 2026-10-28 — kaynak çekirdekte de aynı) ⇒ böyle satır bitiş SAYILMAZ,
+    PUT edilirdi (aXet tur 7 bug-gate F1, 2026-10-28; kaynak çekirdek aynı kuralı d5da3c1 / Issue #379 ile aldı) ⇒ böyle satır bitiş SAYILMAZ,
     çağıran `SINIR_BELIRSIZ` alır (güvenli yön: yanlış gövde dönmez).
     """
     kod = kod_kismi(satir)

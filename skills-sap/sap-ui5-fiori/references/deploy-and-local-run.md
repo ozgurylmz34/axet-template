@@ -333,6 +333,9 @@ python <TEMPLATE>/skills-sap/sap-ui5-fiori/scripts/ui_local_proxy.py <paket>/ui/
     istek 0; o ölçüm changeset kuralı dönemindeydi — yazma reddinin yeni kuralla canlı ölçümü yapılmadı, çevrimdışı testle ölçüldü).
 - Hedef `ui5-deploy.yaml`'dan, kimlik env'den. Yalnız 127.0.0.1'e bağlanır; `/sap/*` isteğinde Host başlığı
   `localhost:<port>` / `127.0.0.1:<port>` değilse 403 (DNS rebinding). Adres: `http://localhost:<port>/index.html`.
+- Uygulama aynı sunucudan açılmalı: `/sap/*` isteğinin `Origin`'i bu sunucunun kendisi değilse ya da
+  `Sec-Fetch-Site` `same-origin`/`none` değilse 403 — başka bir site ya da **başka bir localhost portundaki** dev
+  sunucusu tarayıcı üzerinden bu proxy'yi çağıramaz. Başlık göndermeyen istemci (curl, betik) geçer; OPTIONS 403.
 - Kaydet/sil düğmeleri bu modda 403 alır — beklenen davranış; kullanıcıya söylenir.
 
 ### 7.4 Deploy — drift ve tam liste (kendiliğinden)

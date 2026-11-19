@@ -103,7 +103,8 @@ Servis kontrolleri (sırayla):
   kalır. Kod metni (`KOD=Metin`) henüz desteklenmez: VH'nin metin alanı aracın kendi sözlüğünden gelir — karede
   görünüyorsa elle düzelt (Z180). Sabit değer verilmemiş kod alanı adayları (fixed-values işareti · `Code`/`Status`/
   `Kod`… soneki + kısa MaxLength · UpperCase + MaxLength ≤ 4) raporun sonunda `UYARI: kod alanı adayı` satırıyla
-  listelenir; her biri ya beslenir ya da neden kod olmadığı yazılır. Uyarı çıkış kodunu değiştirmez.
+  listelenir; her biri ya beslenir ya da neden kod olmadığı yazılır. Uyarı çıkış kodunu değiştirmez. Teknik `SAP__` setleri
+  (çerçevenin birim/para birimi listeleri) uyarıya girmez; adayları tek `NOT: teknik SAP__ setleri …` satırında sayılır (Z184).
 - Üretilen biçim: V2 tarihleri `/Date(<ms>)/`; `Edm.Decimal` JSON'a **sayı** olarak yazılır (V2 sunucusu string
   döndürür — ekranda biçim farkı görülürse değeri string'e çevir). Araç, `MaxLength`'e sığmadığı için kestiği
   değer yardımı / yabancı anahtar değerlerini raporda **KESİLEN** satırında `Set.Alan` olarak listeler — o alanları

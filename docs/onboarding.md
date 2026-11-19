@@ -84,7 +84,10 @@ ekip kararıyla, **kendi terminalinde** açılır: `python $HOME\axet\scripts\in
 ## 3. İlk proje
 
 ### 3.1 Proje kur
-Projede çalışacağın klasörde aXet'i aç ve **`%yeni-proje`** yaz. Model şunları sırayla sorar:
+Projede çalışacağın klasörde aXet'i aç ve **`%yeni-proje`** yaz. **Diskin kökünde (`C:\`) açma:** aXet açıldığı
+klasörde `.axet-code` veri dizinini kendisi yaratır ve o klasörü taramaya başlar (ölçüldü: `C:\`'de açılan oturum
+diskin kökünde 8,5 MB'lık veri dizini bıraktı). Proje klasöründe açmak için: `axet-code -c <proje klasörü>`.
+Model şunları sırayla sorar:
 - proje klasörü ve adı;
 - SAP sistem profili, sürümü, master dili, clean core politikası;
 - projenin amacı, depo adresi, test ve çalıştırma komutları.
@@ -182,13 +185,16 @@ SAP GUI otomasyonu gerekiyorsa model script'i yazar, **sen** çalıştırırsın
 - **Ofis işleri:** `%office-excel` (profil, dönüştürme, karşılaştırma, rapor) · `%office-docs` (Markdown → Word/PDF,
   ekran görüntülü kılavuz) · `%office-slides` (PowerPoint).
 - **SAP işleri:** iş alımı `%sap-intake-triage`, okuma `%sap-adt-foundation`, teslim `%sap-abapgit-delivery`;
-  nesne tipine özel skill'leri model seçer.
+  nesne tipine özel skill'leri model seçer. İstek Word ya da Excel dosyasıysa model önce mekanik bir kaynak paketi
+  çıkarıp onu okur (metin, görseller, gömülü nesneler) ve belgedeki her ekran görüntüsünü tek tek açar; belgeyi kendi
+  cümleleriyle yeniden yazmaz. `.pptx` okunamaz: PDF ya da metin ver.
 - **Marketplace skill'i:** kurmadan önce `%skill-audit`; proje kapsamında kur. Template skill'iyle aynı ad
   `doctor.py`'de FAIL olarak görünür.
 - **Güncelleme:** aXet içinde `%guncelle` — tek güncelleme yolu. Klonu yeni yayına seçmeli taşır, SAP Python
   paketlerini denetler, tarayıcı testini hazırlar. Yeni kurallar bir sonraki oturumda yüklenir. Projeler için
   `%guncelle-proje`. Güncelleme uzun test takımı koşmaz; koşulmayanlar **test borcu** olur (kapanış ve `doctor`
-  söyler).
+  söyler). Bitince geçici güncelleme dizininin silinip silinmeyeceği bir kez sorulur; yarım kalmış (uygulanmış ama
+  kapanmamış) güncellemede sorulmaz, dizin geri alma ve kapanış için tutulur.
 - **Testler:** `%testler` — template test takımlarını güncellemeden ayrı, istediğin zaman koşar: varsayılan test
   borcu, ya da tek takım / hepsi (`%testler` önce takımları ve tahmini süreyi listeler). Kırmızı çıkarsa kaynak
   dosyayı ve dört seçeneği gösterir; seçimi sen yaparsın, aXet kendi başına düzeltmez.

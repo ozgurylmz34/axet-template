@@ -602,7 +602,7 @@ def adt_pretty_print(name: str, object_type: str = "class", output_path: str | N
 # METHOD/ENDMETHOD DEYİMİ (satırın neresinde olursa; yorum ve tek satırlık literal ayıklanır) ⇒ tek satırlık
 # `METHOD a. … ENDMETHOD.` ve satır ortasındaki `x = 1. ENDMETHOD.` artık DOĞRU sınırlanır (Z195'in 2026-10-19 temkinli
 # sürümü bunlarda `belirsiz` diyordu). Araya METHOD girerse, aynı satırda METHOD/ENDMETHOD karışırsa ya da
-# `ENDMETHOD.`'dan sonra aynı satırda kod kalırsa (`ENDMETHOD. ENDCLASS.`; aXet eki `bitis_sonrasi_kod`) modül
+# `ENDMETHOD.`'dan sonra aynı satırda kod kalırsa (`ENDMETHOD. ENDCLASS.`; `bitis_sonrasi_kod`, çekirdekte Issue #379) modül
 # `SINIR_BELIRSIZ` döner ⇒ aXet sözleşmesinde `error:"belirsiz"` + `found:null`, gövde DÖNMEZ (hata kodu değişmedi).
 from utils.abap_metot_blok import SINIR_BELIRSIZ as _SINIR_BELIRSIZ  # noqa: E402  (sapadt import'u lib/'i sys.path'e ekler)
 from utils.abap_metot_blok import bitis_sonrasi_kod as _bitis_sonrasi_kod  # noqa: E402

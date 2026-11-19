@@ -32,6 +32,21 @@ motor onları kullanmaz. Motor güncellenince bir sonraki `%guncelle` ajanları 
 (motor PATH'te yok, çıktı çözülemedi) kurulum sürer, satırda "sürümü ölçülemedi" yazar. Kaldırma
 (`--no-sap`/`--uninstall`) motor sürümüne bakmaz.
 
+**Belge okuma izni:** dört alt ajanın (`sap-arastirma`, `sap-backend`, `sap-ui5`, `sap-inceleme`) frontmatter'ında
+`permission:` altında `read_docx`, `read_xlsx` ve `read_pdf` `allow`'dur. Ölçüldü (aXet.code 1.5.1, `run` kipi): bu blok
+yokken özel alt ajanın `read_docx` çağrısı ana ekranda görünmeyen izin sorusunda asılı kaldı (3/3, >290 sn zaman aşımı).
+Kontrollü deney: aynı deneme ajanı blok olmadan 290 sn zaman aşımına düştü, blokla belgeyi okuyup 41 sn'de bitti.
+Yazım, ölçülen deneydeki biçimdir (`<araç>: allow`). Motor referansına göre bu alan izin katmanlarının sonuncusudur; alt
+ajanın kuralları üst oturumunkiyle kesiştirilir, iki taraftaki `deny` de geçerli kalır. `bash` ve yazma araçlarına izin
+eklenmez. Ana ajan `sap-gelistirme` bu bloğu TAŞIMAZ: ölçülen sorun yalnız alt ajanın asılmasıydı; ana ajana `allow`
+vermek kullanıcının config'teki `read_*` kuralını ezebilir (ölçülmedi).
+⚠ **Bu izin yol sınırı taşımaz:** alt ajan proje dışındaki `.docx`/`.xlsx`/`.pdf`'i de sormadan okur (ölçüldü yalnız
+`.docx` ile, `run` kipi: proje içi ve proje dışı belge okundu, soru gelmedi; `.xlsx`/`.pdf` ve TUI ölçülmedi).
+Bilinçli: kullanıcı belgeleri çoğunlukla proje dışındadır (ör. İndirilenler) ve yol sınırı asılma sorununu geri
+getirir; araçlar salt okur. Kimlik dosyası denemesinde (sahte `.conn_adt`) `read_docx` yalnız "zip: not a valid zip
+file" hatası verdi, içerikten bayt dönmedi.
+Yerleşik `task` ajanında `read_*` araçları hiç yoktur; ikili belgeyi alt ajana yol olarak verme (çekirdek §7).
+
 **Sınırlar (bilinçli):** "dosya düzenleme araçları kapalı" = `disallowedTools: [edit, multiedit, write]`; `bash` açıktır,
 yani salt okuma araçla değil istemle sağlanır. Sahiplik işareti hangi klonun kurduğunu ayırmaz: aynı makinede
 ikinci bir klonda (ya da worktree'de) `install.py --sap` koşulursa ajanlar o klona yönlenir, `--no-sap`/`--uninstall`

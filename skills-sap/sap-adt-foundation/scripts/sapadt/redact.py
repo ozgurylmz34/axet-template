@@ -82,9 +82,11 @@ def bilinen_sirlar(user: str | None, password: str | None) -> list[str]:
 def temizle_metin(metin: str, sirlar: list[str] | None = None) -> str:
     if not isinstance(metin, str) or not metin:
         return metin
+    # Z150 (2026-11-19): HARF DUYARSIZ — host hata metninde büyük harfle (ör. DNS/TLS iletisi) geçebilir; yalnız
+    # yazıldığı biçim + küçük harf aranırken maskeleme sessizce kaçıyordu. Fazla maskeleme güvenli yöndür.
     for s in sirlar or []:
-        if s in metin:
-            metin = metin.replace(s, MASK)
+        if s:
+            metin = re.sub(re.escape(s), MASK, metin, flags=re.IGNORECASE)
     for rx, yerine in _DESENLER:
         metin = rx.sub(yerine, metin)
     return metin

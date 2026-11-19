@@ -547,6 +547,35 @@ class KodAlaniAdayiTest(_Temel):
         _, out1 = self.uret(meta, cikti=os.path.join(self.tmp, "c"))
         self.assertNotIn("Order.City", uyari_alanlari(out1))
 
+    def test_teknik_sap_setleri_tek_ozet_satirinda(self):
+        """Z184①: RAP V4 servislerinin teknik `SAP__` setleri (birim/para kodu listeleri) kod alanı adayı UYARI'sı
+        üretmez — tek bir özet NOT satırında sayılır; asıl uyarılar kaybolmaz. Kontrol: özet satırı teknik set
+        yokken basılmaz."""
+        with open(V4, encoding="utf-8") as fh:
+            metin = fh.read()
+        tip = ('<EntityType Name="SAP__UnitOfMeasure"><Key><PropertyRef Name="UnitCode"/></Key>'
+               '<Property Name="UnitCode" Type="Edm.String" Nullable="false" MaxLength="3"/>'
+               '<Property Name="ISOCode" Type="Edm.String" MaxLength="3"/>'
+               '<Property Name="ExternalCode" Type="Edm.String" MaxLength="3"/>'
+               '<Property Name="Text" Type="Edm.String" MaxLength="30"/></EntityType>')
+        set_ = ('<EntitySet Name="SAP__UnitsOfMeasure" '
+                'EntityType="com.sap.gateway.srvd.zbc000_ui_order.v0001.SAP__UnitOfMeasure"/>')
+        self.assertIn('<EntityContainer Name="Container">', metin)
+        meta = os.path.join(self.tmp, "teknik.xml")
+        with open(meta, "w", encoding="utf-8") as fh:
+            fh.write(metin.replace('<EntityContainer Name="Container">', tip + '<EntityContainer Name="Container">')
+                     .replace("</EntityContainer>", set_ + "</EntityContainer>"))
+        cikti, out = self.uret(meta, cikti=os.path.join(self.tmp, "t"))
+        self.assertTrue(os.path.isfile(os.path.join(cikti, "SAP__UnitsOfMeasure.json")))  # set üretildi (ön koşul)
+        self.assertEqual({"Order.OverallStatus", "ZBC000_I_StatusVH.Status"}, uyari_alanlari(out))
+        ozet = [s for s in out.splitlines() if s.startswith("NOT: teknik SAP__ setleri")]
+        self.assertEqual(1, len(ozet), out[-800:])
+        self.assertIn("SAP__UnitsOfMeasure (2)", ozet[0])   # ISOCode + ExternalCode (UnitCode birim sınıfı: aday değil)
+        satirlar = out.strip().splitlines()
+        self.assertTrue(satirlar[-1].startswith("UYARI: kod alanı adayı"), satirlar[-1])  # UYARI'lar yine sonda
+        _, out0 = self.uret(V4, cikti=os.path.join(self.tmp, "k"))
+        self.assertFalse([s for s in out0.splitlines() if s.startswith("NOT: teknik SAP__ setleri")])
+
     def test_sabit_verilen_alan_uyari_vermez_cikis_0(self):
         rc, out, _ = calistir(["--metadata", V2, "--cikti", os.path.join(self.tmp, "d"),
                                "--sabit-degerler", "SalesOrderSet.Status=Q"])

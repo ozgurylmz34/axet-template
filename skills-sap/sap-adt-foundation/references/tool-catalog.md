@@ -40,6 +40,9 @@ Argümanları dosyadan vermek için `--args-json` yerine `--args-file <json dosy
 - Üç değerli alanlar (`true` / `false` / `null`): `null` = **ÖLÇÜLEMEDİ**, "hayır" ya da "doğrulandı" değildir.
 - `client_log` alt katmanın ham satırlarıdır; `exists:false` ya da boş sonuçta önce buna bak.
 - Sayı döndüren her araçta limite eşit sonuç = kırpılmış olabilir.
+- SAP istisnasını ortak eşlemeden (`tools/atom.py` `_err_from_exc`) geçiren hata yanıtında (`auth_failed` / `not_found` / `locked` /
+  `sap_error` …) SAP'nin HTTP kodu biliniyorsa üst düzey `status_code` alanı da gelir (2026-11-19, D14); kod mesaj metninden
+  ayrıştırılmaz. Alan yoksa kod bilinmiyordur ya da araç kendi hata dalını kullanmıştır.
 
 Tip değerleri — CLI tip tablosu (`lib/object_types.py`, kod okuması): `class`, `interface`, `program`, `include`,
 `functiongroup`, `function`, `dataelement`, `domain`, `table`, `structure`, `tabletype`, `cds` (`ddls`), `metadataextension`,
@@ -167,8 +170,11 @@ Genel tablo `supports_create` bayrağı yalnız genel yaratıcının tiplerinde 
 
 ### `adt_atc_check`
 - **Amaç:** ATC statik kontrol (Clean ABAP, performans, güvenlik).
-- **Argümanlar:** `name` · `object_type="class"` · `variant` (yoksa bağlantıdaki ATC varyantı, o da yoksa `DEFAULT`) · `max_verdicts=100`.
-- **Dönüş:** `{ok, variant, finding_count, findings:[…]}`. Sayının doğrulanamadığı durum için ayrı alan olabilir (`finding_count_unverified`).
+- **Argümanlar:** `name` · `object_type="class"` · `variant` (yoksa bağlantıdaki ATC varyantı, o da yoksa `DEFAULT`) · `max_verdicts=100` (pozitif tam sayı;
+  metin `"50"` sayıya çevrilir, geçersizse SAP'ye gidilmeden `ok:false, error:"invalid_argument"`).
+- **Dönüş:** `{ok, variant, finding_count, findings:[…], kesilmis_olabilir, kapsam}`. Sayının doğrulanamadığı durum için ayrı alan olabilir (`finding_count_unverified`).
+  `kesilmis_olabilir:true` = bulgu sayısı `max_verdicts` tavanına eşit: liste kesilmiş olabilir, `max_verdicts`'i artırıp yeniden koş
+  (2026-11-19, Z209; tavanın altındaysa `false`, `kapsam` metni aynısını söyler).
   ATC'nin ölçülmediği tip (`enhs`, 2026-11-17) → `ok:false, error:"atc_kapsam_disi"`, SAP'ye gidilmez ("0 bulgu" DEĞİL).
 
 ### `adt_table_read`

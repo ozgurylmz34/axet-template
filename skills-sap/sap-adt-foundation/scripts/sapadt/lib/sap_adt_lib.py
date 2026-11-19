@@ -1882,10 +1882,29 @@ class SAPADTClient:
         sess.mount('http://', _adapter)
         # Z207: okuma amaçlı POST uçları — ayrı adapter, POST yeniden denemesi AÇIK (requests en uzun öneki seçer;
         # önek `self.url` ile kurulur ⇒ yalnız bu sistemin uçlarına uygulanır).
-        _okuma_post = HTTPAdapter(pool_connections=2, pool_maxsize=10,
-                                  max_retries=_yeniden_deneme(GUVENLI_YENIDEN_DENEME_METOTLARI + ('POST',)))
-        for _onek in OKUMA_POST_ONEKLERI:
-            sess.mount(f"{self.url}{_onek}", _okuma_post)
+        # Z212 (2026-11-19): requests öneki YOL SINIRI bilmeden eşler ⇒ `/checkrunsX` gibi bir yol da okuma sayılıp
+        # POST'u 4 kez gönderiyordu (sahte sunucuyla ölçüldü). Bu adapter isteği yalnız önekten sonra `/`, `?`, `#`
+        # ya da yolun sonu geliyorsa kendisi gönderir; değilse genel (POST'u tekrarlamayan) adapter'a devreder.
+        class _YolSinirliAdapter(HTTPAdapter):
+            def __init__(self, onekler, yedek, **kw):
+                super().__init__(**kw)
+                self._onekler = tuple(o.lower() for o in onekler)
+                self._yedek = yedek
+
+            def sinirda_mi(self, url: str) -> bool:
+                u = (url or "").lower()
+                return any(u.startswith(o) and u[len(o):len(o) + 1] in ("", "/", "?", "#") for o in self._onekler)
+
+            def send(self, request, **kwargs):  # noqa: D401
+                if self.sinirda_mi(request.url):
+                    return super().send(request, **kwargs)
+                return self._yedek.send(request, **kwargs)
+
+        _okuma_onekleri = [f"{self.url}{_onek}" for _onek in OKUMA_POST_ONEKLERI]
+        _okuma_post = _YolSinirliAdapter(_okuma_onekleri, _adapter, pool_connections=2, pool_maxsize=10,
+                                         max_retries=_yeniden_deneme(GUVENLI_YENIDEN_DENEME_METOTLARI + ('POST',)))
+        for _tam_onek in _okuma_onekleri:
+            sess.mount(_tam_onek, _okuma_post)
         # Z190 (2026-10-04): classrun POST'u SAP'de ABAP KODU ÇALIŞTIRIR (mail, tablo
         # yazımı). Z207 öncesi genel adapter 502/503/504'te ve OKUMA ZAMAN AŞIMINDA POST'u
         # 3 kez daha gönderiyordu — yerel sahte sunucuyla ölçüldü: 504 → 4 POST, okuma
@@ -6074,8 +6093,10 @@ class SAPADTClient:
                     self._debug(f"[DEBUG] delete_object - success with approach: {desc}")
                 return {'success': True, 'message': 'Object deleted successfully'}
 
-        status = last_response.status_code if last_response else 'unknown'
-        text = last_response.text if last_response else 'no response'
+        # Z210 (2026-11-19): `is not None` — `requests.Response` 4xx/5xx'te `bool()` False döner; `if last_response`
+        # başarısız her silmede kodu 'unknown' yapıyor, gövdeyi atıyor ve NO_LOCK_SUPPORT dalını öldürüyordu.
+        status = last_response.status_code if last_response is not None else 'unknown'
+        text = last_response.text if last_response is not None else 'no response'
         if self.debug_enabled:
             self._debug(f"[DEBUG] delete_object - all approaches failed, final status: {status}")
 

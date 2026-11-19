@@ -23,7 +23,8 @@ Kullanım:
 
 Kod alanı adayı uyarısı: üretilen setlerde sabit değer verilmemiş ama kod/durum alanına benzeyen Edm.String alanlar
 çıktının SONUNDA `UYARI: kod alanı adayı, sabit değer verilmedi: Set.Alan (...)` satırlarıyla listelenir; çıkış kodu
-değişmez. Aday ölçütü (biri yeter; ② ve ③ para/birim/ülke/e-posta/telefon/kimlik/kullanıcı/şehir/adres/tarih
+değişmez. Teknik `SAP__` setlerinin (RAP V4 çerçeve listeleri) adayları satır satır değil, uyarılardan önce tek
+`NOT: teknik SAP__ setleri …` özetinde set başına sayıyla verilir. Aday ölçütü (biri yeter; ② ve ③ para/birim/ülke/e-posta/telefon/kimlik/kullanıcı/şehir/adres/tarih
 sınıfı alanlara uygulanmaz — araç onlara anlamlı standart değer yazar; ① açık işaret olduğu için her alanda sayılır):
   ① V2 `sap:value-list="fixed-values"` ya da V4 `Common.ValueListWithFixedValues` — servis alanı açıkça sabit küçük
     liste (açılır liste) olarak işaretlemiş;
@@ -549,6 +550,7 @@ R_KOD_SONEK = re.compile(r"(code|kod|kodu|status|durum|durumu|type|tip|tipi|tur|
 KOD_SONEK_MAXLEN = 10      # ② ad soneki + MaxLength ≤ 10
 BUYUK_HARF_MAXLEN = 4      # ③ UpperCase + MaxLength ≤ 4
 KOD_DISI_SINIFLAR = {"para", "birim", "ulke", "eposta", "telefon", "kimlik", "kullanici", "sehir", "adres", "tarih"}
+TEKNIK_SET_ONEKI = "SAP__"  # RAP V4 çerçeve setleri (SAP__Currencies, SAP__UnitsOfMeasure …) — aday özetine ayrı
 
 
 def _deger_kaynaklari(m, set_ad, set_tipi, alan_ad):
@@ -1197,7 +1199,20 @@ def main(argv=None):
           "Common.ValueListWithFixedValues); domain sabit değerlerini ve değer tablolarını OKUMAZ (kaynak: adt_get "
           "domain · değer yardımı seti) ve --sabit-degerler değerlerinin sistemde var olduğunu doğrulamaz."
           % (len(m.bakilmayan), ", ".join(m.bakilmayan) or "-"))
-    for s, a, isaret, kaynak in kod_alani_adaylari(m, [x for x in sira if x in uretilen], sabit):
+    adaylar = kod_alani_adaylari(m, [x for x in sira if x in uretilen], sabit)
+    # Z184① (2026-11-19): RAP V4'ün teknik `SAP__` setleri (birim/para/belge açıklaması listeleri) onlarca aday
+    # üretip asıl uyarıları gömüyordu (canlı KD turu: 40 satırın çoğu) ⇒ set başına sayı, tek özet NOT satırı.
+    teknik: dict = {}
+    for s, *_ in adaylar:
+        if s.startswith(TEKNIK_SET_ONEKI):
+            teknik[s] = teknik.get(s, 0) + 1
+    if teknik:
+        print("NOT: teknik SAP__ setleri — %d kod alanı adayı uyarı olarak listelenmedi (çerçeve listeleri; gerekirse "
+              "--sabit-degerler ile ver): %s" % (sum(teknik.values()),
+                                                ", ".join("%s (%d)" % (s, n) for s, n in sorted(teknik.items()))))
+    for s, a, isaret, kaynak in adaylar:
+        if s in teknik:
+            continue
         print("UYARI: kod alanı adayı, sabit değer verilmedi: %s.%s (%s%s)"
               % (s, a, "; ".join(isaret),
                  ("; değerin kaynağı: %s" % ", ".join("%s.%s" % k for k in kaynak)) if kaynak else ""))

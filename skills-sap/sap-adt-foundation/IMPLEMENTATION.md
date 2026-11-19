@@ -1571,7 +1571,9 @@ yalnız classrun 1 (Z190 ayrı adapter'ı). İlk istek SAP'de işlenmiş olabili
 - **Okuma amaçlı POST izinli listesi (`OKUMA_POST_ONEKLERI`):** `checkruns` (Z195 ① salt-okur sözdizimi) ·
   `datapreview/freestyle` (SELECT önizleme) · `repository/nodestructure` (paket ağacı) ·
   `repository/informationsystem/usageReferences` (where-used) · `abapsource/prettyprinter` (biçimleme, kaydetmez). Ayrı
-  adapter, POST tekrarı açık; mount anahtarı `self.url + önek` ⇒ yalnız bu sistemin uçları. Gerekçe uç sözleşmesidir —
+  adapter, POST tekrarı açık; mount anahtarı `self.url + önek` ⇒ yalnız bu sistemin uçları. **Yol sınırı (2026-11-19, Z212):**
+  `requests` mount'u düz önek eşler (`…/checkruns` → `…/checkrunsX` de tutardı); adapter (`_YolSinirliAdapter`) önekten
+  sonra yalnız `/`, `?`, `#` ya da son görürse POST'u tekrarlar, aksi hâlde isteği genel (POST tekrarsız) adaptere verir. Gerekçe uç sözleşmesidir —
   sunucuda durum yaratmadıkları canlı ÖLÇÜLMEDİ. **Bilinçli dışarıda:** `atc/runs` · `atc/worklists` (koşu/iş listesi yaratır)
   · `abapunit/testruns` (test koşturur; riskli testler veri değiştirebilir) · `oo/classrun`.
 - **Classrun önek kuralı KORUNDU:** genel kural artık classrun POST'unu da tekrarlamaz; Z190 mount'u derinlemesine savunma

@@ -4,6 +4,10 @@ whenToUse: Token-ağır okuma işi — paket/obje haritası çıkarma, where-use
 mode: subagent
 model: large
 disallowedTools: [edit, multiedit, write]
+permission:
+  read_docx: allow
+  read_xlsx: allow
+  read_pdf: allow
 ---
 
 Sen aXet şablonunun SAP araştırma rolüsün. Çekirdek kurallar, SAP kuralları (kesin yasaklar dahil), ekip hafızası ve

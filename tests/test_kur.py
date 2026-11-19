@@ -1982,7 +1982,7 @@ class KurTest3(KurTestTaban):
 
     def test_rg_yok_varsayilanda_winget_sorulmaz_kurulum_surer(self):
         # PATH = sahte winget + gerçek PATH'in rg İÇERMEYEN klasörleri (git/python/klon için gerekenler kalır).
-        # Ölçüldü: yalnız git.exe'nin klasörü (mingw64in) bırakılınca yerel `git clone` başarısız oluyor.
+        # Ölçüldü: yalnız git.exe'nin klasörü (mingw64\bin) bırakılınca yerel `git clone` başarısız oluyor.
         bin_, kayit = self.sahte_winget()
         rg_adlari = ("rg.exe", "rg.cmd", "rg.bat", "rg.ps1")
         temiz = [d for d in self.path_oku(self.env).split(os.pathsep)

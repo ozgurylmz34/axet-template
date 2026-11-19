@@ -228,6 +228,24 @@ class YanEtkiliTekrar(unittest.TestCase):
         ok = yaratma == (1, "yanit 503") and okuma == (4, "RetryError")
         self.kaydet("new_session sonrası: yaratma 1 · checkrun 4", "1 / 4", [yaratma, okuma], ok)
 
+    # Y7b — Z212: okuma-POST öneki YOL SINIRINDA eşleşir (`/`, `?` ya da yolun sonu). requests önek eşleşmesi
+    # sınır bilmez ⇒ eskiden `/checkrunsX` gibi yollar da okuma sayılıp POST'u 4 kez gönderiyordu (ölçüldü).
+    def test_okuma_post_oneki_yol_sinirinda_eslesir(self):
+        sinir_disi = {y: self._gonder("POST", y) for y in
+                      ("/sap/bc/adt/checkrunsX", "/sap/bc/adt/datapreview/freestyleZ",
+                       "/sap/bc/adt/abapsource/prettyprinter_yaz")}
+        sinir_ici = {y: self._gonder("POST", y) for y in
+                     ("/sap/bc/adt/checkruns/alt", "/sap/bc/adt/repository/nodestructure")}
+        sorgu = self._gonder("POST", "/sap/bc/adt/checkruns?reporters=abapCheckRun")
+        kotu = {y: v for y, v in sinir_disi.items() if v != (1, "yanit 503")}
+        kotu.update({y: v for y, v in sinir_ici.items() if v != (4, "RetryError")})
+        if sorgu[1] != "RetryError":
+            kotu["checkruns?…"] = sorgu
+        sayac = self.sunucu.sayac.get(("POST", "/sap/bc/adt/checkruns"), 0)
+        ok = not kotu and sayac == 4
+        self.kaydet("Z212 okuma-POST öneki yol sınırlı: X-uzantı 1 istek · alt yol/sorgu 4", "sınır dışı 1 · içi 4",
+                    kotu or {"sinir_disi": sinir_disi, "sinir_ici": sinir_ici, "sorgu": (sayac, sorgu[1])}, ok)
+
     # Y8 — Z207 BİLİNÇLİ İSTİSNASI: ikinci katman `_retry_request` (Z52) yaratma POST'unu 3 kez gönderir. ----
     # Beş yaratma çağrısı (DTEL · domain · struct · tablo · CDS) 5xx / 504 / zaman aşımını uygulama
     # katmanında kendisi yeniden dener (`max_retries=3`). Z207 öncesi: 503 → 4 POST (adapter) +

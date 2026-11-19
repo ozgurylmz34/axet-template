@@ -533,6 +533,10 @@ def _err_from_exc(exc: Exception) -> dict:
         "error": code,
         "message": str(exc),
     }
+    # D14 (2026-11-19): HTTP durumu yapısal alan — çağıran mesaj metnini ayrıştırmasın. Yalnız istisna taşıyorsa.
+    _durum = getattr(exc, "status_code", None) if isinstance(exc, SAPADTError) else None
+    if isinstance(_durum, int) and not isinstance(_durum, bool):
+        out["status_code"] = _durum
     if isinstance(exc, SAPLockError) and getattr(exc, "lock_owner", None):
         out["lock_owner"] = exc.lock_owner
     if isinstance(exc, SAPActivationError) and getattr(exc, "errors", None):

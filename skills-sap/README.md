@@ -6,7 +6,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 
 | Skill | Ne zaman |
 |---|---|
-| `sap-intake-triage` | Yeni geliştirme / revizyon talebi: kapsam sınıfı S0/S1/S2, S2 intake artefaktı |
+| `sap-intake-triage` | Yeni geliştirme / revizyon talebi: kapsam sınıfı S0/S1/S2, S2 intake artefaktı; talep `.docx`/`.xlsx` ise önce kaynak paketi (`sap-fs-ts-docs`) ve görsellerin tek tek okunması |
 | `sap-dev` | Her SAP geliştirmesinin girişi: profil, paket, adlandırma (`references/naming.md`), ABAP desenleri (`references/coding-patterns.md`), standart veriye yazma API seçimi (`references/write-api-selection.md` — released RAP BO/EML → released BAPI → released OData → BAPI/RFC FM → BDC → manuel), ADT sırası |
 | `sistem` | Projede aktif SAP sistemini gör / değiştir (DEV, QA, PRD — "client switch", "QA'ya geç"): `conn/` sistemlerini listeler, seçileni `switch_tier.py` ile etkinleştirir; dosya içeriği okumaz |
 | `sap-adt-foundation` | SAP'de okuma, indirme, push, aktivasyon, silme, where-used, kilit, transport — tek CLI ve yazma kapısı; fonksiyon grubu include'u (`group`), BAdI enhancement spot okuma/yazma; müşteri namespace'i (`customer_namespaces`) |
@@ -18,7 +18,7 @@ ortak referanslar yönlendirici skill'in `references/` klasöründedir.
 | `sap-ui5-fiori` | UI5 freestyle (OData V2) ve Fiori elements ekranları: kanonik freestyle şablonu (1.71 / 1.120 sürüm parçalı, sürüm ve tema backend'den ölçülür), iskelet, grid/ALV paritesi, filtre, value-help, lokal çalıştırma, yalnız SAP'de duran uygulamanın kaynağını indirme + salt-okur yerel test, runtime doğrulama, BSP deploy (kullanıcı OK'u sonrası) |
 | `sap-gui-scripting` | Veri yalnız SAP GUI ekranında görünüyorsa (ALV, tablo kontrolü, ekran alanı): model script yazar, geliştirici çalıştırır (ecc, s4_private) |
 | `sap-abapgit-delivery` | Değişikliği abapGit ZIP olarak hazırla (kesin yasak + Yasak B taramasıyla); içe aktarımı geliştirici yapar |
-| `sap-fs-ts-docs` | FS/TS/**KD (kullanıcı kılavuzu)** yazımı ve incelemesi — KD kuralları (`references/kd-authoring.md`) ve şablonu (`templates/KD-template.md`) burada; izlenebilirlik ve veri kaybı kontrolü, ekran görüntülü HTML/PDF, TS öncesi canlı teyit turu |
+| `sap-fs-ts-docs` | FS/TS/**KD (kullanıcı kılavuzu)** yazımı ve incelemesi — KD kuralları (`references/kd-authoring.md`) ve şablonu (`templates/KD-template.md`) burada; izlenebilirlik ve veri kaybı kontrolü, `.docx`/`.xlsx` istekten mekanik kaynak paketi (metin, görseller, gömülü nesneler) ve kaynak → belge iz denetimi (`scripts/kaynak_paketi.py`; isteğin ekran görüntüleri `gorsel-notlari.md`'de görsel başına okunur, okunmayan görsel iz denetiminde FAIL), ekran görüntülü HTML/PDF, TS öncesi canlı teyit turu |
 | `sap-ui5-user-guide` | Freestyle UI5 (OData V2) uygulamasının ekran görüntülü kullanıcı kılavuzu (KD): yalnız mock veri, Chrome'a sabit playwright-cli keşfi, çekim senaryosu, kare kare görsel kontrol; KD metni ve HTML + PDF `sap-fs-ts-docs` hattıyla |
 | `sap-pdf-output` | SFP form objesi olmadan ABAP'ten PDF (yalnız `s4_private`): AI'ın yazdığı XFA XDP + `CL_FP_ADS_UTIL=>RENDER_PDF`, çok belge → tek PDF, CL_BCS mail eki; XDP denetçisi, bağlama simülasyonlu XDP → ABAP üreticisi, deneme sınıfı + base64 çözücü. SFP form, NAST/OM, yasal çıktı `sap-classic-abap`'ta |
 

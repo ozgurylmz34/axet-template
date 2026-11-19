@@ -105,6 +105,36 @@ class MockSunucuTest(unittest.TestCase):
         self.assertEqual([], self._artiklar(), "zincirin hepsi kapanmalı")
         self.assertIsNone(M.kayit_oku(self.app))
 
+    def test_yenile_eskiyi_durdurur_yenisini_baslatir(self):
+        """Z181⑤: `yenile` = `durdur` + `baslat` — eski zincir kapanır (kayıtlı süreçlerin hiçbiri yaşamaz), yeni
+        sunucu kayda girer ve yanıt verir."""
+        rc, out, _ = self._kos("baslat", "--komut-json", self.komut, "--zaman-asimi", "60")
+        self.assertEqual(0, rc, out)
+        k1 = M.kayit_oku(self.app)
+        eski = [(k1["pid"], k1["zaman"]), *((a["pid"], a["zaman"]) for a in k1["alt"])]
+        self.assertGreaterEqual(len(eski), 3, k1)  # kök + ara + sunucu kayıtlı (ön koşul)
+        rc2, out2, _ = self._kos("yenile", "--komut-json", self.komut, "--zaman-asimi", "60")
+        self.assertEqual(0, rc2, out2)
+        self.assertIn("DURDU", out2)
+        self.assertIn("MOCK SUNUCU: HAZIR", out2)
+        self.assertNotIn("ZATEN ÇALIŞIYOR", out2)
+        k2 = M.kayit_oku(self.app)
+        self.assertNotEqual(k1["pid"], k2["pid"])
+        tablo = M.surec_tablosu()
+        self.assertEqual([], [p for p, z in eski if M.canli(p, z, tablo)], "eski zincir kapanmalı")
+        self.assertEqual(200, M.http_durum(k2["port"]))
+
+    def test_yenile_durdur_basarisizsa_yeni_sunucu_baslatmaz(self):
+        """Z181⑤ negatif: eski sunucu kapatılamadıysa (`durdur` çıkış 1) `yenile` ikinci bir sunucu BAŞLATMAZ ve
+        aynı çıkış kodunu döner — iki sunucu / kayıt üzerine yazma olmaz."""
+        rc, out, _ = self._kos("baslat", "--komut-json", self.komut, env={"SAHTE_KOPUK": "1"})
+        self.assertEqual(0, rc, out)
+        k1 = M.kayit_oku(self.app)
+        rc2, out2, _ = self._kos("yenile", "--komut-json", self.komut)
+        self.assertEqual(1, rc2, out2)
+        self.assertNotIn("MOCK SUNUCU: HAZIR", out2)
+        self.assertEqual(k1["pid"], (M.kayit_oku(self.app) or {}).get("pid"), "kayıt değişmemeli")
+
     def test_kopuk_agac_yetim_kapatilmaz_durust_fail(self):
         """Soyu kanıtlanamayan sunucu (ara süreci kayıttan önce kapanmış) kapatılMAZ; araç DURDU demez (bug gate
         2026-10-03, 3 tur: portu dinlemek kimlik değildir). Gerçek zincirde sunucu kökün soyundadır (ölçüldü 3/3)."""

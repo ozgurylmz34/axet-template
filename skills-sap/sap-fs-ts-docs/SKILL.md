@@ -6,7 +6,7 @@ description: >
   Covers FS from requirements without invented facts, FS to TS with an FS audit, clean-core level
   choice and a full message inventory, KD with clean mock-data screenshots and every sub-screen,
   the document checklist with an independent reviewer, FS-TS-KD traceability and rewrite loss
-  check, Markdown to HTML/PDF with screenshots, and the live confirmation tour before a TS goes to
+  check, a .docx/.xlsx request source package, Markdown to HTML/PDF with screenshots, and the live confirmation tour before a TS goes to
   build. Triggers: "FS yaz", "FS'ten TS çıkar", "teknik spesifikasyon", "kullanıcı kılavuzu
   hazırla", "KD yaz", "dokümanı PDF yap", "spec'i incele", "ekran görüntülü kılavuz". Not for triage
   (sap-intake-triage), building objects (sap-dev) or non-SAP Word/PDF documents (office-docs).
@@ -44,6 +44,16 @@ description: >
    (`.axet-code/intake/<id>.md`) + EARS kabul kriterleri. Intake artefaktı FS'in girdisidir; kopyalanmaz, bağlanır.
 2. **Girdiler:** kullanıcı isteği (kanon) · intake artefaktı · analiz notları · paket `ref_docs/` (kaynak, canlı teslimat
    değil) · varsa eski/çalışan kaynak. Girdide olmayan iş kuralı, süreç, standart SAP obje adı **uydurulmaz**.
+   İstek **`.docx`/`.xlsx`** ise önce mekanik **kaynak paketi** (`kaynak_paketi.py cikar` → `references/traceability.md` §2-B);
+   yazım ve inceleme paketi okur, ikili dosya yazıma da brife de yol olarak girmez, kaynak metni modelle yeniden yazılmaz.
+   Paket görsel içeriyorsa (`gorsel-notlari.md`) yazıma geçmeden **her görseli `view` aracıyla aç** ve gördüğünü (ekran
+   adı, alanlar, düğmeler, değerler, okunabilen metin) **yalnız o görselin iki işaret satırının arasına**
+   (`<!-- gorulen:KG-nn -->` … `<!-- /gorulen:KG-nn -->`) yaz — görsel başına bir `edit`; işaret dışındaki metni `iz`
+   saymaz, işareti silinen ya da sırası bozulan not FAIL'dir;
+   GÖRÜNTÜLENEMEZ biçimi (ör. `emf`) Pillow kuruluysa paket klasöründe
+   `python -c "from PIL import Image; Image.open('<görsel>').save('media/<kimlik>.kullanici.png')"` ile çevir, PNG'yi
+   `view` ile aç; olmazsa kullanıcıdan PNG iste ve aynı ada kaydet. Görselden türeyen her öğe FS'te bir kimliğe bağlanır,
+   notta `→ <kimlik>` ile anılır ve iz tablosunda o görselin satırına girer; boş not `iz`'de FAIL'dir.
 2b. **Girdiler çelişirse** (aynı workshop'tan kalan birden çok not, transkript, özet ve eski belge sık sık
    çelişir): çelişkiyi **sessizce çözme**. Öncelik sırası: ① kullanıcı isteği (kanon) ② canlı sistemden
    ölçülen olgu ③ intake artefaktı ④ tarihi belli ve daha yeni olan not ⑤ tarihsiz not. Bu sıra bir
@@ -63,6 +73,7 @@ description: >
 | KD yaz | `references/kd-authoring.md` | `templates/KD-template.md` | `capture_kd_screens.js`, `build_kd_pdf.py` |
 | İnceleme (her tip) | `references/doc-checklist.md` | brifing bloğu aynı dosyada §E | `verify_doc_html.py` (yalnız mekanik kısım) |
 | FS↔TS↔KD izlenebilirlik, yeniden yazımda kayıp | `references/traceability.md` | — | `doc_equivalence_check.py` |
+| İstek `.docx`/`.xlsx`: kaynak paketi + kaynak → belge iz tablosu | `references/traceability.md` §2-B | iz tablosu aynı bölümde | `kaynak_paketi.py` (`cikar` · `iz`) |
 | HTML/PDF, ekran görüntüsü, diyagram | `references/pdf-with-screenshots.md` | — | `build_doc_pdf.py`, `html_to_pdf.js`, `doc_tools.py` |
 | TS build'e girmeden canlı teyit | `references/live-confirmation-tour.md` | rapor tablosu aynı dosyada | `%sap-adt-foundation` CLI okuma araçları |
 | Kaynaktan taslak spesifikasyon | `references/traceability.md` §6 | — | `program_to_spec.py` |
@@ -74,9 +85,13 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 1. Girdileri oku; şablonun bölüm yapısını ve istenen kapsamı kullanıcıya bir paragrafta geri söyle.
 2. Girdi yetersizse **dur**: eksikleri araştırmayla bilgilendirilmiş sorulara çevir, **tek seferde, seçenekli ve önerili**
    `ask_user` ile sor; yanıt gelmeden tam FS üretme. Kullanıcı "taslak olarak ilerle" derse boşluklar `[Varsayım]` etiketiyle.
-3. Şablonu bölüm bölüm doldur; kullanıcının yazdığı her istek bir FR/KR'ye izlenebilir (İlke 1). Danışman katkısı
-   `[Öneri]` → §11-A; karar verilemeyen nokta seçenek + öneri ile → §11-B (İlke 2). Gövdede süreç/sürüm anlatısı yok (İlke 2b).
-4. §4 kontrol listesi + bağımsız inceleme (§5 aşağıda) → kullanıcıyla **madde madde mutabakat** (11-A boş, 11-B kapalı).
+3. Şablonu bölüm bölüm doldur — tek bir `write`/`edit` çağrısının içeriği 150 satırı aşacaksa önce iskelet (başlıklar),
+   sonra **her bölüm ayrı bir `edit` çağrısıyla**; 150 satırı aşan tek bölüm de bölünür (çekirdek §10: tek çağrıda uzun
+   içerik model ağ geçidinde 504 aldı). Kullanıcının yazdığı her istek bir FR/KR'ye izlenebilir (İlke 1);
+   kaynak paketi varsa iz tablosunu bölümlerle birlikte doldur. Danışman katkısı `[Öneri]` → §11-A; karar verilemeyen
+   nokta seçenek + öneri ile → §11-B (İlke 2). Gövdede süreç/sürüm anlatısı yok (İlke 2b).
+4. (kaynak paketi varsa) `kaynak_paketi.py iz` **PASS** → §4 kontrol listesi + bağımsız inceleme (§5 aşağıda; iz tablosu
+   varsa "İZ TABLOSUNA DAYALI İNCELEME") → kullanıcıyla **madde madde mutabakat** (11-A boş, 11-B kapalı).
 
 ### 3. TS akışı
 1. **FS onaylı mı?** Değilse TS başlamaz. FS'teki her FR/KR'yi izlenebilirlik matrisine satır olarak al.
@@ -104,7 +119,14 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 1. Yazar önce kendi kontrolünü yapar — **bu yetmez**.
 2. `agent` aracıyla taze bir inceleyici çalıştır. Alt ajan skill dosyalarını ve konuşmayı **görmez** (ölçüldü): brifinge
    `references/doc-checklist.md` §E bloğunu, ilgili tip bölümünün (§A KD · §B FS · §C TS) ve §D çapraz kontrollerin
-   **metnini yapıştır**; dokümanın yolunu ve (varsa) HTML/PDF/ekran görüntüsü yollarını ver.
+   **metnini yapıştır**; dokümanın yolunu ve (varsa) HTML/PDF/ekran görüntüsü yollarını ver. İkili kaynağın (`.docx`/
+   `.xlsx`/`.pdf`) yolunu verme: `view` ikili `.docx`'i açmadı, alt ajan okuyamadı (ölçüldü — aXet.code 1.5.1,
+   2026-11-19, iki koşu: talimatsız ve "read_docx kullan" denince; yerleşik görev alt ajanının araç kümesi glob, grep,
+   ls, sourcegraph, view — read_docx, read_xlsx, read_pdf ve kabuk yok; `.xlsx`/`.pdf` denenmedi). Kaynak `.docx`/
+   `.xlsx` ise kaynak paketinin (`INDEX.md`, `metin.md`, `gorsel-notlari.md`, `media/`) ve iz tablosunun yolunu ver,
+   `iz` çıktısını kendin koşup yapıştır; inceleyiciye görselleri `view` ile açıp notları doğrulamasını yaz (§E,
+   AX-DOC-CR-07). Kaynak `.pdf` ise paket yoktur (`kaynak_paketi.py` çıkış 3): kullanıcıdan `.docx`/`.xlsx` hâlini iste
+   ya da metni çıkarıp dosyaya yaz, o dosyanın yolunu ver (metni modelle yeniden yazma; kaynak izi ÖLÇÜLEMEDİ kalır).
 3. Dönen her BLOCKER'ı kendin dokümanda okuyarak doğrula; doğrulanamayanı NOT'a indir.
 4. Düzeltme turu **ikinci kapıdan** geçmeden kapanmaz: dar kapsam (değişen satırlar + değişen sayı/adın diğer geçtiği
    yerler + kararın yayılım listesi), **başka** bir taze inceleyiciyle.
@@ -133,6 +155,7 @@ başta **KAPSAM** satırı basar (neye baktığı / bakmadığı); "0 bulgu" yal
 | `scripts/capture_kd_screens.js` | yapılandırma dosyasıyla adım adım ekran çekimi + model verisi enjeksiyonu (UI5 mock) |
 | `scripts/verify_doc_html.py` | ölü içindekiler bağlantısı, ham Mermaid sızıntısı, görsel sayısı/eksik dosya, PDF bağlantı sayısı |
 | `scripts/doc_equivalence_check.py` | yeniden yazımda veri kaybı (kimlik, mockup, değer, cümle) + kapanmış karar ters yönü |
+| `scripts/kaynak_paketi.py` | `cikar`: `.docx`/`.xlsx` istekten mekanik paket (çıkarım kapsamındaki metin KM-nnnn, yapılandırılmayan XML metni geri düşüş bölümünde, görseller, OLE/altChunk gömülü nesneler, bağımsız sayımla doğrulama, her görsel için `gorsel-notlari.md` iskeleti; `.pdf` desteklenmiyor) · `iz`: kaynak maddesi → belge kimliği tablosu denetimi + boş görsel notu FAIL (görüntülenemeyen biçim ÖLÇÜLEMEDİ) |
 | `scripts/check_fs_no_analysis_log.py` | FS gövdesinde analiz günlüğü izi sayımı (sürüm etiketi, inceleme kimliği, süreç ifadesi, kullanıcı alıntısı, önceden→şimdi) + §1.1 satır uzunluğu (DOC-FS-05/06a); uyarıdır, kapı değil |
 | `scripts/check_fm_signature_doc_sync.py` | dokümandaki `<!-- FM-IMZA: <FM> -->` bloğu ↔ FM kaynağındaki imza parametreleri, iki yönde (EKSİK · HAYALET); kaynak kökü `sap-project.json` `source_root` (AX-DOC-TS-03); uyarıdır, kapı değil |
 | `scripts/gen_field_table.py` | CDS (+ interface CDS, BDEF, CSV) → alan tablosu |

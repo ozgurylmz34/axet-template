@@ -4,6 +4,10 @@ whenToUse: Bir build ya da doküman değişikliği bitince, SAP'ye yazmadan ya d
 mode: subagent
 model: large
 disallowedTools: [edit, multiedit, write]
+permission:
+  read_docx: allow
+  read_xlsx: allow
+  read_pdf: allow
 ---
 
 Sen aXet şablonunun bağımsız inceleyicisisin. Çekirdek kurallar, SAP kuralları (kesin yasaklar dahil), ekip hafızası ve

@@ -117,8 +117,10 @@ view'da `where username = $session.user`. Servis ve publish: `service-publish.md
 
 `define [root] custom entity <ad> [with parameters …] { … }` da DDLS'tir; select/projection yoktur, veri
 `@ObjectModel.query.implementedBy: 'ABAP:<SINIF>'` sınıfından (`IF_RAP_QUERY_PROVIDER`) gelir.
-⚠ **aXet CLI durumu:** yaratma kaynak kapısı custom entity'yi bu sürümde reddedebilir (`custom entity is not supported by
-this tool`) — önce `--list`/`tool-catalog.md`'ye bak; reddederse kullanıcı entity'yi Eclipse ADT'de yaratır. Aşağıdaki sıra
+⚠ **aXet CLI durumu (2026-11-19):** `adt_push_source ddls` kaynak kapısı custom entity'yi KABUL eder (2026-11-17'den beri;
+`sap-adt-foundation/references/tool-catalog.md` `ddls` maddesi "CDS kaynak kapısı"; çevrimdışı testli). Yol §5'teki gibi:
+`adt_post_shell` `object_type=ddls` kabuğu → `adt_get` → `adt_push_source ddls` → `adt_activate` → readback. Custom entity'nin
+aXet'te uçtan uca canlı yaratılması **DOĞRULANMADI**; araç canlıda düşerse kullanıcı entity'yi Eclipse ADT'de yaratır. Aşağıdaki sıra
 ve gözlemler kaynak ekibin ölçümüdür (bir geliştirme sistemi, SAP_BASIS 758, yerel paket):
 - **Sıra = entity önce:** ① entity kabuk + kaynak ② entity aktivasyonu ③ sorgu sınıfı kabuk + kaynak (+ aktivasyon)
   ④ sınıf entity'den sonra geldiyse entity'yi yeniden aktive et. Atomik toplu aktivasyon (`also`) gerekmedi.

@@ -5,7 +5,7 @@ kurulum araçları. Repo makinede **bir kez** klonlanır; kurulum aracı kullan�
 bu klasöre bağlar. Güncelleme klona tek komutla (`%guncelle`) iner ve klonu okuyan tüm projelere yansır; projelerdeki
 şablon kopyaları (`AGENTS.md`, `.githooks`, denylist …) `%guncelle-proje` ile getirilir.
 
-> Sürüm: v0.5.23 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
+> Sürüm: v0.5.24 · Sürüm notları: `CHANGELOG.md` · Ölçüldüğü aXet.code sürümü: 1.3.0 · Lisans: [MIT + ek koşullar](#lisans)
 
 ## Ne sağlar
 
@@ -29,7 +29,7 @@ testini kurulum kendisi hazırlar. GitHub hesabı gerekmez.
 | Paket | Kullanan |
 |---|---|
 | `python-docx`, `python-pptx`, `openpyxl` (`pip install --user …`) | `%office-docs`, `%office-slides`, `%office-excel` |
-| `markdown`, `Pillow` + Edge/Chrome (PDF baskısı) | `%sap-fs-ts-docs` (FS/TS/KD — kullanıcı kılavuzu dahil; PDF, ekran görüntüsü) |
+| `markdown`, `Pillow` + Edge/Chrome (PDF baskısı) | `%sap-fs-ts-docs` (FS/TS/KD — kullanıcı kılavuzu dahil; PDF, ekran görüntüsü). `Pillow` Word isteğindeki EMF/WMF/BMP görselini okunabilir PNG'ye çevirmek için de kullanılır; yoksa model senden PNG ister. `.docx`/`.xlsx` istekten kaynak paketi çıkarmak ek paket istemez |
 | Chrome ya da Edge + `@playwright/cli` — **kendiliğinden kurulur**: kurulum aracı ve `%guncelle`, Node.js varsa `@playwright/cli`'yi klonun `.araclar/` klasörüne kurar ve `~/.playwright/cli.config.json`'u yazar (`scripts/tarayici_hazirla.py`; tarayıcı indirilmez, ayrı komut gerekmez) | aXet içinde tarayıcı testi (`%sap-ui5-fiori`), `%sap-ui5-user-guide` (keşif ve kare çekimi; çekim betiği bu merkezi kurulumu kendisi bulur, projede ayrı `playwright-core` gerekmez) |
 | `@sap-ux/ui5-middleware-fe-mockserver` (proje `ui/` workspace'inde) | `%sap-ui5-user-guide` (ekran görüntülü kullanıcı kılavuzu) |
 | Node.js + `playwright-core` (proje içinde), `@abaplint/cli` (npx önbelleği) | `%sap-ui5-fiori` ui-smoke, `%sap-code-review` abaplint |
@@ -63,6 +63,10 @@ sistem tipi `DEV`, çağrıda `--sap-write` ve kapsam beyanı (S0/S1 gerekçe, S
 ## Yeni proje
 aXet içinde **`%yeni-proje`** yaz: sorular sohbette tek tek sorulur, önce ne yapılacağı gösterilir, onayınla kurulur
 (klasör, git reposu, proje iskeleti, `AGENTS.md` ve `sap-project.json` alanları, kontrol). Var olan değerler ezilmez.
+
+> ⚠ **aXet'i diskin kökünde (`C:\`) açma.** aXet açıldığı klasörde `.axet-code` veri dizinini kendisi yaratır ve
+> o klasörü taramaya başlar (ölçüldü: `C:\`'de açılan bir oturum diskin kökünde 8,5 MB'lık veri dizini bıraktı).
+> aXet'i proje klasöründe aç: `axet-code -c <proje klasörü>`.
 
 Sonra **proje klasöründeki `KURULUMU-TAMAMLA`'ya çift tıkla** (aXet bu dosyayı yazar ama çalıştırmaz):
 1. Pencere SAP bağlantı dosyalarını hazırlar ve hangisini dolduracağını tam yoluyla söyler: `conn\DEV.env`
@@ -133,7 +137,9 @@ anlamına gelmez. Ayrıntı: `%hata-bildir` → "Gönderdikten sonra".
 ## Güncelleme
 aXet içinde **`%guncelle`** yaz. Klonu yeni yayına seçmeli olarak taşır (senin değişikliklerin korunur), SAP Python
 paketlerini denetleyip eksikse kurar ve tarayıcı testini hazırlar. Yeni kurallar ve skill'ler bir sonraki aXet
-oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`.
+oturumunda yüklenir. Projelerin için ayrıca `%guncelle-proje`. Akış bitince geçici güncelleme dizininin
+(`axet_guncelle_…`) silinip silinmeyeceği bir kez sorulur; onaylarsan yalnız o dizin silinir. Uygulanmış ama kapanmamış
+bir güncelleme varken sorulmaz: dizin geri alma ve kapanış için tutulur, yolu söylenir.
 
 Güncelleme uzun test takımı **koşmaz**; yalnız bir dakikayı geçmeyen hızlı kontrolleri koşar. Klonunda yerel
 değişiklik varsa yayının CI sonucu o ağaca kefil olamaz: koşulmayan takımlar **test borcu** olarak kaydedilir,
@@ -198,7 +204,16 @@ aXet.code 1.3.0'da ölçüldü. Bilmen gerekenler:
 - **Özel ajanlar 1.5.1'de çalışır, sınırlarıyla:** yerleşik görev ajanı (`task`) çekirdeği ve proje kurallarını
   görmez, brifing her şeyi metin olarak taşır; özel `sap-*` ajanları görür ama konuşmayı ve paket `.rules.md`'sini
   görmez (ölçüldü 2026-11-17). Template yalnız kendi kurduğu (işaretli) ajanları günceller ya da siler; aynı adlı
-  kendi ajanına dokunmaz, `doctor.py` bu çakışmayı WARN olarak gösterir.
+  kendi ajanına dokunmaz, `doctor.py` bu çakışmayı WARN olarak gösterir. Dört alt ajan (`sap-arastirma`,
+  `sap-backend`, `sap-ui5`, `sap-inceleme`) Word, Excel ve PDF belgesini sormadan okur, **proje dışındaki belgeyi de**:
+  bu okuma izni yol sınırı taşımaz (izinsizken alt ajan ekranda görünmeyen izin sorusunda asılı kalıyordu; ayrıntı
+  `agents/README.md`).
+- **Belge okuma araçları eksik okur** (1.5.1'de ölçüldü, 2026-11-19/20): `read_docx` görselleri işaretsiz düşürür ve
+  tablo yapısını kaybeder; `read_xlsx` bazı metin hücrelerini boş getirir ve sayfa adlarını kaybeder; `read_pdf` metin
+  katmanlı PDF'te de başarısız olabilir (model buna yanlışlıkla "taranmış PDF" dedi); `.pptx` okuyan araç yok (PDF ya da
+  metin ver). `view` PNG/JPG/GIF görselini açar, BMP/EMF/WMF'yi açmaz. Yerleşik görev ajanında (`task`) bu okuma
+  araçları hiç yoktur. SAP isteği Word ya da Excel ise `%sap-intake-triage` ve `%sap-fs-ts-docs` önce mekanik bir
+  kaynak paketi çıkarıp onu okur, görselleri tek tek açar; belge modelin cümleleriyle yeniden yazılmaz.
 - **Merkezi klon yazmaya kapalı değildir.** Sapmayı `doctor.py` git'e karşı raporlar: klonun davranış yüzeyindeki
   (`core/`, `skills/`, `skills-sap/`, `scripts/`, `templates/`, `AGENTS.md`, `config/permissions.json`, `.axetcode-denylist`) senden gelen
   değişiklik WARN olur, `%guncelle`'nin kendi commit'leri bilgi satırı olur. Eski yazma koruması (config'e yazılan

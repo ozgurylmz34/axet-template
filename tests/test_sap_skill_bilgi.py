@@ -284,6 +284,95 @@ class DdicAdOnerisiKuraliTest(unittest.TestCase):
             self.assertIn(parca, kabuk)
 
 
+class CekirdekBelgeOkumaTest(unittest.TestCase):
+    """Çekirdek §4 "Dosya okuma — tür → araç" + §7 ikili belge kuralı + §11 kimlik dosyası; SAP çekirdeğinde kaynak paketi
+    yönlendirmesi (v0.5.24 D kulvarı).
+
+    Ölçülen vakalar (aXet.code 1.5.1, `run`, 2026-11-19): `view` ikili dosyada "binary" hatası verip bash'e yönlendiriyor ·
+    `read_docx` görseli işaretsiz düşürüyor, tablo yapısını kaybediyor · `read_xlsx` inlineStr metin hücresini boş getiriyor ·
+    `read_pdf` metin katmanlı iki PDF'te de başarısız, model "taranmış" hükmü verdi · yerleşik `task`'ta `read_*` yok,
+    `.docx` yolu verilen `task` 2/2 okuyamadı, kaynak paketi yollarıyla 45 sn'de okudu.
+    Genel çekirdek her kurulumda yüklenir ⇒ yalnız `--sap`'ta var olan `%sap-*` skill'lerine bağlanmaz; FS/kaynak paketi
+    yönlendirmesi `core/sap/00-sap.md`'dedir.
+    KAPSAM — bakılmayanlar: modelin kuralı UYGULADIĞI (canlı koşu) · kaynak paketi betiğinin varlığı (ayrı dalda;
+    kural skill düzeyinde yazıldı) · metnin Türkçe doğruluğu · çekirdek satır sınırı (`test_doctor` ölçer).
+    """
+
+    def setUp(self):
+        self.md = _oku(AXET_HOME / "core" / "00-temel.md")
+        self.sap = _oku(AXET_HOME / "core" / "sap" / "00-sap.md")
+
+    @staticmethod
+    def _blok(metin: str, bas: str) -> str | None:
+        """`bas` ile başlayan madde + iki boşluk girintili devam/alt madde satırları; yoksa None."""
+        satirlar = metin.splitlines()
+        i = next((n for n, s in enumerate(satirlar) if s.startswith(bas)), None)
+        if i is None:
+            return None
+        j = i + 1
+        while j < len(satirlar) and satirlar[j].startswith("  "):
+            j += 1
+        return "\n".join(satirlar[i:j])
+
+    def _var(self, metin: str, bas: str) -> str:
+        blok = self._blok(metin, bas)
+        self.assertIsNotNone(blok, f"'{bas}' maddesi yok")
+        return blok
+
+    def test_tur_arac_rehberi(self):
+        blok = self._var(self.md, "- **Dosya okuma — tür → araç**")
+        self.assertIn(blok, _bolum(self.md, r"## 4\. "), "rehber §4'te değil (§7 ona '§4' diye atıf yapar)")
+        self.assertIn("kendi çözümleyicini (unzip/strings) yazma", blok.splitlines()[0])
+        alt = [s for s in blok.splitlines()[1:] if s.startswith("  - ")]
+        beklenen = {"`.docx` → `read_docx`": ("görsel işaretsiz düşer", "tablo yapısı kaybolur"),
+                    "`.xlsx` → `%office-excel` `profile`": ("`read_xlsx` metin hücresini boş",),
+                    "`.pdf` → `read_pdf`": ("\"taranmış PDF\" HÜKMÜ VERME", "`pdftotext`", "kullanıcıdan metin"),
+                    "`.pptx` → araç yok": (),
+                    "`.png`/`.jpg`/`.jpeg`/`.gif` (harf duyarsız) → `view`": (),
+                    "`.bmp`/`.emf`/`.wmf` → Pillow": ("PNG iste",)}
+        for tur, parcalar in beklenen.items():
+            with self.subTest(tur=tur):
+                satir = next((s for s in alt if tur in s), None)
+                self.assertIsNotNone(satir, f"rehberde '{tur}' alt maddesi yok")
+                for parca in parcalar:
+                    self.assertIn(parca, satir)
+
+    def test_genel_cekirdek_sap_skilline_baglanmaz_andigi_arac_var(self):
+        """Genel çekirdek `--sap`'sız kurulumda da yüklenir: `%sap-*` anmaz; andığı skill/betik diskte durur."""
+        self.assertNotIn("%sap-", self.md)
+        betik = AXET_HOME / "skills" / "office-excel" / "scripts" / "office_excel.py"
+        self.assertIn('sub.add_parser("profile"', _oku(betik))
+        blok = self._var(self.md, "- **Dosya okuma — tür → araç**")
+        skiller = re.findall(r"%([a-z][a-z0-9-]+)", blok)
+        self.assertEqual(skiller, ["office-excel"])
+        for skill in skiller:
+            self.assertTrue((AXET_HOME / "skills" / skill / "SKILL.md").exists(), skill)
+
+    def test_bolum7_ikili_belgeyi_alt_ajana_yol_olarak_vermez(self):
+        b7 = _bolum(self.md, r"## 7\. ")
+        self.assertNotIn("dosyayı kendin `view` ile oku", b7, "eski yönlendirme ikili belgede bash'e saptırıyordu")
+        self.assertIn("türüne uygun araçla oku (§4)", b7)
+        kural = self._var(self.md, "- Alt ajana `.docx`/`.xlsx`/`.pdf` yolu verme")
+        self.assertIn(kural, b7, "kural §7'de değil")
+        for parca in ("türünden bağımsız", "metni kendin çıkarıp dosyaya yaz", "alt ajana o yolu ver",
+                      "görselleri `view` ile açtır", "aynen"):
+            self.assertIn(parca, kural)
+        self.assertNotIn("kaynak paketi", kural, "kaynak paketi SAP paketine özgü — SAP çekirdeğinde durur")
+
+    def test_bolum11_kimlik_dosyasi_read_araclarini_da_kapsar(self):
+        b11 = _bolum(self.md, r"## 11\. ")
+        self.assertIn(self._var(self.md, "- Kimlik dosyalarını"), b11)
+        self.assertIn("`view`/`read_*` ile okuma", self._blok(self.md, "- Kimlik dosyalarını"))
+
+    def test_sap_cekirdegi_kaynak_paketine_yonlendirir(self):
+        kural = self._var(self.sap, "- **İstek belgesi `.docx`/`.xlsx` (FS, gereksinim):**")
+        self.assertIn(kural, _bolum(self.sap, r"## SAP çalışma disiplini"))
+        for parca in ("`%sap-fs-ts-docs`", "kaynak paketi", "`INDEX.md`/`metin.md`", "`view` ile açtır",
+                      "`.pdf` desteklemez"):
+            self.assertIn(parca, kural)
+        self.assertTrue((AXET_HOME / "skills-sap" / "sap-fs-ts-docs" / "SKILL.md").exists())
+
+
 class PlaywrightSirKuraliTest(unittest.TestCase):
     """Z167: playwright-cli `run-code` kodu/dosyayı aynen geri basar → sır değeri komut metnine yazılmaz."""
 

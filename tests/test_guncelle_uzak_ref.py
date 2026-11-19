@@ -35,18 +35,26 @@ def ref_kullanimlari() -> list[tuple[str, int, str]]:
 # Motoru çıkaran ve sürümü söyleyen talimat komutları da git'e ref verir (bug gate 2026-11-17: skill adım 3-4 kısa ad
 # kullanıyordu ⇒ gölge etiket motorun KENDİSİNİ seçerdi). Kapsam: satır başında ya da ters tırnak içinde `git ` geçen satırlar.
 TALIMATLAR = ("skills/guncelle/SKILL.md", "GUNCELLE.md")
-KOMUT_REF = re.compile(r"(?<![/\w])origin/main")
+KOMUT_REF = re.compile(r"(?<![/\w])origin/main\b")
+
+
+def komut_satiri_mi(satir: str) -> bool:
+    return re.search(r"(^|`)git ", satir.strip()) is not None
+
+
+def kisa_ref_var_mi(satir: str) -> bool:
+    """Komut satırında tam ref dışında kısa `origin/main` var mı (tarama ve kalibrasyon AYNI kararı kullanır)."""
+    return KOMUT_REF.search(satir.replace(TAM, "")) is not None and "gölgelen" not in satir
 
 
 def talimat_kisa_refleri() -> tuple[int, list[tuple[str, int, str]]]:
     sayi, kisa = 0, []
     for d in TALIMATLAR:
         for no, satir in enumerate((AXET_HOME / d).read_text(encoding="utf-8").splitlines(), 1):
-            komut = re.search(r"(^|`)git ", satir.strip()) is not None
-            if not komut:
+            if not komut_satiri_mi(satir):
                 continue
             sayi += satir.count(TAM)
-            if KOMUT_REF.search(satir.replace(TAM, "")) and "gölgelen" not in satir:
+            if kisa_ref_var_mi(satir):
                 kisa.append((d, no, satir.strip()[:120]))
     return sayi, kisa
 
@@ -56,6 +64,18 @@ class TalimatRefTest(unittest.TestCase):
         sayi, kisa = talimat_kisa_refleri()
         self.assertGreaterEqual(sayi, 3, "tarama kör: talimatlarda tam ref bulunamadı (beklenen ≥3)")
         self.assertEqual([], kisa, "talimat komutunda kısa `origin/main` — aynı adlı etiket gölgeler")
+
+    def test_komut_tarayici_kalibrasyonu(self):
+        """Z242: bilinen kısa ref'li komut satırları YAKALANMALI, tam ref'li olanlar yakalanmamalı (tarayıcı kör değil).
+        Eskiden desende `\\b` yerine 0x08 baytı vardı ⇒ kısa ref hiç eşleşmiyor, tarama her zaman temiz diyordu."""
+        kisa = ["`git -C <KLON> show origin/main:GUNCELLE.md`",
+                "git -C <KLON> archive --format=tar -o <TMP>/m.tar origin/main GUNCELLE.md",
+                "`git rev-parse origin/main`"]
+        tam = [f"`git -C <KLON> show {TAM}:GUNCELLE.md`", "`git fetch origin main`",
+               "`git -C <KLON> log origin/mainline`", "`git -C <KLON> log upstream/origin/main`"]
+        self.assertTrue(all(komut_satiri_mi(s) for s in kisa + tam))
+        self.assertEqual([True] * len(kisa), [kisa_ref_var_mi(s) for s in kisa], "kısa ref kaçtı — desen kör")
+        self.assertEqual([False] * len(tam), [kisa_ref_var_mi(s) for s in tam], "tam ref / başka ad yanlış pozitif")
 
 
 class KaynakTaramaTest(unittest.TestCase):
